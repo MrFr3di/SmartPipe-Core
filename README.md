@@ -75,10 +75,7 @@ var pipeline = PipelineBuilder
 await pipeline.To(new Sink<EnrichedUser>(user => enrichedUsers.Add(user)));
 ```
 
-```markdown
-## Getting Started 
-### Installation
-```
+## Getting Started | Installation
 
 ```bash
 # Core engine (zero dependencies)
