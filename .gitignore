@@ -1,4 +1,4 @@
-# .NET Build Output
+# Build results
 **/bin/
 **/obj/
 **/artifacts/
@@ -24,5 +24,5 @@
 .DS_Store
 Thumbs.db
 
-# Tools (temporary)
+# Temporary
 tools/
