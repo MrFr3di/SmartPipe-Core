@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/SmartPipe.Core/SmartPipe.Core.csproj" />
+    <Project Path="src/SmartPipe.Extensions/SmartPipe.Extensions.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj" />
+    <Project Path="tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj" />
+  </Folder>
+</Solution>

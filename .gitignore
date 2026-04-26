@@ -1,0 +1,28 @@
+# .NET Build Output
+**/bin/
+**/obj/
+**/artifacts/
+
+# BenchmarkDotNet
+**/BenchmarkDotNet.Artifacts/
+
+# NuGet
+*.nupkg
+*.snupkg
+
+# IDE
+*.user
+*.suo
+*.cache
+.vs/
+.vscode/
+*.DotSettings.user
+.idea/
+*.sln.docstates
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tools (temporary)
+tools/
