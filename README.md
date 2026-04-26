@@ -89,12 +89,13 @@ dotnet add package SmartPipe.Extensions
 
 ```csharp
 using SmartPipe.Core;
+using SmartPipe.Extensions.Selectors;
 using SmartPipe.Extensions.Transforms;
 using SmartPipe.Extensions.Sinks;
 
 var pipeline = PipelineBuilder
-    .From(new FileSource("data.csv"))
-    .Transform(new CsvTransform<CsvRow, MyEntity>())
+    .From(new HttpSelector<MyDto>("https://api.example.com/data"))
+    .Transform(new JsonTransform<MyDto, MyEntity>())
     .WithOptions(o => o.MaxDegreeOfParallelism = 4);
 await pipeline.To(new LoggerSink<MyEntity>(logger));
 ```
