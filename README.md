@@ -1,27 +1,23 @@
-SmartPipe.Core
-Universal streaming pipeline engine for .NET 10 with zero dependencies.
+# SmartPipe.Core
 
-Built on System.Threading.Channels, SmartPipe.Core provides a production-ready pipeline engine for ETL, real-time stream processing, API aggregation, and AI agent integration — all with 0 allocations in hot path.
+**Universal streaming pipeline engine for .NET 10 with zero dependencies.**
 
-[![NuGet](https://img.shields.io/nuget/v/SmartPipe.Core.svg)](https://www.nuget.org/packages/SmartPipe.Core)
+Built on `System.Threading.Channels`, SmartPipe.Core provides a production-ready pipeline engine for ETL, real-time stream processing, API aggregation, and AI agent integration — all with 0 allocations in hot path.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-What is SmartPipe?
-SmartPipe is not just another ETL library. It's a universal streaming pipeline engine that handles:
+## What is SmartPipe?
 
-ETL/ELT — extract from DB/API, transform, load to anywhere
+SmartPipe is not just another ETL library. It's a **universal streaming pipeline engine** that handles:
 
-Real-time stream processing — process events as they arrive
+- **ETL/ELT** — extract from DB/API, transform, load to anywhere
+- **Real-time stream processing** — process events as they arrive
+- **API aggregation** — fan-out requests, aggregate responses
+- **Data validation pipelines** — validate, enrich, route
+- **AI agent tools** — integrate with Semantic Kernel, AutoGen
+- **Log/sensor processing** — process IoT telemetry, application logs
 
-API aggregation — fan-out requests, aggregate responses
-
-Data validation pipelines — validate, enrich, route
-
-AI agent tools — integrate with Semantic Kernel, AutoGen
-
-Log/sensor processing — process IoT telemetry, application logs
-
-All in 5 lines of code:
+**All in 5 lines of code:**
 
 ```csharp
 using SmartPipe.Core;
@@ -33,9 +29,11 @@ var pipeline = PipelineBuilder
     .Transform(new PollyResilienceTransform<MyEntity>(resiliencePipeline))
     .WithOptions(o => o.MaxDegreeOfParallelism = 4);
 await pipeline.To(new LoggerSink<MyEntity>(logger));
-Examples by Scenario
-ETL Pipeline (Database → Transform → API)
 ```
+
+## Examples by Scenario
+
+### ETL Pipeline (Database → Transform → API)
 
 ```csharp
 var pipeline = PipelineBuilder
@@ -44,16 +42,20 @@ var pipeline = PipelineBuilder
     .Transform(new PollyResilienceTransform<OrderDto>(resiliencePipeline))
     .WithOptions(o => o.MaxDegreeOfParallelism = 8);
 await pipeline.To(new HttpSink<OrderDto>(httpClient, "https://api.destination.com/orders"));
-Real-time Stream Processing (API → Filter → Log)
-csharp
+```
+
+### Real-time Stream Processing (API → Filter → Log)
+
+```csharp
 var pipeline = PipelineBuilder
     .From(new HttpSelector<SensorData>("https://iot.example.com/telemetry"))
     .Transform(new JsonTransform<SensorData, SensorData>())
     .Transform(new MapsterTransform<SensorData, Alert>())
     .WithOptions(o => { o.MaxDegreeOfParallelism = 2; o.ContinueOnError = true; });
 await pipeline.To(new LoggerSink<Alert>(logger));
-AI Agent Tool (Semantic Kernel Integration)
 ```
+
+### AI Agent Tool (Semantic Kernel Integration)
 
 ```csharp
 var tool = new PipelineTool<string, string>("summarize", "Summarize text using AI");
@@ -61,8 +63,9 @@ tool.AddTransformer(new JsonTransform<string, PromptDto>());
 tool.AddTransformer(new HttpTransform<PromptDto, string>(openAiClient));
 
 var result = await tool.ExecuteAsync("Long text to summarize...");
-API Aggregation (Fan-out → Aggregate)
 ```
+
+### API Aggregation (Fan-out → Aggregate)
 
 ```csharp
 var pipeline = PipelineBuilder
@@ -72,8 +75,10 @@ var pipeline = PipelineBuilder
 await pipeline.To(new Sink<EnrichedUser>(user => enrichedUsers.Add(user)));
 ```
 
-Getting Started
-Installation
+```markdown
+## Getting Started 
+### Installation
+```
 
 ```bash
 # Core engine (zero dependencies)
@@ -83,7 +88,7 @@ dotnet add package SmartPipe.Core
 dotnet add package SmartPipe.Extensions
 ```
 
-First Pipeline (5 lines)
+## First Pipeline (5 lines)
 
 ```csharp
 using SmartPipe.Core;
@@ -95,8 +100,9 @@ var pipeline = PipelineBuilder
     .Transform(new CsvTransform<CsvRow, MyEntity>())
     .WithOptions(o => o.MaxDegreeOfParallelism = 4);
 await pipeline.To(new LoggerSink<MyEntity>(logger));
-ASP.NET Core BackgroundService
 ```
+
+## ASP.NET Core BackgroundService
 
 ```csharp
 public class PipelineWorker : BackgroundService
@@ -119,6 +125,7 @@ public class PipelineWorker : BackgroundService
 SmartPipe is a streaming pipeline engine built on `System.Threading.Channels`.
 It consists of **21 integrated components** organized in a resilience pipeline order.
 
+```markdown
 ## Pipeline Flow
 ISource<T>
     │
@@ -148,6 +155,7 @@ Bounded Channel
     │
     ▼
 ISink<T>
+```
 
 ## Resilience Pipeline Order
 
