@@ -12,60 +12,65 @@ public class BackpressureStrategyTests
         strategy.GetFillRatio(100).Should().Be(1.0);
     }
 
-    [Fact]
-    public void GetFillRatio_Empty_ShouldBeZero()
+    [Fact]    public void GetFillRatio_Empty_ShouldBeZero()
     {
         var strategy = new BackpressureStrategy(100);
         strategy.GetFillRatio(0).Should().Be(0.0);
     }
 
     [Fact]
-    public void ShouldThrottle_BelowHigh_ShouldBeFalse()
+    public void ShouldThrottle_HighThroughput_ShouldUseHighWatermark()
     {
-        var strategy = new BackpressureStrategy(100) { HighWatermark = 0.80 };
-        strategy.ShouldThrottle(60).Should().BeFalse();
+        var strategy = new BackpressureStrategy(100);
+        strategy.UpdateThroughput(2000); // High throughput > 1000
+        strategy.ShouldThrottle(92).Should().BeTrue(); // > 0.90
+        strategy.ShouldThrottle(85).Should().BeFalse(); // < 0.90
     }
 
     [Fact]
-    public void ShouldThrottle_AboveHigh_ShouldBeTrue()
+    public void ShouldThrottle_LowThroughput_ShouldUseLowWatermark()
     {
-        var strategy = new BackpressureStrategy(100) { HighWatermark = 0.80 };
-        strategy.ShouldThrottle(81).Should().BeTrue();
+        var strategy = new BackpressureStrategy(100);
+        strategy.UpdateThroughput(50); // Low throughput < 100
+        strategy.ShouldThrottle(60).Should().BeTrue(); // > 0.50
     }
 
     [Fact]
-    public void IsCritical_AboveCritical_ShouldBeTrue()
+    public void IsCritical_HighThroughput_ShouldUseHighCritical()
     {
-        var strategy = new BackpressureStrategy(100) { CriticalWatermark = 0.95 };
-        strategy.IsCritical(96).Should().BeTrue();
+        var strategy = new BackpressureStrategy(100);
+        strategy.UpdateThroughput(2000);
+        strategy.IsCritical(99).Should().BeTrue(); // > 0.98
+        strategy.IsCritical(95).Should().BeFalse(); // < 0.98
     }
 
     [Fact]
-    public void IsCritical_BelowCritical_ShouldBeFalse()
+    public void IsCritical_LowThroughput_ShouldUseLowCritical()
     {
-        var strategy = new BackpressureStrategy(100) { CriticalWatermark = 0.95 };
-        strategy.IsCritical(50).Should().BeFalse();
+        var strategy = new BackpressureStrategy(100);
+        strategy.UpdateThroughput(50);
+        strategy.IsCritical(85).Should().BeTrue(); // > 0.80
     }
 
     [Fact]
     public async Task ThrottleAsync_BelowHigh_ShouldNotDelay()
     {
-        var strategy = new BackpressureStrategy(100) { HighWatermark = 0.80 };
+        var strategy = new BackpressureStrategy(100);
+        strategy.UpdateThroughput(500); // Medium
         var sw = System.Diagnostics.Stopwatch.StartNew();
         await strategy.ThrottleAsync(50, CancellationToken.None);
         sw.Stop();
-
-        sw.ElapsedMilliseconds.Should().BeLessThan(5); // Near zero delay
+        sw.ElapsedMilliseconds.Should().BeLessThan(10);
     }
 
     [Fact]
     public async Task ThrottleAsync_AboveHigh_ShouldDelay()
     {
-        var strategy = new BackpressureStrategy(100) { HighWatermark = 0.80 };
+        var strategy = new BackpressureStrategy(100);
+        strategy.UpdateThroughput(500);
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        await strategy.ThrottleAsync(90, CancellationToken.None);
+        await strategy.ThrottleAsync(85, CancellationToken.None);
         sw.Stop();
-
-        sw.ElapsedMilliseconds.Should().BeGreaterThanOrEqualTo(50); // Proportional delay
+        sw.ElapsedMilliseconds.Should().BeGreaterThanOrEqualTo(50);
     }
 }

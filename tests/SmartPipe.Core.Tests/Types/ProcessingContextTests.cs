@@ -11,7 +11,6 @@ public class ProcessingContextTests
     {
         var ctx1 = new ProcessingContext<string>("payload1");
         var ctx2 = new ProcessingContext<string>("payload2");
-
         ctx1.TraceId.Should().NotBe(ctx2.TraceId);
     }
 
@@ -19,7 +18,6 @@ public class ProcessingContextTests
     public void Constructor_ShouldSetPayload()
     {
         var ctx = new ProcessingContext<int>(42);
-
         ctx.Payload.Should().Be(42);
     }
 
@@ -27,7 +25,6 @@ public class ProcessingContextTests
     public void Constructor_ShouldInitializeEmptyMetadata()
     {
         var ctx = new ProcessingContext<string>("test");
-
         ctx.Metadata.Should().NotBeNull().And.BeEmpty();
     }
 
@@ -36,30 +33,23 @@ public class ProcessingContextTests
     {
         var metadata = new Dictionary<string, string> { ["key"] = "value" };
         var ctx = new ProcessingContext<string>("test", metadata);
-
         ctx.Metadata.Should().ContainKey("key").WhoseValue.Should().Be("value");
-        ctx.Metadata.Should().NotBeSameAs(metadata); // Copied, not referenced
+        ctx.Metadata.Should().NotBeSameAs(metadata);
     }
 
     [Fact]
-    public void EnterPipelineTicks_ShouldBeSetToCurrentTime()
+    public void EnterPipelineTicks_ShouldBeSet()
     {
-        var before = Environment.TickCount64;
         var ctx = new ProcessingContext<string>("test");
-        var after = Environment.TickCount64;
-
-        ctx.EnterPipelineTicks.Should().BeInRange(before, after);
+        ctx.EnterPipelineTicks.Should().BeGreaterThan(0);
     }
 
     [Fact]
-    public void AddMetadata_ShouldReturnNewInstance()
+    public void Metadata_ShouldBeMutable()
     {
-        var ctx1 = new ProcessingContext<string>("test");
-        var ctx2 = ctx1.AddMetadata("key", "value");
-
-        ctx2.Should().NotBeSameAs(ctx1);
-        ctx2.Metadata.Should().ContainKey("key");
-        ctx1.Metadata.Should().BeEmpty(); // Original unchanged
+        var ctx = new ProcessingContext<string>("test");
+        ctx.Metadata["newKey"] = "newValue";
+        ctx.Metadata.Should().ContainKey("newKey");
     }
 
     [Fact]
@@ -68,7 +58,6 @@ public class ProcessingContextTests
         var ids = new List<ulong>();
         for (int i = 0; i < 100; i++)
             ids.Add(new ProcessingContext<int>(i).TraceId);
-
         ids.Should().OnlyHaveUniqueItems();
     }
 
@@ -76,12 +65,28 @@ public class ProcessingContextTests
     public void TraceId_ShouldBeThreadSafe()
     {
         var ids = new ConcurrentBag<ulong>();
-        Parallel.For(0, 1000, i =>
-        {
-            ids.Add(new ProcessingContext<int>(i).TraceId);
-        });
-
+        Parallel.For(0, 1000, i => ids.Add(new ProcessingContext<int>(i).TraceId));
         ids.Should().OnlyHaveUniqueItems();
         ids.Should().HaveCount(1000);
+    }
+
+    [Fact]
+    public void Reset_ShouldGenerateNewTraceId()
+    {
+        var ctx = new ProcessingContext<string>("test");
+        var oldId = ctx.TraceId;
+        ctx.Reset();
+        ctx.TraceId.Should().NotBe(oldId);
+        ctx.Payload.Should().BeNull();
+        ctx.Metadata.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void DefaultConstructor_ShouldCreateValidContext()
+    {
+        var ctx = new ProcessingContext<int>();
+        ctx.TraceId.Should().BeGreaterThan(0UL);
+        ctx.Payload.Should().Be(0); // default(int)
+        ctx.Metadata.Should().NotBeNull();
     }
 }

@@ -1,37 +1,55 @@
 namespace SmartPipe.Core;
 
-/// <summary>Immutable context of a pipeline element. Thread-safe trace ID generation.</summary>
+/// <summary>
+/// Mutable context of a pipeline element. Thread-safe trace ID generation.
+/// Supports ObjectPool reuse via Reset() — zero allocations in hot path.
+/// </summary>
 /// <typeparam name="T">Type of payload data.</typeparam>
-public record class ProcessingContext<T>
+public class ProcessingContext<T>
 {
     private static long _counter;
 
     /// <summary>Unique trace ID across the entire pipeline (monotonic, thread-safe).</summary>
-    public ulong TraceId { get; init; }
+    public ulong TraceId { get; set; }
 
     /// <summary>Payload data to process.</summary>
-    public T Payload { get; init; }
+    public T Payload { get; set; } = default!;
 
-    /// <summary>Metadata dictionary for additional context (source file name, timestamp, etc.).</summary>
-    public Dictionary<string, string> Metadata { get; init; }
+    /// <summary>Metadata dictionary for additional context.</summary>
+    public Dictionary<string, string> Metadata { get; set; } = new();
 
     /// <summary>Timestamp (TickCount64) when the element entered the pipeline.</summary>
-    public long EnterPipelineTicks { get; init; }
+    public long EnterPipelineTicks { get; set; }
 
-    /// <summary>Create a new context with auto-generated TraceId.</summary>
-    /// <param name="payload">Payload data.</param>
-    /// <param name="metadata">Optional metadata dictionary (copied, not referenced).</param>
-    public ProcessingContext(T payload, Dictionary<string, string>? metadata = null)
+    /// <summary>Create an empty context (for ObjectPool).</summary>
+    public ProcessingContext()
     {
         TraceId = (ulong)Interlocked.Increment(ref _counter);
-        Payload = payload;
-        Metadata = metadata is null ? new() : new Dictionary<string, string>(metadata); // Copy to ensure immutability
         EnterPipelineTicks = Environment.TickCount64;
     }
 
-    /// <summary>Add metadata entry, returning a new immutable instance.</summary>
-    /// <param name="key">Metadata key.</param>
-    /// <param name="value">Metadata value.</param>
-    public ProcessingContext<T> AddMetadata(string key, string value) =>
-        this with { Metadata = new Dictionary<string, string>(Metadata) { [key] = value } };
+    /// <summary>Create a new context with payload.</summary>
+    public ProcessingContext(T payload) : this()
+    {
+        Payload = payload;
+    }
+
+    /// <summary>Create a new context with payload and metadata.</summary>
+    public ProcessingContext(T payload, Dictionary<string, string>? metadata) : this(payload)
+    {
+        if (metadata != null)
+        {
+            foreach (var kv in metadata)
+                Metadata[kv.Key] = kv.Value;
+        }
+    }
+
+    /// <summary>Reset state for ObjectPool reuse. Generates new TraceId.</summary>
+    public void Reset()
+    {
+        TraceId = (ulong)Interlocked.Increment(ref _counter);
+        Payload = default!;
+        Metadata.Clear();
+        EnterPipelineTicks = Environment.TickCount64;
+    }
 }

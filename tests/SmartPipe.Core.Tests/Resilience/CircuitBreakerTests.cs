@@ -45,7 +45,7 @@ public class CircuitBreakerTests
             failureRatio: 0.5,
             minimumThroughput: 5,
             breakDuration: TimeSpan.FromMilliseconds(10),
-            maxHalfOpenRequests: 1);
+            maxHalfOpenRequests: 2);
 
         // Open circuit
         for (int i = 0; i < 5; i++) cb.RecordFailure();
@@ -56,6 +56,7 @@ public class CircuitBreakerTests
         // Second request allowed
         cb.AllowRequest().Should().BeTrue();
         // Third request blocked
+        cb.AllowRequest().Should().BeFalse();
         cb.AllowRequest().Should().BeFalse();
     }
 

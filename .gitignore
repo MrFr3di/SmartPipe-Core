@@ -26,3 +26,5 @@ Thumbs.db
 
 # Temporary
 tools/
+benchmarks/SmartPipe.CompetitorBenchmarks/
+

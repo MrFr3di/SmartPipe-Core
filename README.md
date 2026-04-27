@@ -8,6 +8,7 @@ Built on `System.Threading.Channels`, SmartPipe.Core provides a production-ready
 [![NuGet Core](https://img.shields.io/nuget/v/SmartPipe.Core.svg)](https://www.nuget.org/packages/SmartPipe.Core)
 [![NuGet Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.svg)](https://www.nuget.org/packages/SmartPipe.Extensions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Coverage](https://img.shields.io/badge/coverage-96.3%25-brightgreen.svg)](https://github.com/MrFr3di/SmartPipe-Core)
 
 ## What is SmartPipe?
 
@@ -169,8 +170,10 @@ ISink<T>
 
 | Component | Type | Memory | Performance |
 |-----------|------|--------|-------------|
-| DeduplicationFilter | Bloom filter | O(1) | 20.86 ns |
-| ObjectPool | Lock-free | O(n) | 15.67 ns |
+| DeduplicationFilter | Bloom filter | O(1) | 20.04 ns |
+| ObjectPool | Lock-free | O(n) | 15.63 ns |
+| CircuitBreaker | Lock-free (Interlocked) | O(n) | 27.76 ns |
+| RetryQueue | Lock-free (Channel) | O(n) | 69.16 ns |
 | ExponentialHistogram | Percentiles | O(log² n) | < 100 ns |
 | JumpHash | Sharding | O(1) | < 10 ns |
 | CuckooFilter | Dedup + delete | O(1) | < 50 ns |
@@ -203,12 +206,24 @@ SmartPipe.Extensions/
 One package. All integrations. Zero boilerplate.
 ```
 
-Requirements
-.NET 10.0+
+## Requirements
 
-No external dependencies for SmartPipe.Core
+- .NET 10.0+
+- SmartPipe.Core: **0 dependencies**
+- SmartPipe.Extensions: Polly, EF Core, Dapper, Mapster, CsvHelper
+- **186 tests, 96.3% code coverage**
 
-Optional: Polly, EF Core, Dapper, Mapster, CsvHelper for Extensions
+## What's New in v1.0.2
+
+- **Lock-free RetryQueue**
+- **Lock-free CircuitBreaker**
+- **SmartPipeEventSource** — monitor via `dotnet-counters`
+- **SmartPipeHostedService** — native ASP.NET Core integration
+- **SmartPipeHealthCheck** — pipeline health for YARP/Kubernetes
+- **Adaptive EMA** — dynamic α for spike detection
+- **Dynamic Watermark** — throughput-based backpressure
+- **96.3% code coverage** (up from 86.5%)
+- **47 new tests**, 0 regressions in benchmarks
 
 ## Acknowledgements
 

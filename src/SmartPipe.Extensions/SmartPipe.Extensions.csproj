@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Version>1.0.0</Version>
+    <Version>1.0.2</Version>
     <Authors>SmartPipe</Authors>
     <Description>Extensions for SmartPipe.Core: Http, EF Core, Dapper, JSON, CSV, Mapster, Compression, and Polly resilience integrations. One package instead of 12.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -23,6 +23,8 @@
     <PackageReference Include="Dapper" Version="2.1.66" />
     <PackageReference Include="Mapster" Version="7.4.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.0-preview.3.25171.5" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.0-preview.3.25171.5" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0-preview.3.25171.5" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0-preview.3.25171.5" />
     <PackageReference Include="Microsoft.Extensions.Resilience" Version="9.4.0" />
     <PackageReference Include="System.Text.Json" Version="10.0.0-preview.3.25171.5" />
