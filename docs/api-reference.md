@@ -71,3 +71,28 @@ Structured error with Type (Transient/Permanent), Category, and optional InnerEx
 | `DebugSampling` | `false` | Reservoir sampling |
 | `CuckooFilter` | `false` | TTL deduplication |
 | `JumpHash` | `false` | Consumer sharding |
+
+### New in v1.0.3
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `UseRendezvous` | `false` | Strict Producer-Consumer sync (Capacity=0) |
+| `FullMode` | `Wait` | Channel full behavior: Wait/DropOldest/DropNewest |
+
+### New Components
+
+| Component | Type | Description |
+|-----------|------|-------------|
+| `HyperLogLogEstimator` | Count-Distinct | Approximate unique count, O(1) memory |
+| `MiddlewareTransformer<T>` | Transform | `Func<T,T>` as lightweight ITransformer |
+| `DeadLetterSink<T>` | Sink | Persist failed items to JSON |
+| `ChannelMerge` | Extension | Merge two ChannelReader<T> streams |
+| `SmartPipeLivenessCheck` | Health | Kubernetes liveness probe |
+| `SmartPipeReadinessCheck` | Health | Kubernetes readiness probe |
+
+### Core Types
+
+| Type | Description |
+|------|-------------|
+| `ProcessingContext<T>` | Mutable context with Data Lineage keys |
+| `DataLineage` | Constants for provenance tracking in Metadata |

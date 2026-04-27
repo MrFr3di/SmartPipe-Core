@@ -30,7 +30,7 @@ public class EfCoreSelector<T> : ISource<T> where T : class
 
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         var query = _query ?? _dbContext.Set<T>();
         var entities = query.AsAsyncEnumerable().WithCancellation(ct);

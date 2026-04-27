@@ -21,6 +21,12 @@ public class ProcessingContext<T>
     /// <summary>Timestamp (TickCount64) when the element entered the pipeline.</summary>
     public long EnterPipelineTicks { get; set; }
 
+    // Data Lineage keys for Metadata dictionary
+    public const string LineageSource = "lineage_source";
+    public const string LineagePipeline = "lineage_pipeline";
+    public const string LineageEnteredAt = "lineage_entered_at";
+    public const string LineageTransform = "lineage_transform";
+
     /// <summary>Create an empty context (for ObjectPool).</summary>
     public ProcessingContext()
     {

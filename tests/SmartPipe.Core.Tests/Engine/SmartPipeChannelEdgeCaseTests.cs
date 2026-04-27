@@ -86,7 +86,6 @@ public class SmartPipeChannelEdgeCaseTests
         channel.AddSink(sink);
 
         await channel.RunAsync();
-        // Either 0 or 1 successes before first failure
         sink.Results.Count.Should().BeLessThanOrEqualTo(2);
     }
 
@@ -101,7 +100,29 @@ public class SmartPipeChannelEdgeCaseTests
     public async Task DisposeAsync_ShouldCompleteWithoutError()
     {
         var channel = new SmartPipeChannel<int, int>();
-        await channel.Invoking(c => c.DisposeAsync().AsTask())
-            .Should().NotThrowAsync();
+        await channel.Invoking(c => c.DisposeAsync().AsTask()).Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task RunAsync_WithJumpHashFeature_ShouldNotThrow()
+    {
+        var options = new SmartPipeChannelOptions();
+        options.EnableFeature("JumpHash");
+        var source = new SimpleSource<int>(1, 2, 3);
+        var transformer = new PassthroughTransformer<int>();
+        var sink = new CollectionSink<int>();
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(source);
+        channel.AddTransformer(transformer);
+        channel.AddSink(sink);
+
+        await channel.Invoking(c => c.RunAsync()).Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public void Metrics_FeatureFlag_ShouldBeEnabledByDefault()
+    {
+        var options = new SmartPipeChannelOptions();
+        options.IsEnabled("Metrics").Should().BeTrue();
     }
 }

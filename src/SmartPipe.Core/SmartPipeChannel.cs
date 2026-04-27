@@ -73,6 +73,23 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         GC.SuppressFinalize(this);
     }
 
+    /// <summary>Get the output channel reader for SignalR/gRPC integration.</summary>
+    public ChannelReader<ProcessingResult<TOutput>>? AsChannelReader() => _outputChannel?.Reader;
+
+    /// <summary>Run pipeline in background, returning a ChannelReader for streaming consumption.</summary>
+    public ChannelReader<ProcessingResult<TOutput>> RunInBackground(CancellationToken ct = default)
+    {
+        var channel = System.Threading.Channels.Channel.CreateBounded<ProcessingResult<TOutput>>(
+            new System.Threading.Channels.BoundedChannelOptions(_options.BoundedCapacity > 0 ? _options.BoundedCapacity : 1000)
+            { FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait });
+        _ = Task.Run(async () =>
+        {
+            try { await RunAsync(ct); }
+            finally { channel.Writer.TryComplete(); }
+        }, ct);
+        return channel.Reader;
+    }
+
     private void Validate()
     {
         if (_sources.Count == 0) throw new InvalidOperationException("At least one source required.");
@@ -97,8 +114,8 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             foreach (var t in _transformers) await t.InitializeAsync(token).ConfigureAwait(false);
             foreach (var s in _sinks) await s.InitializeAsync(token).ConfigureAwait(false);
 
-            _inputChannel = ChannelPool.RentBounded<ProcessingContext<TInput>>(_options.BoundedCapacity, BoundedChannelFullMode.Wait);
-            _outputChannel = ChannelPool.RentBounded<ProcessingResult<TOutput>>(_options.BoundedCapacity, BoundedChannelFullMode.Wait);
+            _inputChannel = ChannelPool.RentBounded<ProcessingContext<TInput>>(_options.UseRendezvous ? 0 : _options.BoundedCapacity, _options.FullMode);
+            _outputChannel = ChannelPool.RentBounded<ProcessingResult<TOutput>>(_options.UseRendezvous ? 0 : _options.BoundedCapacity, _options.FullMode);
             Metrics = new SmartPipeMetrics();
 
             var retryTask = _retryQueue != null ? ProcessRetriesAsync(token) : null;
@@ -221,10 +238,8 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
 
-    private bool ShouldProcessItem(ProcessingContext<TInput> ctx, int consumerIndex)
-    {
-        return _shardBuckets == null || JumpHash.Hash(ctx.TraceId, _shardBuckets.Length) == consumerIndex;
-    }
+    private bool ShouldProcessItem(ProcessingContext<TInput> ctx, int consumerIndex) =>
+        _shardBuckets == null || JumpHash.Hash(ctx.TraceId, _shardBuckets.Length) == consumerIndex;
 
     private async ValueTask<bool> HandleCircuitBreakerAsync(ProcessingContext<TInput> ctx, CancellationToken ct)
     {

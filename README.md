@@ -8,7 +8,9 @@ Built on `System.Threading.Channels`, SmartPipe.Core provides a production-ready
 [![NuGet Core](https://img.shields.io/nuget/v/SmartPipe.Core.svg)](https://www.nuget.org/packages/SmartPipe.Core)
 [![NuGet Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.svg)](https://www.nuget.org/packages/SmartPipe.Extensions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Coverage](https://img.shields.io/badge/coverage-96.3%25-brightgreen.svg)](https://github.com/MrFr3di/SmartPipe-Core)
+[![Coverage](https://img.shields.io/badge/coverage-96.4%25-brightgreen.svg)](https://github.com/MrFr3di/SmartPipe-Core)
+
+📖 **[Complete Feature Reference →](docs/features.md)**
 
 ## What is SmartPipe?
 
@@ -20,6 +22,8 @@ SmartPipe is not just another ETL library. It's a **universal streaming pipeline
 - **Data validation pipelines** — validate, enrich, route
 - **AI agent tools** — integrate with Semantic Kernel, AutoGen
 - **Log/sensor processing** — process IoT telemetry, application logs
+- **Error recovery & dead letter** — capture failures for later replay
+- **Stream merging** — combine multiple data sources into one pipeline
 
 **All in 5 lines of code:**
 
@@ -29,13 +33,24 @@ using SmartPipe.Extensions;
 
 var pipeline = PipelineBuilder
     .From(new HttpSelector<MyDto>("https://api.example.com/data"))
-    .Transform(new JsonTransform<MyDto, MyEntity>())
-    .Transform(new PollyResilienceTransform<MyEntity>(resiliencePipeline))
+    .Transform(x => x.Enrich())       // Middleware for simple ops
+    .Transform(new JsonTransform<MyDto, MyEntity>())  // ITransformer for complex
     .WithOptions(o => o.MaxDegreeOfParallelism = 4);
 await pipeline.To(new LoggerSink<MyEntity>(logger));
 ```
 
 ## Examples by Scenario
+
+### Middleware Pattern (5 lines)
+
+```csharp
+var pipeline = PipelineBuilder
+    .From(new HttpSelector<int>("https://api.example.com/numbers"))
+    .Transform(x => x * 2)          // Middleware!
+    .Transform(x => x + 1)          // Middleware!
+    .WithOptions(o => o.MaxDegreeOfParallelism = 4);
+await pipeline.To(new LoggerSink<int>(logger));
+```
 
 ### ETL Pipeline (Database → Transform → API)
 
@@ -77,6 +92,16 @@ var pipeline = PipelineBuilder
     .Transform(new MapsterTransform<User, EnrichedUser>())
     .Transform(new PollyResilienceTransform<EnrichedUser>(resiliencePipeline));
 await pipeline.To(new Sink<EnrichedUser>(user => enrichedUsers.Add(user)));
+```
+
+### Error Persistence with DeadLetterSink
+
+```csharp
+var pipeline = PipelineBuilder
+    .From(new HttpSelector<Order>("https://api.example.com/orders"))
+    .Transform(new OrderValidator())
+    .WithOptions(o => o.ContinueOnError = true);
+await pipeline.To(new DeadLetterSink<Order>("failed_orders.json"));
 ```
 
 ## Getting Started | Installation
@@ -125,29 +150,30 @@ public class PipelineWorker : BackgroundService
 ## Overview
 
 SmartPipe is a streaming pipeline engine built on `System.Threading.Channels`.
-It consists of **21 integrated components** organized in a resilience pipeline order.
+It consists of **24 integrated components** organized in a resilience pipeline order.
 
 ```markdown
 ## Pipeline Flow
-ISource<T>
+## Pipeline Flow
+ISource<T> (or RunInBackground)
     │
     ▼
-Bounded Channel
+Bounded Channel (or Rendezvous Channel)
     │
     ▼
-BackpressureStrategy (Watermark 80%/95%)
+BackpressureStrategy (Dual-threshold: Pause/Resume)
     │
     ▼
-DeduplicationFilter (Bloom, O(1))
+DeduplicationFilter (Bloom, O(1)) + HyperLogLogEstimator
     │
     ▼
 AdaptiveParallelism (Little's Law)
     │
     ▼
-CircuitBreaker (Closed→Open→HalfOpen)
+CircuitBreaker (Lock-free, Closed→Open→HalfOpen)
     │
     ▼
-ITransformer (ValueTask, parallel) + AttemptTimeout
+MiddlewareTransformer (Func<T,T>) + ITransformer (ValueTask)
     │
     ▼
 RetryQueue (Jitter + Exponential Backoff)
@@ -156,7 +182,10 @@ RetryQueue (Jitter + Exponential Backoff)
 Bounded Channel
     │
     ▼
-ISink<T>
+ISink<T> (Logger, DeadLetter, HealthChecks)
+    │
+    ▼
+AsChannelReader() → SignalR/gRPC
 ```
 
 ## Resilience Pipeline Order
@@ -165,6 +194,9 @@ ISink<T>
 2. **CircuitBreaker** — stops processing on high failure rate
 3. **RetryQueue** — delays and retries transient errors
 4. **AttemptTimeout** — per-transformer timeout
+5. **DeadLetterSink** — captures exhausted retries for later replay
+6. **LivenessCheck** — detects stalled pipeline
+7. **ReadinessCheck** — detects overloaded pipeline
 
 ## Component Overview
 
@@ -178,14 +210,19 @@ ISink<T>
 | JumpHash | Sharding | O(1) | < 10 ns |
 | CuckooFilter | Dedup + delete | O(1) | < 50 ns |
 | ReservoirSampler | Sampling | O(k) | < 10 ns |
+| HyperLogLogEstimator | Count-Distinct | O(1) | < 50 ns |
+| DeadLetterSink | Error persistence | O(n) | — |
+| ChannelMerge | Stream merging | O(n) | — |
 
 ## Extension Architecture
 
 Extensions follow the **Selection Pattern** — a single package with categorized components:
 
 - **Selectors** — data sources (Http, EF Core, Dapper)
-- **Transforms** — data transformers (JSON, CSV, Mapster, Compression, Polly)
-- **Sinks** — data destinations (Logger)
+- **Transforms** — data transformers (JSON, CSV, Mapster, Compression, Polly, Middleware)
+- **Sinks** — data destinations (Logger, DeadLetter)
+- **Health** — Kubernetes probes (Liveness, Readiness)
+- **Streaming** — ChannelMerge, RunInBackground, AsChannelReader
 
 Instead of 12 separate NuGet packages, SmartPipe uses a single SmartPipe.Extensions package with the Selection Pattern:
 
@@ -202,7 +239,8 @@ SmartPipe.Extensions/
 │   ├── CompressionTransform
 │   └── PollyResilienceTransform
 └── Sinks/              ← Data destinations
-    └── LoggerSink
+    ├── LoggerSink      ← Structured logging
+    └── DeadLetterSink  ← Failed items persistence
 One package. All integrations. Zero boilerplate.
 ```
 
@@ -211,7 +249,22 @@ One package. All integrations. Zero boilerplate.
 - .NET 10.0+
 - SmartPipe.Core: **0 dependencies**
 - SmartPipe.Extensions: Polly, EF Core, Dapper, Mapster, CsvHelper
-- **186 tests, 96.3% code coverage**
+- **215 tests, 96.4% code coverage**
+
+## What's New in v1.0.3
+
+- **13 new features** (215 tests, 96.3% coverage)
+- **Middleware Transformer** — `Func<T,T>` as lightweight ITransformer
+- **Rendezvous Channel** — (BoundedCapacity=0)
+- **HyperLogLogEstimator** — Count-Distinct with O(1) memory
+- **Dual-threshold Watermark** — Pause/Resume prevents oscillation
+- **Liveness/Readiness Health Checks** — Kubernetes-native
+- **DeadLetterSink** — failed items persistence
+- **Data Lineage** — provenance tracking in Metadata
+- **ChannelMerge** — merge two streams
+- **RunInBackground()** — streaming pipeline consumption
+- **Hybrid Queue** — FullMode option (Wait/DropOldest)
+- **AsChannelReader()** — SignalR/gRPC integration
 
 ## What's New in v1.0.2
 
@@ -224,6 +277,15 @@ One package. All integrations. Zero boilerplate.
 - **Dynamic Watermark** — throughput-based backpressure
 - **96.3% code coverage** (up from 86.5%)
 - **47 new tests**, 0 regressions in benchmarks
+
+## Documentation
+
+- [Complete Feature Reference](docs/features.md) — all 24 components in detail
+- [Architecture Overview](docs/architecture.md) — pipeline flow and design
+- [API Reference](docs/api-reference.md) — interfaces and configuration
+- [Contributing Guide](CONTRIBUTING.md)
+- [Security Policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
 
 ## Acknowledgements
 

@@ -3,55 +3,43 @@ using SmartPipe.Core;
 
 namespace SmartPipe.Extensions;
 
-/// <summary>
-/// Health check that reports SmartPipe pipeline status:
-/// Circuit Breaker state, Backpressure level, Queue size.
-/// </summary>
-/// <typeparam name="TInput">Pipeline input type.</typeparam>
-/// <typeparam name="TOutput">Pipeline output type.</typeparam>
-public class SmartPipeHealthCheck<TInput, TOutput> : IHealthCheck
+/// <summary>Liveness check: is the pipeline alive (not hung)?</summary>
+public class SmartPipeLivenessCheck<TIn, TOut> : IHealthCheck
 {
-    private readonly SmartPipeChannel<TInput, TOutput> _pipeline;
+    private readonly SmartPipeChannel<TIn, TOut> _pipe;
+    public SmartPipeLivenessCheck(SmartPipeChannel<TIn, TOut> p) => _pipe = p;
 
-    public SmartPipeHealthCheck(SmartPipeChannel<TInput, TOutput> pipeline)
+    public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext ctx, CancellationToken ct = default)
     {
-        _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+        var ok = !_pipe.IsPaused;
+        return Task.FromResult(ok
+            ? HealthCheckResult.Healthy("Pipeline is alive")
+            : HealthCheckResult.Unhealthy("Pipeline is paused"));
     }
+}
 
-    public Task<HealthCheckResult> CheckHealthAsync(
-        HealthCheckContext context,
-        CancellationToken ct = default)
+/// <summary>Readiness check: can the pipeline accept data?</summary>
+public class SmartPipeReadinessCheck<TIn, TOut> : IHealthCheck
+{
+    private readonly SmartPipeChannel<TIn, TOut> _pipe;
+    public SmartPipeReadinessCheck(SmartPipeChannel<TIn, TOut> p) => _pipe = p;
+
+    public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext ctx, CancellationToken ct = default)
     {
-        var metrics = _pipeline.Metrics;
-        bool isHealthy = true;
+        var m = _pipe.Metrics;
         var data = new Dictionary<string, object>
         {
-            ["ItemsProcessed"] = metrics.ItemsProcessed,
-            ["ItemsFailed"] = metrics.ItemsFailed,
-            ["QueueSize"] = metrics.QueueSize,
-            ["AvgLatencyMs"] = metrics.AvgLatencyMs,
-            ["SmoothThroughput"] = metrics.SmoothThroughput
+            ["QueueSize"] = m.QueueSize,
+            ["Failures"] = m.ItemsFailed,
+            ["AvgLatencyMs"] = m.AvgLatencyMs
         };
 
-        // Check failure rate
-        if (metrics.ItemsProcessed + metrics.ItemsFailed > 100)
-        {
-            double failureRate = (double)metrics.ItemsFailed / (metrics.ItemsProcessed + metrics.ItemsFailed);
-            data["FailureRate"] = failureRate;
-            if (failureRate > 0.5)
-                isHealthy = false;
-        }
+        if (m.QueueSize > 1000)
+            return Task.FromResult(HealthCheckResult.Degraded("Queue too large", data: data));
 
-        // Check queue size
-        if (metrics.QueueSize > 1000)
-        {
-            isHealthy = false;
-            data["Warning"] = "Queue size exceeds 1000";
-        }
+        if (m.ItemsFailed > 0)
+            return Task.FromResult(HealthCheckResult.Degraded("Failures detected", data: data));
 
-        var status = isHealthy ? HealthStatus.Healthy : HealthStatus.Degraded;
-        return Task.FromResult(new HealthCheckResult(status, 
-            isHealthy ? "Pipeline is healthy" : "Pipeline is degraded", 
-            data: data));
+        return Task.FromResult(HealthCheckResult.Healthy("Ready", data));
     }
 }

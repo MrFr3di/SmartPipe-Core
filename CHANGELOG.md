@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.0.3] — 2026-04-27
+
+### New Features (13)
+- **Middleware Transformer** — `Func<T,T>` as lightweight `ITransformer`, zero boilerplate
+- **Rendezvous Channel** — `UseRendezvous=true` enables strict Producer-Consumer sync (BoundedCapacity=0)
+- **HyperLogLogEstimator** — Count-Distinct with O(1) memory, ~3% accuracy
+- **Dual-threshold Watermark** — Pause/Resume thresholds prevent oscillation (System.IO.Pipelines pattern)
+- **Liveness/Readiness Health Checks** — Kubernetes-native probes (`SmartPipeLivenessCheck`, `SmartPipeReadinessCheck`)
+- **DeadLetterSink** — persists failed items to JSON for later analysis
+- **Data Lineage** — provenance tracking via `ProcessingContext.Metadata` keys
+- **ChannelMerge** — merge two `ChannelReader<T>` streams into one
+- **RunInBackground()** — non-blocking pipeline execution returning `ChannelReader`
+- **Hybrid Queue** — `FullMode` option in `SmartPipeChannelOptions` (Wait/DropOldest/DropNewest)
+- **AsChannelReader()** — exposes pipeline output for SignalR/gRPC integration
+- **Hybrid Queue** — `FullMode` option (Wait/DropOldest/DropNewest)
+- **Lambda sources/sinks** — `AddSource(Func)` and `AddSink(Action)` for rapid prototyping
+
+### Testing & Quality
+- **215 tests** (up from 186, +29 tests)
+- **96.4% line coverage**
+- 0 regressions in all benchmarks
+
 ## [1.0.2] — 2026-04-27
 
 ### Performance

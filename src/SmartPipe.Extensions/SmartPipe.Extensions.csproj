@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <Authors>SmartPipe</Authors>
     <Description>Extensions for SmartPipe.Core: Http, EF Core, Dapper, JSON, CSV, Mapster, Compression, and Polly resilience integrations. One package instead of 12.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

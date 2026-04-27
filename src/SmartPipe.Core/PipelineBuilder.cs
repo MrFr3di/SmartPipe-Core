@@ -4,24 +4,17 @@ namespace SmartPipe.Core;
 public static class PipelineBuilder
 {
     /// <summary>Start building from a source.</summary>
-    /// <typeparam name="T">Source element type.</typeparam>
-    /// <param name="source">Data source.</param>
-    /// <returns>Pipeline builder for the given source type.</returns>
     public static PipelineBuilder<T> From<T>(ISource<T> source) => new(source);
 }
 
 /// <summary>Pipeline builder with input type.</summary>
-/// <typeparam name="TInput">Input element type.</typeparam>
 public class PipelineBuilder<TInput>
 {
     private readonly ISource<TInput> _source;
 
     internal PipelineBuilder(ISource<TInput> source) => _source = source;
 
-    /// <summary>Add a transformer to the pipeline.</summary>
-    /// <typeparam name="TOutput">Output element type.</typeparam>
-    /// <param name="transformer">Transformer to add.</param>
-    /// <returns>Builder with both input and output types.</returns>
+    /// <summary>Add a transformer (ITransformer).</summary>
     public PipelineBuilder<TInput, TOutput> Transform<TOutput>(ITransformer<TInput, TOutput> transformer)
     {
         var channel = new SmartPipeChannel<TInput, TOutput>();
@@ -29,11 +22,15 @@ public class PipelineBuilder<TInput>
         channel.AddTransformer(transformer);
         return new PipelineBuilder<TInput, TOutput>(channel);
     }
+
+    /// <summary>Add a lightweight middleware (Func<T, T>). Same input/output type.</summary>
+    public PipelineBuilder<TInput, TInput> Transform(Func<TInput, TInput> middleware)
+    {
+        return Transform(new MiddlewareTransformer<TInput>(middleware));
+    }
 }
 
 /// <summary>Pipeline builder with input and output types.</summary>
-/// <typeparam name="TInput">Input element type.</typeparam>
-/// <typeparam name="TOutput">Output element type.</typeparam>
 public class PipelineBuilder<TInput, TOutput>
 {
     private readonly SmartPipeChannel<TInput, TOutput> _channel;
@@ -41,8 +38,6 @@ public class PipelineBuilder<TInput, TOutput>
     internal PipelineBuilder(SmartPipeChannel<TInput, TOutput> channel) => _channel = channel;
 
     /// <summary>Add another transformer (same types).</summary>
-    /// <param name="transformer">Transformer to add.</param>
-    /// <returns>This builder for chaining.</returns>
     public PipelineBuilder<TInput, TOutput> Pipe(ITransformer<TInput, TOutput> transformer)
     {
         _channel.AddTransformer(transformer);
@@ -50,8 +45,6 @@ public class PipelineBuilder<TInput, TOutput>
     }
 
     /// <summary>Configure channel options.</summary>
-    /// <param name="configure">Options configuration delegate.</param>
-    /// <returns>This builder for chaining.</returns>
     public PipelineBuilder<TInput, TOutput> WithOptions(Action<SmartPipeChannelOptions> configure)
     {
         configure(_channel.Options);
@@ -59,8 +52,6 @@ public class PipelineBuilder<TInput, TOutput>
     }
 
     /// <summary>Add a sink and run the pipeline.</summary>
-    /// <param name="sink">Data sink.</param>
-    /// <param name="ct">Cancellation token.</param>
     public async Task To(ISink<TOutput> sink, CancellationToken ct = default)
     {
         _channel.AddSink(sink);

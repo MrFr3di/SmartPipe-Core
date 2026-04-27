@@ -39,7 +39,7 @@ public class DapperSelector<T> : ISource<T>, IDisposable
         return Task.CompletedTask;
     }
 
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         _reader = await _connection.ExecuteReaderAsync(_sql, _parameters, commandTimeout: _commandTimeout);
 

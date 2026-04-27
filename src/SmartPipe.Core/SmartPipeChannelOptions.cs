@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using System;
 using System.Collections.Generic;
 
@@ -11,6 +12,10 @@ public class SmartPipeChannelOptions
 
     /// <summary>Channel capacity for input and output. Default: 1000.</summary>
     public int BoundedCapacity { get; set; } = 1000;
+    /// <summary>Use Rendezvous Channel (BoundedCapacity=0, strict Producer-Consumer sync). Default: false.</summary>
+    public bool UseRendezvous { get; set; } = false;
+    /// <summary>Channel full mode: Wait (default), DropOldest, DropNewest. Default: Wait.</summary>
+    public BoundedChannelFullMode FullMode { get; set; } = BoundedChannelFullMode.Wait;
 
     /// <summary>Continue processing when a transformer fails. Default: true.</summary>
     public bool ContinueOnError { get; set; } = true;

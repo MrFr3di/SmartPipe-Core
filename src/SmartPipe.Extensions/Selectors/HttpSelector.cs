@@ -31,7 +31,7 @@ public class HttpSelector<T> : ISource<T>
 
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         _logger?.LogInformation("Fetching data from {Uri}", _requestUri);
 
