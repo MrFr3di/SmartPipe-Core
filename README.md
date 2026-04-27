@@ -153,7 +153,7 @@ SmartPipe is a streaming pipeline engine built on `System.Threading.Channels`.
 It consists of **24 integrated components** organized in a resilience pipeline order.
 
 ```markdown
-## Pipeline Flow
+
 ## Pipeline Flow
 ISource<T> (or RunInBackground)
     │
