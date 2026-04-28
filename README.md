@@ -154,37 +154,31 @@ It consists of **24 integrated components** organized in a resilience pipeline o
 
 ## Pipeline Flow
 
+```markdown
+
 ISource<T> (or RunInBackground)
-    │
     ▼
 Bounded Channel (or Rendezvous Channel)
-    │
     ▼
 BackpressureStrategy (Dual-threshold: Pause/Resume)
-    │
     ▼
 DeduplicationFilter (Bloom, O(1)) + HyperLogLogEstimator
-    │
     ▼
 AdaptiveParallelism (Little's Law)
-    │
     ▼
 CircuitBreaker (Lock-free, Closed→Open→HalfOpen)
     │
     ▼
 MiddlewareTransformer (Func<T,T>) + ITransformer (ValueTask)
-    │
     ▼
 RetryQueue (Jitter + Exponential Backoff)
-    │
     ▼
 Bounded Channel
-    │
     ▼
 ISink<T> (Logger, DeadLetter, HealthChecks)
-    │
     ▼
 AsChannelReader() → SignalR/gRPC
+```
 
 ## Resilience Pipeline Order
 
