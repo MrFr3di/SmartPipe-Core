@@ -11,6 +11,7 @@ public class AdaptiveMetricsTests
         var metrics = new AdaptiveMetrics();
         metrics.SmoothLatencyMs.Should().Be(0);
         metrics.SmoothThroughputPerSec.Should().Be(0);
+        metrics.LatencyVelocity.Should().Be(0);
     }
 
     [Fact]
@@ -18,7 +19,6 @@ public class AdaptiveMetricsTests
     {
         var metrics = new AdaptiveMetrics();
         metrics.Update(50.0);
-
         metrics.SmoothLatencyMs.Should().Be(50.0);
     }
 
@@ -27,8 +27,7 @@ public class AdaptiveMetricsTests
     {
         var metrics = new AdaptiveMetrics();
         metrics.Update(100.0);
-        metrics.Update(101.0); // α=0.2: 0.2*101 + 0.8*100 = 100.2
-
+        metrics.Update(101.0);
         metrics.SmoothLatencyMs.Should().BeApproximately(100.2, 0.01);
     }
 
@@ -37,10 +36,26 @@ public class AdaptiveMetricsTests
     {
         var metrics = new AdaptiveMetrics();
         metrics.Update(10.0);
-        await Task.Delay(100); // Ensure significant elapsed time for TickCount64
+        await Task.Delay(50);
         metrics.Update(12.0);
-
-        // Throughput should be computed after at least two updates with time gap
         metrics.SmoothThroughputPerSec.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void PredictNextLatency_ShouldBeNonNegative()
+    {
+        var metrics = new AdaptiveMetrics();
+        metrics.Update(10.0);
+        metrics.Update(15.0);
+        metrics.PredictNextLatency().Should().BeGreaterThanOrEqualTo(0);
+    }
+
+    [Fact]
+    public void LatencyVelocity_ShouldTrackTrend()
+    {
+        var metrics = new AdaptiveMetrics();
+        metrics.Update(10.0);
+        metrics.Update(15.0);
+        metrics.LatencyVelocity.Should().BeGreaterThan(0); // Rising
     }
 }

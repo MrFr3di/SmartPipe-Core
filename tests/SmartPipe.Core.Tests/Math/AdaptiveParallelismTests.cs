@@ -13,26 +13,26 @@ public class AdaptiveParallelismTests
     }
 
     [Fact]
-    public void HighLatencyAndQueue_ShouldIncrease()
+    public void HighLatency_ShouldIncreaseParallelism()
     {
         var ap = new AdaptiveParallelism(min: 2, max: 16);
         int initial = ap.Current;
 
-        // Simulate high latency + queue
-        for (int i = 0; i < 10; i++)
+        // Push latency up significantly
+        for (int i = 0; i < 50; i++)
             ap.Update(100, 20);
 
         ap.Current.Should().BeGreaterThanOrEqualTo(initial);
     }
 
     [Fact]
-    public void LowLatencyAndNoQueue_ShouldDecrease()
+    public void LowLatency_ShouldDecreaseParallelism()
     {
         var ap = new AdaptiveParallelism(min: 2, max: 16);
         int initial = ap.Current;
 
-        // Simulate low latency + empty queue
-        for (int i = 0; i < 10; i++)
+        // Push latency down
+        for (int i = 0; i < 50; i++)
             ap.Update(1, 0);
 
         ap.Current.Should().BeLessThanOrEqualTo(initial);
@@ -43,12 +43,23 @@ public class AdaptiveParallelismTests
     {
         var ap = new AdaptiveParallelism(min: 4, max: 8);
 
-        // Try to go below min
         for (int i = 0; i < 100; i++) ap.Update(0.1, 0);
         ap.Current.Should().BeGreaterThanOrEqualTo(4);
 
-        // Try to go above max
         for (int i = 0; i < 100; i++) ap.Update(1000, 100);
         ap.Current.Should().BeLessThanOrEqualTo(8);
+    }
+
+    [Fact]
+    public void DeadZone_ShouldNotChangeOnSmallErrors()
+    {
+        var ap = new AdaptiveParallelism(min: 2, max: 16);
+        int initial = ap.Current;
+
+        // Small error (< 5ms) should not change parallelism
+        for (int i = 0; i < 10; i++)
+            ap.Update(10.5, 0); // ~10ms vs target 10ms
+
+        ap.Current.Should().Be(initial);
     }
 }

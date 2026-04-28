@@ -3,25 +3,41 @@ using System.Threading;
 
 namespace SmartPipe.Core;
 
-/// <summary>Adaptive metrics with dynamic alpha. Uses α=0.2 for stable load, α=0.8 for spikes.</summary>
+/// <summary>
+/// Adaptive metrics with Double EMA (level + velocity) and one-step prediction.
+/// Tracks smoothed latency, throughput, and rate of change for proactive control.
+/// </summary>
 public class AdaptiveMetrics
 {
-    private double _emaLatencyMs, _emaThroughput;
+    private double _emaLatencyMs, _emaThroughput, _emaVelocity;
+    private double _prevEmaLatencyMs;
     private long _lastUpdateTicks;
 
     public double SmoothLatencyMs => Volatile.Read(ref _emaLatencyMs);
     public double SmoothThroughputPerSec => Volatile.Read(ref _emaThroughput);
+    public double LatencyVelocity => Volatile.Read(ref _emaVelocity);
 
     public AdaptiveMetrics() => _lastUpdateTicks = Environment.TickCount64;
 
     public void Update(double latencyMs)
     {
         double oldLat = Volatile.Read(ref _emaLatencyMs);
-        // Adaptive alpha: 0.8 for spike (>3x EMA), 0.2 for stable
         double alpha = (oldLat > 0.001 && latencyMs > oldLat * 3) ? 0.8 : 0.2;
+
+        // Level EMA
         double newLat = oldLat < 0.001 ? latencyMs : alpha * latencyMs + (1.0 - alpha) * oldLat;
         Interlocked.Exchange(ref _emaLatencyMs, newLat);
 
+        // Velocity EMA (Double EMA)
+        double oldPrev = _prevEmaLatencyMs;
+        _prevEmaLatencyMs = newLat;
+        double instantVelocity = newLat - oldPrev;
+        double beta = 0.1;
+        double oldVel = Volatile.Read(ref _emaVelocity);
+        double newVel = oldVel < 0.001 ? instantVelocity : beta * instantVelocity + (1.0 - beta) * oldVel;
+        Interlocked.Exchange(ref _emaVelocity, newVel);
+
+        // Throughput EMA
         var now = Environment.TickCount64;
         long lastTicks = Interlocked.Exchange(ref _lastUpdateTicks, now);
         double elapsedSec = (now - lastTicks) / 1000.0;
@@ -32,5 +48,11 @@ public class AdaptiveMetrics
             double newTp = oldTp < 0.001 ? instantTp : 0.2 * instantTp + 0.8 * oldTp;
             Interlocked.Exchange(ref _emaThroughput, newTp);
         }
+    }
+
+    /// <summary>Predict latency one step ahead using level + velocity.</summary>
+    public double PredictNextLatency()
+    {
+        return Math.Max(0, Volatile.Read(ref _emaLatencyMs) + Volatile.Read(ref _emaVelocity));
     }
 }

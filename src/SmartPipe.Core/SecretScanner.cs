@@ -11,12 +11,13 @@ public static class SecretScanner
         new(@"api[_-]?key\s*[:=]\s*['""].+?['""]", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         new(@"password\s*[:=]\s*['""].+?['""]", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         new(@"sk-[a-zA-Z0-9]{32,}", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new(@"-----BEGIN\s(?:RSA|OPENSSH|DSA|EC)\sPRIVATE KEY-----", RegexOptions.Singleline | RegexOptions.Compiled)
+        new(@"-----BEGIN\s(?:RSA|OPENSSH|DSA|EC)\sPRIVATE KEY-----", RegexOptions.Singleline | RegexOptions.Compiled),
+        new(@"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", RegexOptions.Compiled),
+        new(@"AKIA[0-9A-Z]{16}", RegexOptions.Compiled),
+        new(@"ghp_[A-Za-z0-9]{36}", RegexOptions.Compiled),
+        new(@"ya29\.[A-Za-z0-9_-]+", RegexOptions.Compiled),
     };
 
-    /// <summary>Check if content contains secrets.</summary>
-    /// <param name="content">Content to scan.</param>
-    /// <returns>True if any secret pattern is detected.</returns>
     public static bool HasSecrets(string content)
     {
         foreach (var p in Patterns)
@@ -24,9 +25,6 @@ public static class SecretScanner
         return false;
     }
 
-    /// <summary>Redact secrets from content.</summary>
-    /// <param name="content">Content to redact.</param>
-    /// <returns>Content with secrets replaced by ***REDACTED***.</returns>
     public static string Redact(string content)
     {
         foreach (var p in Patterns)

@@ -79,6 +79,15 @@ Structured error with Type (Transient/Permanent), Category, and optional InnerEx
 | `UseRendezvous` | `false` | Strict Producer-Consumer sync (Capacity=0) |
 | `FullMode` | `Wait` | Channel full behavior: Wait/DropOldest/DropNewest |
 
+### New in v1.0.4
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `OnProgress` | `null` | Progress delegate: `(int current, int? total, TimeSpan elapsed, TimeSpan? eta)` |
+| `DeadLetterSink` | `null` | Auto-routing for exhausted retries |
+| `FullMode` | `Wait` | `BoundedChannelFullMode`: Wait/DropOldest/DropNewest |
+
+
 ### New Components
 
 | Component | Type | Description |
@@ -90,9 +99,27 @@ Structured error with Type (Transient/Permanent), Category, and optional InnerEx
 | `SmartPipeLivenessCheck` | Health | Kubernetes liveness probe |
 | `SmartPipeReadinessCheck` | Health | Kubernetes readiness probe |
 
+### New Components in v1.0.4
+
+| Component | Type | Description |
+|-----------|------|-------------|
+| `CsvFileSource<T>` | Source | Stream CSV files via CsvHelper |
+| `JsonFileSource<T>` | Source | Stream JSON array/NDJSON via System.Text.Json |
+| `CsvFileSink<T>` | Sink | Write CSV files |
+| `JsonFileSink<T>` | Sink | Write JSON files |
+| `FilterTransform<T>` | Transform | Predicate filter with And/Or/Not combinators |
+| `ValidationTransform<T>` | Transform | DataAnnotations + custom `.Require()` rules |
+| `DbSink<T>` | Sink | Insert into any database via Dapper |
+| `HttpSink<T>` | Sink | POST to REST API with optional Polly resilience |
+| `ConditionalTransform<T>` | Transform | Apply transform only when condition met |
+| `DeadLetterSource<T>` | Source | Replay failed items from DeadLetterSink |
+| `CompositeTransform<T>` | Transform | Chain multiple transforms into one |
+
 ### Core Types
 
 | Type | Description |
 |------|-------------|
 | `ProcessingContext<T>` | Mutable context with Data Lineage keys |
 | `DataLineage` | Constants for provenance tracking in Metadata |
+| `PipelineState` | Enum: NotStarted, Running, Completed, Faulted, Cancelled |
+| `PipelineDashboard` | Aggregated State, Progress, Metrics, CB info |

@@ -1,16 +1,13 @@
-using System;
-using System.Threading;
+using System.Security.Cryptography;
 using System.Threading.Channels;
-using System.Threading.Tasks;
 
 namespace SmartPipe.Core;
 
-/// <summary>Lock-free retry queue with jitter and timeout-based waiting.</summary>
+/// <summary>Lock-free retry queue with cryptographically secure jitter.</summary>
 /// <typeparam name="T">Type of payload.</typeparam>
 public class RetryQueue<T>
 {
     private readonly Channel<RetryItem<T>> _channel;
-    private readonly Random _jitterRng = new();
 
     public int Count => _channel.Reader.Count;
 
@@ -38,12 +35,11 @@ public class RetryQueue<T>
 
     public async ValueTask<RetryItem<T>?> TryGetNextAsync(CancellationToken ct = default)
     {
-        // Use WaitToReadAsync with 50ms timeout to prevent hanging
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(50); // 50ms timeout
-            
+            cts.CancelAfter(50);
+
             if (_channel.Reader.Count == 0)
             {
                 await _channel.Reader.WaitToReadAsync(cts.Token);
@@ -52,21 +48,20 @@ public class RetryQueue<T>
         }
         catch (OperationCanceledException)
         {
-            return null; // Timeout or cancelled — normal, return nothing
+            return null;
         }
 
         if (_channel.Reader.TryRead(out var item))
         {
             if (item.RetryAt <= DateTime.UtcNow) return item;
-            // Not ready yet — put it back
             await _channel.Writer.WriteAsync(item, ct);
         }
         return null;
     }
 
-    private TimeSpan ApplyJitter(TimeSpan baseDelay)
+    private static TimeSpan ApplyJitter(TimeSpan baseDelay)
     {
-        double jitterFactor = 0.75 + (_jitterRng.NextDouble() * 0.25);
+        double jitterFactor = 0.75 + (RandomNumberGenerator.GetInt32(0, 101) / 100.0 * 0.25);
         return TimeSpan.FromTicks((long)(baseDelay.Ticks * jitterFactor));
     }
 }

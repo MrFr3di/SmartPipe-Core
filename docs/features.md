@@ -17,6 +17,20 @@ Producer → Bounded Channel → Parallel Consumers → Output Channel → Sink.
 - `DrainAsync(timeout)` — graceful shutdown: pauses input, drains pending items, completes output channel. Returns when all items are processed or timeout expires.
 - `AsChannelReader()` — exposes output channel as `ChannelReader<ProcessingResult<TOutput>>` for direct integration.
 
+**Lifecycle management (new in v1.0.4):**
+- `PipelineState` — enum: NotStarted, Running, Completed, Faulted, Cancelled. Tracked via volatile field.
+- `OnStateChanged` — event fired on state transitions: `Action<PipelineState, PipelineState>`.
+- `Cancel()` — graceful cancellation via internal CancellationTokenSource. Transitions state to Cancelled.
+- `CreateDashboard()` — returns `PipelineDashboard` aggregating State, Progress, Metrics, CB info.
+
+**Pipeline Dashboard:**
+- `State` — current pipeline state
+- `Current` — items processed so far
+- `Elapsed` — time since pipeline started
+- `P99LatencyMs` — 99th percentile latency
+- `CBState` — CircuitBreaker state (or "N/A")
+- `Metrics` — dictionary of all exported metrics
+
 **Internal pipeline structure:**
 1. Producer reads from all `ISource<TInput>` instances via `IAsyncEnumerable`
 2. Items pass through `BackpressureStrategy` throttling
@@ -44,6 +58,8 @@ Configuration for pipeline behavior.
 | `FullMode` | Wait | Channel behavior when full: Wait, DropOldest, DropNewest |
 | `DeduplicationFilter` | null | Optional Bloom filter for deduplication |
 | `OnMetrics` | null | Callback invoked after each processed item |
+| `OnProgress` | null | Progress delegate: `(int current, int? total, TimeSpan elapsed, TimeSpan? eta)` |
+| `DeadLetterSink` | null | Auto-routing for exhausted retries |
 
 ### SmartPipeMetrics
 OpenTelemetry-compatible metrics collected during pipeline execution.
@@ -66,6 +82,11 @@ Uses `Meter` (static singleton) with Counter, Histogram, and ObservableGauge ins
 - `AvgLatencyMs` — running average of processing latency
 - `SmoothLatencyMs` — exponentially smoothed latency (EMA)
 - `SmoothThroughput` — exponentially smoothed throughput (items/sec)
+
+**Export methods (new in v1.0.4):**
+- `Export()` — returns `Dictionary<string, object>` with all metrics
+- `ExportJson()` — returns JSON string
+- `ExportPrometheus()` — returns Prometheus text format
 
 ## Resilience
 
@@ -94,6 +115,15 @@ Lock-free implementation preventing cascading failures when downstream systems a
 **Performance:**
 - `AllowRequest()` — 27.76 ns, 0 allocations
 
+**Hybrid failure detection (new in v1.0.4):**
+- EWMA (exponential weighted moving average) for fast reaction
+- Sliding window for accurate threshold decisions
+- Adaptive α: 0.5 when failure rate > 10%, 0.2 otherwise
+- Early warning: if EWMA > 1.5× threshold → pre-emptively adds to window
+
+**Metrics export (new in v1.0.4):**
+- `GetMetrics()` — returns dictionary with cb_state, cb_failure_ratio, cb_ewma_failure_rate, cb_half_open_attempts
+
 ### RetryQueue
 Lock-free delayed retry mechanism for transient failures.
 
@@ -105,6 +135,9 @@ Lock-free delayed retry mechanism for transient failures.
 **Jitter:**
 - Random 75-100% of calculated delay
 - Prevents thundering herd when multiple items fail simultaneously
+
+**Security (new in v1.0.4):**
+- `RandomNumberGenerator` replaces `System.Random` for cryptographically secure jitter
 
 **Configuration:**
 - `MaxRetries` — maximum retry attempts (default: 3)
@@ -131,22 +164,24 @@ Defines when and how to retry failed operations.
 - `OnRetry` — optional callback invoked on each retry attempt
 
 ### BackpressureStrategy
-Adaptive throttling protecting pipeline from overload.
+P-controller based continuous throttling (new in v1.0.4). Replaces binary Pause/Resume.
 
-**Dual thresholds (prevents oscillation):**
-- `PauseThreshold` — stop accepting new items when queue fills above this ratio (default: 0.80)
-- `ResumeThreshold` — resume accepting items when queue drops below this ratio (default: 0.50)
-- `CriticalThreshold` — queue is critically full, consider dropping oldest (default: 0.95)
+**How it works:**
+- `ThrottleAsync(int currentSize)` — applies delay proportional to queue fill error
+- Error = currentFillRatio - targetFillRatio
+- Delay = Kp × error × 100ms, clamped to 0-200ms
+- If below target → no delay (returns immediately)
 
-**Adaptive behavior:**
-- `UpdateThroughput(throughputPerSec)` — adjusts thresholds based on current load
-- High throughput (>1000/s): higher thresholds (0.90/0.60)
-- Low throughput (<100/s): lower thresholds (0.50/0.30)
-- Medium throughput: default thresholds (0.80/0.50)
+**Adaptive target:**
+- `UpdateThroughput(throughputPerSec, predictedLatencyMs)` — adjusts target fill ratio
+- High throughput (>1000/s): target 50%
+- Low throughput (<100/s): target 85%
+- Medium: target 70%
+- If latency predicted to spike (>50ms): lowers target by 10%
 
-**Effect:**
-- Without backpressure: 10.73 seconds for slow consumer scenario
-- With backpressure: 2.00 seconds (5.4× faster)
+**Obsolete methods (kept for backward compatibility):**
+- `ShouldPause(int)` — always returns false
+- `IsCritical(int)` — returns true if fill ≥ 95%
 
 ### DeadLetterSink<T>
 Captures items that failed after all retry attempts for later analysis.
@@ -159,28 +194,40 @@ Captures items that failed after all retry attempts for later analysis.
 ## Mathematics & Data Structures
 
 ### AdaptiveParallelism
-Auto-tunes the number of parallel consumer threads based on Little's Law (L=λ×W).
+Discrete P-controller for smooth thread scaling (new in v1.0.4). Replaces binary thresholds.
+
+**P-controller parameters:**
+- Dead zone: ±5ms error ignored
+- Proportional band: 20ms error = 1 thread adjustment
+- Anti-windup: stops accumulating error at min/max limits
 
 **How it works:**
-1. Monitors average latency (EMA) and current queue size
-2. If latency > 1.5× average AND queue > 10 → increase parallelism
-3. If latency < 0.5× average AND queue is empty → decrease parallelism
-4. Respects configured min/max bounds
-
-**Configuration:**
-- `min` — minimum parallelism (default: 2)
-- `max` — maximum parallelism (default: 32)
+1. Calculates error = targetLatency - currentLatency
+2. If error in dead zone → no change
+3. If at limit and error pushes further → anti-windup blocks
+4. Otherwise: threads += error / proportionalBand
+5. Result clamped to [min, max]
 
 ### AdaptiveMetrics
-Exponential Moving Average (EMA) for smoothing metrics without storing history.
+Double Exponential Moving Average with velocity tracking and one-step prediction (new in v1.0.4).
+
+**Double EMA:**
+- Level EMA (α=0.2/0.8) — smoothed latency
+- Velocity EMA (β=0.1) — rate of change of latency
 
 **Dynamic alpha:**
-- α=0.2 during stable operation (strong smoothing)
-- α=0.8 when spike detected (current > 3× EMA) — fast adaptation
+- α=0.2 during stable operation
+- α=0.8 when spike detected (current > 3× EMA)
 
 **Tracked metrics:**
 - `SmoothLatencyMs` — smoothed processing latency
 - `SmoothThroughputPerSec` — smoothed items per second
+- `LatencyVelocity` — rate of change (ms per update)
+
+**Prediction (new in v1.0.4):**
+- `PredictNextLatency()` — returns max(0, level + velocity)
+- Used by Backpressure and Parallelism controllers for proactive adjustment
+- Performance: 0.16 ns
 
 ### DeduplicationFilter
 Bloom filter probabilistic data structure for O(1) duplicate detection.
@@ -364,6 +411,36 @@ EventCounters for monitoring without OTLP collector.
 - **LoggerSink<T>** — writes results to `ILogger`. Supports structured logging.
 - **DeadLetterSink<T>** — persists failed items to JSON file for later analysis.
 
+### File Sources (new in v1.0.4)
+- **CsvFileSource<T>** — streams CSV files using CsvHelper.GetRecordsAsync<T>(). Supports custom delimiter and culture.
+- **JsonFileSource<T>** — reads JSON arrays (System.Text.Json.DeserializeAsyncEnumerable) or NDJSON (line-by-line). Auto-detects format.
+- **DeadLetterSource<T>** — replays failed items from DeadLetterSink JSON file for reprocessing.
+
+### File Sinks (new in v1.0.4)
+- **CsvFileSink<T>** — writes items to CSV file with header row. Thread-safe via lock.
+- **JsonFileSink<T>** — buffers items and writes JSON array on disposal.
+
+### Advanced Transforms (new in v1.0.4)
+- **FilterTransform<T>** — predicate-based filtering. Returns Success for matching items, Failure with Category="Filtered" for non-matching. Supports `And()`, `Or()`, `Not()` combinators and `&`, `|`, `!` operators.
+- **ValidationTransform<T>** — validates items using DataAnnotations (`[Required]`, `[Range]`) and custom `.Require()` rules. Returns Failure with semicolon-separated error messages.
+- **ConditionalTransform<T>** — applies inner transform only when condition is met. Otherwise passes item through unchanged.
+- **CompositeTransform<T>** — chains multiple transforms into one. Stops on first failure.
+
+### Database Sink (new in v1.0.4)
+- **DbSink<T>** — inserts items into any database via Dapper. Supports custom SQL or auto-generated INSERT from `[Table]`/`[Column]` attributes.
+
+### HTTP Sink (new in v1.0.4)
+- **HttpSink<T>** — POSTs items to REST API via HttpClient.PostAsJsonAsync. Supports optional Polly ResiliencePipeline.
+
+### Auto DeadLetter Routing (new in v1.0.4)
+- **HandleFailureAsync** — Permanent errors → DeadLetterSink (if configured)
+- **ProcessRetriesAsync** — exhausted retries → DeadLetterSink (if configured), then Failure to output channel
+- Configured via `SmartPipeChannelOptions.DeadLetterSink`
+
+### Progress Reporting (new in v1.0.4)
+- **OnProgress delegate** — `(int current, int? total, TimeSpan elapsed, TimeSpan? eta)`. Called from ProduceAsync after each item.
+- ETA calculated from elapsed time and progress ratio.
+
 ### Health Checks
 - **SmartPipeLivenessCheck** — reports Healthy if pipeline is not paused.
 - **SmartPipeReadinessCheck** — reports Degraded if queue > 1000 or failures detected.
@@ -386,6 +463,10 @@ Detects secrets in pipeline data based on OWASP patterns.
 - API keys (`api_key: '...'`, `sk-...`)
 - Passwords (`password: '...'`)
 - Private keys (`-----BEGIN RSA PRIVATE KEY-----`)
+- JWT tokens (`eyJ...`)
+- AWS Access Keys (`AKIA...`)
+- GitHub tokens (`ghp_...`)
+- OAuth tokens (`ya29...`)
 
 **Methods:**
 - `HasSecrets(string)` — returns true if any pattern matches

@@ -1,5 +1,51 @@
 # Changelog
 
+## [1.0.4] — 2026-04-28
+
+### New Features (22)
+- **CsvFileSource\<T\>** + **CsvFileSink\<T\>** — streaming CSV read/write
+- **JsonFileSource\<T\>** + **JsonFileSink\<T\>** — JSON array and NDJSON read/write
+- **FilterTransform\<T\>** — predicate-based filtering with And/Or/Not combinators
+- **ValidationTransform\<T\>** — DataAnnotations validation with custom `.Require()` rules
+- **DbSink\<T\>** — database insert via Dapper with auto-generated SQL from attributes
+- **HttpSink\<T\>** — HTTP POST sink with optional Polly resilience pipeline
+- **ConditionalTransform\<T\>** — apply transform only when condition met
+- **DeadLetterSource\<T\>** — replay failed items from DeadLetterSink JSON
+- **CompositeTransform\<T\>** — chain multiple transforms into one
+- **Filter-to-Validation extension** — `.ToFilter()` method
+
+### Core Improvements (10)
+- **P-Controller Parallelism** — discrete P-controller with dead zone and anti-windup (replaces binary thresholds)
+- **Double EMA + Prediction** — velocity tracking + `PredictNextLatency()` for proactive control
+- **Hybrid CircuitBreaker** — EWMA for fast reaction + Sliding window for accurate decisions + adaptive α
+- **P-Controller Backpressure** — continuous throttling replaces binary Pause/Resume (prevents oscillation)
+- **Adaptive Pipeline** — controllers linked via `PredictNextLatency()` for coordinated response
+
+### Pipeline Management
+- **PipelineState** — `NotStarted → Running → Completed/Faulted/Cancelled` with `OnStateChanged` event
+- **Cancel()** — graceful pipeline cancellation
+- **CreateDashboard()** — aggregated State + Progress + Metrics + CB info
+- **Progress reporting** — `OnProgress(int current, int? total, TimeSpan elapsed, TimeSpan? eta)` delegate
+
+### Observability
+- **Metrics.Export()** — Dictionary export + JSON + Prometheus text format
+- **CircuitBreaker.GetMetrics()** — CB state, failure ratio, EWMA rate export
+
+### Resilience
+- **Auto DeadLetter routing** — exhausted retries → DeadLetterSink automatically (via Options.DeadLetterSink)
+- **Filtered category handling** — `Category=="Filtered"` not counted as error
+- **Cryptographically secure Jitter** — `Random` → `RandomNumberGenerator` in RetryQueue
+
+### Security
+- **4 new OWASP patterns** in SecretScanner — JWT, AWS Key, GitHub Token, OAuth Token
+
+### Testing & Quality
+- **243 tests** (+28 from v1.0.3)
+- **96.4% line coverage**
+- **Algorithm benchmarks** — P-controller, Double EMA, Hybrid CB, Backpressure
+- **Performance**: ValueTask_Transform 12% faster (69.12 ns vs 78.81 ns), 0 regressions
+
+
 ## [1.0.3] — 2026-04-27
 
 ### New Features (13)

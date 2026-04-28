@@ -1,11 +1,10 @@
-# SmartPipe Architecture
-
 ## Overview
 
 SmartPipe is a streaming pipeline engine built on `System.Threading.Channels`.
-It consists of **21 integrated components** organized in a resilience pipeline order.
+It consists of **24 integrated components** organized in a resilience pipeline order.
 
 ## Pipeline Flow
+
 ISource<T> (or RunInBackground)
     │
     ▼
@@ -52,24 +51,26 @@ AsChannelReader() → SignalR/gRPC
 
 | Component | Type | Memory | Performance |
 |-----------|------|--------|-------------|
-| DeduplicationFilter | Bloom filter | O(1) | 20.86 ns |
-| ObjectPool | Lock-free | O(n) | 15.67 ns |
+| DeduplicationFilter | Bloom filter | O(1) | 20.65 ns |
+| ObjectPool | Lock-free | O(n) | 15.55 ns |
+| CircuitBreaker | Lock-free (Interlocked) | O(n) | 28.10 ns |
+| RetryQueue | Lock-free (Channel) | O(n) | 69.16 ns |
 | ExponentialHistogram | Percentiles | O(log² n) | < 100 ns |
 | JumpHash | Sharding | O(1) | < 10 ns |
 | CuckooFilter | Dedup + delete | O(1) | < 50 ns |
 | ReservoirSampler | Sampling | O(k) | < 10 ns |
-| CircuitBreaker | Lock-free (Interlocked) | O(n) | 27.76 ns |
-| RetryQueue | Lock-free (Channel) | O(n) | 69.16 ns |
 | HyperLogLogEstimator | Count-Distinct | O(1) | < 50 ns |
 | DeadLetterSink | Error persistence | O(n) | — |
 | ChannelMerge | Stream merging | O(n) | — |
+| AdaptiveMetrics (Update) | Double EMA | O(1) | 20.25 ns |
+| AdaptiveMetrics (Predict) | Double EMA | O(1) | 0.16 ns |
 
 ## Extension Architecture
 
 Extensions follow the **Selection Pattern** — a single package with categorized components:
 
-- **Selectors** — data sources (Http, EF Core, Dapper)
-- **Transforms** — data transformers (JSON, CSV, Mapster, Compression, Polly, Middleware)
-- **Sinks** — data destinations (Logger, DeadLetter)
+- **Selectors** — data sources (Http, EF Core, Dapper, CSV, JSON, DeadLetter)
+- **Transforms** — data transformers (JSON, CSV, Mapster, Compression, Polly, Filter, Validation, Conditional, Composite)
+- **Sinks** — data destinations (Logger, DeadLetter, Http, Db, CSV, JSON)
 - **Health** — Kubernetes probes (Liveness, Readiness)
 - **Streaming** — ChannelMerge, RunInBackground, AsChannelReader

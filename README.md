@@ -39,6 +39,16 @@ var pipeline = PipelineBuilder
 await pipeline.To(new LoggerSink<MyEntity>(logger));
 ```
 
+## Getting Started | Installation
+
+```bash
+# Core engine (zero dependencies)
+dotnet add package SmartPipe.Core
+
+# Extensions (Http, EF Core, Dapper, JSON, CSV, Mapster, Polly)
+dotnet add package SmartPipe.Extensions
+```
+
 ## Examples by Scenario
 
 ### Middleware Pattern (5 lines)
@@ -104,16 +114,6 @@ var pipeline = PipelineBuilder
 await pipeline.To(new DeadLetterSink<Order>("failed_orders.json"));
 ```
 
-## Getting Started | Installation
-
-```bash
-# Core engine (zero dependencies)
-dotnet add package SmartPipe.Core
-
-# Extensions (Http, EF Core, Dapper, JSON, CSV, Mapster, Polly)
-dotnet add package SmartPipe.Extensions
-```
-
 ## First Pipeline (5 lines)
 
 ```csharp
@@ -152,9 +152,8 @@ public class PipelineWorker : BackgroundService
 SmartPipe is a streaming pipeline engine built on `System.Threading.Channels`.
 It consists of **24 integrated components** organized in a resilience pipeline order.
 
-```markdown
-
 ## Pipeline Flow
+
 ISource<T> (or RunInBackground)
     │
     ▼
@@ -186,7 +185,6 @@ ISink<T> (Logger, DeadLetter, HealthChecks)
     │
     ▼
 AsChannelReader() → SignalR/gRPC
-```
 
 ## Resilience Pipeline Order
 
@@ -202,9 +200,9 @@ AsChannelReader() → SignalR/gRPC
 
 | Component | Type | Memory | Performance |
 |-----------|------|--------|-------------|
-| DeduplicationFilter | Bloom filter | O(1) | 20.04 ns |
-| ObjectPool | Lock-free | O(n) | 15.63 ns |
-| CircuitBreaker | Lock-free (Interlocked) | O(n) | 27.76 ns |
+| DeduplicationFilter | Bloom filter | O(1) | 20.65 ns |
+| ObjectPool | Lock-free | O(n) | 15.55 ns |
+| CircuitBreaker | Lock-free (Interlocked) | O(n) | 28.10 ns |
 | RetryQueue | Lock-free (Channel) | O(n) | 69.16 ns |
 | ExponentialHistogram | Percentiles | O(log² n) | < 100 ns |
 | JumpHash | Sharding | O(1) | < 10 ns |
@@ -213,14 +211,16 @@ AsChannelReader() → SignalR/gRPC
 | HyperLogLogEstimator | Count-Distinct | O(1) | < 50 ns |
 | DeadLetterSink | Error persistence | O(n) | — |
 | ChannelMerge | Stream merging | O(n) | — |
+| AdaptiveMetrics (Update) | Double EMA | O(1) | 20.25 ns |
+| AdaptiveMetrics (Predict) | Double EMA | O(1) | 0.16 ns |
 
 ## Extension Architecture
 
 Extensions follow the **Selection Pattern** — a single package with categorized components:
 
-- **Selectors** — data sources (Http, EF Core, Dapper)
-- **Transforms** — data transformers (JSON, CSV, Mapster, Compression, Polly, Middleware)
-- **Sinks** — data destinations (Logger, DeadLetter)
+- **Selectors** — data sources (Http, EF Core, Dapper, CSV, JSON, DeadLetter)
+- **Transforms** — data transformers (JSON, CSV, Mapster, Compression, Polly, Filter, Validation, Conditional, Composite)
+- **Sinks** — data destinations (Logger, DeadLetter, Http, Db, CSV, JSON)
 - **Health** — Kubernetes probes (Liveness, Readiness)
 - **Streaming** — ChannelMerge, RunInBackground, AsChannelReader
 
@@ -229,18 +229,29 @@ Instead of 12 separate NuGet packages, SmartPipe uses a single SmartPipe.Extensi
 ```text
 SmartPipe.Extensions/
 ├── Selectors/          ← Data sources
-│   ├── HttpSelector
-│   ├── EfCoreSelector
-│   └── DapperSelector
+│   ├── HttpSelector      ← REST API client
+│   ├── EfCoreSelector    ← Entity Framework streaming
+│   ├── DapperSelector    ← High-performance SQL
+│   ├── CsvFileSource     ← CSV file reader
+│   ├── JsonFileSource    ← JSON array & NDJSON reader
+│   └── DeadLetterSource  ← Replay failed items
 ├── Transforms/         ← Data transformers
-│   ├── JsonTransform
-│   ├── CsvTransform
-│   ├── MapsterTransform
-│   ├── CompressionTransform
-│   └── PollyResilienceTransform
+│   ├── JsonTransform          ← JSON serialization
+│   ├── CsvTransform           ← CSV parsing
+│   ├── MapsterTransform       ← Object mapping
+│   ├── CompressionTransform   ← Brotli/GZip
+│   ├── PollyResilienceTransform ← Retry/CB/Hedging
+│   ├── FilterTransform        ← Predicate filtering
+│   ├── ValidationTransform    ← DataAnnotations validation
+│   ├── ConditionalTransform   ← Conditional execution
+│   └── CompositeTransform     ← Chain transforms
 └── Sinks/              ← Data destinations
-    ├── LoggerSink      ← Structured logging
-    └── DeadLetterSink  ← Failed items persistence
+    ├── LoggerSink       ← Structured logging
+    ├── DeadLetterSink   ← Failed items persistence
+    ├── HttpSink         ← REST API client
+    ├── DbSink           ← Database insert
+    ├── CsvFileSink      ← CSV file writer
+    └── JsonFileSink     ← JSON file writer
 One package. All integrations. Zero boilerplate.
 ```
 
@@ -249,7 +260,22 @@ One package. All integrations. Zero boilerplate.
 - .NET 10.0+
 - SmartPipe.Core: **0 dependencies**
 - SmartPipe.Extensions: Polly, EF Core, Dapper, Mapster, CsvHelper
-- **215 tests, 96.4% code coverage**
+- **243 tests, 96.4% code coverage**
+
+## What's New in v1.0.4
+
+- **22 new features** (243 tests, 96.4% coverage)
+- **P-Controller Parallelism** — smooth thread scaling, no binary jumps
+- **Double EMA + Prediction** — velocity tracking + one-step latency forecast
+- **Hybrid CircuitBreaker** — EWMA early warning + Sliding window decisions
+- **P-Controller Backpressure** — continuous throttling, no oscillation
+- **PipelineState + Cancel()** — lifecycle management with events
+- **Progress reporting** — `OnProgress` with ETA calculation
+- **Auto DeadLetter routing** — exhausted retries → DeadLetterSink
+- **12 new Extensions** — CsvFileSource/Sink, JsonFileSource/Sink, FilterTransform, ValidationTransform, DbSink, HttpSink, ConditionalTransform, DeadLetterSource, CompositeTransform
+- **Metrics.Export()** — JSON + Prometheus format
+- **4 new OWASP patterns** in SecretScanner
+- **12% faster** ValueTask_Transform (69.12 ns)
 
 ## What's New in v1.0.3
 

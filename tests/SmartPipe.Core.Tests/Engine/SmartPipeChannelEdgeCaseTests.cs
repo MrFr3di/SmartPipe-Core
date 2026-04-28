@@ -9,17 +9,12 @@ public class SmartPipeChannelEdgeCaseTests
     public async Task RunAsync_WithRetryQueueFeature_ShouldNotThrow()
     {
         var options = new SmartPipeChannelOptions();
-        options.EnableFeature("RetryQueue");
-        options.EnableFeature("CircuitBreaker");
-
+        options.EnableFeature("RetryQueue"); options.EnableFeature("CircuitBreaker");
         var source = new SimpleSource<int>(1, 2, 3);
         var transformer = new PassthroughTransformer<int>();
         var sink = new CollectionSink<int>();
         var channel = new SmartPipeChannel<int, int>(options);
-        channel.AddSource(source);
-        channel.AddTransformer(transformer);
-        channel.AddSink(sink);
-
+        channel.AddSource(source); channel.AddTransformer(transformer); channel.AddSink(sink);
         await channel.Invoking(c => c.RunAsync()).Should().NotThrowAsync();
         sink.Results.Should().HaveCount(3);
     }
@@ -30,15 +25,11 @@ public class SmartPipeChannelEdgeCaseTests
         var options = new SmartPipeChannelOptions();
         foreach (var flag in new[] { "RetryQueue", "CircuitBreaker", "DebugSampling", "CuckooFilter", "JumpHash" })
             options.EnableFeature(flag);
-
         var source = new SimpleSource<int>(1, 2, 3);
         var transformer = new PassthroughTransformer<int>();
         var sink = new CollectionSink<int>();
         var channel = new SmartPipeChannel<int, int>(options);
-        channel.AddSource(source);
-        channel.AddTransformer(transformer);
-        channel.AddSink(sink);
-
+        channel.AddSource(source); channel.AddTransformer(transformer); channel.AddSink(sink);
         await channel.Invoking(c => c.RunAsync()).Should().NotThrowAsync();
     }
 
@@ -49,10 +40,7 @@ public class SmartPipeChannelEdgeCaseTests
         var transformer = new PassthroughTransformer<int>();
         var sink = new CollectionSink<int>();
         var channel = new SmartPipeChannel<int, int>();
-        channel.AddSource(source);
-        channel.AddTransformer(transformer);
-        channel.AddSink(sink);
-
+        channel.AddSource(source); channel.AddTransformer(transformer); channel.AddSink(sink);
         await channel.RunAsync();
         sink.Results.Should().BeEmpty();
     }
@@ -65,10 +53,7 @@ public class SmartPipeChannelEdgeCaseTests
         var transformer = new SimpleTransformer<int>(failureRate: 0.5);
         var sink = new CollectionSink<int>();
         var channel = new SmartPipeChannel<int, int>(options);
-        channel.AddSource(source);
-        channel.AddTransformer(transformer);
-        channel.AddSink(sink);
-
+        channel.AddSource(source); channel.AddTransformer(transformer); channel.AddSink(sink);
         await channel.RunAsync();
         sink.Results.Should().NotBeEmpty();
     }
@@ -81,10 +66,7 @@ public class SmartPipeChannelEdgeCaseTests
         var transformer = new SimpleTransformer<int>(failureRate: 0.9);
         var sink = new CollectionSink<int>();
         var channel = new SmartPipeChannel<int, int>(options);
-        channel.AddSource(source);
-        channel.AddTransformer(transformer);
-        channel.AddSink(sink);
-
+        channel.AddSource(source); channel.AddTransformer(transformer); channel.AddSink(sink);
         await channel.RunAsync();
         sink.Results.Count.Should().BeLessThanOrEqualTo(2);
     }
@@ -112,17 +94,28 @@ public class SmartPipeChannelEdgeCaseTests
         var transformer = new PassthroughTransformer<int>();
         var sink = new CollectionSink<int>();
         var channel = new SmartPipeChannel<int, int>(options);
-        channel.AddSource(source);
-        channel.AddTransformer(transformer);
-        channel.AddSink(sink);
-
+        channel.AddSource(source); channel.AddTransformer(transformer); channel.AddSink(sink);
         await channel.Invoking(c => c.RunAsync()).Should().NotThrowAsync();
     }
 
     [Fact]
     public void Metrics_FeatureFlag_ShouldBeEnabledByDefault()
     {
-        var options = new SmartPipeChannelOptions();
-        options.IsEnabled("Metrics").Should().BeTrue();
+        new SmartPipeChannelOptions().IsEnabled("Metrics").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CreateDashboard_AfterRun_ShouldHaveMetrics()
+    {
+        var pipe = new SmartPipeChannel<int, int>();
+        pipe.AddSource(new SimpleSource<int>(1, 2, 3));
+        pipe.AddTransformer(new PassthroughTransformer<int>());
+        pipe.AddSink(new CollectionSink<int>());
+        await pipe.RunAsync();
+        var dashboard = pipe.CreateDashboard();
+        dashboard.State.Should().Be(PipelineState.Completed);
+        dashboard.Current.Should().BeGreaterThanOrEqualTo(0);
+        dashboard.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.Zero);
+        dashboard.Metrics.Should().ContainKey("items_processed");
     }
 }

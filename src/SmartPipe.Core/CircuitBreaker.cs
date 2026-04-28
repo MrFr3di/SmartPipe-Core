@@ -6,6 +6,10 @@ namespace SmartPipe.Core;
 
 public enum CircuitState { Closed, Open, HalfOpen, Isolated }
 
+/// <summary>
+/// Lock-free Circuit Breaker with hybrid failure detection:
+/// EWMA for fast reaction + Sliding window for accurate threshold decisions.
+/// </summary>
 public class CircuitBreaker
 {
     private readonly double _failureRatio;
@@ -20,6 +24,8 @@ public class CircuitBreaker
     private long _openedAtTicks;
     private long _halfOpenAtTicks;
 
+    // Hybrid: EWMA for early warning + Sliding window for decisions
+    private double _ewmaFailureRate;
     private readonly ConcurrentQueue<(DateTime Timestamp, bool IsSuccess)> _window = new();
 
     public CircuitState State => (CircuitState)Volatile.Read(ref _state);
@@ -63,7 +69,6 @@ public class CircuitBreaker
             return Interlocked.Increment(ref _halfOpenCount) <= _maxHalfOpenRequests;
 
         if (currentState == (int)CircuitState.Isolated) return false;
-
         return true;
     }
 
@@ -72,7 +77,10 @@ public class CircuitBreaker
         _window.Enqueue((DateTime.UtcNow, true));
         CleanupWindow();
 
-        // Track successes in HalfOpen to close circuit
+        // EWMA update
+        double alpha = _ewmaFailureRate > 0.1 ? 0.5 : 0.2;
+        _ewmaFailureRate = (1.0 - alpha) * _ewmaFailureRate;
+
         if (Volatile.Read(ref _state) == (int)CircuitState.HalfOpen)
         {
             int successes = Interlocked.Increment(ref _halfOpenSuccesses);
@@ -81,6 +89,7 @@ public class CircuitBreaker
                 Interlocked.Exchange(ref _state, (int)CircuitState.Closed);
                 Interlocked.Exchange(ref _halfOpenCount, 0);
                 Interlocked.Exchange(ref _halfOpenSuccesses, 0);
+                _ewmaFailureRate = 0;
             }
         }
     }
@@ -90,12 +99,20 @@ public class CircuitBreaker
         _window.Enqueue((DateTime.UtcNow, false));
         CleanupWindow();
 
+        // EWMA — fast reaction
+        double alpha = _ewmaFailureRate > 0.1 ? 0.5 : 0.2;
+        _ewmaFailureRate = alpha * 1.0 + (1.0 - alpha) * _ewmaFailureRate;
+
+        // Early warning: EWMA spike → pre-emptively add to window
+        if (_ewmaFailureRate > _failureRatio * 1.5)
+            _window.Enqueue((DateTime.UtcNow, false));
+
+        // Sliding window — accurate decision
         int total = _window.Count;
         if (total < _minimumThroughput) return;
 
         int failures = 0;
-        foreach (var (_, ok) in _window)
-            if (!ok) failures++;
+        foreach (var (_, ok) in _window) if (!ok) failures++;
 
         int currentState = Volatile.Read(ref _state);
         if ((double)failures / total >= _failureRatio)
@@ -118,6 +135,7 @@ public class CircuitBreaker
         Interlocked.Exchange(ref _state, (int)CircuitState.Closed);
         Interlocked.Exchange(ref _halfOpenCount, 0);
         Interlocked.Exchange(ref _halfOpenSuccesses, 0);
+        _ewmaFailureRate = 0;
     }
 
     public double GetCurrentFailureRatio()
@@ -129,6 +147,15 @@ public class CircuitBreaker
         foreach (var (_, ok) in _window) if (!ok) failures++;
         return (double)failures / total;
     }
+
+    /// <summary>Export metrics for dashboard integration.</summary>
+    public Dictionary<string, object> GetMetrics() => new()
+    {
+        ["cb_state"] = State.ToString(),
+        ["cb_failure_ratio"] = GetCurrentFailureRatio(),
+        ["cb_ewma_failure_rate"] = _ewmaFailureRate,
+        ["cb_half_open_attempts"] = _halfOpenCount,
+    };
 
     private void CleanupWindow()
     {
