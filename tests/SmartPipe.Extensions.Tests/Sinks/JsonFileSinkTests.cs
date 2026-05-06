@@ -48,13 +48,15 @@ public class JsonFileSinkTests
     }
 
     [Fact]
-    public async Task WriteAsync_ThrowsDirectoryNotFoundException_ForInvalidPath()
+    public async Task WriteAsync_ThrowsIOException_ForInvalidPath()
     {
-        var sink = new JsonFileSink<object>("Z:\\nonexistent\\file.json");
+        var sink = new JsonFileSink<object>("/nonexistent/path/file.json");
         var result = ProcessingResult<object>.Success(new(), 1);
-        
+
         // DisposeAsync tries to write to path
-        await Assert.ThrowsAsync<DirectoryNotFoundException>(() => sink.DisposeAsync());
+        // Use Record.ExceptionAsync to allow any IOException-derived type (DirectoryNotFoundException on Windows, etc.)
+        var ex = await Record.ExceptionAsync(() => sink.DisposeAsync());
+        Assert.IsAssignableFrom<IOException>(ex);
     }
 
     private class TestItem
