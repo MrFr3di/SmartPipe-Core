@@ -1,3 +1,5 @@
+#nullable enable
+
 namespace SmartPipe.Core;
 
 /// <summary>Structured error for Partial Success pattern. Contains classification and optional exception.</summary>

@@ -1,3 +1,5 @@
+#nullable enable
+
 namespace SmartPipe.Core;
 
 /// <summary>Pipeline step result with Partial Success support. Errors become data, not exceptions.</summary>

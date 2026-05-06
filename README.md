@@ -8,7 +8,7 @@ Built on `System.Threading.Channels`, SmartPipe.Core provides a production-ready
 [![NuGet Core](https://img.shields.io/nuget/v/SmartPipe.Core.svg)](https://www.nuget.org/packages/SmartPipe.Core)
 [![NuGet Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.svg)](https://www.nuget.org/packages/SmartPipe.Extensions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Coverage](https://img.shields.io/badge/coverage-96.4%25-brightgreen.svg)](https://github.com/MrFr3di/SmartPipe-Core)
+[![Coverage](https://img.shields.io/badge/coverage-95.8%25-brightgreen.svg)](https://github.com/MrFr3di/SmartPipe-Core)
 
 📖 **[Complete Feature Reference →](docs/features.md)**
 
@@ -84,14 +84,12 @@ var pipeline = PipelineBuilder
 await pipeline.To(new LoggerSink<Alert>(logger));
 ```
 
-### AI Agent Tool (Semantic Kernel Integration)
+### Single Item Processing
 
 ```csharp
-var tool = new PipelineTool<string, string>("summarize", "Summarize text using AI");
-tool.AddTransformer(new JsonTransform<string, PromptDto>());
-tool.AddTransformer(new HttpTransform<PromptDto, string>(openAiClient));
-
-var result = await tool.ExecuteAsync("Long text to summarize...");
+var pipeline = new SmartPipeChannel<string, string>();
+pipeline.AddTransformer(new JsonTransform<string, PromptDto>());
+var result = await pipeline.ProcessSingleAsync(new ProcessingContext<string>("Long text to summarize..."));
 ```
 
 ### API Aggregation (Fan-out → Aggregate)
@@ -150,7 +148,7 @@ public class PipelineWorker : BackgroundService
 ## Overview
 
 SmartPipe is a streaming pipeline engine built on `System.Threading.Channels`.
-It consists of **24 integrated components** organized in a resilience pipeline order.
+It consists of **34 integrated components** organized in a resilience pipeline order.
 
 ## Pipeline Flow
 
@@ -160,13 +158,13 @@ ISource<T> (or RunInBackground)
     ▼
 Bounded Channel (or Rendezvous Channel)
     ▼
-BackpressureStrategy (Dual-threshold: Pause/Resume)
+BackpressureStrategy (P-controller: continuous throttling)
     ▼
 DeduplicationFilter (Bloom, O(1)) + HyperLogLogEstimator
     ▼
-AdaptiveParallelism (Little's Law)
+AdaptiveParallelism (P-controller with dead zone + anti-windup)
     ▼
-CircuitBreaker (Lock-free, Closed→Open→HalfOpen)
+CircuitBreaker (Lock-free, Closed→Open→HalfOpen + Isolated)
     │
     ▼
 MiddlewareTransformer (Func<T,T>) + ITransformer (ValueTask)
@@ -189,6 +187,8 @@ AsChannelReader() → SignalR/gRPC
 5. **DeadLetterSink** — captures exhausted retries for later replay
 6. **LivenessCheck** — detects stalled pipeline
 7. **ReadinessCheck** — detects overloaded pipeline
+8. **DefaultRetryPolicy** — per-pipeline default retry configuration
+9. **RetryBudget** — per-item retry budget control
 
 ## Component Overview
 
@@ -196,7 +196,7 @@ AsChannelReader() → SignalR/gRPC
 |-----------|------|--------|-------------|
 | DeduplicationFilter | Bloom filter | O(1) | 20.65 ns |
 | ObjectPool | Lock-free | O(n) | 15.55 ns |
-| CircuitBreaker | Lock-free (Interlocked) | O(n) | 28.10 ns |
+| CircuitBreaker | Lock-free (Interlocked) | O(n) | 29.30 ns |
 | RetryQueue | Lock-free (Channel) | O(n) | 69.16 ns |
 | ExponentialHistogram | Percentiles | O(log² n) | < 100 ns |
 | JumpHash | Sharding | O(1) | < 10 ns |
@@ -207,6 +207,8 @@ AsChannelReader() → SignalR/gRPC
 | ChannelMerge | Stream merging | O(n) | — |
 | AdaptiveMetrics (Update) | Double EMA | O(1) | 20.25 ns |
 | AdaptiveMetrics (Predict) | Double EMA | O(1) | 0.16 ns |
+| IClock | Time abstraction | O(1) | < 5 ns |
+| AtomicHelper | Lock-free double ops | O(1) | < 10 ns |
 
 ## Extension Architecture
 
@@ -238,14 +240,24 @@ SmartPipe.Extensions/
 │   ├── FilterTransform        ← Predicate filtering
 │   ├── ValidationTransform    ← DataAnnotations validation
 │   ├── ConditionalTransform   ← Conditional execution
-│   └── CompositeTransform     ← Chain transforms
-└── Sinks/              ← Data destinations
-    ├── LoggerSink       ← Structured logging
-    ├── DeadLetterSink   ← Failed items persistence
-    ├── HttpSink         ← REST API client
-    ├── DbSink           ← Database insert
-    ├── CsvFileSink      ← CSV file writer
-    └── JsonFileSink     ← JSON file writer
+│   ├── CompositeTransform     ← Chain transforms
+│   └── FilterValidationExtensions ← ToFilter() conversion
+├── Sinks/              ← Data destinations
+│   ├── LoggerSink       ← Structured logging
+│   ├── DeadLetterSink   ← Failed items persistence
+│   ├── HttpSink         ← REST API client
+│   ├── DbSink           ← Database insert
+│   ├── CsvFileSink      ← CSV file writer
+│   └── JsonFileSink     ← JSON file writer
+├── Hosting/            ← ASP.NET Core integration
+│   ├── SmartPipeHostedService       ← BackgroundService
+│   ├── SmartPipeServiceCollectionExtensions ← AddSmartPipe DI
+│   └── SmartPipeResilienceExtensions ← Polly registration
+├── Health/             ← Kubernetes probes
+│   ├── SmartPipeLivenessCheck
+│   └── SmartPipeReadinessCheck
+└── Streaming/          ← Stream utilities
+    └── ChannelMerge    ← Merge two channels
 One package. All integrations. Zero boilerplate.
 ```
 
@@ -254,7 +266,24 @@ One package. All integrations. Zero boilerplate.
 - .NET 10.0+
 - SmartPipe.Core: **0 dependencies**
 - SmartPipe.Extensions: Polly, EF Core, Dapper, Mapster, CsvHelper
-- **243 tests, 96.4% code coverage**
+- **598 tests, 95.8% code coverage**
+
+## What's New in v1.0.5
+
+- **598 tests, 95.8% code coverage**
+- **DefaultRetryPolicy** — per-pipeline retry configuration in SmartPipeChannelOptions
+- **RetryBudget** — per-item retry budget in RetryQueue, auto-routes exhausted items to DeadLetterSink
+- **DisposeAsync(CancellationToken)** — graceful cancellation during pipeline disposal
+- **AddSmartPipe DI** — service collection extensions for ASP.NET Core integration
+- **IClock integration** — time abstraction for testability, replaces DateTime.UtcNow
+- **AtomicHelper** — lock-free CompareExchange loop utility
+- **SecretScanner evasion detection** — Base64/URL decoding, MaxRecursionDepth=3, 164 tests
+- **DeadLetterSink retry** — IOException recovery with exponential backoff
+- **AdaptiveParallelism adaptive alpha** — faster response to latency changes
+- **CircuitBreaker CleanupWindow** — thread-safe via TryDequeue+check
+- **ObjectPool ABA protection** — version stamps prevent race conditions
+- **CuckooFilter Merge** — combine multiple filters
+
 
 ## What's New in v1.0.4
 
@@ -321,6 +350,8 @@ SmartPipe is built on ideas and research from:
 - **Microsoft.Extensions.Resilience** — resilience pipeline integration
 - **OWASP** — security patterns for secret detection
 - **BenchmarkDotNet** — performance measurement framework
+- **Control Theory (P-controllers)** — applied to AdaptiveParallelism and BackpressureStrategy
+- **HyperLogLog (Flajolet et al.)** — cardinality estimation algorithm
 
 License
 MIT License — see LICENSE for details.

@@ -1,3 +1,5 @@
+#nullable enable
+
 namespace SmartPipe.Core;
 
 /// <summary>Fluent API for declarative pipeline construction.</summary>
@@ -23,7 +25,7 @@ public class PipelineBuilder<TInput>
         return new PipelineBuilder<TInput, TOutput>(channel);
     }
 
-    /// <summary>Add a lightweight middleware (Func<T, T>). Same input/output type.</summary>
+    /// <summary>Add a lightweight middleware (<see cref="Func{TInput, TInput}"/>). Same input/output type.</summary>
     public PipelineBuilder<TInput, TInput> Transform(Func<TInput, TInput> middleware)
     {
         return Transform(new MiddlewareTransformer<TInput>(middleware));

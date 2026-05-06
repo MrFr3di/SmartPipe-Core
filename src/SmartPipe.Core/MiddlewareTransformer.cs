@@ -1,10 +1,13 @@
+#nullable enable
+
 namespace SmartPipe.Core;
 
 /// <summary>
-/// Lightweight transformer that wraps a Func<T,T> delegate.
+/// Lightweight transformer that wraps a <see cref="Func{T, T}"/> delegate.
 /// Provides middleware-style simplicity without sacrificing resilience.
+/// Implements <see cref="ITransformer{T, T}"/> for pipeline integration.
 /// </summary>
-/// <typeparam name="T">Data type.</typeparam>
+/// <typeparam name="T">The data type.</typeparam>
 public class MiddlewareTransformer<T> : ITransformer<T, T>
 {
     private readonly Func<T, T> _func;
@@ -12,10 +15,20 @@ public class MiddlewareTransformer<T> : ITransformer<T, T>
     /// <summary>Create from a delegate.</summary>
     public MiddlewareTransformer(Func<T, T> func) => _func = func ?? throw new ArgumentNullException(nameof(func));
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Initializes the middleware transformer.
+    /// This implementation completes immediately as no initialization is required.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A completed task.</returns>
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Transforms the input payload using the configured delegate.
+    /// </summary>
+    /// <param name="ctx">Processing context containing the input payload.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A ValueTask containing the processing result with the transformed output.</returns>
     public ValueTask<ProcessingResult<T>> TransformAsync(ProcessingContext<T> ctx, CancellationToken ct = default)
     {
         try
@@ -31,6 +44,10 @@ public class MiddlewareTransformer<T> : ITransformer<T, T>
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Disposes the middleware transformer.
+    /// This implementation completes immediately as no disposal is required.
+    /// </summary>
+    /// <returns>A completed task.</returns>
     public Task DisposeAsync() => Task.CompletedTask;
 }

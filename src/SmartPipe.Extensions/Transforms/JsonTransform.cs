@@ -5,15 +5,21 @@ using SmartPipe.Core;
 namespace SmartPipe.Extensions.Transforms;
 
 /// <summary>
-/// JSON serialization/deserialization transformer using System.Text.Json source generation.
-/// Supports AOT compilation and zero-reflection serialization.
+/// JSON serialization/deserialization transformer using System.Text.Json.
+/// Serializes <typeparamref name="TInput"/> to JSON, then deserializes to <typeparamref name="TOutput"/>.
+/// Supports <see cref="JsonSerializerOptions"/> configuration for custom serialization behavior.
+/// Implements <see cref="ITransformer{TInput, TOutput}"/> for pipeline integration.
 /// </summary>
-/// <typeparam name="TInput">Input type to serialize.</typeparam>
-/// <typeparam name="TOutput">Output type to deserialize.</typeparam>
+/// <typeparam name="TInput">The input type to serialize.</typeparam>
+/// <typeparam name="TOutput">The output type to deserialize.</typeparam>
 public class JsonTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
 {
     private readonly JsonSerializerOptions _options;
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="JsonTransform{TInput, TOutput}"/>.
+    /// </summary>
+    /// <param name="options">Optional JSON serializer options. If null, default options with case-insensitive property matching are used.</param>
     public JsonTransform(JsonSerializerOptions? options = null)
     {
         _options = options ?? new JsonSerializerOptions
@@ -23,8 +29,10 @@ public class JsonTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
         };
     }
 
+    /// <inheritdoc/>
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
+    /// <inheritdoc/>
     public ValueTask<ProcessingResult<TOutput>> TransformAsync(ProcessingContext<TInput> ctx, CancellationToken ct = default)
     {
         try
@@ -44,5 +52,6 @@ public class JsonTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
         }
     }
 
+    /// <inheritdoc/>
     public Task DisposeAsync() => Task.CompletedTask;
 }

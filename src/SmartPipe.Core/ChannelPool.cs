@@ -1,3 +1,5 @@
+#nullable enable
+
 using System.Threading.Channels;
 
 namespace SmartPipe.Core;
@@ -30,8 +32,8 @@ public static class ChannelPool
             AllowSynchronousContinuations = true
         });
 
-    /// <summary>Return a channel to the pool by completing its writer.</summary>
-    /// <typeparam name="T">Channel element type.</typeparam>
-    /// <param name="channel">Channel to return.</param>
-    public static void Return<T>(Channel<T> channel) => channel.Writer.TryComplete();
+/// <summary>Close the channel writer (calls TryComplete, does not return to pool).</summary>
+/// <typeparam name="T">Channel element type.</typeparam>
+/// <param name="channel">Channel to close.</param>
+public static void CloseChannel<T>(Channel<T> channel) => channel.Writer.TryComplete();
 }

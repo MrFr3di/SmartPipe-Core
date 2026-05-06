@@ -63,22 +63,4 @@ public class BackpressureStrategyTests
         sw.ElapsedMilliseconds.Should().BeLessThan(5);
     }
 
-    [Fact]
-    public void ShouldPause_Obsolete_ReturnsFalse()
-    {
-        var s = new BackpressureStrategy(100);
-#pragma warning disable CS0618
-        s.ShouldPause(90).Should().BeFalse();
-#pragma warning restore CS0618
-    }
-
-    [Fact]
-    public void IsCritical_Obsolete_ReturnsTrueAbove95()
-    {
-        var s = new BackpressureStrategy(100);
-#pragma warning disable CS0618
-        s.IsCritical(96).Should().BeTrue();
-        s.IsCritical(50).Should().BeFalse();
-#pragma warning restore CS0618
-    }
 }

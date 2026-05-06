@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SmartPipe.Core\SmartPipe.Core.csproj" />
+    <ProjectReference Include="..\..\tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj" />
   </ItemGroup>
 
   <ItemGroup>

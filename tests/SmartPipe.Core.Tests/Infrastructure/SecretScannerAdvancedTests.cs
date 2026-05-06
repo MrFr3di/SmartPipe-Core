@@ -14,7 +14,7 @@ public class SecretScannerAdvancedTests
     [Fact]
     public void HasSecrets_AwsKey_ShouldDetect()
     {
-        SecretScanner.HasSecrets("AKIAIOSFODNN7EXAMPLE").Should().BeTrue();
+        SecretScanner.HasSecrets("AKIA1234567890ABCDEF").Should().BeTrue();
     }
 
     [Fact]

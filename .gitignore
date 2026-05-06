@@ -19,6 +19,7 @@
 *.DotSettings.user
 .idea/
 *.sln.docstates
+.kilocode
 
 # OS
 .DS_Store
@@ -27,6 +28,12 @@ Thumbs.db
 # Temporary
 tools/
 benchmarks/SmartPipe.CompetitorBenchmarks/
-
-
+Modelfile.embed
+Modelfile.qwen-router
+SOUL.md
+AGENTS.md
+Modelfile.nomic
+TestResults/
+backups/
+plans/
 .fake

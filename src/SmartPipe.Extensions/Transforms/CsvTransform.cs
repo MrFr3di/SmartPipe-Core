@@ -7,15 +7,23 @@ namespace SmartPipe.Extensions.Transforms;
 
 /// <summary>
 /// CSV serialization/deserialization transformer using CsvHelper.
-/// Supports custom delimiter, culture, and mapping configuration.
+/// Converts <typeparamref name="TInput"/> to CSV string, then deserializes to <typeparamref name="TOutput"/>.
+/// Supports custom delimiter, culture, and mapping configuration via <see cref="CsvConfiguration"/>.
+/// Implements <see cref="ITransformer{TInput, TOutput}"/> for pipeline integration.
 /// </summary>
-/// <typeparam name="TInput">Input type.</typeparam>
-/// <typeparam name="TOutput">Output type.</typeparam>
+/// <typeparam name="TInput">The input type to serialize to CSV.</typeparam>
+/// <typeparam name="TOutput">The output type to deserialize from CSV.</typeparam>
 public class CsvTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
 {
     private readonly CsvConfiguration _readConfig;
     private readonly CsvConfiguration _writeConfig;
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="CsvTransform{TInput, TOutput}"/>.
+    /// </summary>
+    /// <param name="delimiter">The CSV delimiter character. Defaults to ",".</param>
+    /// <param name="culture">The culture for parsing. Defaults to <see cref="CultureInfo.InvariantCulture"/>.</param>
+    /// <param name="configure">Optional action to configure CSV reading behavior.</param>
     public CsvTransform(
         string delimiter = ",",
         CultureInfo? culture = null,
@@ -39,8 +47,10 @@ public class CsvTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
         };
     }
 
+    /// <inheritdoc/>
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
+    /// <inheritdoc/>
     public ValueTask<ProcessingResult<TOutput>> TransformAsync(ProcessingContext<TInput> ctx, CancellationToken ct = default)
     {
         try
@@ -52,19 +62,27 @@ public class CsvTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
 
             using var reader = new StringReader(csv);
             using var csvReader = new CsvReader(reader, _readConfig);
-            var records = csvReader.GetRecords<TOutput>().ToList();
+            var firstRecord = csvReader.GetRecords<TOutput>().First();
 
             return ValueTask.FromResult(
-                ProcessingResult<TOutput>.Success(records.First(), ctx.TraceId));
+                ProcessingResult<TOutput>.Success(firstRecord, ctx.TraceId));
         }
-        catch (Exception ex)
+        catch (CsvHelperException ex)
         {
             return ValueTask.FromResult(
                 ProcessingResult<TOutput>.Failure(
-                    new SmartPipeError($"CSV transform failed: {ex.Message}", ErrorType.Permanent, "Serialization", ex),
+                    new SmartPipeError($"CSV parsing error: {ex.Message}", ErrorType.Permanent, "Serialization", ex),
+                    ctx.TraceId));
+        }
+        catch (IOException ex)
+        {
+            return ValueTask.FromResult(
+                ProcessingResult<TOutput>.Failure(
+                    new SmartPipeError($"CSV IO error: {ex.Message}", ErrorType.Transient, "Serialization", ex),
                     ctx.TraceId));
         }
     }
 
+    /// <inheritdoc/>
     public Task DisposeAsync() => Task.CompletedTask;
 }

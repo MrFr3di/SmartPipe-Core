@@ -60,4 +60,13 @@ public class SmartPipeChannelOptionsTests
 
         options.DeduplicationFilter.Should().Be(filter);
     }
+
+    [Fact]
+    public void Constructor_ThrowsWhenUseRendezvousIsTrue()
+    {
+        var options = new SmartPipeChannelOptions { UseRendezvous = true };
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => new SmartPipeChannel<object, object>(options));
+        Assert.Contains("BoundedCapacity", ex.Message);
+    }
 }

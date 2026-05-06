@@ -53,6 +53,7 @@ Extensions for SmartPipe.Core providing ready-to-use selectors, transforms, sink
 | Component | Description |
 |-----------|-------------|
 | `SmartPipeHostedService` | ASP.NET Core BackgroundService |
+| `AddSmartPipe<TIn,TOut>()` | DI registration for SmartPipeChannel |
 | `AddSmartPipeResilience()` | DI registration for Polly pipelines |
 
 ## Streaming
@@ -70,7 +71,7 @@ dotnet add package SmartPipe.Extensions
 ## Requirements
 
 - .NET 10.0+
-- SmartPipe.Core 1.0.4 (included as dependency)
+- SmartPipe.Core 1.0.5 (included as dependency)
 - **Zero additional dependencies required for basic usage**
 - Individual features pull their own dependencies:
   - `HttpSelector` / `HttpSink` → Polly (via Microsoft.Extensions.Resilience)
@@ -81,6 +82,13 @@ dotnet add package SmartPipe.Extensions
   - `PollyResilienceTransform` → Polly.Core
   - `SmartPipeHostedService` / `SmartPipeHealthCheck` → Microsoft.Extensions.Hosting / HealthChecks
   - All other components (FilterTransform, ValidationTransform, ConditionalTransform, CompositeTransform, LoggerSink, DeadLetterSink, JsonFileSource, JsonFileSink) — **zero additional dependencies**
+
+## What's New in v1.0.5
+
+- **AddSmartPipe<TIn,TOut>()** — register SmartPipeChannel in ASP.NET Core DI
+- **DeadLetterSink retry** — automatic IOException recovery with exponential backoff (100ms/200ms/400ms)
+- **FilterValidationExtensions** — convert ValidationTransform to FilterTransform with `.ToFilter()`
+- **SmartPipeServiceCollectionExtensions** — fluent DI registration for all pipeline configurations
 
 ## License
 

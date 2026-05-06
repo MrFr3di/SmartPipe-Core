@@ -1,3 +1,5 @@
+#nullable enable
+
 namespace SmartPipe.Core;
 
 /// <summary>Error classification for retry strategy.</summary>

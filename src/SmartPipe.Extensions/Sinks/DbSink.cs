@@ -6,23 +6,29 @@ using SmartPipe.Core;
 namespace SmartPipe.Extensions.Sinks;
 
 /// <summary>Writes items to database using Dapper. Supports auto-generated SQL from [Table]/[Column] attributes.</summary>
+/// <typeparam name="T">Entity type.</typeparam>
 public class DbSink<T> : ISink<T>
 {
     private readonly IDbConnection _connection;
     private readonly string _sql;
 
+    /// <summary>Create DB sink with optional SQL override.</summary>
+    /// <param name="connection">Database connection.</param>
+    /// <param name="sql">Optional INSERT SQL (auto-generated if null).</param>
     public DbSink(IDbConnection connection, string? sql = null)
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
         _sql = sql ?? GenerateInsertSql();
     }
 
+    /// <inheritdoc />
     public Task InitializeAsync(CancellationToken ct = default)
     {
         _connection.Open();
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
     public Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
     {
         if (result.IsSuccess && result.Value != null)
@@ -30,6 +36,7 @@ public class DbSink<T> : ISink<T>
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
     public Task DisposeAsync()
     {
         _connection.Close();

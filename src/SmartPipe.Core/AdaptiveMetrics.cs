@@ -1,3 +1,5 @@
+#nullable enable
+
 using System;
 using System.Threading;
 
@@ -13,12 +15,20 @@ public class AdaptiveMetrics
     private double _prevEmaLatencyMs;
     private long _lastUpdateTicks;
 
+    /// <summary>Smoothed latency via EMA.</summary>
     public double SmoothLatencyMs => Volatile.Read(ref _emaLatencyMs);
+
+    /// <summary>Smoothed throughput (items/sec) via EMA.</summary>
     public double SmoothThroughputPerSec => Volatile.Read(ref _emaThroughput);
+
+    /// <summary>Rate of latency change (velocity) via Double EMA.</summary>
     public double LatencyVelocity => Volatile.Read(ref _emaVelocity);
 
+    /// <summary>Initialize adaptive metrics with current tick count.</summary>
     public AdaptiveMetrics() => _lastUpdateTicks = Environment.TickCount64;
 
+    /// <summary>Update metrics with a new latency sample.</summary>
+    /// <param name="latencyMs">Measured latency in milliseconds.</param>
     public void Update(double latencyMs)
     {
         double oldLat = Volatile.Read(ref _emaLatencyMs);

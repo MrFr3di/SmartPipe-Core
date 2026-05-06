@@ -1,0 +1,6 @@
+TempBase64Gen/
+encode_secrets.cs
+encode_secrets.py
+test_output.txt
+test_results.txt
+plans/

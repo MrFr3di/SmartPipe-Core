@@ -1,3 +1,5 @@
+#nullable enable
+
 namespace SmartPipe.Core;
 
 /// <summary>
@@ -22,9 +24,13 @@ public class ProcessingContext<T>
     public long EnterPipelineTicks { get; set; }
 
     // Data Lineage keys for Metadata dictionary
+    /// <summary>Metadata key for the source of the data item.</summary>
     public const string LineageSource = "lineage_source";
+    /// <summary>Metadata key for the pipeline processing the data item.</summary>
     public const string LineagePipeline = "lineage_pipeline";
+    /// <summary>Metadata key for the timestamp when the item entered the pipeline.</summary>
     public const string LineageEnteredAt = "lineage_entered_at";
+    /// <summary>Metadata key for the transform that processed the data item.</summary>
     public const string LineageTransform = "lineage_transform";
 
     /// <summary>Create an empty context (for ObjectPool).</summary>

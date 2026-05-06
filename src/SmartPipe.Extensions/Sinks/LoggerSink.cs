@@ -12,13 +12,17 @@ public class LoggerSink<T> : ISink<T>
 {
     private readonly ILogger<LoggerSink<T>> _logger;
 
+    /// <summary>Create logger sink with given ILogger.</summary>
+    /// <param name="logger">Logger instance.</param>
     public LoggerSink(ILogger<LoggerSink<T>> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <inheritdoc />
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
+    /// <inheritdoc />
     public Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
     {
         if (result.IsSuccess)
@@ -37,5 +41,6 @@ public class LoggerSink<T> : ISink<T>
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
     public Task DisposeAsync() => Task.CompletedTask;
 }

@@ -23,10 +23,10 @@ public class ChannelPoolTests
     }
 
     [Fact]
-    public void Return_ShouldCompleteWriter()
+    public void CloseChannel_ShouldCompleteWriter()
     {
         var channel = ChannelPool.RentUnbounded<int>();
-        ChannelPool.Return(channel);
+        ChannelPool.CloseChannel(channel);
 
         // Writer should be completed, reader should eventually complete
         channel.Reader.Completion.IsCompleted.Should().BeTrue();

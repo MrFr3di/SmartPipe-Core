@@ -1,10 +1,14 @@
+#nullable enable
+
 using System.Diagnostics.Tracing;
 
 namespace SmartPipe.Core;
 
+/// <summary>ETW EventSource for SmartPipe runtime telemetry.</summary>
 [EventSource(Name = "SmartPipe.EventSource")]
 public sealed class SmartPipeEventSource : EventSource
 {
+    /// <summary>Singleton instance for logging pipeline events.</summary>
     public static readonly SmartPipeEventSource Log = new();
 
     private IncrementingEventCounter? _itemsProcessedCounter;
@@ -16,6 +20,11 @@ public sealed class SmartPipeEventSource : EventSource
 
     private SmartPipeEventSource() : base("SmartPipe.EventSource") { }
 
+    /// <summary>
+    /// Called when an event command is received (enable/disable tracing).
+    /// Initializes performance counters when tracing is enabled.
+    /// </summary>
+    /// <param name="command">The event command arguments.</param>
     protected override void OnEventCommand(EventCommandEventArgs command)
     {
         if (command.Command == EventCommand.Enable && !_countersInitialized)
@@ -44,11 +53,19 @@ public sealed class SmartPipeEventSource : EventSource
         }
     }
 
+    /// <summary>Current queue size for polling counter.</summary>
     public float _queueSize;
+    /// <summary>ObjectPool hit rate for polling counter.</summary>
     public float _poolHitRate;
+    /// <summary>Circuit breaker state for polling counter (0=Closed, 1=Open, 2=HalfOpen).</summary>
     public float _cbState;
 
+    /// <summary>Record one processed item (increment counter).</summary>
     public void RecordItemProcessed() => _itemsProcessedCounter?.Increment();
+
+    /// <summary>Record one backpressure activation.</summary>
     public void RecordBackpressureActivation() => _backpressureCounter?.Increment();
+
+    /// <summary>True if EventSource counters have been initialized.</summary>
     public bool CountersInitialized => _countersInitialized;
 }

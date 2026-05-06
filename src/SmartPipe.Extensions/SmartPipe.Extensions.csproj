@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Version>1.0.4</Version>
+    <Version>1.0.5</Version>
     <Authors>SmartPipe</Authors>
     <Description>Extensions for SmartPipe.Core: Http, EF Core, Dapper, JSON, CSV, Mapster, Compression, and Polly resilience integrations. One package instead of 12.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -15,6 +15,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>SmartPipe.Extensions.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\SmartPipe.Core\SmartPipe.Core.csproj" />
   </ItemGroup>
 
@@ -22,13 +28,12 @@
     <PackageReference Include="CsvHelper" Version="33.0.1" />
     <PackageReference Include="Dapper" Version="2.1.66" />
     <PackageReference Include="Mapster" Version="7.4.0" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.0-preview.3.25171.5" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.0-preview.3.25171.5" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0-preview.3.25171.5" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0-preview.3.25171.5" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.0-preview.4.25258.110" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.0-preview.4.25258.110" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0-preview.4.25258.110" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0-preview.4.25258.110" />
     <PackageReference Include="Microsoft.Extensions.Resilience" Version="9.4.0" />
-    <PackageReference Include="System.Text.Json" Version="10.0.0-preview.3.25171.5" />
-  </ItemGroup>
+   </ItemGroup>
 
   <ItemGroup>
     <None Include="..\SmartPipe.Core\icon.png" Pack="true" PackagePath="\" />

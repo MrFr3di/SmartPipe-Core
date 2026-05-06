@@ -19,6 +19,12 @@ public class DapperSelector<T> : ISource<T>, IDisposable
     private readonly ILogger<DapperSelector<T>>? _logger;
     private IDataReader? _reader;
 
+    /// <summary>Create Dapper source for given SQL query.</summary>
+    /// <param name="connection">Database connection.</param>
+    /// <param name="sql">SQL query to execute.</param>
+    /// <param name="parameters">Optional query parameters.</param>
+    /// <param name="commandTimeout">Command timeout in seconds (default: 30).</param>
+    /// <param name="logger">Optional logger.</param>
     public DapperSelector(
         IDbConnection connection,
         string sql,
@@ -33,12 +39,14 @@ public class DapperSelector<T> : ISource<T>, IDisposable
         _logger = logger;
     }
 
+    /// <inheritdoc />
     public Task InitializeAsync(CancellationToken ct = default)
     {
         _connection.Open();
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         _reader = await _connection.ExecuteReaderAsync(_sql, _parameters, commandTimeout: _commandTimeout);
@@ -71,6 +79,7 @@ public class DapperSelector<T> : ISource<T>, IDisposable
         return instance;
     }
 
+    /// <inheritdoc />
     public Task DisposeAsync()
     {
         _reader?.Dispose();
@@ -78,6 +87,7 @@ public class DapperSelector<T> : ISource<T>, IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>Dispose connection and reader (synchronous).</summary>
     public void Dispose()
     {
         _reader?.Dispose();

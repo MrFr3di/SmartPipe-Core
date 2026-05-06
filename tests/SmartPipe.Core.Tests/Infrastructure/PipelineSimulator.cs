@@ -1,9 +1,11 @@
+#nullable enable
+
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SmartPipe.Core;
+namespace SmartPipe.Core.Tests.Infrastructure;
 
 /// <summary>Deterministic simulator for testing multi-threaded pipeline scenarios without real race conditions.
 /// Based on FoundationDB and MSR Coyote testing approaches.</summary>

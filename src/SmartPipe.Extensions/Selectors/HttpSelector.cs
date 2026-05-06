@@ -17,6 +17,11 @@ public class HttpSelector<T> : ISource<T>
     private readonly ResiliencePipeline? _pipeline;
     private readonly ILogger<HttpSelector<T>>? _logger;
 
+    /// <summary>Create HTTP source for given endpoint.</summary>
+    /// <param name="httpClient">HTTP client instance.</param>
+    /// <param name="requestUri">Request URI to fetch data from.</param>
+    /// <param name="pipeline">Optional resilience pipeline (retry/circuit-breaker).</param>
+    /// <param name="logger">Optional logger.</param>
     public HttpSelector(
         HttpClient httpClient,
         string requestUri,
@@ -29,8 +34,10 @@ public class HttpSelector<T> : ISource<T>
         _logger = logger;
     }
 
+    /// <inheritdoc />
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         _logger?.LogInformation("Fetching data from {Uri}", _requestUri);
@@ -56,5 +63,6 @@ public class HttpSelector<T> : ISource<T>
         _logger?.LogInformation("Fetched {Count} items from {Uri}", items?.Count ?? 0, _requestUri);
     }
 
+    /// <inheritdoc />
     public Task DisposeAsync() => Task.CompletedTask;
 }

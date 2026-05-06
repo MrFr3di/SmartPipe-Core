@@ -15,6 +15,9 @@ public class EfCoreSelector<T> : ISource<T> where T : class
     private readonly ILogger<EfCoreSelector<T>>? _logger;
     private IQueryable<T>? _query;
 
+    /// <summary>Create EF Core source for given DbContext.</summary>
+    /// <param name="dbContext">EF Core database context.</param>
+    /// <param name="logger">Optional logger.</param>
     public EfCoreSelector(DbContext dbContext, ILogger<EfCoreSelector<T>>? logger = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -28,8 +31,10 @@ public class EfCoreSelector<T> : ISource<T> where T : class
         return this;
     }
 
+    /// <inheritdoc />
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         var query = _query ?? _dbContext.Set<T>();
@@ -44,5 +49,6 @@ public class EfCoreSelector<T> : ISource<T> where T : class
         _logger?.LogInformation("EFCore source completed for {EntityType}", typeof(T).Name);
     }
 
+    /// <inheritdoc />
     public Task DisposeAsync() => Task.CompletedTask;
 }

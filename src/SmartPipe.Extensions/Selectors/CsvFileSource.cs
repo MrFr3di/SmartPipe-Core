@@ -7,11 +7,16 @@ using SmartPipe.Core;
 namespace SmartPipe.Extensions.Selectors;
 
 /// <summary>Streams CSV files as pipeline source using CsvHelper.</summary>
+/// <typeparam name="T">Record type to map.</typeparam>
 public class CsvFileSource<T> : ISource<T>
 {
     private readonly string _path;
     private readonly CsvConfiguration _config;
 
+    /// <summary>Create CSV source for given file.</summary>
+    /// <param name="path">Path to CSV file.</param>
+    /// <param name="delimiter">Column delimiter (default: ",").</param>
+    /// <param name="culture">Culture for parsing (default: InvariantCulture).</param>
     public CsvFileSource(string path, string delimiter = ",", CultureInfo? culture = null)
     {
         _path = path;
@@ -24,8 +29,10 @@ public class CsvFileSource<T> : ISource<T>
         };
     }
 
+    /// <inheritdoc />
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([EnumeratorCancellation] CancellationToken ct = default)
     {
         using var reader = new StreamReader(_path);
@@ -34,5 +41,6 @@ public class CsvFileSource<T> : ISource<T>
             yield return new ProcessingContext<T>(record);
     }
 
+    /// <inheritdoc />
     public Task DisposeAsync() => Task.CompletedTask;
 }

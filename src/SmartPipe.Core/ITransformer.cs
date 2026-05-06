@@ -1,3 +1,5 @@
+#nullable enable
+
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -10,11 +12,13 @@ public interface ITransformer<TInput, TOutput>
 {
     /// <summary>Async initialization (load model, dictionary, etc.).</summary>
     /// <param name="ct">Cancellation token.</param>
+    /// <returns>Task representing async initialization.</returns>
     Task InitializeAsync(CancellationToken ct = default);
 
-    /// <summary>Transform a single element. Returns ProcessingResult (no exceptions thrown).</summary>
-    /// <param name="ctx">Input context with payload and metadata.</param>
+    /// <summary>Transform a single element. Returns <see cref="ProcessingResult{TOutput}"/> (no exceptions thrown).</summary>
+    /// <param name="ctx">Input <see cref="ProcessingContext{TInput}"/> with payload and metadata.</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <returns><see cref="ProcessingResult{TOutput}"/> with transformed data or error details.</returns>
     ValueTask<ProcessingResult<TOutput>> TransformAsync(ProcessingContext<TInput> ctx, CancellationToken ct = default);
 
     /// <summary>Release resources.</summary>

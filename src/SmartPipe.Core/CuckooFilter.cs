@@ -1,3 +1,5 @@
+#nullable enable
+
 using System;
 using System.Threading;
 
@@ -30,7 +32,8 @@ public class CuckooFilter
     public bool Add(ulong fp)
     {
         uint f = Fingerprint(fp);
-        int i1 = BucketIndex(f, 0), i2 = i1 ^ BucketIndex(f, 1);
+        int i1 = BucketIndex(f, 0);
+        int i2 = (i1 ^ BucketIndex(f, 1)) % _numBuckets;
         if (InsertToBucket(i1, f) || InsertToBucket(i2, f)) { Interlocked.Increment(ref _count); return true; }
 
         int i = (fp % 2 == 0) ? i1 : i2;
@@ -40,7 +43,7 @@ public class CuckooFilter
             uint evicted = _buckets[i, slot];
             _buckets[i, slot] = f;
             f = evicted;
-            i ^= BucketIndex(f, 1);
+            i = (i ^ BucketIndex(f, 1)) % _numBuckets;
             if (InsertToBucket(i, f)) { Interlocked.Increment(ref _count); return true; }
         }
         return false;
@@ -52,7 +55,8 @@ public class CuckooFilter
     public bool Contains(ulong fp)
     {
         uint f = Fingerprint(fp);
-        int i1 = BucketIndex(f, 0), i2 = i1 ^ BucketIndex(f, 1);
+        int i1 = BucketIndex(f, 0);
+        int i2 = (i1 ^ BucketIndex(f, 1)) % _numBuckets;
         return BucketContains(i1, f) || BucketContains(i2, f);
     }
 
@@ -62,7 +66,8 @@ public class CuckooFilter
     public bool Remove(ulong fp)
     {
         uint f = Fingerprint(fp);
-        int i1 = BucketIndex(f, 0), i2 = i1 ^ BucketIndex(f, 1);
+        int i1 = BucketIndex(f, 0);
+        int i2 = (i1 ^ BucketIndex(f, 1)) % _numBuckets;
         if (RemoveFromBucket(i1, f) || RemoveFromBucket(i2, f)) { Interlocked.Decrement(ref _count); return true; }
         return false;
     }
@@ -100,6 +105,85 @@ public class CuckooFilter
     {
         for (int i = 0; i < BucketSize; i++)
             if (_buckets[b, i] == f) { _buckets[b, i] = 0; return true; }
+        return false;
+    }
+
+    /// <summary>Merge another CuckooFilter into this one.</summary>
+    /// <param name="other">The other CuckooFilter to merge into this one.</param>
+    public void Merge(CuckooFilter other)
+    {
+        if (other == null) throw new ArgumentNullException(nameof(other));
+        if (_numBuckets != other._numBuckets)
+            throw new ArgumentException("Cannot merge filters with different bucket counts.");
+
+        // For each fingerprint in the other filter
+        for (int b = 0; b < other._numBuckets; b++)
+            for (int s = 0; s < BucketSize; s++)
+                MergeFingerprint(other._buckets[b, s]);
+    }
+
+    private void MergeFingerprint(uint fp)
+    {
+        if (fp == 0 || Contains(fp)) return;
+
+        int i1 = BucketIndex(fp, 0);
+        int i2 = (i1 ^ BucketIndex(fp, 1)) % _numBuckets;
+
+        if (TryInsertToBuckets(fp, i1, i2)) return;
+
+        // Both buckets full - use aggressive cuckoo kicking
+        if (CuckooKick(fp, i1, 5000) || CuckooKick(fp, i2, 5000))
+            Interlocked.Increment(ref _count);
+    }
+
+    private bool TryInsertToBuckets(uint fp, int i1, int i2)
+    {
+        if (InsertToBucket(i1, fp) || InsertToBucket(i2, fp))
+        {
+            Interlocked.Increment(ref _count);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Perform cuckoo kicking to insert a fingerprint.
+    /// </summary>
+    private bool CuckooKick(uint fp, int startBucket, int maxKicks)
+    {
+        uint currentFp = fp;
+        int currentBucket = startBucket;
+        
+        for (int n = 0; n < maxKicks; n++)
+        {
+            int slot = n % BucketSize;
+            if (EvictAndInsertSlot(ref currentFp, ref currentBucket, slot))
+                return true;
+        }
+        
+        return false;
+    }
+
+    private bool EvictAndInsertSlot(ref uint currentFp, ref int currentBucket, int slot)
+    {
+        uint evicted = _buckets[currentBucket, slot];
+        
+        if (evicted == 0)
+        {
+            _buckets[currentBucket, slot] = currentFp;
+            return true;
+        }
+        
+        _buckets[currentBucket, slot] = currentFp;
+        currentFp = evicted;
+        currentBucket = (currentBucket ^ BucketIndex(currentFp, 1)) % _numBuckets;
+        
+        // Try to insert the evicted fingerprint
+        if (InsertToBucket(currentBucket, currentFp))
+        {
+            return true;
+        }
+        
         return false;
     }
 }

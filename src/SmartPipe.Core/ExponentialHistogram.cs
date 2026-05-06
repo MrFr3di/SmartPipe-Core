@@ -1,3 +1,5 @@
+#nullable enable
+
 using System;
 using System.Threading;
 
@@ -30,13 +32,7 @@ public class ExponentialHistogram
         if (b < 0) b = 0;
         if (b >= _buckets.Length) b = _buckets.Length - 1;
         
-        double original, updated;
-        do
-        {
-            original = _buckets[b];
-            updated = original + 1;
-        }
-        while (Interlocked.CompareExchange(ref _buckets[b], updated, original) != original);
+        AtomicHelper.CompareExchangeLoop(ref _buckets[b], original => original + 1);
         
         Interlocked.Increment(ref _totalCount);
     }

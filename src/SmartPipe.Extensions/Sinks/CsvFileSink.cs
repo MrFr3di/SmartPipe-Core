@@ -6,6 +6,7 @@ using SmartPipe.Core;
 namespace SmartPipe.Extensions.Sinks;
 
 /// <summary>Writes pipeline output to a CSV file.</summary>
+/// <typeparam name="T">Record type.</typeparam>
 public class CsvFileSink<T> : ISink<T>
 {
     private readonly string _path;
@@ -13,12 +14,17 @@ public class CsvFileSink<T> : ISink<T>
     private StreamWriter? _writer;
     private CsvWriter? _csv;
 
+    /// <summary>Create CSV file sink.</summary>
+    /// <param name="path">Output file path.</param>
+    /// <param name="delimiter">Column delimiter (default: ",").</param>
+    /// <param name="culture">Culture for parsing (default: InvariantCulture).</param>
     public CsvFileSink(string path, string delimiter = ",", CultureInfo? culture = null)
     {
         _path = path;
         _config = new CsvConfiguration(culture ?? CultureInfo.InvariantCulture) { Delimiter = delimiter, HasHeaderRecord = true };
     }
 
+    /// <inheritdoc />
     public Task InitializeAsync(CancellationToken ct = default)
     {
         _writer = new StreamWriter(_path);
@@ -28,6 +34,7 @@ public class CsvFileSink<T> : ISink<T>
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
     public async Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
     {
         if (result.IsSuccess && result.Value != null)
@@ -37,6 +44,7 @@ public class CsvFileSink<T> : ISink<T>
         }
     }
 
+    /// <inheritdoc />
     public Task DisposeAsync()
     {
         _csv?.Dispose();

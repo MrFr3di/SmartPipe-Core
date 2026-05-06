@@ -1,5 +1,54 @@
 # Changelog
 
+## [1.0.5] — 2026-05-06
+
+### New Features
+- **DefaultRetryPolicy** in SmartPipeChannelOptions — per-pipeline retry policy for transient failures
+- **RetryBudget per RetryItem** — per-item retry budget with DeadLetterSink routing when exhausted
+- **DisposeAsync(CancellationToken)** — graceful shutdown with timeout support
+- **AddSmartPipe DI** — three overloads for flexible pipeline registration in IServiceCollection
+- **IClock integration** — TimeProviderClock for testable time across CircuitBreaker, RetryQueue, SmartPipeChannel
+
+### Core Improvements
+- **CircuitBreaker thread-safety** — _ewmaFailureRate updated via AtomicHelper.CompareExchangeLoop (lock-free)
+- **AdaptiveParallelism adaptive alpha** — dynamic EMA alpha based on latency delta for faster convergence
+- **ObjectPool ABA protection** — version stamps prevent ABA race conditions under high concurrency
+- **CleanupWindow race fix** — TryPeek+TryDequeue replaced with TryDequeue+check pattern
+- **P-controller recovery** — currentLatencyMs used directly for error calculation, faster spike response
+- **AdaptiveMetrics thread-safety** — _avgLatencyMs updated via Volatile.Read/Write for thread-safe access
+
+### Pipeline Management
+- **PipelineState.Paused** — Pause()/Resume() now fire OnStateChanged events correctly
+- **BoundedCapacity guard** — UseRendezvous=true throws InvalidOperationException (by design)
+- **Magic numbers → named constants** — AlphaScaleFactor, MaxDelayMs, throughput/latency thresholds in BackpressureStrategy
+
+### SecretScanner Improvements
+- **Evasion detection** — TryDecodeBase64/TryDecodeUrl for Base64 and URL-encoded secrets
+- **MaxRecursionDepth=3** — handles triple-encoded payloads with safety margin (found in real penetration tests)
+- **Padding fix** — TryDecodeBase64 handles missing Base64 padding correctly
+- **AWS key guard** — IsRawAwsAccessKey prevents false Base64 decode on raw AWS keys
+- **169 SecretScanner tests** — +26 from v1.0.4
+
+### Code Quality Sweep
+- **Broad catch(Exception) → specific types** — 8 catch blocks with Polly, Mapster, CsvHelper, IO exceptions
+- **AtomicHelper utility** — 3 duplicate CompareExchange loops extracted into reusable class (internal)
+- **Dead code removal** — PipelineTool, ShouldPause/IsCritical
+- **Method extraction** — ProcessRetriesAsync, RecordFailure, Merge refactored to ≤3 levels nesting
+- **XML documentation** — 0 CS1591 warnings in production code (50+ files documented)
+- **ILogger logging** — added to all catch blocks, debug-level logging for cancellation events
+- **#nullable enable** — verified in all source files
+
+### Testing & Quality
+- **598 tests** (+355 from v1.0.4)
+- **Stress tests** — 50-thread CircuitBreaker, 20-thread ObjectPool, 10-producer/10-consumer RetryQueue
+- **Property-based tests** — RetryPolicy invariants (monotonicity, boundedness, overflow protection)
+
+### Breaking Changes
+- **Removed ShouldPause()/IsCritical()** — replaced by P-controller based throttling. Code using these must migrate to Pause()/Resume() and check ErrorType directly.
+- **Removed PipelineTool class** — functionality consolidated into SmartPipeChannel and PipelineBuilder. Use ProcessSingleAsync() for AI agent integration.
+- **ChannelPool.Return() → CloseChannel()** — method now calls TryComplete() on writer, does NOT return channel to pool. Update callers.
+- **IClock parameter added** to CircuitBreaker, RetryQueue, SmartPipeChannel constructors — optional with TimeProviderClock default, no changes required for existing code.
+
 ## [1.0.4] — 2026-04-28
 
 ### New Features (22)

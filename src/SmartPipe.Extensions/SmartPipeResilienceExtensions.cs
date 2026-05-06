@@ -6,19 +6,19 @@ using SmartPipe.Extensions.Transforms;
 namespace SmartPipe.Extensions;
 
 /// <summary>
-/// Extension methods for registering SmartPipe resilience strategies in DI.
+/// Extension methods for registering SmartPipe pipelines with Polly resilience strategies in DI.
 /// </summary>
 public static class SmartPipeResilienceExtensions
 {
     /// <summary>
-    /// Adds SmartPipe pipeline with integrated Polly resilience pipeline.
+    /// Adds a <see cref="SmartPipeChannel{TInput, TOutput}"/> with integrated Polly <see cref="ResiliencePipeline"/>.
     /// </summary>
     /// <typeparam name="TInput">Pipeline input type.</typeparam>
     /// <typeparam name="TOutput">Pipeline output type.</typeparam>
-    /// <param name="services">Service collection.</param>
+    /// <param name="services">The service collection.</param>
     /// <param name="configurePipeline">Action to configure the SmartPipe pipeline.</param>
-    /// <param name="configureResilience">Action to configure the Polly resilience pipeline.</param>
-    /// <returns>Service collection for chaining.</returns>
+    /// <param name="configureResilience">Optional action to configure the Polly resilience pipeline (retry, circuit breaker, etc.).</param>
+    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddSmartPipe<TInput, TOutput>(
         this IServiceCollection services,
         Action<SmartPipeChannel<TInput, TOutput>> configurePipeline,
@@ -48,8 +48,15 @@ public static class SmartPipeResilienceExtensions
     }
 
     /// <summary>
-    /// Registers a SmartPipe pipeline as a hosted service.
+    /// Registers a <see cref="SmartPipeChannel{TInput, TOutput}"/> as a hosted service with optional resilience.
+    /// The pipeline will start and stop with the application lifecycle.
     /// </summary>
+    /// <typeparam name="TInput">Pipeline input type.</typeparam>
+    /// <typeparam name="TOutput">Pipeline output type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configurePipeline">Action to configure the SmartPipe pipeline.</param>
+    /// <param name="configureResilience">Optional action to configure the Polly resilience pipeline.</param>
+    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddSmartPipeHostedService<TInput, TOutput>(
         this IServiceCollection services,
         Action<SmartPipeChannel<TInput, TOutput>> configurePipeline,
@@ -60,6 +67,12 @@ public static class SmartPipeResilienceExtensions
         return services;
     }
 
+    /// <summary>
+    /// Fluent helper to apply a configuration action to a <see cref="ResiliencePipelineBuilder"/>.
+    /// </summary>
+    /// <param name="builder">The resilience pipeline builder.</param>
+    /// <param name="configure">The configuration action to apply.</param>
+    /// <returns>The builder for fluent chaining.</returns>
     private static ResiliencePipelineBuilder With(
         this ResiliencePipelineBuilder builder,
         Action<ResiliencePipelineBuilder> configure)
