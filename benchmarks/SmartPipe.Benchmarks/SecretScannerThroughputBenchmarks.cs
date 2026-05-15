@@ -1,14 +1,9 @@
 #nullable enable
 using BenchmarkDotNet.Attributes;
 using SmartPipe.Core;
-using SmartPipe.Core.Tests.Infrastructure.TestCases;
 
 namespace SmartPipe.Benchmarks;
 
-/// <summary>
-/// BenchmarkDotNet benchmarks for SecretScanner throughput validation.
-/// Measures processing speed for large benign inputs (1MB, 5MB, 10MB).
-/// </summary>
 [MemoryDiagnoser]
 [SimpleJob(iterationCount: 10, warmupCount: 2)]
 public class SecretScannerThroughputBenchmarks
@@ -20,98 +15,47 @@ public class SecretScannerThroughputBenchmarks
     private string? _5MbJson;
     private string? _10MbJson;
 
-    /// <summary>
-    /// Setup method called before benchmarks run.
-    /// </summary>
     [GlobalSetup]
     public void Setup()
     {
-        _1MbLoremIpsum = LargeBenignInputs.Generate1MbLoremIpsum();
-        _5MbLoremIpsum = LargeBenignInputs.Generate5MbLoremIpsum();
-        _10MbLoremIpsum = LargeBenignInputs.Generate10MbLoremIpsum();
-        _1MbJson = LargeBenignInputs.Generate1MbJson();
-        _5MbJson = LargeBenignInputs.Generate5MbJson();
-        _10MbJson = LargeBenignInputs.Generate10MbJson();
+        _1MbLoremIpsum = GenerateLoremIpsum(1_000_000);
+        _5MbLoremIpsum = GenerateLoremIpsum(5_000_000);
+        _10MbLoremIpsum = GenerateLoremIpsum(10_000_000);
+        _1MbJson = GenerateJson(1_000_000);
+        _5MbJson = GenerateJson(5_000_000);
+        _10MbJson = GenerateJson(10_000_000);
     }
 
-    /// <summary>
-    /// Benchmark for 1MB Lorem Ipsum input using HasSecrets.
-    /// </summary>
-    [Benchmark]
-    public bool HasSecrets_1MB_LoremIpsum()
+    private static string GenerateLoremIpsum(int size)
     {
-        return SecretScanner.HasSecrets(_1MbLoremIpsum!);
+        var lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. ";
+        var sb = new System.Text.StringBuilder(size);
+        while (sb.Length < size)
+            sb.Append(lorem);
+        return sb.ToString(0, size);
     }
 
-    /// <summary>
-    /// Benchmark for 5MB Lorem Ipsum input using HasSecrets.
-    /// </summary>
-    [Benchmark]
-    public bool HasSecrets_5MB_LoremIpsum()
+    private static string GenerateJson(int size)
     {
-        return SecretScanner.HasSecrets(_5MbLoremIpsum!);
+        var sb = new System.Text.StringBuilder(size);
+        sb.Append("{\"data\":[");
+        int count = size / 50;
+        for (int i = 0; i < count; i++)
+        {
+            if (i > 0) sb.Append(',');
+            sb.Append("{\"id\":").Append(i).Append(",\"value\":\"test data ").Append(i).Append("\"}");
+        }
+        sb.Append("]}");
+        return sb.ToString();
     }
 
-    /// <summary>
-    /// Benchmark for 10MB Lorem Ipsum input using HasSecrets.
-    /// </summary>
-    [Benchmark]
-    public bool HasSecrets_10MB_LoremIpsum()
-    {
-        return SecretScanner.HasSecrets(_10MbLoremIpsum!);
-    }
-
-    /// <summary>
-    /// Benchmark for 1MB JSON input using HasSecrets.
-    /// </summary>
-    [Benchmark]
-    public bool HasSecrets_1MB_Json()
-    {
-        return SecretScanner.HasSecrets(_1MbJson!);
-    }
-
-    /// <summary>
-    /// Benchmark for 5MB JSON input using HasSecrets.
-    /// </summary>
-    [Benchmark]
-    public bool HasSecrets_5MB_Json()
-    {
-        return SecretScanner.HasSecrets(_5MbJson!);
-    }
-
-    /// <summary>
-    /// Benchmark for 10MB JSON input using HasSecrets.
-    /// </summary>
-    [Benchmark]
-    public bool HasSecrets_10MB_Json()
-    {
-        return SecretScanner.HasSecrets(_10MbJson!);
-    }
-
-    /// <summary>
-    /// Benchmark for 1MB Lorem Ipsum input using Redact.
-    /// </summary>
-    [Benchmark]
-    public string? Redact_1MB_LoremIpsum()
-    {
-        return SecretScanner.Redact(_1MbLoremIpsum!);
-    }
-
-    /// <summary>
-    /// Benchmark for 5MB Lorem Ipsum input using Redact.
-    /// </summary>
-    [Benchmark]
-    public string? Redact_5MB_LoremIpsum()
-    {
-        return SecretScanner.Redact(_5MbLoremIpsum!);
-    }
-
-    /// <summary>
-    /// Benchmark for 10MB Lorem Ipsum input using Redact.
-    /// </summary>
-    [Benchmark]
-    public string? Redact_10MB_LoremIpsum()
-    {
-        return SecretScanner.Redact(_10MbLoremIpsum!);
-    }
+    [Benchmark] public bool HasSecrets_1MB_LoremIpsum() => SecretScanner.HasSecrets(_1MbLoremIpsum!);
+    [Benchmark] public bool HasSecrets_5MB_LoremIpsum() => SecretScanner.HasSecrets(_5MbLoremIpsum!);
+    [Benchmark] public bool HasSecrets_10MB_LoremIpsum() => SecretScanner.HasSecrets(_10MbLoremIpsum!);
+    [Benchmark] public bool HasSecrets_1MB_Json() => SecretScanner.HasSecrets(_1MbJson!);
+    [Benchmark] public bool HasSecrets_5MB_Json() => SecretScanner.HasSecrets(_5MbJson!);
+    [Benchmark] public bool HasSecrets_10MB_Json() => SecretScanner.HasSecrets(_10MbJson!);
+    [Benchmark] public string? Redact_1MB_LoremIpsum() => SecretScanner.Redact(_1MbLoremIpsum!);
+    [Benchmark] public string? Redact_5MB_LoremIpsum() => SecretScanner.Redact(_5MbLoremIpsum!);
+    [Benchmark] public string? Redact_10MB_LoremIpsum() => SecretScanner.Redact(_10MbLoremIpsum!);
 }
