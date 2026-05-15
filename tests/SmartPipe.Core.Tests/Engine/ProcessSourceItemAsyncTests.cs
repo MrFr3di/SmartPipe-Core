@@ -86,7 +86,7 @@ public class ProcessSourceItemAsyncTests
     {
         public bool ThrottleAsyncCalled { get; private set; }
         public int CallCount { get; private set; }
-        public List<int> CallSizes { get; } = new();
+        public List<int> CallSizes { get; } = [];
         public ManualResetEventSlim? ThrottleCalledEvent { get; set; }
 
         public TestBackpressureStrategy(int capacity) : base(capacity) { }

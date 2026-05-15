@@ -11,7 +11,7 @@ namespace SmartPipe.Extensions.Transforms;
 /// <typeparam name="T">The data type to validate.</typeparam>
 public class ValidationTransform<T> : ITransformer<T, T>
 {
-    private readonly List<Func<T, string?>> _rules = new();
+    private readonly List<Func<T, string?>> _rules = [];
 
     /// <summary>
     /// Adds a custom validation rule to the transform.

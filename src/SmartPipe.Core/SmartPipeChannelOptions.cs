@@ -50,7 +50,8 @@ public class SmartPipeChannelOptions
     public Dictionary<string, bool> FeatureFlags { get; } = new()
     {
         ["RetryQueue"] = false, ["Metrics"] = true, ["CircuitBreaker"] = false,
-        ["ObjectPool"] = true, ["DebugSampling"] = false, ["CuckooFilter"] = false, ["JumpHash"] = false
+        ["ObjectPool"] = true, ["DebugSampling"] = false, ["CuckooFilter"] = false, ["JumpHash"] = false,
+        ["SecretScanner"] = false // off by default 
     };
 
     /// <summary>Check if a feature flag is enabled.</summary>

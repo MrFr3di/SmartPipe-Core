@@ -22,9 +22,9 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     private readonly ILogger? _logger;
     private readonly IClock _clock;
     
-    private readonly List<ISource<TInput>> _sources = new();
-    private readonly List<ITransformer<TInput, TOutput>> _transformers = new();
-    private readonly List<ISink<TOutput>> _sinks = new();
+    private readonly List<ISource<TInput>> _sources = [];
+    private readonly List<ITransformer<TInput, TOutput>> _transformers = [];
+    private readonly List<ISink<TOutput>> _sinks = [];
     private readonly SmartPipeChannelOptions _options;
     private readonly CancellationTokenSource _internalCts = new();
     private Channel<ProcessingContext<TInput>>? _inputChannel;
@@ -96,15 +96,27 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
 
     /// <summary>Adds a data source to the pipeline.</summary>
     /// <param name="source">The source to add.</param>
-    public void AddSource(ISource<TInput> source) => _sources.Add(source);
+    public void AddSource(ISource<TInput> source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        _sources.Add(source);
+    }
 
     /// <summary>Adds a transformer to the pipeline.</summary>
     /// <param name="t">The transformer to add.</param>
-    public void AddTransformer(ITransformer<TInput, TOutput> t) => _transformers.Add(t);
+    public void AddTransformer(ITransformer<TInput, TOutput> t)
+    {
+        ArgumentNullException.ThrowIfNull(t);
+        _transformers.Add(t);
+    }
 
     /// <summary>Adds a sink to the pipeline.</summary>
     /// <param name="sink">The sink to add.</param>
-    public void AddSink(ISink<TOutput> sink) => _sinks.Add(sink);
+    public void AddSink(ISink<TOutput> sink)
+    {
+        ArgumentNullException.ThrowIfNull(sink);
+        _sinks.Add(sink);
+    }
 
     /// <summary>Pauses the pipeline processing.</summary>
     public void Pause() { _isPaused = true; TransitionState(PipelineState.Paused); }
@@ -123,8 +135,9 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
 
     /// <summary>Drains the pipeline by completing the input channel and flushing remaining items.</summary>
     /// <param name="timeout">Maximum time to wait for draining.</param>
+    /// <param name="ct">Cancellation token to abort the drain operation.</param>
     /// <remarks>Only one drain operation runs at a time (lock-free).</remarks>
-    public async Task DrainAsync(TimeSpan timeout)
+    public async Task DrainAsync(TimeSpan timeout, CancellationToken ct = default)
     {
         Pause(); 
         
@@ -134,10 +147,13 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         
         try 
         { 
-            _inputChannel?.Writer.Complete(); 
+            _inputChannel?.Writer.TryComplete(); // Use TryComplete — channel may already be closed
             var sw = Stopwatch.StartNew(); 
-            while (_inputChannel?.Reader.TryRead(out _) == true && sw.Elapsed < timeout) { } 
-            _outputChannel?.Writer.Complete(); 
+            while (_inputChannel?.Reader.TryRead(out _) == true && sw.Elapsed < timeout) 
+            {
+                ct.ThrowIfCancellationRequested(); // Check cancellation token
+            }
+            _outputChannel?.Writer.TryComplete(); 
         }
         finally 
         { 
@@ -149,9 +165,20 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     /// Disposes the pipeline by draining pending items and releasing resources.
     /// </summary>
     /// <returns>A ValueTask representing the asynchronous disposal operation.</returns>
+    private int _disposed; // 0 = not disposed, 1 = disposed
+
+    /// <summary>
+    /// Disposes the pipeline by draining pending items and releasing all resources.
+    /// Thread-safe: subsequent calls after the first are no-ops.
+    /// </summary>
+    /// <returns>A ValueTask representing the asynchronous disposal operation.</returns>
     public async ValueTask DisposeAsync()
     {
-        await DrainAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
+            return; // Already disposed
+
+        using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await DrainAsync(TimeSpan.FromSeconds(5), drainCts.Token).ConfigureAwait(false);
         _internalCts?.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -173,7 +200,15 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
 
     /// <summary>Creates a real-time dashboard snapshot of pipeline state.</summary>
     /// <returns>Dashboard object with current metrics.</returns>
-    public PipelineDashboard CreateDashboard() => new() { State = _state, Current = _totalCount, Total = null, Elapsed = _startTime != default ? _clock.UtcNow - _startTime : TimeSpan.Zero, P99LatencyMs = _latencyHistogram.P99, CBState = _circuitBreaker?.State.ToString() ?? "N/A", Metrics = Metrics.Export() };
+    public PipelineDashboard CreateDashboard() => new(
+        _state,
+        _totalCount,
+        null,
+        _startTime != default ? _clock.UtcNow - _startTime : TimeSpan.Zero,
+        _latencyHistogram.P99,
+        _circuitBreaker?.State.ToString() ?? "N/A",
+        Metrics.Export()
+    );
 
     private void Validate() { if (_sources.Count == 0) throw new InvalidOperationException("At least one source required."); if (_transformers.Count == 0) throw new InvalidOperationException("At least one transformer required."); if (_sinks.Count == 0) throw new InvalidOperationException("At least one sink required."); }
 
@@ -362,11 +397,21 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     {
         if (!result)
         {
-            if (result.Error?.Category == "Filtered") { await WriteOutputAsync(result, ct).ConfigureAwait(false); _contextPool?.Return(ctx); return; }
+            if (result.Error?.Category == "Filtered") 
+            { 
+                await WriteOutputAsync(result, ct).ConfigureAwait(false); 
+                _contextPool?.Return(ctx); // Filtered item — safe to return to pool
+                return; 
+            }
             await HandleFailureAsync(ctx, result, null, ct).ConfigureAwait(false);
+            // Do NOT return ctx to pool here — it may be enqueued in RetryQueue
         }
-        else HandleSuccess(result, null, elapsed);
-        await WriteOutputAsync(result, ct).ConfigureAwait(false); _contextPool?.Return(ctx);
+        else 
+        {
+            HandleSuccess(result, null, elapsed);
+            await WriteOutputAsync(result, ct).ConfigureAwait(false);
+            _contextPool?.Return(ctx); // Success item — safe to return to pool
+        }
     }
 
     private bool ShouldProcessItem(ProcessingContext<TInput> ctx, int consumerIndex) => _shardBuckets == null || JumpHash.Hash(ctx.TraceId, _shardBuckets.Length) == consumerIndex;
@@ -388,10 +433,31 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     private async ValueTask<(ProcessingResult<TOutput> Result, long ElapsedMs)> TransformWithTimeoutAsync(ProcessingContext<TInput> ctx, CancellationToken ct)
     {
         var sw = Environment.TickCount64;
-        try { var r = await PipelineCancellation.WithTimeoutAsync(_transformers[0].TransformAsync(ctx, ct), _options.AttemptTimeout, ctx.TraceId).ConfigureAwait(false); return (r, Environment.TickCount64 - sw); }
-        catch (InvalidOperationException ex) { _logger?.LogError(ex, "Transform error for TraceId: {TraceId}", ctx.TraceId); return (ProcessingResult<TOutput>.Failure(new SmartPipeError(ex.Message, ErrorType.Permanent, "TransformError", ex), ctx.TraceId), Environment.TickCount64 - sw); }
-        catch (NotSupportedException ex) { _logger?.LogError(ex, "Transform error for TraceId: {TraceId}", ctx.TraceId); return (ProcessingResult<TOutput>.Failure(new SmartPipeError(ex.Message, ErrorType.Permanent, "TransformError", ex), ctx.TraceId), Environment.TickCount64 - sw); }
-        catch (TimeoutException ex) { _logger?.LogWarning(ex, "Transform timeout for TraceId: {TraceId}", ctx.TraceId); return (ProcessingResult<TOutput>.Failure(new SmartPipeError(ex.Message, ErrorType.Transient, "Timeout", ex), ctx.TraceId), Environment.TickCount64 - sw); }
+        try 
+        { 
+            var r = await PipelineCancellation.WithTimeoutAsync(_transformers[0].TransformAsync(ctx, ct), _options.AttemptTimeout, ctx.TraceId).ConfigureAwait(false); 
+            return (r, Environment.TickCount64 - sw); 
+        }
+        catch (InvalidOperationException ex) 
+        { 
+            _logger?.LogError(ex, "Transform error for TraceId: {TraceId}", ctx.TraceId); 
+            return (ProcessingResult<TOutput>.Failure(new SmartPipeError(ex.Message, ErrorType.Permanent, "TransformError", ex), ctx.TraceId), Environment.TickCount64 - sw); 
+        }
+        catch (NotSupportedException ex) 
+        { 
+            _logger?.LogError(ex, "Transform error for TraceId: {TraceId}", ctx.TraceId); 
+            return (ProcessingResult<TOutput>.Failure(new SmartPipeError(ex.Message, ErrorType.Permanent, "TransformError", ex), ctx.TraceId), Environment.TickCount64 - sw); 
+        }
+        catch (TimeoutException ex) 
+        { 
+            _logger?.LogWarning(ex, "Transform timeout for TraceId: {TraceId}", ctx.TraceId); 
+            return (ProcessingResult<TOutput>.Failure(new SmartPipeError(ex.Message, ErrorType.Transient, "Timeout", ex), ctx.TraceId), Environment.TickCount64 - sw); 
+        }
+        catch (Exception ex) // catch-all for unexpected exceptions (ArgumentException, JsonException, NullReferenceException, etc.)
+        {
+            _logger?.LogError(ex, "Unexpected transform error for TraceId: {TraceId}", ctx.TraceId);
+            return (ProcessingResult<TOutput>.Failure(new SmartPipeError(ex.Message, ErrorType.Permanent, "UnexpectedError", ex), ctx.TraceId), Environment.TickCount64 - sw);
+        }
     }
 
     private void RecordMetrics(long elapsedMs) { _adaptiveMetrics.Update(elapsedMs); _latencyHistogram.Record(elapsedMs); Metrics.RecordProcessed(elapsedMs); }
@@ -449,7 +515,13 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         await _options.DeadLetterSink.WriteAsync(ProcessingResult<object>.Failure(deadLetterError, ctx.TraceId), ct).ConfigureAwait(false);
     }
 
-    private void HandleSuccess(ProcessingResult<TOutput> result, Activity? activity, long elapsedMs) { _circuitBreaker?.RecordSuccess(); activity?.SetTag("smartpipe.latency_ms", elapsedMs); if (result.Value is string str && SecretScanner.HasSecrets(str)) activity?.SetTag("smartpipe.secret_found", true); }
+    private void HandleSuccess(ProcessingResult<TOutput> result, Activity? activity, long elapsedMs)
+    {
+        _circuitBreaker?.RecordSuccess();
+        activity?.SetTag("smartpipe.latency_ms", elapsedMs);
+        if (_options.IsEnabled("SecretScanner") && result.Value is string str && SecretScanner.HasSecrets(str))
+            activity?.SetTag("smartpipe.secret_found", true);
+    }
 
     private async ValueTask WriteOutputAsync(ProcessingResult<TOutput> result, CancellationToken ct) { Metrics.SmoothLatencyMs = _adaptiveMetrics.SmoothLatencyMs; Metrics.SmoothThroughput = _adaptiveMetrics.SmoothThroughputPerSec; Metrics.QueueSize = _inputChannel!.Reader.Count; _options.OnMetrics?.Invoke(Metrics); await _outputChannel!.Writer.WriteAsync(result, ct).ConfigureAwait(false); }
 
@@ -551,44 +623,35 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     }
 }
 
-/// <summary>Represents the state of a pipeline during its lifecycle.</summary>
-public enum PipelineState
-{
-    /// <summary>Pipeline has not started yet.</summary>
-    NotStarted,
-    /// <summary>Pipeline is currently running.</summary>
-    Running,
-    /// <summary>Pipeline is paused (producer suspended).</summary>
-    Paused,
-    /// <summary>Pipeline completed successfully.</summary>
-    Completed,
-    /// <summary>Pipeline terminated due to an error.</summary>
-    Faulted,
-    /// <summary>Pipeline was cancelled by user or timeout.</summary>
-    Cancelled
-}
+    /// <summary>Represents the state of a pipeline during its lifecycle.</summary>
+    public enum PipelineState
+    {
+        /// <summary>Pipeline has not started yet.</summary>
+        NotStarted,
+        /// <summary>Pipeline is currently running.</summary>
+        Running,
+        /// <summary>Pipeline is paused (producer suspended).</summary>
+        Paused,
+        /// <summary>Pipeline completed successfully.</summary>
+        Completed,
+        /// <summary>Pipeline terminated due to an error.</summary>
+        Faulted,
+        /// <summary>Pipeline was cancelled by user or timeout.</summary>
+        Cancelled
+    }
 
-/// <summary>Real-time dashboard data for pipeline monitoring.</summary>
-public class PipelineDashboard
-{
-    /// <summary>Current pipeline state.</summary>
-    public PipelineState State { get; set; }
-
-    /// <summary>Number of items processed so far.</summary>
-    public int Current { get; set; }
-
-    /// <summary>Total items to process (null if unknown).</summary>
-    public int? Total { get; set; }
-
-    /// <summary>Elapsed time since pipeline started.</summary>
-    public TimeSpan Elapsed { get; set; }
-
-    /// <summary>99th percentile latency in milliseconds.</summary>
-    public double P99LatencyMs { get; set; }
-
-    /// <summary>Circuit breaker state string (or "N/A").</summary>
-    public string CBState { get; set; } = "N/A";
-
-    /// <summary>Exported metrics dictionary.</summary>
-    public Dictionary<string, object> Metrics { get; set; } = new();
-}
+    /// <summary>Real-time dashboard data for pipeline monitoring. Immutable snapshot.</summary>
+    public readonly record struct PipelineDashboard(
+        PipelineState State,
+        int Current,
+        int? Total,
+        TimeSpan Elapsed,
+        double P99LatencyMs,
+        string CbState,
+        Dictionary<string, object> Metrics
+    )
+    {
+        /// <summary>Empty dashboard with default values.</summary>
+        public static PipelineDashboard Empty => new(
+            PipelineState.NotStarted, 0, null, TimeSpan.Zero, 0.0, "N/A", []);
+    }

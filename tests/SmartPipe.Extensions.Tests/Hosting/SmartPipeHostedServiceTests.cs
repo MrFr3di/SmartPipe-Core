@@ -19,11 +19,11 @@ public class SmartPipeHostedServiceTests
     {
         public async IAsyncEnumerable<ProcessingContext<TestItem>> ReadAsync([EnumeratorCancellation] CancellationToken ct = default)
         {
-            // Бесконечно генерируем данные пока не отменят
+            // Continuously generate data until cancelled
             while (!ct.IsCancellationRequested)
             {
                 yield return new ProcessingContext<TestItem> { Payload = new TestItem { Value = "test" } };
-                await Task.Delay(100, ct); // Задержка между элементами
+                await Task.Delay(100, ct); // Delay between items
             }
         }
 
@@ -84,17 +84,17 @@ public class SmartPipeHostedServiceTests
         var hostedService = new SmartPipeHostedService<TestItem, TestItem>(
             pipeline, logger);
 
-        // Act - запускаем с таймаутом
+        // Act - start with timeout
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         var startTask = hostedService.StartAsync(cts.Token);
         
-        // Даем время на обработку
+        // Allow some processing time
         await Task.Delay(500);
         
         // Stop
         await hostedService.StopAsync(CancellationToken.None);
         
-        // Assert - не должно быть исключений
+        // Assert - no exceptions should occur
         Assert.True(true);
     }
 }

@@ -4,9 +4,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Version>1.0.5</Version>
+    <Version>1.0.6</Version>
     <Authors>SmartPipe</Authors>
-    <Description>Lightweight ETL pipeline library based on System.Threading.Channels. Zero dependencies, 21 integrated resilience features, 0B allocations in hot path.</Description>
+    <Description>Streaming ETL pipeline engine for .NET 10 based on System.Threading.Channels. 34 components, 0B allocations. Thread-safe with CircuitBreaker, RetryQueue, SecretScanner, and more.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageIcon>icon.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>

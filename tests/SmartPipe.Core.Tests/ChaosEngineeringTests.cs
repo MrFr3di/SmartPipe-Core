@@ -153,7 +153,7 @@ internal class ChaosTransformer<T> : ITransformer<T, T>
 internal class ChaosSlowSink<T> : ISink<T>
 {
     private readonly int _delayMs;
-    private readonly List<T> _results = new();
+    private readonly List<T> _results = [];
     public IReadOnlyList<T> Results => _results;
     public ChaosSlowSink(int delayMs = 50) => _delayMs = delayMs;
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
@@ -169,7 +169,7 @@ internal class ChaosDropSink<T> : ISink<T>
 {
     private int _count;
     private readonly int _dropEvery;
-    private readonly List<T> _results = new();
+    private readonly List<T> _results = [];
     public IReadOnlyList<T> Results => _results;
     public ChaosDropSink(int dropEvery = 5) => _dropEvery = dropEvery;
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;

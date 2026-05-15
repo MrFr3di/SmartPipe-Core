@@ -151,6 +151,14 @@ var options = new SmartPipeChannelOptions
 };
 ```
 
+**Usage:**
+
+```csharp
+// SecretScanner must be explicitly enabled
+var options = new SmartPipeChannelOptions();
+options.EnableFeature("SecretScanner");
+```
+
 ---
 
 ### DataLineage (Constants in ProcessingContext)
@@ -219,8 +227,8 @@ internal static class AtomicHelper
 | `DeduplicationFilter` | `DeduplicationFilter?` | Input deduplication |
 | `OnProgress` | `Action<int, int?, TimeSpan, TimeSpan?>?` | Progress callback |
 | `DeadLetterSink` | `ISink<object>?` | Exhausted retry sink |
-| `DefaultRetryPolicy` | `RetryPolicy?` | **NEW** Pipeline retry policy |
-| `FeatureFlags` | `Dictionary<string, bool>` | Component toggles |
+| `DefaultRetryPolicy` | `RetryPolicy?` | Pipeline retry policy |
+| `FeatureFlags` | `Dictionary<string, bool>` | Optional component toggles. `SecretScanner` defaults to `false`. |
 
 ### CircuitBreaker
 
@@ -255,13 +263,28 @@ public class CircuitBreaker
 public class RetryQueue<T>
 {
     public int Count { get; }
+
+    /// <summary>
+    /// Creates a new retry queue.
+    /// </summary>
+    /// <param name="capacity">Maximum number of pending retry items (default: 10000).</param>
+    /// <param name="logger">Optional logger for retry diagnostics.</param>
+    /// <param name="deadLetterSink">Optional sink for items that exhaust all retries.</param>
+    /// <param name="clock">Optional clock for testable time (defaults to TimeProviderClock).</param>
+    /// <param name="pollTimeoutMs">
+    /// Polling timeout in milliseconds for TryGetNextAsync.
+    /// Controls how frequently the consumer checks for new items when the queue is empty.
+    /// Default: 100ms.
+    /// </param>
+    /// Optional pollTimeoutMs parameter. Controls how frequently TryGetNextAsync polls for new items when the queue is empty (default: 100ms). Reduces CancellationTokenSource allocations.
     
     public RetryQueue(
         int capacity = 10000,
         ILogger<RetryQueue<T>>? logger = null,
         ISink<object>? deadLetterSink = null,
-        IClock? clock = null);
-    
+        IClock? clock = null,
+        int pollTimeoutMs = 100);
+
     public ValueTask<bool> EnqueueAsync(
         ProcessingContext<T> ctx,
         RetryPolicy policy,
@@ -269,12 +292,13 @@ public class RetryQueue<T>
         SmartPipeError error,
         CancellationToken ct = default,
         int? retryBudget = null);
-    
+
     public ValueTask<RetryItem<T>?> TryGetNextAsync(CancellationToken ct = default);
 }
 ```
 
-**RetryItem<T>:**
+### RetryItem<T>
+
 ```csharp
 public readonly record struct RetryItem<T>(
     ProcessingContext<T> Context,
@@ -282,7 +306,7 @@ public readonly record struct RetryItem<T>(
     int RetryCount,
     SmartPipeError Error,
     DateTime RetryAt,
-    int RetryBudget = -1  // NEW: Per-item budget
+    int RetryBudget = -1  // Per-item budget
 )
 ```
 
@@ -383,9 +407,10 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     public void Resume();     // NEW: Sets PipelineState.Running
     public void Cancel();
     
-    public Task DrainAsync(TimeSpan timeout);
+    public Task DrainAsync(TimeSpan timeout, CancellationToken ct = default);
     public ValueTask DisposeAsync();
     
+    /// <summary>Throws ArgumentNullException if ctx is null.</summary>
     public ValueTask<ProcessingResult<TOutput>> ProcessSingleAsync(
         ProcessingContext<TInput> ctx, CancellationToken ct = default);
 
@@ -474,7 +499,7 @@ public class ProcessingContext<T>
     public ulong TraceId { get; set; }
     public T Payload { get; set; } = default!;
     public Dictionary<string, string> Metadata { get; set; } = new();
-    public long EnterPipelineTicks { get; set; }
+    internal long EnterPipelineTicks { get; set; } /// Visibility changed from public to internal. Not accessible outside SmartPipe.Core.
     
     // Data Lineage constants
     public const string LineageSource = "lineage_source";
@@ -493,6 +518,11 @@ public class ProcessingContext<T>
 public class DeduplicationFilter
 {
     public long ItemsSeen { get; }
+
+    public DeduplicationFilter(
+        int capacity = 1_000_000, 
+        TimeSpan? ttl = null);
+
     public bool ContainsAndAdd(ulong traceId);
 }
 ```
@@ -516,12 +546,15 @@ public class SmartPipeMetrics
     public void RecordFailed();
     public void RecordRetry();
     public void RecordDuplicate();
-    
+    public void RecordPoolHitRate(double hitRate); /// Pool hit rate as a value between 0.0 and 1.0.
+
     public Dictionary<string, object> Export();
-    public string ExportJson();      // NEW
-    public string ExportPrometheus(); // NEW
+    public string ExportJson();      
+    public string ExportPrometheus(); 
 }
 ```
+
+Optional ttl parameter. When set, entries are automatically expired after the specified duration, preventing the filter from growing indefinitely.
 
 ## PipelineDashboard
 
@@ -661,7 +694,7 @@ Cardinality estimation algorithm.
 ### ReservoirSampler<T>
 
 ```csharp
-public class ReservoirSampler<T>
+public class ReservoirSampler<T> /// Thread-safe. Uses ThreadLocal<Random> for per-thread randomness. Reservoir array protected by Lock for concurrent writes.
 {
     public int Capacity { get; }
     public long Count { get; }
@@ -701,8 +734,22 @@ Latency and throughput tracking with EWMA.
 ```csharp
 public class ObjectPool<T>
 {
-    public ObjectPool(Func<T> factory, int capacity = 256);
+    /// <summary>
+    /// Creates a new object pool.
+    /// </summary>
+    /// <param name="factory">Factory function to create new instances.</param>
+    /// <param name="capacity">Initial pool capacity (default: 256).</param>
+    /// <param name="maxCapacity">
+    /// Maximum pool size. Prevents unbounded growth under sustained load.
+    /// When the pool reaches this limit, returned items are discarded instead of being stored.
+    /// Default: 1024.
+    /// </param>
+    public ObjectPool(Func<T> factory, int capacity = 256, int maxCapacity = 1024);
+
+    /// <summary>Rent an instance from the pool, or create a new one if empty.</summary>
     public T Rent();
+
+    /// <summary>Return an instance to the pool for reuse (if below maxCapacity).</summary>
     public void Return(T item);
 }
 ```
@@ -753,6 +800,7 @@ public static class SmartPipeServiceCollectionExtensions
         Action<SmartPipeChannel<TInput, TOutput>>? configurePipeline = null);
 }
 ```
+
 DI registration for SmartPipe pipelines. Automatically registers `IClock` as `TimeProviderClock`.
 
 ### SmartPipeLivenessCheck<TIn, TOut>
@@ -990,9 +1038,24 @@ Location: `src/SmartPipe.Extensions/Sinks/JsonFileSink.cs`
 ```csharp
 public class JsonFileSink<T> : ISink<T>
 {
-    public JsonFileSink(string path);
+    /// <summary>
+    /// Creates a new JSON file sink.
+    /// </summary>
+    /// <param name="path">File path for output.</param>
+    /// <param name="flushInterval">
+    /// Interval in milliseconds for periodic batch flushing to disk.
+    /// Prevents unbounded in-memory buffering on large datasets.
+    /// Uses NDJSON format for append-only writes.
+    /// Default: 1000ms (1 second).
+    /// </param>
+    public JsonFileSink(string path, int flushInterval = 1000);
+
+    public Task InitializeAsync(CancellationToken ct = default);
+    public Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default);
+    public Task DisposeAsync();
 }
 ```
+
 Writes results to JSON file (array format).
 
 ### CsvFileSink<T>

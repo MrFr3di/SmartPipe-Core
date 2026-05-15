@@ -166,7 +166,7 @@ public class ZeroThroughputTests
         sink.Results.Should().BeEmpty("all items should have failed");
         
         // Check dashboard for circuit breaker state info
-        dashboard.CBState.Should().NotBe("N/A");
+        dashboard.CbState.Should().NotBe("N/A");
     }
 
     [Fact]
@@ -286,8 +286,8 @@ public class ZeroThroughputTests
         sink.Results.Should().BeEmpty();
         
         // CircuitBreaker should have opened due to failures
-        // Check via dashboard - the CBState might be "Open" or "HalfOpen" after retries
+        // Check via dashboard - the CbState might be "Open" or "HalfOpen" after retries
         var dashboard = channel.CreateDashboard();
-        dashboard.CBState.Should().NotBe("N/A");
+        dashboard.CbState.Should().NotBe("N/A");
     }
 }

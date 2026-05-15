@@ -15,6 +15,7 @@ public class AdaptiveParallelism
     private int _current;
     private double _avgLatencyMs = 10.0;
     private double _targetLatencyMs = 10.0;
+    private string _lastDecision = "Initial: P-controller not yet updated";
     
     // P-controller parameters
     private const int DeadZone = 5;          // Ignore errors smaller than 5ms
@@ -44,30 +45,46 @@ public class AdaptiveParallelism
     }
 
     /// <summary>Update with current latency and queue size. Uses P-controller for smooth adjustments.</summary>
+    /// <param name="currentLatencyMs">Current measured latency in milliseconds.</param>
+    /// <param name="queueSize">Reserved for future use.</param>
     public void Update(double currentLatencyMs, int queueSize)
     {
         // Adaptive alpha: larger changes → faster response
-        // This allows EMA to converge quickly when latency changes dramatically
         double currentAvg = Volatile.Read(ref _avgLatencyMs);
         double alpha = Math.Min(0.8, Math.Abs(currentLatencyMs - currentAvg) / AlphaScaleFactor);
-        alpha = Math.Max(0.1, alpha); // Minimum alpha to ensure some smoothing
+        alpha = Math.Max(0.1, alpha);
  
         Volatile.Write(ref _avgLatencyMs, alpha * Math.Max(1, currentLatencyMs) + (1.0 - alpha) * currentAvg);
 
         double error = _targetLatencyMs - currentLatencyMs;
 
         // Dead zone: ignore small errors
-        if (Math.Abs(error) < DeadZone) return;
+        if (Math.Abs(error) < DeadZone)
+        {
+            _lastDecision = $"DeadZone: error {Math.Abs(error):F1}ms < {DeadZone}ms threshold, no adjustment";
+            return;
+        }
 
         // Anti-windup: don't accumulate error when at limits
-        if (_current >= _max && error > 0) return;
-        if (_current <= _min && error < 0) return;
+        if (_current >= _max && error > 0)
+        {
+            _lastDecision = $"AntiWindup: at max ({_max}), error {error:F1}ms, blocked";
+            return;
+        }
+        if (_current <= _min && error < 0)
+        {
+            _lastDecision = $"AntiWindup: at min ({_min}), error {error:F1}ms, blocked";
+            return;
+        }
 
         // P-controller: error / proportionalBand = thread adjustment
-        // CAP the adjustment to prevent aggressive changes
         int rawAdjustment = (int)(Math.Abs(error) / ProportionalBand);
-        int adjustment = Math.Sign(error) * Math.Max(1, Math.Min(3, rawAdjustment)); // Max 3 threads per iteration
+        int adjustment = Math.Sign(error) * Math.Max(1, Math.Min(3, rawAdjustment));
         int newValue = Math.Clamp(_current + adjustment, _min, _max);
         Interlocked.Exchange(ref _current, newValue);
+        _lastDecision = $"P-controller: error {error:F1}ms, adjusted by {adjustment:+0;-#}, new={newValue} (min={_min}, max={_max})";
     }
+
+    /// <summary>Returns the reason for the last P-controller decision. Useful for observability and debugging.</summary>
+    public string GetDecisionReason() => _lastDecision;
 }

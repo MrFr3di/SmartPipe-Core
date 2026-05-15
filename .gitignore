@@ -2,6 +2,7 @@
 **/bin/
 **/obj/
 **/artifacts/
+**/nuget
 
 # BenchmarkDotNet
 **/BenchmarkDotNet.Artifacts/
@@ -28,12 +29,7 @@ Thumbs.db
 # Temporary
 tools/
 benchmarks/SmartPipe.CompetitorBenchmarks/
-Modelfile.embed
-Modelfile.qwen-router
-SOUL.md
-AGENTS.md
-Modelfile.nomic
+
 TestResults/
 backups/
-plans/
-.fake
+

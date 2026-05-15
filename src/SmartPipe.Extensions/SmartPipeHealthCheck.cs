@@ -5,7 +5,7 @@ namespace SmartPipe.Extensions;
 
 /// <summary>
 /// Liveness health check for <see cref="SmartPipeChannel{TIn, TOut}"/>.
-/// Reports healthy when the pipeline is not paused (alive and responsive).
+/// Reports healthy when the pipeline is alive (not paused, not faulted).
 /// </summary>
 /// <typeparam name="TIn">Pipeline input type.</typeparam>
 /// <typeparam name="TOut">Pipeline output type.</typeparam>
@@ -20,17 +20,21 @@ public class SmartPipeLivenessCheck<TIn, TOut> : IHealthCheck
     public SmartPipeLivenessCheck(SmartPipeChannel<TIn, TOut> p) => _pipe = p;
 
     /// <summary>
-    /// Checks if the pipeline is alive (not paused).
+    /// Checks if the pipeline is alive (not paused, not faulted).
     /// </summary>
     /// <param name="ctx">The health check context.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A healthy result if the pipeline is running; otherwise unhealthy.</returns>
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext ctx, CancellationToken ct = default)
     {
-        var ok = !_pipe.IsPaused;
-        return Task.FromResult(ok
-            ? HealthCheckResult.Healthy("Pipeline is alive")
-            : HealthCheckResult.Unhealthy("Pipeline is paused"));
+        // A faulted pipeline is dead — it cannot recover without intervention
+        if (_pipe.State == PipelineState.Faulted)
+            return Task.FromResult(HealthCheckResult.Unhealthy("Pipeline is faulted"));
+
+        if (_pipe.IsPaused)
+            return Task.FromResult(HealthCheckResult.Unhealthy("Pipeline is paused"));
+
+        return Task.FromResult(HealthCheckResult.Healthy("Pipeline is alive"));
     }
 }
 

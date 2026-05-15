@@ -9,7 +9,8 @@ namespace SmartPipe.Core;
 /// <summary>OpenTelemetry-compatible metrics with export to JSON and Prometheus.</summary>
 public class SmartPipeMetrics
 {
-    private static readonly Meter Meter = new("SmartPipe.Core", "1.0.5");
+    private static readonly Meter Meter = new("SmartPipe.Core", 
+        typeof(SmartPipeMetrics).Assembly.GetName().Version?.ToString() ?? "1.0.0");
     private static readonly Counter<long> ItemsProcessedCounter = Meter.CreateCounter<long>("smartpipe.items.processed", "items");
     private static readonly Counter<long> ItemsFailedCounter = Meter.CreateCounter<long>("smartpipe.items.failed", "items");
     private static readonly Counter<long> DuplicatesFilteredCounter = Meter.CreateCounter<long>("smartpipe.duplicates.filtered", "items");
@@ -40,7 +41,7 @@ public class SmartPipeMetrics
     /// <summary>Current queue size.</summary>
     public int QueueSize;
 
-    /// <summary>ObjectPool hit rate (0.0-1.0).</summary>
+    /// <summary>ObjectPool hit rate (0.0-1.0). Updated externally by the pipeline when context pool is used.</summary>
     public double PoolHitRate;
 
     /// <summary>Record a processed item and its latency.</summary>
@@ -62,6 +63,13 @@ public class SmartPipeMetrics
 
     /// <summary>Record a retry attempt.</summary>
     public void RecordRetry() { Interlocked.Increment(ref Retries); RetriesCounter.Add(1); }
+
+    /// <summary>Update the ObjectPool hit rate metric.</summary>
+    /// <param name="hitRate">Pool hit rate between 0.0 and 1.0.</param>
+    public void RecordPoolHitRate(double hitRate)
+    {
+        PoolHitRate = hitRate;
+    }
 
     /// <summary>Export all metrics as a dictionary.</summary>
     public Dictionary<string, object> Export() => new()

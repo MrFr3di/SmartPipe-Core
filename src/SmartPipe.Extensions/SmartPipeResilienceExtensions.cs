@@ -11,7 +11,9 @@ namespace SmartPipe.Extensions;
 public static class SmartPipeResilienceExtensions
 {
     /// <summary>
-    /// Adds a <see cref="SmartPipeChannel{TInput, TOutput}"/> with integrated Polly <see cref="ResiliencePipeline"/>.
+    /// Adds a <see cref="SmartPipeChannel{TInput, TOutput}"/> with optional Polly <see cref="ResiliencePipeline"/>
+    /// registered in DI for use by <see cref="PollyResilienceTransform{TOutput}"/>.
+    /// The Polly transform must be added to the pipeline manually via <c>pipeline.AddTransformer(pollyTransform)</c>.
     /// </summary>
     /// <typeparam name="TInput">Pipeline input type.</typeparam>
     /// <typeparam name="TOutput">Pipeline output type.</typeparam>
@@ -24,23 +26,17 @@ public static class SmartPipeResilienceExtensions
         Action<SmartPipeChannel<TInput, TOutput>> configurePipeline,
         Action<ResiliencePipelineBuilder>? configureResilience = null)
     {
-        var resiliencePipeline = configureResilience != null
-            ? new ResiliencePipelineBuilder().With(configureResilience).Build()
-            : ResiliencePipeline.Empty;
+        if (configureResilience != null)
+        {
+            var builder = new ResiliencePipelineBuilder();
+            configureResilience(builder);
+            services.AddSingleton(builder.Build());
+        }
 
-        services.AddSingleton(resiliencePipeline);
         services.AddSingleton(sp =>
         {
             var pipeline = new SmartPipeChannel<TInput, TOutput>();
             configurePipeline(pipeline);
-
-            // Add Polly resilience as a transform if configured
-            if (configureResilience != null)
-            {
-                var pollyTransform = new PollyResilienceTransform<TOutput>(resiliencePipeline);
-                // Register for later use — consumer adds transforms manually
-            }
-
             return pipeline;
         });
 
@@ -65,19 +61,5 @@ public static class SmartPipeResilienceExtensions
         services.AddSmartPipe(configurePipeline, configureResilience);
         services.AddHostedService<SmartPipeHostedService<TInput, TOutput>>();
         return services;
-    }
-
-    /// <summary>
-    /// Fluent helper to apply a configuration action to a <see cref="ResiliencePipelineBuilder"/>.
-    /// </summary>
-    /// <param name="builder">The resilience pipeline builder.</param>
-    /// <param name="configure">The configuration action to apply.</param>
-    /// <returns>The builder for fluent chaining.</returns>
-    private static ResiliencePipelineBuilder With(
-        this ResiliencePipelineBuilder builder,
-        Action<ResiliencePipelineBuilder> configure)
-    {
-        configure(builder);
-        return builder;
     }
 }

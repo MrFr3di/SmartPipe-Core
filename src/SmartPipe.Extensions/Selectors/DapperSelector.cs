@@ -49,16 +49,26 @@ public class DapperSelector<T> : ISource<T>, IDisposable
     /// <inheritdoc />
     public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
-        _reader = await _connection.ExecuteReaderAsync(_sql, _parameters, commandTimeout: _commandTimeout);
+        var reader = await _connection.ExecuteReaderAsync(_sql, _parameters, commandTimeout: _commandTimeout);
+        _reader = reader; // Store for DisposeAsync
 
-        while (!_reader.IsClosed && _reader.Read())
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            var row = MapRow(_reader);
-            yield return new ProcessingContext<T>(row);
-        }
+            while (!reader.IsClosed && reader.Read())
+            {
+                ct.ThrowIfCancellationRequested();
+                var row = MapRow(reader);
+                yield return new ProcessingContext<T>(row);
+            }
 
-        _logger?.LogInformation("Dapper source completed. SQL: {Sql}", _sql);
+            _logger?.LogInformation("Dapper source completed. SQL: {Sql}", _sql);
+        }
+        finally
+        {
+            // Ensure reader is disposed when enumeration ends (early break, exception, or completion)
+            reader?.Dispose();
+            _reader = null;
+        }
     }
 
     private static T MapRow(IDataRecord reader)

@@ -13,6 +13,10 @@ public class ExponentialHistogram
     private readonly double _base;
     private long _totalCount;
 
+    // Cached percentile values, invalidated on Record()
+    private double _cachedP50 = double.NaN, _cachedP95 = double.NaN, _cachedP99 = double.NaN;
+    private long _cachedTotalCount = -1;
+
     /// <summary>Create histogram with given range and bucket count.</summary>
     /// <param name="minValue">Minimum expected value (default: 0.1).</param>
     /// <param name="maxValue">Maximum expected value (default: 100,000).</param>
@@ -35,6 +39,7 @@ public class ExponentialHistogram
         AtomicHelper.CompareExchangeLoop(ref _buckets[b], original => original + 1);
         
         Interlocked.Increment(ref _totalCount);
+        _cachedTotalCount = -1; // Invalidate cache
     }
 
     /// <summary>Get approximate p-percentile (0.0-1.0). Returns 0 if no data.</summary>
@@ -48,18 +53,40 @@ public class ExponentialHistogram
         long target = (long)(total * p), cumulative = 0;
         for (int i = 0; i < _buckets.Length; i++)
         {
-            cumulative += (long)Interlocked.CompareExchange(ref _buckets[i], 0, 0);
+            // Use Volatile.Read for non-destructive atomic read — avoids cache line invalidation
+            // caused by CompareExchange on other cores. Percentile estimation does not require
+            // exact consistency, so a non-destructive read is sufficient.
+            cumulative += (long)Volatile.Read(ref _buckets[i]);
             if (cumulative >= target) return Math.Pow(_base, i + 0.5);
         }
         return Math.Pow(_base, _buckets.Length - 1);
     }
 
     /// <summary>Median (p50). Returns 0 if no data.</summary>
-    public double P50 => GetPercentile(0.50);
+    public double P50 => GetOrCompute(0.50, ref _cachedP50);
 
     /// <summary>95th percentile.</summary>
-    public double P95 => GetPercentile(0.95);
+    public double P95 => GetOrCompute(0.95, ref _cachedP95);
 
     /// <summary>99th percentile.</summary>
-    public double P99 => GetPercentile(0.99);
+    public double P99 => GetOrCompute(0.99, ref _cachedP99);
+
+    private double GetOrCompute(double p, ref double cached)
+    {
+        long currentTotal = Interlocked.Read(ref _totalCount);
+        if (currentTotal != _cachedTotalCount || double.IsNaN(cached))
+        {
+            _cachedP50 = GetPercentile(0.50);
+            _cachedP95 = GetPercentile(0.95);
+            _cachedP99 = GetPercentile(0.99);
+            _cachedTotalCount = currentTotal;
+        }
+        return p switch
+        {
+            0.50 => _cachedP50,
+            0.95 => _cachedP95,
+            0.99 => _cachedP99,
+            _ => GetPercentile(p)
+        };
+    }
 }

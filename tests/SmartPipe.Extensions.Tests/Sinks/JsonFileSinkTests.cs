@@ -52,11 +52,16 @@ public class JsonFileSinkTests
     {
         var sink = new JsonFileSink<object>("/nonexistent/path/file.json");
         var result = ProcessingResult<object>.Success(new(), 1);
-
-        // DisposeAsync tries to write to path
-        // Use Record.ExceptionAsync to allow any IOException-derived type (DirectoryNotFoundException on Windows, etc.)
+        
+        // WriteAsync only buffers (flushInterval=1000 default), no I/O yet
+        await sink.WriteAsync(result);
+        
+        // DisposeAsync should fail when trying to flush to invalid path
         var ex = await Record.ExceptionAsync(() => sink.DisposeAsync());
-        Assert.IsAssignableFrom<IOException>(ex);
+        
+        Assert.NotNull(ex);
+        Assert.True(ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException,
+            $"Expected IOException-derived exception, got {ex?.GetType().Name ?? "null"}");
     }
 
     private class TestItem

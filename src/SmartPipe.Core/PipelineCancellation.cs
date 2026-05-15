@@ -19,11 +19,14 @@ public static class PipelineCancellation
     /// <param name="task">Async operation to wrap.</param>
     /// <param name="timeout">Timeout duration.</param>
     /// <param name="traceId">Trace ID for error reporting.</param>
+    /// <param name="ct">External cancellation token to abort the operation.</param>
     /// <returns>Processing result, or Failure if timeout occurred.</returns>
     public static async ValueTask<ProcessingResult<T>> WithTimeoutAsync<T>(
-        this ValueTask<ProcessingResult<T>> task, TimeSpan timeout, ulong traceId)
+        this ValueTask<ProcessingResult<T>> task, TimeSpan timeout, ulong traceId,
+        CancellationToken ct = default)
     {
-        using var cts = new CancellationTokenSource(timeout);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(timeout);
         try
         {
             return await task.AsTask().WaitAsync(cts.Token);

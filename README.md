@@ -1,6 +1,6 @@
 # SmartPipe.Core
 
-**Universal streaming pipeline engine for .NET 10 with zero dependencies.**
+**Universal streaming pipeline engine for .NET 10**
 
 Built on `System.Threading.Channels`, SmartPipe.Core provides a production-ready pipeline engine for ETL, real-time stream processing, API aggregation, and AI agent integration — all with 0 allocations in hot path.
 
@@ -8,7 +8,7 @@ Built on `System.Threading.Channels`, SmartPipe.Core provides a production-ready
 [![NuGet Core](https://img.shields.io/nuget/v/SmartPipe.Core.svg)](https://www.nuget.org/packages/SmartPipe.Core)
 [![NuGet Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.svg)](https://www.nuget.org/packages/SmartPipe.Extensions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Coverage](https://img.shields.io/badge/coverage-95.8%25-brightgreen.svg)](https://github.com/MrFr3di/SmartPipe-Core)
+[![Coverage](https://img.shields.io/badge/coverage-89.2%25-brightgreen.svg)](https://github.com/MrFr3di/SmartPipe-Core)
 
 📖 **[Complete Feature Reference →](docs/features.md)**
 
@@ -42,7 +42,7 @@ await pipeline.To(new LoggerSink<MyEntity>(logger));
 ## Getting Started | Installation
 
 ```bash
-# Core engine (zero dependencies)
+# Core engine 
 dotnet add package SmartPipe.Core
 
 # Extensions (Http, EF Core, Dapper, JSON, CSV, Mapster, Polly)
@@ -258,7 +258,7 @@ SmartPipe.Extensions/
 │   └── SmartPipeReadinessCheck
 └── Streaming/          ← Stream utilities
     └── ChannelMerge    ← Merge two channels
-One package. All integrations. Zero boilerplate.
+One package. All integrations. 
 ```
 
 ## Requirements
@@ -266,7 +266,26 @@ One package. All integrations. Zero boilerplate.
 - .NET 10.0+
 - SmartPipe.Core: **0 dependencies**
 - SmartPipe.Extensions: Polly, EF Core, Dapper, Mapster, CsvHelper
-- **598 tests, 95.8% code coverage**
+- **598 tests, 89.2% code coverage**
+
+## What's New in v1.0.6
+
+
+- **Thread safety** — CuckooFilter, DeduplicationFilter, ReservoirSampler now fully thread-safe
+- **ObjectPool max capacity** — prevents unbounded pool growth under sustained load
+- **DeduplicationFilter TTL** — automatic entry expiration for long-running pipelines
+- **JsonFileSink periodic flushing** — NDJSON batch writes, prevents OOM on large datasets
+- **RetryQueue polling optimization** — single CancellationTokenSource per call, reduced allocations
+- **DrainAsync + WithTimeoutAsync** — CancellationToken support
+- **PipelineDashboard** — readonly record struct, `PipelineDashboard.Empty`
+- **TransformWithTimeoutAsync** — catch-all exception handling prevents consumer crashes
+- **SecretScanner** — disabled by default, explicit opt-in via `EnableFeature("SecretScanner")`
+- **ExponentialHistogram** — Volatile.Read for percentile reads, P50/P95/P99 caching
+- **AdaptiveMetrics** — Stopwatch.GetTimestamp() instead of TickCount64
+- **DbSink** — async ExecuteAsync, no thread pool blocking
+- **DapperSelector** — try/finally reader disposal
+- **ChannelMerge** — optional BoundedChannelOptions
+
 
 ## What's New in v1.0.5
 
@@ -329,12 +348,12 @@ One package. All integrations. Zero boilerplate.
 
 ## Documentation
 
-- [Complete Feature Reference](docs/features.md) — all 24 components in detail
-- [Architecture Overview](docs/architecture.md) — pipeline flow and design
-- [API Reference](docs/api-reference.md) — interfaces and configuration
-- [Contributing Guide](CONTRIBUTING.md)
-- [Security Policy](SECURITY.md)
-- [Changelog](CHANGELOG.md)
+- [Complete Feature Reference](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/features.md) — all 24 components in detail
+- [Architecture Overview](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/architecture.md) — pipeline flow and design
+- [API Reference](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/api-reference.md) — interfaces and configuration
+- [Contributing Guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CONTRIBUTING.md)
+- [Security Policy](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SECURITY.md)
+- [Changelog](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CHANGELOG.md)
 
 ## Acknowledgements
 

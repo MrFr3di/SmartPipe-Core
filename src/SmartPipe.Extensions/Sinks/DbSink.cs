@@ -5,7 +5,8 @@ using SmartPipe.Core;
 
 namespace SmartPipe.Extensions.Sinks;
 
-/// <summary>Writes items to database using Dapper. Supports auto-generated SQL from [Table]/[Column] attributes.</summary>
+/// <summary>Writes items to database using Dapper. Supports auto-generated SQL from [Table]/[Column] attributes.
+/// Uses async I/O for non-blocking database writes.</summary>
 /// <typeparam name="T">Entity type.</typeparam>
 public class DbSink<T> : ISink<T>
 {
@@ -29,11 +30,10 @@ public class DbSink<T> : ISink<T>
     }
 
     /// <inheritdoc />
-    public Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
+    public async Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
     {
         if (result.IsSuccess && result.Value != null)
-            _connection.Execute(_sql, result.Value);
-        return Task.CompletedTask;
+            await _connection.ExecuteAsync(_sql, result.Value);
     }
 
     /// <inheritdoc />

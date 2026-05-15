@@ -10,7 +10,7 @@ public class PipelineDashboardTests
     public void PipelineDashboard_DefaultValues_AreCorrect()
     {
         // Arrange & Act
-        var dashboard = new PipelineDashboard();
+        var dashboard = PipelineDashboard.Empty;
 
         // Assert
         Assert.Equal(PipelineState.NotStarted, dashboard.State);
@@ -18,7 +18,7 @@ public class PipelineDashboardTests
         Assert.Null(dashboard.Total);
         Assert.Equal(TimeSpan.Zero, dashboard.Elapsed);
         Assert.Equal(0.0, dashboard.P99LatencyMs);
-        Assert.Equal("N/A", dashboard.CBState);
+        Assert.Equal("N/A", dashboard.CbState);
         Assert.NotNull(dashboard.Metrics);
         Assert.Empty(dashboard.Metrics);
     }
@@ -26,18 +26,18 @@ public class PipelineDashboardTests
     [Fact]
     public void PipelineDashboard_Properties_CanBeSet()
     {
-        // Arrange
-        var dashboard = new PipelineDashboard();
+        // Arrange: create a fully populated dashboard via constructor
         var metrics = new Dictionary<string, object> { ["key"] = "value" };
 
         // Act
-        dashboard.State = PipelineState.Running;
-        dashboard.Current = 100;
-        dashboard.Total = 500;
-        dashboard.Elapsed = TimeSpan.FromSeconds(30);
-        dashboard.P99LatencyMs = 45.5;
-        dashboard.CBState = "Closed";
-        dashboard.Metrics = metrics;
+        var dashboard = new PipelineDashboard(
+            PipelineState.Running,
+            100,
+            500,
+            TimeSpan.FromSeconds(30),
+            45.5,
+            "Closed",
+            metrics);
 
         // Assert
         Assert.Equal(PipelineState.Running, dashboard.State);
@@ -45,7 +45,7 @@ public class PipelineDashboardTests
         Assert.Equal(500, dashboard.Total);
         Assert.Equal(TimeSpan.FromSeconds(30), dashboard.Elapsed);
         Assert.Equal(45.5, dashboard.P99LatencyMs);
-        Assert.Equal("Closed", dashboard.CBState);
+        Assert.Equal("Closed", dashboard.CbState);
         Assert.Same(metrics, dashboard.Metrics);
     }
 
@@ -59,8 +59,7 @@ public class PipelineDashboardTests
         // Act
         var dashboard = channel.CreateDashboard();
 
-        // Assert
-        Assert.NotNull(dashboard);
+        // Assert — dashboard is a value type, cannot be null
         Assert.Equal(PipelineState.NotStarted, dashboard.State);
         Assert.Equal(0, dashboard.Current);
         Assert.Null(dashboard.Total);
@@ -78,7 +77,7 @@ public class PipelineDashboardTests
         var dashboard = channel.CreateDashboard();
 
         // Assert
-        Assert.Equal("N/A", dashboard.CBState);
+        Assert.Equal("N/A", dashboard.CbState);
     }
 
     [Fact]
@@ -93,7 +92,7 @@ public class PipelineDashboardTests
         var dashboard = channel.CreateDashboard();
 
         // Assert
-        Assert.NotEqual("N/A", dashboard.CBState);
-        Assert.False(string.IsNullOrEmpty(dashboard.CBState));
+        Assert.NotEqual("N/A", dashboard.CbState);
+        Assert.False(string.IsNullOrEmpty(dashboard.CbState));
     }
 }

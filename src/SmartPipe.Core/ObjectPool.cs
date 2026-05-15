@@ -5,31 +5,38 @@ using System.Threading;
 namespace SmartPipe.Core;
 
 /// <summary>Lock-free object pool with ABA-safe Rent/Return.
-/// Uses version stamps to prevent ABA race conditions.</summary>
+/// Uses version stamps to prevent ABA race conditions.
+/// Enforces a maximum total capacity to prevent unbounded growth under sustained load.</summary>
 /// <typeparam name="T">Type of pooled objects.</typeparam>
 public class ObjectPool<T> where T : class
 {
     private readonly T?[] _items;
     private readonly int[] _versions;
     private readonly Func<T> _factory;
+    private readonly int _maxCapacity;
     private int _index;
+    private int _totalCreated;
 
     /// <summary>Creates a new object pool with pre-allocated objects.</summary>
     /// <param name="factory">Factory function to create new objects.</param>
-    /// <param name="capacity">Maximum pool capacity.</param>
+    /// <param name="capacity">Initial pool capacity (number of pre-allocated objects).</param>
+    /// <param name="maxCapacity">Maximum total objects this pool can create. If exceeded, returned objects are discarded.</param>
     /// <exception cref="ArgumentNullException">Thrown when factory is null.</exception>
-    public ObjectPool(Func<T> factory, int capacity = 256)
+    public ObjectPool(Func<T> factory, int capacity = 256, int maxCapacity = 1024)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _items = new T[capacity];
         _versions = new int[capacity];
+        _maxCapacity = maxCapacity;
         for (int i = 0; i < capacity; i++) _items[i] = _factory();
         _index = capacity;
+        _totalCreated = capacity;
     }
 
     /// <summary>Rents an object from the pool or creates a new one if empty.</summary>
     /// <returns>A pooled or new object.</returns>
-    /// <remarks>Uses version stamps to prevent ABA race conditions.</remarks>
+    /// <remarks>Uses version stamps to prevent ABA race conditions.
+    /// If pool is exhausted and max capacity reached, creates a new object without tracking it.</remarks>
     public T Rent()
     {
         const int maxRetries = 100;
@@ -40,7 +47,14 @@ public class ObjectPool<T> where T : class
             if (i < 0 || i >= _items.Length)
             {
                 Interlocked.Increment(ref _index);
-                return _factory(); // Pool exhausted
+                // Pool exhausted — create new if under max capacity
+                if (Volatile.Read(ref _totalCreated) < _maxCapacity)
+                {
+                    Interlocked.Increment(ref _totalCreated);
+                    return _factory();
+                }
+                // Max capacity reached — create without tracking
+                return _factory();
             }
 
             // Read version before attempting exchange
@@ -57,7 +71,6 @@ public class ObjectPool<T> where T : class
                 // ABA detected: slot was recycled while we were exchanging.
                 // Put object back and retry with a different slot.
                 Interlocked.Exchange(ref _items[i], obj);
-                // Don't increment version here - the object was never successfully rented
             }
 
             // Slot was empty or ABA detected - release our claim on this slot
@@ -70,7 +83,8 @@ public class ObjectPool<T> where T : class
     /// <summary>Returns an object to the pool for reuse.</summary>
     /// <param name="item">Object to return.</param>
     /// <exception cref="ArgumentNullException">Thrown when item is null.</exception>
-    /// <remarks>Increments version stamp to prevent ABA issues.</remarks>
+    /// <remarks>Increments version stamp to prevent ABA issues.
+    /// If pool is full, the item is discarded and left for GC.</remarks>
     public void Return(T item)
     {
         if (item == null) throw new ArgumentNullException(nameof(item));
@@ -85,6 +99,7 @@ public class ObjectPool<T> where T : class
         else
         {
             Interlocked.Decrement(ref _index);
+            // Pool is full — item is discarded, GC will collect it
         }
     }
 }

@@ -18,10 +18,10 @@ public class ProcessingContext<T>
     public T Payload { get; set; } = default!;
 
     /// <summary>Metadata dictionary for additional context.</summary>
-    public Dictionary<string, string> Metadata { get; set; } = new();
+    public Dictionary<string, string> Metadata { get; set; } = [];
 
-    /// <summary>Timestamp (TickCount64) when the element entered the pipeline.</summary>
-    public long EnterPipelineTicks { get; set; }
+    /// <summary>Timestamp (TickCount64) when the element entered the pipeline. Internal use only.</summary>
+    internal long EnterPipelineTicks { get; set; }
 
     // Data Lineage keys for Metadata dictionary
     /// <summary>Metadata key for the source of the data item.</summary>
@@ -62,6 +62,7 @@ public class ProcessingContext<T>
         TraceId = (ulong)Interlocked.Increment(ref _counter);
         Payload = default!;
         Metadata.Clear();
+        Metadata.TrimExcess(); // Release internal dictionary storage
         EnterPipelineTicks = Environment.TickCount64;
     }
 }

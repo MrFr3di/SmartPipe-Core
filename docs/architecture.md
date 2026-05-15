@@ -20,6 +20,12 @@ The pipeline employs P-controllers in two key areas:
    - Delay clamped between 0ms and 200ms
    - Target fill ratio adapts based on throughput (high throughput → lower target, low throughput → higher target)
 
+### ExponentialHistogram Percentile Caching
+
+The `ExponentialHistogram` now caches `P50`, `P95`, and `P99` values. Percentiles are recomputed only when `_totalCount` changes, avoiding redundant bucket scans.
+
+- **Read path**: `GetPercentile()` uses `Volatile.Read` instead of `Interlocked.CompareExchange`, preventing cache line invalidations under concurrent reads.
+
 ### CircuitBreaker States
 
 The CircuitBreaker implements four states:
@@ -28,72 +34,55 @@ The CircuitBreaker implements four states:
 - **Open**: Circuit is tripped, requests are blocked. Transitions to HalfOpen after `breakDuration` expires.
 - **HalfOpen**: Testing if the circuit can be closed. Allows up to `maxHalfOpenRequests` concurrent requests. On sufficient success, transitions to Closed; on failure, returns to Open.
 - **Isolated**: Manually isolated state (via `Isolate()` method), blocks all requests indefinitely until manually reset.
+- **Performance:** `GetMetrics()` now creates the metrics dictionary with exact capacity (4), reducing internal resizing allocations
 
 The CircuitBreaker uses lock-free atomic operations for state transitions and combines EWMA (Exponentially Weighted Moving Average) for fast reaction with a sliding window for accurate threshold decisions.
 
-## New v1.0.5 Components
+## Core Components
 
-### IClock Interface and TimeProviderClock Implementation
+### AdaptiveMetrics — Stopwatch.GetTimestamp
 
-**`IClock`** (`src/SmartPipe.Core/IClock.cs`):
-```csharp
-public interface IClock
-{
-    DateTime UtcNow { get; }
-}
-```
-Provides testable access to current UTC time, enabling deterministic unit tests by mocking time.
+Uses `Stopwatch.GetTimestamp()` for throughput calculation instead of `Environment.TickCount64`, which wraps around after ~49.7 days. Includes guard against abnormally large elapsed time (>10 seconds) to prevent errors after system resume.
 
-**`TimeProviderClock`** (`src/SmartPipe.Core/IClock.cs`):
-```csharp
-public sealed class TimeProviderClock : IClock
-```
-Production implementation using `System.TimeProvider` (available in .NET 8+). Defaults to `TimeProvider.System`.
+### TransformWithTimeoutAsync — Exception Handling
 
-Used throughout the codebase:
-- `CircuitBreaker`: For tracking open/half-open timing and window cleanup
-- `RetryQueue`: For calculating retry-at timestamps and jitter
-- `SmartPipeChannel`: For pipeline timing and metrics
+Catch-all `catch (Exception)` block handles unexpected exception types (`ArgumentException`, `JsonException`) that previously crashed the consumer task.
 
-### AtomicHelper (Internal Utility)
+### ObjectPool and RetryQueue Coordination
 
-**`AtomicHelper`** (`src/SmartPipe.Core/AtomicHelper.cs`):
-```csharp
-internal static class AtomicHelper
-```
-Internal utility providing lock-free atomic operations for `double` values using compare-exchange loops.
+`HandleTransformResultAsync` returns context to the pool only for successful and filtered items. Retried items keep their context until retry completes, preventing a race where a retried item's context could be rented by another item.
 
-Key method:
-- `CompareExchangeLoop(ref double location, Func<double, double> update)`: Atomically updates a double by repeatedly reading current value, computing new value, and CAS-ing until successful.
+### DrainAsync
 
-Used by `CircuitBreaker` for thread-safe EWMA failure rate updates without locks.
+Accepts a `CancellationToken`. Uses `TryComplete()` instead of `Complete()` on channels to prevent `ChannelClosedException` when called concurrently.
 
-### DefaultRetryPolicy in SmartPipeChannelOptions
+### SmartPipeHostedService
 
-**`SmartPipeChannelOptions.DefaultRetryPolicy`** (`src/SmartPipe.Core/SmartPipeChannelOptions.cs`):
-```csharp
-public RetryPolicy? DefaultRetryPolicy { get; set; }
-```
-Optional retry policy for transient failures. If `null`, pipeline falls back to 3 retries with 1-second delay (exponential backoff).
+`StopAsync` calls `pipeline.DisposeAsync()`. `Faulted` state exceptions are logged rather than rethrown.
 
-Applied in:
-- `SmartPipeChannel.HandleRetryAsync()`: Uses `_options.DefaultRetryPolicy ?? new RetryPolicy(3, TimeSpan.FromSeconds(1))`
-- `SmartPipeChannel.HandleCircuitBreakerAsync()`: Same fallback when circuit is open and retry queue is enabled
+### RetryQueue Polling
 
-### RetryBudget per Item in RetryQueue
+`TryGetNextAsync` always waits for items (removed race between `Count == 0` check and `WaitToReadAsync`). Single `CancellationTokenSource` per call. `TryWrite` for re-queueing.
 
-**`RetryItem<T>.RetryBudget`** (`src/SmartPipe.Core/RetryQueue.cs`):
-```csharp
-public readonly record struct RetryItem<T>(
-    ...,
-    int RetryBudget = -1  // -1 = use policy default
-)
-```
+### PipelineDashboard
 
-Per-item retry budget allows individual items to have different retry limits than the global policy:
-- `EffectiveRetryBudget` property returns `RetryBudget` if set (≥0), otherwise falls back to `Policy.MaxRetries`
-- Checked in `EnqueueAsync()`: if `retryCount >= effectiveBudget`, item is routed to dead letter sink
-- Enables fine-grained control: critical items can have higher budgets, non-critical items lower
+Readonly record struct. `CBState` → `CbState`. Static `PipelineDashboard.Empty` for defaults. Constructor-based creation.
+
+### DbSink
+
+`ExecuteAsync()` instead of `Execute()` to avoid blocking the thread pool.
+
+### DapperSelector
+
+`ReadAsync` wraps reader in `try/finally` for immediate disposal on early exit or exception.
+
+### SmartPipeResilienceExtensions
+
+Removed dead code that created `PollyResilienceTransform` without adding it to the pipeline.
+
+### ChannelMerge
+
+Optional `BoundedChannelOptions` parameter for bounded output channels.
 
 ## Resilience Order
 
@@ -107,3 +96,4 @@ This order ensures:
 - Open circuits fail immediately without attempting retries
 - Transient failures are retried before timing out the entire request
 - Timeouts bound total latency per transform attempt
+- RetryQueue polling uses a single `CancellationTokenSource` per `TryGetNextAsync` call. Re-queueing uses `TryWrite` to avoid blocking.

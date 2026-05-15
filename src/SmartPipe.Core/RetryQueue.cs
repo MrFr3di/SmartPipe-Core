@@ -19,6 +19,9 @@ public class RetryQueue<T>
     private readonly ISink<object>? _deadLetterSink;
     private readonly IClock _clock;
 
+    /// <summary>Default timeout for polling when no items are available. Configurable via constructor.</summary>
+    private readonly int _pollTimeoutMs;
+
     /// <summary>Gets the number of items waiting for retry.</summary>
     public int Count => _channel.Reader.Count;
 
@@ -27,7 +30,8 @@ public class RetryQueue<T>
     /// <param name="logger">Optional logger.</param>
     /// <param name="deadLetterSink">Sink for exhausted retries.</param>
     /// <param name="clock">Optional clock for testability (defaults to TimeProviderClock()).</param>
-    public RetryQueue(int capacity = 10000, ILogger<RetryQueue<T>>? logger = null, ISink<object>? deadLetterSink = null, IClock? clock = null)
+    /// <param name="pollTimeoutMs">Timeout in milliseconds for polling when no items are ready. Default 100ms.</param>
+    public RetryQueue(int capacity = 10000, ILogger<RetryQueue<T>>? logger = null, ISink<object>? deadLetterSink = null, IClock? clock = null, int pollTimeoutMs = 100)
     {
         _channel = Channel.CreateBounded<RetryItem<T>>(new BoundedChannelOptions(capacity)
         {
@@ -36,6 +40,7 @@ public class RetryQueue<T>
         _logger = logger;
         _deadLetterSink = deadLetterSink;
         _clock = clock ?? new TimeProviderClock();
+        _pollTimeoutMs = pollTimeoutMs;
     }
 
     /// <summary>Enqueues an item for retry with jittered delay.</summary>
@@ -67,40 +72,36 @@ public class RetryQueue<T>
         var jitteredDelay = ApplyJitter(baseDelay);
         var retryAt = _clock.UtcNow + jitteredDelay;
         var item = new RetryItem<T>(ctx, policy, retryCount + 1, error, retryAt, retryBudget ?? -1);
-        await _channel.Writer.WriteAsync(item, ct);
+        _channel.Writer.TryWrite(item);
         return true;
     }
 
     /// <summary>Tries to get the next retry item that is ready.</summary>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Retry item if ready; null if none available or not yet time.</returns>
-    /// <remarks>Items not yet ready are re-queued.</remarks>
+    /// <remarks>
+    /// Uses WaitToReadAsync with a single CancellationTokenSource per call, with configurable timeout.
+    /// Items not yet ready are re-queued.
+    /// </remarks>
     public async ValueTask<RetryItem<T>?> TryGetNextAsync(CancellationToken ct = default)
     {
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var cts = new CancellationTokenSource(_pollTimeoutMs);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, cts.Token);
+        
         try
         {
-            cts.CancelAfter(50);
-
-            if (_channel.Reader.Count == 0)
-            {
-                await _channel.Reader.WaitToReadAsync(cts.Token);
-                return null;
-            }
+            // Always wait — removes the race condition between Count check and WaitToReadAsync
+            await _channel.Reader.WaitToReadAsync(linked.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        catch (OperationCanceledException) when (cts.IsCancellationRequested || ct.IsCancellationRequested)
         {
             return null;
-        }
-        finally
-        {
-            cts.Dispose();
         }
 
         if (_channel.Reader.TryRead(out var item))
         {
             if (item.RetryAt <= _clock.UtcNow) return item;
-            await _channel.Writer.WriteAsync(item, ct);
+            _channel.Writer.TryWrite(item); // Not ready yet — re-queue
         }
         return null;
     }

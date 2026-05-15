@@ -29,7 +29,7 @@ internal class PassthroughTransformer<T> : ITransformer<T, T>
 
 internal class CollectionSink<T> : ISink<T>
 {
-    private readonly List<T> _results = new();
+    private readonly List<T> _results = [];
     public IReadOnlyList<T> Results => _results;
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
     public Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)

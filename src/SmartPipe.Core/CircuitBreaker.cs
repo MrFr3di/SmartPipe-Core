@@ -202,13 +202,19 @@ public class CircuitBreaker
 
     /// <summary>Export metrics for dashboard integration.</summary>
     /// <returns>Dictionary of circuit breaker metrics.</returns>
-    public Dictionary<string, object> GetMetrics() => new()
+    private static readonly string[] _metricKeys = ["cb_state", "cb_failure_ratio", "cb_ewma_failure_rate", "cb_half_open_attempts"];
+
+    /// <summary>Export metrics for dashboard integration. Returns a dictionary with circuit breaker state, failure ratio, EWMA rate, and half-open attempts.</summary>
+    /// <returns>Dictionary of circuit breaker metrics keyed by metric name.</returns>
+    public Dictionary<string, object> GetMetrics()
     {
-        ["cb_state"] = State.ToString(),
-        ["cb_failure_ratio"] = GetCurrentFailureRatio(),
-        ["cb_ewma_failure_rate"] = _ewmaFailureRate,
-        ["cb_half_open_attempts"] = _halfOpenCount,
-    };
+        var dict = new Dictionary<string, object>(4); // Exact capacity
+        dict[_metricKeys[0]] = State.ToString();
+        dict[_metricKeys[1]] = GetCurrentFailureRatio();
+        dict[_metricKeys[2]] = _ewmaFailureRate;
+        dict[_metricKeys[3]] = _halfOpenCount;
+        return dict;
+    }
 
     private void CleanupWindow()
     {
