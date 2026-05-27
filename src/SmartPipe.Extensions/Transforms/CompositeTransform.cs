@@ -17,22 +17,28 @@ public class CompositeTransform<T> : ITransformer<T, T>
     /// </summary>
     /// <param name="transforms">The transforms to apply sequentially.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="transforms"/> is null.</exception>
-    public CompositeTransform(params ITransformer<T, T>[] transforms) => _transforms = transforms ?? throw new ArgumentNullException(nameof(transforms));
+    public CompositeTransform(params ITransformer<T, T>[] transforms) =>
+        _transforms = transforms ?? throw new ArgumentNullException(nameof(transforms));
 
     /// <inheritdoc/>
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        foreach (var t in _transforms) await t.InitializeAsync(ct);
+        foreach (var t in _transforms)
+            await t.InitializeAsync(ct);
     }
 
     /// <inheritdoc/>
-    public async ValueTask<ProcessingResult<T>> TransformAsync(ProcessingContext<T> ctx, CancellationToken ct = default)
+    public async ValueTask<ProcessingResult<T>> TransformAsync(
+        ProcessingContext<T> ctx,
+        CancellationToken ct = default
+    )
     {
         var current = ctx;
         foreach (var t in _transforms)
         {
             var result = await t.TransformAsync(current, ct);
-            if (!result.IsSuccess) return result;
+            if (!result.IsSuccess)
+                return result;
             current = new ProcessingContext<T>(result.Value!) { Metadata = current.Metadata };
         }
         return ProcessingResult<T>.Success(current.Payload, ctx.TraceId);
@@ -41,6 +47,7 @@ public class CompositeTransform<T> : ITransformer<T, T>
     /// <inheritdoc/>
     public async Task DisposeAsync()
     {
-        foreach (var t in _transforms) await t.DisposeAsync();
+        foreach (var t in _transforms)
+            await t.DisposeAsync();
     }
 }

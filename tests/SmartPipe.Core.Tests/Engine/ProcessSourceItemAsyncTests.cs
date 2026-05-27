@@ -1,10 +1,10 @@
 #nullable enable
 
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Channels;
-using System.Collections.Generic;
-using System.Diagnostics;
 using NSubstitute;
 using SmartPipe.Core;
 using Xunit;
@@ -22,21 +22,22 @@ public class ProcessSourceItemAsyncTests
 
     public ProcessSourceItemAsyncTests()
     {
-        _options = new SmartPipeChannelOptions
-        {
-            BoundedCapacity = 10,
-            MaxDegreeOfParallelism = 1
-        };
+        _options = new SmartPipeChannelOptions { BoundedCapacity = 10, MaxDegreeOfParallelism = 1 };
         _channel = new SmartPipeChannel<string, string>(_options);
         _cts = new CancellationTokenSource();
         // Don't initialize pipeline here - causes state leakage between tests
         // Each test that needs channels will initialize them individually
     }
 
-    private async ValueTask InvokeProcessSourceItemAsync(ProcessingContext<string> ctx, CancellationToken ct)
+    private async ValueTask InvokeProcessSourceItemAsync(
+        ProcessingContext<string> ctx,
+        CancellationToken ct
+    )
     {
-        var method = typeof(SmartPipeChannel<string, string>)
-            .GetMethod("ProcessSourceItemAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+        var method = typeof(SmartPipeChannel<string, string>).GetMethod(
+            "ProcessSourceItemAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(method);
         var task = (ValueTask)method.Invoke(_channel, new object[] { ctx, ct })!;
         await task;
@@ -44,16 +45,20 @@ public class ProcessSourceItemAsyncTests
 
     private Channel<ProcessingContext<string>>? GetInputChannel()
     {
-        var field = typeof(SmartPipeChannel<string, string>)
-            .GetField("_inputChannel", BindingFlags.NonPublic | BindingFlags.Instance);
+        var field = typeof(SmartPipeChannel<string, string>).GetField(
+            "_inputChannel",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(field);
         return (Channel<ProcessingContext<string>>?)field.GetValue(_channel);
     }
 
     private void SetPaused(bool value)
     {
-        var field = typeof(SmartPipeChannel<string, string>)
-            .GetField("_isPaused", BindingFlags.NonPublic | BindingFlags.Instance);
+        var field = typeof(SmartPipeChannel<string, string>).GetField(
+            "_isPaused",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(field);
         field.SetValue(_channel, value);
     }
@@ -61,23 +66,33 @@ public class ProcessSourceItemAsyncTests
     private void InitializeChannels()
     {
         // Directly set the input and output channels via reflection
-        var inputChannelField = typeof(SmartPipeChannel<string, string>)
-            .GetField("_inputChannel", BindingFlags.NonPublic | BindingFlags.Instance);
+        var inputChannelField = typeof(SmartPipeChannel<string, string>).GetField(
+            "_inputChannel",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(inputChannelField);
-        inputChannelField.SetValue(_channel, 
-            Channel.CreateBounded<ProcessingContext<string>>(new BoundedChannelOptions(10)));
-        
-        var outputChannelField = typeof(SmartPipeChannel<string, string>)
-            .GetField("_outputChannel", BindingFlags.NonPublic | BindingFlags.Instance);
+        inputChannelField.SetValue(
+            _channel,
+            Channel.CreateBounded<ProcessingContext<string>>(new BoundedChannelOptions(10))
+        );
+
+        var outputChannelField = typeof(SmartPipeChannel<string, string>).GetField(
+            "_outputChannel",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(outputChannelField);
-        outputChannelField.SetValue(_channel, 
-            Channel.CreateBounded<ProcessingResult<string>>(new BoundedChannelOptions(10)));
+        outputChannelField.SetValue(
+            _channel,
+            Channel.CreateBounded<ProcessingResult<string>>(new BoundedChannelOptions(10))
+        );
     }
 
     private void SetCuckooFilter(CuckooFilter filter)
     {
-        var field = typeof(SmartPipeChannel<string, string>)
-            .GetField("_cuckooFilter", BindingFlags.NonPublic | BindingFlags.Instance);
+        var field = typeof(SmartPipeChannel<string, string>).GetField(
+            "_cuckooFilter",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(field);
         field.SetValue(_channel, filter);
     }
@@ -89,7 +104,8 @@ public class ProcessSourceItemAsyncTests
         public List<int> CallSizes { get; } = [];
         public ManualResetEventSlim? ThrottleCalledEvent { get; set; }
 
-        public TestBackpressureStrategy(int capacity) : base(capacity) { }
+        public TestBackpressureStrategy(int capacity)
+            : base(capacity) { }
 
         public override async ValueTask ThrottleAsync(int currentSize, CancellationToken ct)
         {
@@ -103,8 +119,10 @@ public class ProcessSourceItemAsyncTests
 
     private void SetBackpressureStrategy(BackpressureStrategy strategy)
     {
-        var field = typeof(SmartPipeChannel<string, string>)
-            .GetField("_backpressure", BindingFlags.NonPublic | BindingFlags.Instance);
+        var field = typeof(SmartPipeChannel<string, string>).GetField(
+            "_backpressure",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(field);
         field.SetValue(_channel, strategy);
     }
@@ -139,7 +157,10 @@ public class ProcessSourceItemAsyncTests
         // Arrange
         InitializeChannels();
         bool progressCalled = false;
-        _options.OnProgress = (current, total, elapsed, _) => { progressCalled = true; };
+        _options.OnProgress = (current, total, elapsed, _) =>
+        {
+            progressCalled = true;
+        };
         var ctx = new ProcessingContext<string>("test-payload");
 
         // Act
@@ -158,7 +179,10 @@ public class ProcessSourceItemAsyncTests
         // Arrange
         InitializeChannels();
         bool metricsCalled = false;
-        _options.OnMetrics = (metrics) => { metricsCalled = true; };
+        _options.OnMetrics = (metrics) =>
+        {
+            metricsCalled = true;
+        };
         var ctx = new ProcessingContext<string>("test-payload");
 
         // Act
@@ -178,7 +202,7 @@ public class ProcessSourceItemAsyncTests
         InitializeChannels();
         _options.EnableFeature("CuckooFilter"); // Enable feature flag
         var ctx = new ProcessingContext<string>("test-payload");
-        
+
         // Create a CuckooFilter and add the TraceId to trigger deduplication
         var cuckooFilter = new CuckooFilter();
         cuckooFilter.Add(ctx.TraceId);
@@ -205,12 +229,12 @@ public class ProcessSourceItemAsyncTests
         // Arrange
         InitializeChannels();
         var ctx = new ProcessingContext<string>("test-payload");
-        
+
         // Create DeduplicationFilter and add the item first so ContainsAndAdd returns true
         var dedupFilter = new DeduplicationFilter();
         // Call ContainsAndAdd twice - first time returns false (adds), second time returns true (already seen)
         dedupFilter.ContainsAndAdd(ctx.TraceId); // First call - adds the item
-        
+
         // Now set the filter - the method will call ContainsAndAdd again
         // Since the item was already added, the second call should return true
         _options.DeduplicationFilter = dedupFilter;
@@ -241,7 +265,7 @@ public class ProcessSourceItemAsyncTests
         var throttleCalledEvent = new ManualResetEventSlim(false);
         var testBackpressure = new TestBackpressureStrategy(10)
         {
-            ThrottleCalledEvent = throttleCalledEvent
+            ThrottleCalledEvent = throttleCalledEvent,
         };
         SetBackpressureStrategy(testBackpressure);
 
@@ -258,8 +282,10 @@ public class ProcessSourceItemAsyncTests
         await InvokeProcessSourceItemAsync(ctx, _cts.Token);
 
         // Assert: ThrottleAsync was called (deterministic check via test double)
-        Assert.True(testBackpressure.ThrottleAsyncCalled,
-            "ThrottleAsync should be called when channel fill ratio exceeds target");
+        Assert.True(
+            testBackpressure.ThrottleAsyncCalled,
+            "ThrottleAsync should be called when channel fill ratio exceeds target"
+        );
 
         // Verify the fill ratio was high enough to trigger throttling
         // At the time of ThrottleAsync call, the channel has 9 items (filler items)
@@ -290,24 +316,27 @@ public class ProcessSourceItemAsyncTests
 
         var inputChannel = GetInputChannel();
         Assert.NotNull(inputChannel);
-        
+
         // Start background reader to consume items (prevents potential hangs)
         var readerCts = new CancellationTokenSource();
-        var readerTask = Task.Run(async () =>
-        {
-            await foreach (var _ in inputChannel.Reader.ReadAllAsync(readerCts.Token)) { }
-        }, readerCts.Token);
+        var readerTask = Task.Run(
+            async () =>
+            {
+                await foreach (var _ in inputChannel.Reader.ReadAllAsync(readerCts.Token)) { }
+            },
+            readerCts.Token
+        );
 
         try
         {
             // Act: Start processing, resume after 50ms
             var sw = Stopwatch.StartNew();
             var task = InvokeProcessSourceItemAsync(ctx, _cts.Token).AsTask();
-            
+
             // Wait 50ms then resume
             await Task.Delay(50);
             _channel.Resume(); // Use public method instead of reflection
-            
+
             // Wait for task with timeout to prevent hangs
             var completed = await Task.WhenAny(task, Task.Delay(5000));
             sw.Stop();
@@ -317,13 +346,19 @@ public class ProcessSourceItemAsyncTests
             await task; // Propagate exceptions
 
             // Assert: Method waited at least 45ms (due to pause)
-            Assert.True(sw.ElapsedMilliseconds >= 45, 
-                $"Expected wait >=45ms, actual {sw.ElapsedMilliseconds}ms");
+            Assert.True(
+                sw.ElapsedMilliseconds >= 45,
+                $"Expected wait >=45ms, actual {sw.ElapsedMilliseconds}ms"
+            );
         }
         finally
         {
             readerCts.Cancel();
-            try { await readerTask; } catch (OperationCanceledException) { }
+            try
+            {
+                await readerTask;
+            }
+            catch (OperationCanceledException) { }
         }
     }
 }

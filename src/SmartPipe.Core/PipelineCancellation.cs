@@ -22,8 +22,11 @@ public static class PipelineCancellation
     /// <param name="ct">External cancellation token to abort the operation.</param>
     /// <returns>Processing result, or Failure if timeout occurred.</returns>
     public static async ValueTask<ProcessingResult<T>> WithTimeoutAsync<T>(
-        this ValueTask<ProcessingResult<T>> task, TimeSpan timeout, ulong traceId,
-        CancellationToken ct = default)
+        this ValueTask<ProcessingResult<T>> task,
+        TimeSpan timeout,
+        ulong traceId,
+        CancellationToken ct = default
+    )
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeout);
@@ -34,8 +37,13 @@ public static class PipelineCancellation
         catch (OperationCanceledException)
         {
             return ProcessingResult<T>.Failure(
-                new SmartPipeError($"Timed out after {timeout.TotalSeconds:F1}s", ErrorType.Transient, "Timeout"),
-                traceId);
+                new SmartPipeError(
+                    $"Timed out after {timeout.TotalSeconds:F1}s",
+                    ErrorType.Transient,
+                    "Timeout"
+                ),
+                traceId
+            );
         }
     }
 }

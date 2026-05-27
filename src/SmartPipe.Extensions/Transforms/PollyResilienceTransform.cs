@@ -22,7 +22,10 @@ public class PollyResilienceTransform<T> : ITransformer<T, T>
     /// <param name="pipeline">The Polly resilience pipeline to apply.</param>
     /// <param name="logger">Optional logger for diagnostic information.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="pipeline"/> is null.</exception>
-    public PollyResilienceTransform(ResiliencePipeline pipeline, ILogger<PollyResilienceTransform<T>>? logger = null)
+    public PollyResilienceTransform(
+        ResiliencePipeline pipeline,
+        ILogger<PollyResilienceTransform<T>>? logger = null
+    )
     {
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
         _logger = logger;
@@ -32,38 +35,69 @@ public class PollyResilienceTransform<T> : ITransformer<T, T>
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     /// <inheritdoc/>
-    public async ValueTask<ProcessingResult<T>> TransformAsync(ProcessingContext<T> ctx, CancellationToken ct = default)
+    public async ValueTask<ProcessingResult<T>> TransformAsync(
+        ProcessingContext<T> ctx,
+        CancellationToken ct = default
+    )
     {
         try
         {
             var result = await _pipeline.ExecuteAsync(
-                static (ctx, ct) => ValueTask.FromResult(ProcessingResult<T>.Success(ctx.Payload, ctx.TraceId)),
+                static (ctx, ct) =>
+                    ValueTask.FromResult(ProcessingResult<T>.Success(ctx.Payload, ctx.TraceId)),
                 ctx,
-                ct);
+                ct
+            );
 
             _logger?.LogDebug("Polly transform succeeded for TraceId: {TraceId}", ctx.TraceId);
             return result;
         }
         catch (Polly.Timeout.TimeoutRejectedException ex)
         {
-            _logger?.LogWarning(ex, "Polly transform timed out for TraceId: {TraceId}", ctx.TraceId);
+            _logger?.LogWarning(
+                ex,
+                "Polly transform timed out for TraceId: {TraceId}",
+                ctx.TraceId
+            );
             return ProcessingResult<T>.Failure(
-                new SmartPipeError($"Polly timeout: {ex.Message}", ErrorType.Transient, "Resilience", ex),
-                ctx.TraceId);
+                new SmartPipeError(
+                    $"Polly timeout: {ex.Message}",
+                    ErrorType.Transient,
+                    "Resilience",
+                    ex
+                ),
+                ctx.TraceId
+            );
         }
         catch (BrokenCircuitException ex)
         {
-            _logger?.LogWarning(ex, "Polly circuit breaker opened for TraceId: {TraceId}", ctx.TraceId);
+            _logger?.LogWarning(
+                ex,
+                "Polly circuit breaker opened for TraceId: {TraceId}",
+                ctx.TraceId
+            );
             return ProcessingResult<T>.Failure(
-                new SmartPipeError($"Polly circuit breaker: {ex.Message}", ErrorType.Transient, "Resilience", ex),
-                ctx.TraceId);
+                new SmartPipeError(
+                    $"Polly circuit breaker: {ex.Message}",
+                    ErrorType.Transient,
+                    "Resilience",
+                    ex
+                ),
+                ctx.TraceId
+            );
         }
         catch (InvalidOperationException ex)
         {
             _logger?.LogError(ex, "Polly transform failed for TraceId: {TraceId}", ctx.TraceId);
             return ProcessingResult<T>.Failure(
-                new SmartPipeError($"Polly pipeline error: {ex.Message}", ErrorType.Permanent, "Resilience", ex),
-                ctx.TraceId);
+                new SmartPipeError(
+                    $"Polly pipeline error: {ex.Message}",
+                    ErrorType.Permanent,
+                    "Resilience",
+                    ex
+                ),
+                ctx.TraceId
+            );
         }
     }
 

@@ -9,7 +9,11 @@ public class DeadLetterRoutingTests
     public async Task DeadLetterSink_ShouldReceivePermanentErrors()
     {
         var deadLetter = new TestDeadLetterSink();
-        var options = new SmartPipeChannelOptions { ContinueOnError = true, DeadLetterSink = deadLetter };
+        var options = new SmartPipeChannelOptions
+        {
+            ContinueOnError = true,
+            DeadLetterSink = deadLetter,
+        };
 
         // Permanent error → goes directly to DeadLetterSink via HandleFailureAsync
         var source = new SimpleSource<int>(1, 2, 3);
@@ -28,20 +32,32 @@ public class DeadLetterRoutingTests
 internal class PermanentFailTransformer<T> : ITransformer<T, T>
 {
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-    public ValueTask<ProcessingResult<T>> TransformAsync(ProcessingContext<T> ctx, CancellationToken ct = default)
-        => ValueTask.FromResult(ProcessingResult<T>.Failure(
-            new SmartPipeError("Permanent fail", ErrorType.Permanent), ctx.TraceId));
+
+    public ValueTask<ProcessingResult<T>> TransformAsync(
+        ProcessingContext<T> ctx,
+        CancellationToken ct = default
+    ) =>
+        ValueTask.FromResult(
+            ProcessingResult<T>.Failure(
+                new SmartPipeError("Permanent fail", ErrorType.Permanent),
+                ctx.TraceId
+            )
+        );
+
     public Task DisposeAsync() => Task.CompletedTask;
 }
 
 internal class TestDeadLetterSink : ISink<object>
 {
     public int Received;
+
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+
     public Task WriteAsync(ProcessingResult<object> result, CancellationToken ct = default)
     {
         Interlocked.Increment(ref Received);
         return Task.CompletedTask;
     }
+
     public Task DisposeAsync() => Task.CompletedTask;
 }

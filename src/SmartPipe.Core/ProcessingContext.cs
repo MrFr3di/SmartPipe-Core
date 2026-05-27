@@ -4,7 +4,7 @@ namespace SmartPipe.Core;
 
 /// <summary>
 /// Mutable context of a pipeline element. Thread-safe trace ID generation.
-/// Supports ObjectPool reuse via Reset() — zero allocations in hot path.
+/// Supports explicit reset for advanced pooling scenarios.
 /// </summary>
 /// <typeparam name="T">Type of payload data.</typeparam>
 public class ProcessingContext<T>
@@ -26,10 +26,13 @@ public class ProcessingContext<T>
     // Data Lineage keys for Metadata dictionary
     /// <summary>Metadata key for the source of the data item.</summary>
     public const string LineageSource = "lineage_source";
+
     /// <summary>Metadata key for the pipeline processing the data item.</summary>
     public const string LineagePipeline = "lineage_pipeline";
+
     /// <summary>Metadata key for the timestamp when the item entered the pipeline.</summary>
     public const string LineageEnteredAt = "lineage_entered_at";
+
     /// <summary>Metadata key for the transform that processed the data item.</summary>
     public const string LineageTransform = "lineage_transform";
 
@@ -41,13 +44,15 @@ public class ProcessingContext<T>
     }
 
     /// <summary>Create a new context with payload.</summary>
-    public ProcessingContext(T payload) : this()
+    public ProcessingContext(T payload)
+        : this()
     {
         Payload = payload;
     }
 
     /// <summary>Create a new context with payload and metadata.</summary>
-    public ProcessingContext(T payload, Dictionary<string, string>? metadata) : this(payload)
+    public ProcessingContext(T payload, Dictionary<string, string>? metadata)
+        : this(payload)
     {
         if (metadata != null)
         {
@@ -56,13 +61,12 @@ public class ProcessingContext<T>
         }
     }
 
-    /// <summary>Reset state for ObjectPool reuse. Generates new TraceId.</summary>
+    /// <summary>Reset state for advanced reuse scenarios. Generates new TraceId.</summary>
     public void Reset()
     {
         TraceId = (ulong)Interlocked.Increment(ref _counter);
         Payload = default!;
         Metadata.Clear();
-        Metadata.TrimExcess(); // Release internal dictionary storage
         EnterPipelineTicks = Environment.TickCount64;
     }
 }

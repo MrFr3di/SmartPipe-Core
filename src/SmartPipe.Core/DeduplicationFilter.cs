@@ -13,7 +13,8 @@ namespace SmartPipe.Core;
 public class DeduplicationFilter
 {
     private readonly BitArray _bits;
-    private readonly int _hashCount, _size;
+    private readonly int _hashCount,
+        _size;
     private long _itemsSeen;
     private readonly Lock _bitsLock = new(); // Protects BitArray from concurrent access
 
@@ -29,7 +30,11 @@ public class DeduplicationFilter
     /// <param name="expectedItems">Expected number of unique items (default: 1,000,000).</param>
     /// <param name="falsePositiveRate">Desired false positive rate (default: 0.001 = 0.1%).</param>
     /// <param name="ttl">Optional time-to-live. If set, elements are automatically removed after TTL expires.</param>
-    public DeduplicationFilter(long expectedItems = 1_000_000, double falsePositiveRate = 0.001, TimeSpan? ttl = null)
+    public DeduplicationFilter(
+        long expectedItems = 1_000_000,
+        double falsePositiveRate = 0.001,
+        TimeSpan? ttl = null
+    )
     {
         _size = (int)(-expectedItems * Math.Log(falsePositiveRate) / (Math.Log(2) * Math.Log(2)));
         _hashCount = Math.Max(1, (int)(_size / (double)expectedItems * Math.Log(2)));
@@ -56,12 +61,18 @@ public class DeduplicationFilter
             CleanupExpired();
 
             bool allSet = true;
-            int h1 = Hash1(traceId), h2 = Hash2(traceId);
+            int h1 = Hash1(traceId),
+                h2 = Hash2(traceId);
             for (int i = 0; i < _hashCount; i++)
             {
                 int index = (int)((h1 + (long)i * h2) % _size);
-                if (index < 0) index += _size;
-                if (!_bits[index]) { allSet = false; _bits[index] = true; }
+                if (index < 0)
+                    index += _size;
+                if (!_bits[index])
+                {
+                    allSet = false;
+                    _bits[index] = true;
+                }
             }
 
             // Track new entry for TTL
@@ -78,7 +89,8 @@ public class DeduplicationFilter
     /// <summary>Removes expired entries from the filter.</summary>
     private void CleanupExpired()
     {
-        if (!_ttl.HasValue || _ttlEntries == null) return;
+        if (!_ttl.HasValue || _ttlEntries == null)
+            return;
 
         var cutoff = DateTime.UtcNow - _ttl.Value;
         long currentIndex = Interlocked.Read(ref _ttlIndex);
@@ -88,15 +100,18 @@ public class DeduplicationFilter
         for (long i = scanFrom; i <= currentIndex; i++)
         {
             var entry = _ttlEntries[i % _ttlEntries.Length];
-            if (entry.traceId == 0) continue; // Empty slot
+            if (entry.traceId == 0)
+                continue; // Empty slot
             if (entry.addedAt < cutoff)
             {
                 // Remove expired entry from BitArray
-                int h1 = Hash1(entry.traceId), h2 = Hash2(entry.traceId);
+                int h1 = Hash1(entry.traceId),
+                    h2 = Hash2(entry.traceId);
                 for (int j = 0; j < _hashCount; j++)
                 {
                     int index = (int)((h1 + (long)j * h2) % _size);
-                    if (index < 0) index += _size;
+                    if (index < 0)
+                        index += _size;
                     _bits[index] = false; // Clear bit — may introduce false negatives for other items sharing this bit
                 }
                 _ttlEntries[i % _ttlEntries.Length] = (0, default); // Clear slot
@@ -107,14 +122,21 @@ public class DeduplicationFilter
     private static int Hash1(ulong x)
     {
         ulong h = 14695981039346656037;
-        for (int i = 0; i < 8; i++) { h ^= (byte)(x >> (i * 8)); h *= 1099511628211; }
+        for (int i = 0; i < 8; i++)
+        {
+            h ^= (byte)(x >> (i * 8));
+            h *= 1099511628211;
+        }
         return (int)h;
     }
 
     private static int Hash2(ulong x)
     {
-        x ^= x >> 33; x *= 0xFF51AFD7ED558CCD; x ^= x >> 33;
-        x *= 0xC4CEB9FE1A85EC53; x ^= x >> 33;
+        x ^= x >> 33;
+        x *= 0xFF51AFD7ED558CCD;
+        x ^= x >> 33;
+        x *= 0xC4CEB9FE1A85EC53;
+        x ^= x >> 33;
         return (int)x;
     }
 }

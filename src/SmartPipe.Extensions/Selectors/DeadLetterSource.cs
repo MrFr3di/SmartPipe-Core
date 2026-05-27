@@ -13,13 +13,14 @@ public class DeadLetterSource<T> : ISource<T>
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter() }
+        Converters = { new JsonStringEnumConverter() },
     };
 
     /// <summary>Create source for given dead letter JSON file.</summary>
     /// <param name="path">Path to dead letter JSON file.</param>
     /// <exception cref="ArgumentNullException">Thrown when path is null.</exception>
-    public DeadLetterSource(string path) => _path = path ?? throw new ArgumentNullException(nameof(path));
+    public DeadLetterSource(string path) =>
+        _path = path ?? throw new ArgumentNullException(nameof(path));
 
     /// <inheritdoc />
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -30,14 +31,16 @@ public class DeadLetterSource<T> : ISource<T>
     }
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+        [EnumeratorCancellation] CancellationToken ct = default
+    )
     {
         var json = await File.ReadAllTextAsync(_path, ct);
-        
+
         // Try to deserialize as JsonElement first for flexible handling
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
-        
+
         // Handle both JSON arrays and single objects
         if (root.ValueKind == JsonValueKind.Array)
         {
@@ -63,8 +66,10 @@ public class DeadLetterSource<T> : ISource<T>
 
     private static ProcessingContext<T>? ProcessElement(JsonElement element)
     {
-        if (!element.TryGetProperty("IsSuccess", out var isSuccessProp) || 
-            !isSuccessProp.GetBoolean())
+        if (
+            !element.TryGetProperty("IsSuccess", out var isSuccessProp)
+            || !isSuccessProp.GetBoolean()
+        )
         {
             // Only process failed items
             if (element.TryGetProperty("Value", out var valueProp))

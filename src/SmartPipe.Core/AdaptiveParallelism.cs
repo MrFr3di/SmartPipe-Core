@@ -11,14 +11,15 @@ namespace SmartPipe.Core;
 /// </summary>
 public class AdaptiveParallelism
 {
-    private readonly int _min, _max;
+    private readonly int _min,
+        _max;
     private int _current;
     private double _avgLatencyMs = 10.0;
     private double _targetLatencyMs = 10.0;
     private string _lastDecision = "Initial: P-controller not yet updated";
-    
+
     // P-controller parameters
-    private const int DeadZone = 5;          // Ignore errors smaller than 5ms
+    private const int DeadZone = 5; // Ignore errors smaller than 5ms
     private const int ProportionalBand = 20; // Error of 20ms = 1 thread adjustment
     private const double AlphaScaleFactor = 50.0; // Scale factor for adaptive EMA alpha: larger latency deltas → faster adaptation
 
@@ -37,8 +38,9 @@ public class AdaptiveParallelism
     public AdaptiveParallelism(int min = 2, int max = 32)
     {
         // Fix: swap if min > max to prevent ArgumentException in Math.Clamp
-        if (min > max) (min, max) = (max, min);
-        
+        if (min > max)
+            (min, max) = (max, min);
+
         _min = Math.Max(1, min);
         _max = Math.Min(Environment.ProcessorCount * 4, max);
         _current = Math.Clamp(Environment.ProcessorCount, _min, _max);
@@ -53,15 +55,19 @@ public class AdaptiveParallelism
         double currentAvg = Volatile.Read(ref _avgLatencyMs);
         double alpha = Math.Min(0.8, Math.Abs(currentLatencyMs - currentAvg) / AlphaScaleFactor);
         alpha = Math.Max(0.1, alpha);
- 
-        Volatile.Write(ref _avgLatencyMs, alpha * Math.Max(1, currentLatencyMs) + (1.0 - alpha) * currentAvg);
+
+        Volatile.Write(
+            ref _avgLatencyMs,
+            alpha * Math.Max(1, currentLatencyMs) + (1.0 - alpha) * currentAvg
+        );
 
         double error = _targetLatencyMs - currentLatencyMs;
 
         // Dead zone: ignore small errors
         if (Math.Abs(error) < DeadZone)
         {
-            _lastDecision = $"DeadZone: error {Math.Abs(error):F1}ms < {DeadZone}ms threshold, no adjustment";
+            _lastDecision =
+                $"DeadZone: error {Math.Abs(error):F1}ms < {DeadZone}ms threshold, no adjustment";
             return;
         }
 
@@ -82,7 +88,8 @@ public class AdaptiveParallelism
         int adjustment = Math.Sign(error) * Math.Max(1, Math.Min(3, rawAdjustment));
         int newValue = Math.Clamp(_current + adjustment, _min, _max);
         Interlocked.Exchange(ref _current, newValue);
-        _lastDecision = $"P-controller: error {error:F1}ms, adjusted by {adjustment:+0;-#}, new={newValue} (min={_min}, max={_max})";
+        _lastDecision =
+            $"P-controller: error {error:F1}ms, adjusted by {adjustment:+0;-#}, new={newValue} (min={_min}, max={_max})";
     }
 
     /// <summary>Returns the reason for the last P-controller decision. Useful for observability and debugging.</summary>

@@ -11,12 +11,15 @@ public enum CircuitState
 {
     /// <summary>Normal operation, requests pass through.</summary>
     Closed,
+
     /// <summary>Circuit is open, requests are blocked.</summary>
     Open,
+
     /// <summary>Testing if the circuit can be closed.</summary>
     HalfOpen,
+
     /// <summary>Manually isolated, requests are blocked.</summary>
-    Isolated
+    Isolated,
 }
 
 /// <summary>
@@ -24,7 +27,7 @@ public enum CircuitState
 /// EWMA for fast reaction + Sliding window for accurate threshold decisions.
 /// </summary>
 /// <remarks>
-/// Uses lock-free atomic operations for state transitions.
+/// Uses atomic operations for state transitions.
 /// EWMA provides early warning, sliding window makes final decisions.
 /// </remarks>
 public class CircuitBreaker
@@ -62,7 +65,8 @@ public class CircuitBreaker
         int minimumThroughput = 10,
         TimeSpan? breakDuration = null,
         int maxHalfOpenRequests = 3,
-        IClock? clock = null)
+        IClock? clock = null
+    )
     {
         _failureRatio = failureRatio;
         _samplingDuration = samplingDuration ?? TimeSpan.FromSeconds(30);
@@ -80,7 +84,8 @@ public class CircuitBreaker
         CleanupWindow();
         int currentState = Volatile.Read(ref _state);
 
-        if (currentState == (int)CircuitState.Closed) return true;
+        if (currentState == (int)CircuitState.Closed)
+            return true;
 
         if (currentState == (int)CircuitState.Open)
         {
@@ -99,7 +104,8 @@ public class CircuitBreaker
         if (currentState == (int)CircuitState.HalfOpen)
             return Interlocked.Increment(ref _halfOpenCount) <= _maxHalfOpenRequests;
 
-        if (currentState == (int)CircuitState.Isolated) return false;
+        if (currentState == (int)CircuitState.Isolated)
+            return false;
         return true;
     }
 
@@ -141,7 +147,10 @@ public class CircuitBreaker
     private void UpdateEwmaFailureRate()
     {
         double alpha = _ewmaFailureRate > 0.1 ? 0.5 : 0.2;
-        AtomicHelper.CompareExchangeLoop(ref _ewmaFailureRate, current => alpha * 1.0 + (1.0 - alpha) * current);
+        AtomicHelper.CompareExchangeLoop(
+            ref _ewmaFailureRate,
+            current => alpha * 1.0 + (1.0 - alpha) * current
+        );
     }
 
     private void AddEarlyWarningToWindow()
@@ -154,10 +163,13 @@ public class CircuitBreaker
     private void EvaluateSlidingWindow()
     {
         int total = _window.Count;
-        if (total < _minimumThroughput) return;
+        if (total < _minimumThroughput)
+            return;
 
         int failures = 0;
-        foreach (var (_, ok) in _window) if (!ok) failures++;
+        foreach (var (_, ok) in _window)
+            if (!ok)
+                failures++;
 
         int currentState = Volatile.Read(ref _state);
         if ((double)failures / total >= _failureRatio)
@@ -194,15 +206,24 @@ public class CircuitBreaker
     {
         CleanupWindow();
         int total = _window.Count;
-        if (total == 0) return 0;
+        if (total == 0)
+            return 0;
         int failures = 0;
-        foreach (var (_, ok) in _window) if (!ok) failures++;
+        foreach (var (_, ok) in _window)
+            if (!ok)
+                failures++;
         return (double)failures / total;
     }
 
     /// <summary>Export metrics for dashboard integration.</summary>
     /// <returns>Dictionary of circuit breaker metrics.</returns>
-    private static readonly string[] _metricKeys = ["cb_state", "cb_failure_ratio", "cb_ewma_failure_rate", "cb_half_open_attempts"];
+    private static readonly string[] _metricKeys =
+    [
+        "cb_state",
+        "cb_failure_ratio",
+        "cb_ewma_failure_rate",
+        "cb_half_open_attempts",
+    ];
 
     /// <summary>Export metrics for dashboard integration. Returns a dictionary with circuit breaker state, failure ratio, EWMA rate, and half-open attempts.</summary>
     /// <returns>Dictionary of circuit breaker metrics keyed by metric name.</returns>

@@ -27,23 +27,33 @@ public class MapsterTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     /// <inheritdoc/>
-    public ValueTask<ProcessingResult<TOutput>> TransformAsync(ProcessingContext<TInput> ctx, CancellationToken ct = default)
+    public ValueTask<ProcessingResult<TOutput>> TransformAsync(
+        ProcessingContext<TInput> ctx,
+        CancellationToken ct = default
+    )
     {
         try
         {
-            var result = _config != null
-                ? ctx.Payload.Adapt<TOutput>(_config)
-                : ctx.Payload.Adapt<TOutput>();
+            var result =
+                _config != null
+                    ? ctx.Payload.Adapt<TOutput>(_config)
+                    : ctx.Payload.Adapt<TOutput>();
 
-            return ValueTask.FromResult(
-                ProcessingResult<TOutput>.Success(result, ctx.TraceId));
+            return ValueTask.FromResult(ProcessingResult<TOutput>.Success(result, ctx.TraceId));
         }
         catch (InvalidOperationException ex)
         {
             return ValueTask.FromResult(
                 ProcessingResult<TOutput>.Failure(
-                    new SmartPipeError($"Mapster mapping error: {ex.Message}", ErrorType.Permanent, "Mapping", ex),
-                    ctx.TraceId));
+                    new SmartPipeError(
+                        $"Mapster mapping error: {ex.Message}",
+                        ErrorType.Permanent,
+                        "Mapping",
+                        ex
+                    ),
+                    ctx.TraceId
+                )
+            );
         }
     }
 

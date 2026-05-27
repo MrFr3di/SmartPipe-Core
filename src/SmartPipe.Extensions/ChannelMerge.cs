@@ -18,11 +18,14 @@ public static class ChannelMerge
     /// <param name="second">The second channel reader.</param>
     /// <param name="options">Optional bounded channel options. If null, an unbounded channel is created.</param>
     /// <returns>A <see cref="ChannelReader{T}"/> that receives items from both input readers.</returns>
-    public static ChannelReader<T> Merge<T>(ChannelReader<T> first, ChannelReader<T> second, BoundedChannelOptions? options = null)
+    public static ChannelReader<T> Merge<T>(
+        ChannelReader<T> first,
+        ChannelReader<T> second,
+        BoundedChannelOptions? options = null
+    )
     {
-        var output = options != null
-            ? Channel.CreateBounded<T>(options)
-            : Channel.CreateUnbounded<T>();
+        var output =
+            options != null ? Channel.CreateBounded<T>(options) : Channel.CreateUnbounded<T>();
 
         _ = Task.Run(async () =>
         {
@@ -52,7 +55,8 @@ public static class ChannelMerge
         await foreach (var item in reader.ReadAllAsync())
         {
             await writer.WaitToWriteAsync();
-            if (!writer.TryWrite(item)) break; // Channel completed
+            if (!writer.TryWrite(item))
+                break; // Channel completed
         }
     }
 }

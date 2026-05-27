@@ -1,7 +1,7 @@
 #nullable enable
 
-using System.Text.Json;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SmartPipe.Core;
@@ -27,7 +27,11 @@ public class DeadLetterSink<T> : ISink<T>
     /// <param name="path">Output JSON file path (default: "dead_letter.json").</param>
     /// <param name="logger">Logger instance via DI.</param>
     /// <param name="stream">Optional test stream. If provided, writer is created immediately.</param>
-    public DeadLetterSink(string path = "dead_letter.json", ILogger<DeadLetterSink<T>>? logger = null, Stream? stream = null)
+    public DeadLetterSink(
+        string path = "dead_letter.json",
+        ILogger<DeadLetterSink<T>>? logger = null,
+        Stream? stream = null
+    )
     {
         _path = path;
         _logger = logger ?? NullLogger<DeadLetterSink<T>>.Instance;
@@ -45,7 +49,12 @@ public class DeadLetterSink<T> : ISink<T>
         if (_writer == null)
         {
             // Open file in create mode - overwrite existing file on initialization
-            var fileStream = new FileStream(_path, FileMode.Create, FileAccess.Write, FileShare.None);
+            var fileStream = new FileStream(
+                _path,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None
+            );
             _writer = new StreamWriter(fileStream);
         }
         return Task.CompletedTask;
@@ -61,7 +70,9 @@ public class DeadLetterSink<T> : ISink<T>
         try
         {
             if (_writer == null)
-                throw new InvalidOperationException("Sink not initialized. Call InitializeAsync first.");
+                throw new InvalidOperationException(
+                    "Sink not initialized. Call InitializeAsync first."
+                );
 
             var json = JsonSerializer.Serialize(result);
             await WriteWithRetryAsync(json, ct);
@@ -89,7 +100,11 @@ public class DeadLetterSink<T> : ISink<T>
                     return;
 
                 // For testing: check if we should throw IOException
-                if (_testException != null && attempt < _testException.Length && _testException[attempt])
+                if (
+                    _testException != null
+                    && attempt < _testException.Length
+                    && _testException[attempt]
+                )
                 {
                     throw new IOException($"Simulated IOException (attempt {attempt + 1})");
                 }
@@ -103,7 +118,13 @@ public class DeadLetterSink<T> : ISink<T>
 
                 if (attempt < 2)
                 {
-                    _logger.LogWarning(ex, "IOException on attempt {Attempt}/3 writing to dead letter file {Path}. Retrying in {Delay}ms...", attempt + 1, _path, delays[attempt]);
+                    _logger.LogWarning(
+                        ex,
+                        "IOException on attempt {Attempt}/3 writing to dead letter file {Path}. Retrying in {Delay}ms...",
+                        attempt + 1,
+                        _path,
+                        delays[attempt]
+                    );
                     await Task.Delay(delays[attempt], ct);
                 }
             }
@@ -112,7 +133,11 @@ public class DeadLetterSink<T> : ISink<T>
         // Final failure after all retries
         if (lastException != null)
         {
-            _logger.LogError(lastException, "Failed to write to dead letter file {Path} after 3 retries. Skipping item.", _path);
+            _logger.LogError(
+                lastException,
+                "Failed to write to dead letter file {Path} after 3 retries. Skipping item.",
+                _path
+            );
         }
     }
 

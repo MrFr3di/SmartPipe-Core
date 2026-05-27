@@ -10,7 +10,8 @@ namespace SmartPipe.Core;
 /// Thread-safe: all public methods synchronize access to the internal bucket array.</summary>
 public class CuckooFilter
 {
-    private const int BucketSize = 4, MaxKicks = 500;
+    private const int BucketSize = 4,
+        MaxKicks = 500;
     private readonly uint[,] _buckets;
     private readonly int _numBuckets;
     private long _count;
@@ -113,21 +114,30 @@ public class CuckooFilter
     private bool InsertToBucket(int b, uint f)
     {
         for (int i = 0; i < BucketSize; i++)
-            if (_buckets[b, i] == 0) { _buckets[b, i] = f; return true; }
+            if (_buckets[b, i] == 0)
+            {
+                _buckets[b, i] = f;
+                return true;
+            }
         return false;
     }
 
     private bool BucketContains(int b, uint f)
     {
         for (int i = 0; i < BucketSize; i++)
-            if (_buckets[b, i] == f) return true;
+            if (_buckets[b, i] == f)
+                return true;
         return false;
     }
 
     private bool RemoveFromBucket(int b, uint f)
     {
         for (int i = 0; i < BucketSize; i++)
-            if (_buckets[b, i] == f) { _buckets[b, i] = 0; return true; }
+            if (_buckets[b, i] == f)
+            {
+                _buckets[b, i] = 0;
+                return true;
+            }
         return false;
     }
 
@@ -135,7 +145,8 @@ public class CuckooFilter
     /// <param name="other">The other CuckooFilter to merge into this one.</param>
     public void Merge(CuckooFilter other)
     {
-        if (other == null) throw new ArgumentNullException(nameof(other));
+        if (other == null)
+            throw new ArgumentNullException(nameof(other));
         if (_numBuckets != other._numBuckets)
             throw new ArgumentException("Cannot merge filters with different bucket counts.");
 
@@ -143,22 +154,25 @@ public class CuckooFilter
         {
             // For each fingerprint in the other filter
             for (int b = 0; b < other._numBuckets; b++)
-                for (int s = 0; s < BucketSize; s++)
-                    MergeFingerprint(other._buckets[b, s]);
+            for (int s = 0; s < BucketSize; s++)
+                MergeFingerprint(other._buckets[b, s]);
         }
     }
 
     private void MergeFingerprint(uint fp)
     {
-        if (fp == 0) return;
+        if (fp == 0)
+            return;
 
         int i1 = BucketIndex(fp, 0);
         int i2 = (i1 ^ BucketIndex(fp, 1)) % _numBuckets;
 
         // Прямой поиск вместо Contains (уже под локом)
-        if (BucketContains(i1, fp) || BucketContains(i2, fp)) return;
+        if (BucketContains(i1, fp) || BucketContains(i2, fp))
+            return;
 
-        if (TryInsertToBuckets(fp, i1, i2)) return;
+        if (TryInsertToBuckets(fp, i1, i2))
+            return;
 
         if (CuckooKick(fp, i1, 5000) || CuckooKick(fp, i2, 5000))
             Interlocked.Increment(ref _count);
@@ -181,30 +195,30 @@ public class CuckooFilter
     {
         uint currentFp = fp;
         int currentBucket = startBucket;
-        
+
         for (int n = 0; n < maxKicks; n++)
         {
             int slot = n % BucketSize;
             if (EvictAndInsertSlot(ref currentFp, ref currentBucket, slot))
                 return true;
         }
-        
+
         return false;
     }
 
     private bool EvictAndInsertSlot(ref uint currentFp, ref int currentBucket, int slot)
     {
         uint evicted = _buckets[currentBucket, slot];
-        
+
         if (evicted == 0)
         {
             _buckets[currentBucket, slot] = currentFp;
             return true;
         }
-        
+
         _buckets[currentBucket, slot] = currentFp;
         int nextBucket = (currentBucket ^ BucketIndex(evicted, 1)) % _numBuckets;
-        
+
         // Try to insert the evicted fingerprint into its alternate bucket
         if (InsertToBucket(nextBucket, evicted))
         {
@@ -212,7 +226,7 @@ public class CuckooFilter
             currentBucket = nextBucket;
             return true;
         }
-        
+
         // Failed to insert evicted fingerprint — restore original and return false
         _buckets[currentBucket, slot] = evicted;
         return false;

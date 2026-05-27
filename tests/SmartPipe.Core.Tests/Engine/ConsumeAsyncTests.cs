@@ -19,11 +19,7 @@ public class ConsumeAsyncTests
 
     public ConsumeAsyncTests()
     {
-        _options = new SmartPipeChannelOptions
-        {
-            BoundedCapacity = 10,
-            MaxDegreeOfParallelism = 1
-        };
+        _options = new SmartPipeChannelOptions { BoundedCapacity = 10, MaxDegreeOfParallelism = 1 };
         _channel = new SmartPipeChannel<string, string>(_options);
         _cts = new CancellationTokenSource();
         InitializePipeline(); // Initialize channels and components
@@ -31,8 +27,10 @@ public class ConsumeAsyncTests
 
     private async Task InvokeConsumeAsync(CancellationToken ct, int consumerIndex = 0)
     {
-        var method = typeof(SmartPipeChannel<string, string>)
-            .GetMethod("ConsumeAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+        var method = typeof(SmartPipeChannel<string, string>).GetMethod(
+            "ConsumeAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(method);
         var task = (Task)method.Invoke(_channel, new object[] { ct, consumerIndex })!;
         await task;
@@ -40,8 +38,10 @@ public class ConsumeAsyncTests
 
     private void InitializePipeline()
     {
-        var method = typeof(SmartPipeChannel<string, string>)
-            .GetMethod("InitializePipelineAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+        var method = typeof(SmartPipeChannel<string, string>).GetMethod(
+            "InitializePipelineAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(method);
         var task = (Task)method.Invoke(_channel, new object[] { _cts.Token })!;
         task.GetAwaiter().GetResult();
@@ -49,48 +49,60 @@ public class ConsumeAsyncTests
 
     private void AddTransformer(ITransformer<string, string> transformer)
     {
-        var method = typeof(SmartPipeChannel<string, string>)
-            .GetMethod("AddTransformer", BindingFlags.Public | BindingFlags.Instance);
+        var method = typeof(SmartPipeChannel<string, string>).GetMethod(
+            "AddTransformer",
+            BindingFlags.Public | BindingFlags.Instance
+        );
         Assert.NotNull(method);
         method.Invoke(_channel, new object[] { transformer });
     }
 
     private void AddSink(ISink<string> sink)
     {
-        var method = typeof(SmartPipeChannel<string, string>)
-            .GetMethod("AddSink", BindingFlags.Public | BindingFlags.Instance);
+        var method = typeof(SmartPipeChannel<string, string>).GetMethod(
+            "AddSink",
+            BindingFlags.Public | BindingFlags.Instance
+        );
         Assert.NotNull(method);
         method.Invoke(_channel, new object[] { sink });
     }
 
     private Channel<ProcessingContext<string>>? GetInputChannel()
     {
-        var field = typeof(SmartPipeChannel<string, string>)
-            .GetField("_inputChannel", BindingFlags.NonPublic | BindingFlags.Instance);
+        var field = typeof(SmartPipeChannel<string, string>).GetField(
+            "_inputChannel",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(field);
         return (Channel<ProcessingContext<string>>?)field.GetValue(_channel);
     }
 
     private Channel<ProcessingResult<string>>? GetOutputChannel()
     {
-        var field = typeof(SmartPipeChannel<string, string>)
-            .GetField("_outputChannel", BindingFlags.NonPublic | BindingFlags.Instance);
+        var field = typeof(SmartPipeChannel<string, string>).GetField(
+            "_outputChannel",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(field);
         return (Channel<ProcessingResult<string>>?)field.GetValue(_channel);
     }
 
     private void SetShardBuckets(int[] buckets)
     {
-        var field = typeof(SmartPipeChannel<string, string>)
-            .GetField("_shardBuckets", BindingFlags.NonPublic | BindingFlags.Instance);
+        var field = typeof(SmartPipeChannel<string, string>).GetField(
+            "_shardBuckets",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(field);
         field.SetValue(_channel, buckets);
     }
 
     private void SetCircuitBreaker(CircuitBreaker cb)
     {
-        var field = typeof(SmartPipeChannel<string, string>)
-            .GetField("_circuitBreaker", BindingFlags.NonPublic | BindingFlags.Instance);
+        var field = typeof(SmartPipeChannel<string, string>).GetField(
+            "_circuitBreaker",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(field);
         field.SetValue(_channel, cb);
     }
@@ -179,7 +191,7 @@ public class ConsumeAsyncTests
 
         // Create a real CircuitBreaker and trip it
         var circuitBreaker = new CircuitBreaker();
-        
+
         // Record enough failures to trip the breaker (need >50% failure rate with min 10 requests)
         for (int i = 0; i < 10; i++)
         {
@@ -187,7 +199,7 @@ public class ConsumeAsyncTests
         }
         // Verify it's open
         Assert.False(circuitBreaker.AllowRequest());
-        
+
         SetCircuitBreaker(circuitBreaker);
 
         // Enable RetryQueue to handle the circuit breaker failure
@@ -230,11 +242,12 @@ public class ConsumeAsyncTests
         // So output channel should be empty.
         var outputChannel = GetOutputChannel();
         Assert.NotNull(outputChannel);
-        
+
         // Try to read with a short timeout — should timeout because no item is written
         using var readCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         await Assert.ThrowsAsync<OperationCanceledException>(async () =>
-            await outputChannel.Reader.ReadAsync(readCts.Token));
+            await outputChannel.Reader.ReadAsync(readCts.Token)
+        );
     }
 
     /// <summary>
@@ -244,7 +257,10 @@ public class ConsumeAsyncTests
     {
         public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
-        public async ValueTask<ProcessingResult<string>> TransformAsync(ProcessingContext<string> ctx, CancellationToken ct = default)
+        public async ValueTask<ProcessingResult<string>> TransformAsync(
+            ProcessingContext<string> ctx,
+            CancellationToken ct = default
+        )
         {
             return ProcessingResult<string>.Success(ctx.Payload, ctx.TraceId);
         }
@@ -259,9 +275,15 @@ public class ConsumeAsyncTests
     {
         public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
-        public async ValueTask<ProcessingResult<string>> TransformAsync(ProcessingContext<string> ctx, CancellationToken ct = default)
+        public async ValueTask<ProcessingResult<string>> TransformAsync(
+            ProcessingContext<string> ctx,
+            CancellationToken ct = default
+        )
         {
-            return ProcessingResult<string>.Failure(new SmartPipeError("transform failed", ErrorType.Transient, "Test"), ctx.TraceId);
+            return ProcessingResult<string>.Failure(
+                new SmartPipeError("transform failed", ErrorType.Transient, "Test"),
+                ctx.TraceId
+            );
         }
 
         public Task DisposeAsync() => Task.CompletedTask;
@@ -273,7 +295,7 @@ public class ConsumeAsyncTests
     private class TestSink : ISink<string>
     {
         public List<ProcessingResult<string>> Items { get; } = [];
-        
+
         public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
         public Task WriteAsync(ProcessingResult<string> result, CancellationToken ct = default)

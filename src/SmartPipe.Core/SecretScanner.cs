@@ -19,15 +19,20 @@ public static class SecretScanner
         new(@"api[_-]?key\s*[:=]\s*['""].+?['""]", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         new(@"password\s*[:=]\s*['""].+?['""]", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         new(@"sk-[a-zA-Z0-9]{32,}", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new(@"-----BEGIN\s(?:RSA|OPENSSH|DSA|EC)\sPRIVATE KEY-----", RegexOptions.Singleline | RegexOptions.Compiled),
+        new(
+            @"-----BEGIN\s(?:RSA|OPENSSH|DSA|EC)\sPRIVATE KEY-----",
+            RegexOptions.Singleline | RegexOptions.Compiled
+        ),
         new(@"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", RegexOptions.Compiled),
         new(@"AKIA[0-9A-Z]{16}", RegexOptions.Compiled),
         new(@"ghp_[A-Za-z0-9]{36}", RegexOptions.Compiled),
         new(@"ya29\.[A-Za-z0-9_-]+", RegexOptions.Compiled),
     };
 
-    private static readonly Regex UrlEncodedPattern =
-        new(@"%[0-9A-Fa-f]{2}", RegexOptions.Compiled);
+    private static readonly Regex UrlEncodedPattern = new(
+        @"%[0-9A-Fa-f]{2}",
+        RegexOptions.Compiled
+    );
 
     /// <summary>Check if content contains any secrets (API keys, passwords, private keys).</summary>
     /// <param name="content">String to scan.</param>
@@ -80,7 +85,7 @@ public static class SecretScanner
     private static string RedactInternal(string content, int depth)
     {
         content = ApplyPatternRedaction(content);
-        
+
         if (depth < MaxRecursionDepth)
         {
             content = TryDecodeAndRedactBase64(content, depth);
@@ -113,7 +118,8 @@ public static class SecretScanner
 
     internal static bool ValidateBase64Characters(string content)
     {
-        if (string.IsNullOrEmpty(content)) return false;
+        if (string.IsNullOrEmpty(content))
+            return false;
         return content.All(c => char.IsLetterOrDigit(c) || c == '+' || c == '/' || c == '=');
     }
 
@@ -126,7 +132,8 @@ public static class SecretScanner
 
     internal static string? DecodeBase64WithPadding(string content)
     {
-        if (!ValidateBase64Characters(content)) return null;
+        if (!ValidateBase64Characters(content))
+            return null;
         var padded = EnsurePadding(content);
         return TryDecodeWithBuffer(padded);
     }
@@ -142,7 +149,7 @@ public static class SecretScanner
         var buffer = new byte[content.Length];
         if (Convert.TryFromBase64String(content, buffer, out var bytesWritten))
         {
-            var decoded = System.Text.Encoding.UTF8.GetString(buffer,0, bytesWritten);
+            var decoded = System.Text.Encoding.UTF8.GetString(buffer, 0, bytesWritten);
             if (!string.IsNullOrEmpty(decoded) && decoded != content)
                 return decoded;
         }

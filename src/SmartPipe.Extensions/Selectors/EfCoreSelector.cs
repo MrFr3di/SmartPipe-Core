@@ -9,7 +9,8 @@ namespace SmartPipe.Extensions.Selectors;
 /// Supports cancellation and logging.
 /// </summary>
 /// <typeparam name="T">Entity type from DbContext.</typeparam>
-public class EfCoreSelector<T> : ISource<T> where T : class
+public class EfCoreSelector<T> : ISource<T>
+    where T : class
 {
     private readonly DbContext _dbContext;
     private readonly ILogger<EfCoreSelector<T>>? _logger;
@@ -35,7 +36,9 @@ public class EfCoreSelector<T> : ISource<T> where T : class
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
+    )
     {
         var query = _query ?? _dbContext.Set<T>();
         var entities = query.AsAsyncEnumerable().WithCancellation(ct);

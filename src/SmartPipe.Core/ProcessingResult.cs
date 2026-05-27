@@ -18,18 +18,20 @@ public readonly record struct ProcessingResult<T>
     /// <summary>Trace ID from the original context.</summary>
     public ulong TraceId { get; }
 
-    private ProcessingResult(bool success, T? value, SmartPipeError? error, ulong traceId)
-        => (IsSuccess, Value, Error, TraceId) = (success, value, error, traceId);
+    private ProcessingResult(bool success, T? value, SmartPipeError? error, ulong traceId) =>
+        (IsSuccess, Value, Error, TraceId) = (success, value, error, traceId);
 
     /// <summary>Create a successful result.</summary>
     /// <param name="value">Result value.</param>
     /// <param name="traceId">Trace ID from the original context.</param>
-    public static ProcessingResult<T> Success(T value, ulong traceId) => new(true, value, null, traceId);
+    public static ProcessingResult<T> Success(T value, ulong traceId) =>
+        new(true, value, null, traceId);
 
     /// <summary>Create a failed result.</summary>
     /// <param name="error">Structured error describing the failure.</param>
     /// <param name="traceId">Trace ID from the original context.</param>
-    public static ProcessingResult<T> Failure(SmartPipeError error, ulong traceId) => new(false, default, error, traceId);
+    public static ProcessingResult<T> Failure(SmartPipeError error, ulong traceId) =>
+        new(false, default, error, traceId);
 
     /// <summary>Implicit conversion to bool for clean syntax: if (result).</summary>
     /// <param name="r">Processing result.</param>

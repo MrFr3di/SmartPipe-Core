@@ -11,12 +11,14 @@ public static class ChannelPool
     /// <typeparam name="T">Channel element type.</typeparam>
     /// <returns>Configured unbounded channel.</returns>
     public static Channel<T> RentUnbounded<T>() =>
-        Channel.CreateUnbounded<T>(new UnboundedChannelOptions
-        {
-            SingleReader = false,
-            SingleWriter = true,
-            AllowSynchronousContinuations = true
-        });
+        Channel.CreateUnbounded<T>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = false,
+                SingleWriter = true,
+                AllowSynchronousContinuations = true,
+            }
+        );
 
     /// <summary>Rent a bounded channel with capacity and full mode.</summary>
     /// <typeparam name="T">Channel element type.</typeparam>
@@ -24,16 +26,18 @@ public static class ChannelPool
     /// <param name="mode">Behavior when channel is full.</param>
     /// <returns>Configured bounded channel.</returns>
     public static Channel<T> RentBounded<T>(int capacity, BoundedChannelFullMode mode) =>
-        Channel.CreateBounded<T>(new BoundedChannelOptions(capacity)
-        {
-            FullMode = mode,
-            SingleReader = true,
-            SingleWriter = false,
-            AllowSynchronousContinuations = true
-        });
+        Channel.CreateBounded<T>(
+            new BoundedChannelOptions(capacity)
+            {
+                FullMode = mode,
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = true,
+            }
+        );
 
-/// <summary>Close the channel writer (calls TryComplete, does not return to pool).</summary>
-/// <typeparam name="T">Channel element type.</typeparam>
-/// <param name="channel">Channel to close.</param>
-public static void CloseChannel<T>(Channel<T> channel) => channel.Writer.TryComplete();
+    /// <summary>Close the channel writer (calls TryComplete, does not return to pool).</summary>
+    /// <typeparam name="T">Channel element type.</typeparam>
+    /// <param name="channel">Channel to close.</param>
+    public static void CloseChannel<T>(Channel<T> channel) => channel.Writer.TryComplete();
 }

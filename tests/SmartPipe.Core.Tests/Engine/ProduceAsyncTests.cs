@@ -19,19 +19,17 @@ public class ProduceAsyncTests
 
     public ProduceAsyncTests()
     {
-        _options = new SmartPipeChannelOptions
-        {
-            BoundedCapacity = 10,
-            MaxDegreeOfParallelism = 1
-        };
+        _options = new SmartPipeChannelOptions { BoundedCapacity = 10, MaxDegreeOfParallelism = 1 };
         _channel = new SmartPipeChannel<string, string>(_options);
         _cts = new CancellationTokenSource();
     }
 
     private async Task InvokeProduceAsync(CancellationToken ct)
     {
-        var method = typeof(SmartPipeChannel<string, string>)
-            .GetMethod("ProduceAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+        var method = typeof(SmartPipeChannel<string, string>).GetMethod(
+            "ProduceAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(method);
         var task = (Task)method.Invoke(_channel, new object[] { ct })!;
         await task;
@@ -39,16 +37,20 @@ public class ProduceAsyncTests
 
     private void AddSource(ISource<string> source)
     {
-        var method = typeof(SmartPipeChannel<string, string>)
-            .GetMethod("AddSource", BindingFlags.Public | BindingFlags.Instance);
+        var method = typeof(SmartPipeChannel<string, string>).GetMethod(
+            "AddSource",
+            BindingFlags.Public | BindingFlags.Instance
+        );
         Assert.NotNull(method);
         method.Invoke(_channel, new object[] { source });
     }
 
     private void InitializePipeline()
     {
-        var method = typeof(SmartPipeChannel<string, string>)
-            .GetMethod("InitializePipelineAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+        var method = typeof(SmartPipeChannel<string, string>).GetMethod(
+            "InitializePipelineAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(method);
         var task = (Task)method.Invoke(_channel, new object[] { _cts.Token })!;
         task.GetAwaiter().GetResult();
@@ -62,7 +64,10 @@ public class ProduceAsyncTests
     {
         // Arrange
         bool progressCalled = false;
-        _options.OnProgress = (current, total, elapsed, _) => { progressCalled = true; };
+        _options.OnProgress = (current, total, elapsed, _) =>
+        {
+            progressCalled = true;
+        };
         var source = new TestSource(new[] { "item1" });
         AddSource(source);
         InitializePipeline();
@@ -84,7 +89,10 @@ public class ProduceAsyncTests
     {
         // Arrange
         bool metricsCalled = false;
-        _options.OnMetrics = (metrics) => { metricsCalled = true; };
+        _options.OnMetrics = (metrics) =>
+        {
+            metricsCalled = true;
+        };
         var source = new TestSource(new[] { "item1" });
         AddSource(source);
         InitializePipeline();
@@ -106,7 +114,10 @@ public class ProduceAsyncTests
     {
         // Arrange
         int itemCount = 0;
-        _options.OnProgress = (current, total, elapsed, _) => { itemCount++; };
+        _options.OnProgress = (current, total, elapsed, _) =>
+        {
+            itemCount++;
+        };
         var source1 = new TestSource(new[] { "item1", "item2" });
         var source2 = new TestSource(new[] { "item3" });
         AddSource(source1);
@@ -178,7 +189,10 @@ public class ProduceAsyncTests
         InitializePipeline();
 
         int sourceCount = 0;
-        _options.OnProgress = (current, total, elapsed, _) => { sourceCount++; };
+        _options.OnProgress = (current, total, elapsed, _) =>
+        {
+            sourceCount++;
+        };
 
         // Act
         var task = InvokeProduceAsync(_cts.Token);
@@ -210,7 +224,9 @@ public class ProduceAsyncTests
 
         public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
-        public async IAsyncEnumerable<ProcessingContext<string>> ReadAsync(CancellationToken ct = default)
+        public async IAsyncEnumerable<ProcessingContext<string>> ReadAsync(
+            CancellationToken ct = default
+        )
         {
             foreach (var item in _items)
             {

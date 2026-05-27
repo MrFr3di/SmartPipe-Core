@@ -15,13 +15,13 @@ public static class SmartPipeServiceCollectionExtensions
     /// <typeparam name="TOutput">The output type for the pipeline.</typeparam>
     /// <param name="services">The service collection.</param>
     /// <returns>The service collection for chaining.</returns>
-    public static IServiceCollection AddSmartPipe<TInput, TOutput>(
-        this IServiceCollection services)
+    public static IServiceCollection AddSmartPipe<TInput, TOutput>(this IServiceCollection services)
     {
         services.AddSingleton<IClock>(new TimeProviderClock());
         services.AddSingleton(sp => new SmartPipeChannel<TInput, TOutput>(
             new SmartPipeChannelOptions(),
-            sp.GetRequiredService<IClock>()));
+            sp.GetRequiredService<IClock>()
+        ));
         return services;
     }
 
@@ -35,14 +35,16 @@ public static class SmartPipeServiceCollectionExtensions
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddSmartPipe<TInput, TOutput>(
         this IServiceCollection services,
-        Action<SmartPipeChannel<TInput, TOutput>> configure)
+        Action<SmartPipeChannel<TInput, TOutput>> configure
+    )
     {
         services.AddSingleton<IClock>(new TimeProviderClock());
         services.AddSingleton(sp =>
         {
             var pipeline = new SmartPipeChannel<TInput, TOutput>(
                 new SmartPipeChannelOptions(),
-                sp.GetRequiredService<IClock>());
+                sp.GetRequiredService<IClock>()
+            );
             configure?.Invoke(pipeline);
             return pipeline;
         });
@@ -62,7 +64,8 @@ public static class SmartPipeServiceCollectionExtensions
     public static IServiceCollection AddSmartPipe<TInput, TOutput>(
         this IServiceCollection services,
         Action<SmartPipeChannelOptions> configureOptions,
-        Action<SmartPipeChannel<TInput, TOutput>>? configurePipeline = null)
+        Action<SmartPipeChannel<TInput, TOutput>>? configurePipeline = null
+    )
     {
         services.AddSingleton<IClock>(new TimeProviderClock());
         services.AddSingleton(sp =>
@@ -71,7 +74,8 @@ public static class SmartPipeServiceCollectionExtensions
             configureOptions(options);
             var pipeline = new SmartPipeChannel<TInput, TOutput>(
                 options,
-                sp.GetRequiredService<IClock>());
+                sp.GetRequiredService<IClock>()
+            );
             configurePipeline?.Invoke(pipeline);
             return pipeline;
         });

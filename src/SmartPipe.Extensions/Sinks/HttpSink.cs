@@ -29,10 +29,17 @@ public class HttpSink<T> : ISink<T>
     /// <inheritdoc />
     public async Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
     {
-        if (!result.IsSuccess || result.Value == null) return;
+        if (!result.IsSuccess || result.Value == null)
+            return;
 
         if (_resilience != null)
-            await _resilience.ExecuteAsync(async token => { await _http.PostAsJsonAsync(_url, result.Value, token); }, ct);
+            await _resilience.ExecuteAsync(
+                async token =>
+                {
+                    await _http.PostAsJsonAsync(_url, result.Value, token);
+                },
+                ct
+            );
         else
             await _http.PostAsJsonAsync(_url, result.Value, ct);
     }

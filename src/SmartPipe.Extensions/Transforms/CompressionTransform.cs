@@ -15,10 +15,11 @@ public enum CompressionAlgorithm
     /// Brotli compression algorithm - offers good compression ratio with moderate speed.
     /// </summary>
     Brotli,
+
     /// <summary>
     /// GZip compression algorithm - widely supported with good compression.
     /// </summary>
-    GZip
+    GZip,
 }
 
 /// <summary>
@@ -37,7 +38,8 @@ public class CompressionTransform : ITransformer<byte[], byte[]>
     /// <param name="level">The compression level. Defaults to <see cref="CompressionLevel.Optimal"/>.</param>
     public CompressionTransform(
         CompressionAlgorithm algorithm = CompressionAlgorithm.Brotli,
-        CompressionLevel level = CompressionLevel.Optimal)
+        CompressionLevel level = CompressionLevel.Optimal
+    )
     {
         _algorithm = algorithm;
         _level = level;
@@ -47,7 +49,10 @@ public class CompressionTransform : ITransformer<byte[], byte[]>
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     /// <inheritdoc/>
-    public ValueTask<ProcessingResult<byte[]>> TransformAsync(ProcessingContext<byte[]> ctx, CancellationToken ct = default)
+    public ValueTask<ProcessingResult<byte[]>> TransformAsync(
+        ProcessingContext<byte[]> ctx,
+        CancellationToken ct = default
+    )
     {
         try
         {
@@ -56,21 +61,36 @@ public class CompressionTransform : ITransformer<byte[], byte[]>
                 compressor.Write(ctx.Payload, 0, ctx.Payload.Length);
 
             return ValueTask.FromResult(
-                ProcessingResult<byte[]>.Success(output.ToArray(), ctx.TraceId));
+                ProcessingResult<byte[]>.Success(output.ToArray(), ctx.TraceId)
+            );
         }
         catch (IOException ex)
         {
             return ValueTask.FromResult(
                 ProcessingResult<byte[]>.Failure(
-                    new SmartPipeError($"Compression IO error: {ex.Message}", ErrorType.Transient, "Compression", ex),
-                    ctx.TraceId));
+                    new SmartPipeError(
+                        $"Compression IO error: {ex.Message}",
+                        ErrorType.Transient,
+                        "Compression",
+                        ex
+                    ),
+                    ctx.TraceId
+                )
+            );
         }
         catch (NotSupportedException ex)
         {
             return ValueTask.FromResult(
                 ProcessingResult<byte[]>.Failure(
-                    new SmartPipeError($"Compression not supported: {ex.Message}", ErrorType.Permanent, "Compression", ex),
-                    ctx.TraceId));
+                    new SmartPipeError(
+                        $"Compression not supported: {ex.Message}",
+                        ErrorType.Permanent,
+                        "Compression",
+                        ex
+                    ),
+                    ctx.TraceId
+                )
+            );
         }
     }
 
@@ -83,10 +103,11 @@ public class CompressionTransform : ITransformer<byte[], byte[]>
     /// <param name="output">The output stream to write compressed data to.</param>
     /// <returns>A compression stream wrapper.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <see cref="CompressionAlgorithm"/> is unknown.</exception>
-    private Stream CreateCompressor(Stream output) => _algorithm switch
-    {
-        CompressionAlgorithm.Brotli => new BrotliStream(output, _level),
-        CompressionAlgorithm.GZip => new GZipStream(output, _level),
-        _ => throw new ArgumentOutOfRangeException(nameof(_algorithm))
-    };
+    private Stream CreateCompressor(Stream output) =>
+        _algorithm switch
+        {
+            CompressionAlgorithm.Brotli => new BrotliStream(output, _level),
+            CompressionAlgorithm.GZip => new GZipStream(output, _level),
+            _ => throw new ArgumentOutOfRangeException(nameof(_algorithm)),
+        };
 }

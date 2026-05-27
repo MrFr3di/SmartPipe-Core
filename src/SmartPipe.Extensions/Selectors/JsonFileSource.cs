@@ -27,7 +27,9 @@ public class JsonFileSource<T> : ISource<T>
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+        [EnumeratorCancellation] CancellationToken ct = default
+    )
     {
         char firstChar;
         using (var peekReader = new StreamReader(_path))
@@ -38,7 +40,9 @@ public class JsonFileSource<T> : ISource<T>
         if (firstChar == '[')
         {
             using var stream = File.OpenRead(_path);
-            var items = await JsonSerializer.DeserializeAsync<List<T>>(stream, cancellationToken: ct).ConfigureAwait(false);
+            var items = await JsonSerializer
+                .DeserializeAsync<List<T>>(stream, cancellationToken: ct)
+                .ConfigureAwait(false);
             if (items != null)
                 foreach (var item in items)
                     if (item != null)
@@ -50,10 +54,13 @@ public class JsonFileSource<T> : ISource<T>
             while (true)
             {
                 var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
-                if (line == null) break;
-                if (string.IsNullOrWhiteSpace(line)) continue;
+                if (line == null)
+                    break;
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
                 var item = JsonSerializer.Deserialize<T>(line);
-                if (item != null) yield return new ProcessingContext<T>(item);
+                if (item != null)
+                    yield return new ProcessingContext<T>(item);
             }
         }
     }

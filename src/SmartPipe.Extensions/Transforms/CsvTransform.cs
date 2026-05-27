@@ -27,23 +27,25 @@ public class CsvTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
     public CsvTransform(
         string delimiter = ",",
         CultureInfo? culture = null,
-        Action<CsvConfiguration>? configure = null)
+        Action<CsvConfiguration>? configure = null
+    )
     {
         var baseConfig = new CsvConfiguration(culture ?? CultureInfo.InvariantCulture)
         {
             Delimiter = delimiter,
             HasHeaderRecord = true,
             MissingFieldFound = null,
-            BadDataFound = null
+            BadDataFound = null,
         };
 
-        if (configure != null) configure(baseConfig);
+        if (configure != null)
+            configure(baseConfig);
 
         _readConfig = baseConfig;
         _writeConfig = new CsvConfiguration(culture ?? CultureInfo.InvariantCulture)
         {
             Delimiter = delimiter,
-            HasHeaderRecord = true
+            HasHeaderRecord = true,
         };
     }
 
@@ -51,7 +53,10 @@ public class CsvTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     /// <inheritdoc/>
-    public ValueTask<ProcessingResult<TOutput>> TransformAsync(ProcessingContext<TInput> ctx, CancellationToken ct = default)
+    public ValueTask<ProcessingResult<TOutput>> TransformAsync(
+        ProcessingContext<TInput> ctx,
+        CancellationToken ct = default
+    )
     {
         try
         {
@@ -65,21 +70,36 @@ public class CsvTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
             var firstRecord = csvReader.GetRecords<TOutput>().First();
 
             return ValueTask.FromResult(
-                ProcessingResult<TOutput>.Success(firstRecord, ctx.TraceId));
+                ProcessingResult<TOutput>.Success(firstRecord, ctx.TraceId)
+            );
         }
         catch (CsvHelperException ex)
         {
             return ValueTask.FromResult(
                 ProcessingResult<TOutput>.Failure(
-                    new SmartPipeError($"CSV parsing error: {ex.Message}", ErrorType.Permanent, "Serialization", ex),
-                    ctx.TraceId));
+                    new SmartPipeError(
+                        $"CSV parsing error: {ex.Message}",
+                        ErrorType.Permanent,
+                        "Serialization",
+                        ex
+                    ),
+                    ctx.TraceId
+                )
+            );
         }
         catch (IOException ex)
         {
             return ValueTask.FromResult(
                 ProcessingResult<TOutput>.Failure(
-                    new SmartPipeError($"CSV IO error: {ex.Message}", ErrorType.Transient, "Serialization", ex),
-                    ctx.TraceId));
+                    new SmartPipeError(
+                        $"CSV IO error: {ex.Message}",
+                        ErrorType.Transient,
+                        "Serialization",
+                        ex
+                    ),
+                    ctx.TraceId
+                )
+            );
         }
     }
 

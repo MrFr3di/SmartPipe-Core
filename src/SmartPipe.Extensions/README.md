@@ -1,9 +1,9 @@
 # SmartPipe.Extensions
 
-**One package. All integrations. Zero boilerplate.**
-**Ready-to-use components for SmartPipe.Core — build ETL pipelines in minutes.**
+**One package. Common integrations.**
+**Ready-to-use components for SmartPipe.Core — build ETL pipelines with selectors, transforms, sinks, hosting, and health checks.**
 
-Extensions for SmartPipe.Core providing ready-to-use selectors, transforms, sinks, and health checks for building production ETL pipelines in minutes.
+Extensions for SmartPipe.Core providing ready-to-use selectors, transforms, sinks, and health checks.
 
 ## Selectors (Data Sources)
 
@@ -71,8 +71,8 @@ dotnet add package SmartPipe.Extensions
 ## Requirements
 
 - .NET 10.0+
-- SmartPipe.Core 1.0.5 (included as dependency)
-- **Zero additional dependencies required for basic usage**
+- SmartPipe.Core 1.1.0 (included as dependency)
+- This package intentionally includes integration dependencies for the features below.
 - Individual features pull their own dependencies:
   - `HttpSelector` / `HttpSink` → Polly (via Microsoft.Extensions.Resilience)
   - `EfCoreSelector` → Entity Framework Core
@@ -81,7 +81,7 @@ dotnet add package SmartPipe.Extensions
   - `CsvFileSource` / `CsvFileSink` / `CsvTransform` → CsvHelper
   - `PollyResilienceTransform` → Polly.Core
   - `SmartPipeHostedService` / `SmartPipeHealthCheck` → Microsoft.Extensions.Hosting / HealthChecks
-  - All other components (FilterTransform, ValidationTransform, ConditionalTransform, CompositeTransform, LoggerSink, DeadLetterSink, JsonFileSource, JsonFileSink) — **zero additional dependencies**
+  - Other components use platform APIs or dependencies already carried by this package.
 
 ## What's New in v1.0.5
 

@@ -33,3 +33,6 @@ benchmarks/SmartPipe.CompetitorBenchmarks/
 TestResults/
 backups/
 
+.work/
+REVIEW_REPORT.md
+.kilo

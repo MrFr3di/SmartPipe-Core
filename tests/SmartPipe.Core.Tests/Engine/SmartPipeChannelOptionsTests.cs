@@ -25,6 +25,7 @@ public class SmartPipeChannelOptionsTests
         options.IsEnabled("RetryQueue").Should().BeFalse();
         options.IsEnabled("Metrics").Should().BeTrue();
         options.IsEnabled("CircuitBreaker").Should().BeFalse();
+        options.IsEnabled("ObjectPool").Should().BeFalse();
     }
 
     [Fact]

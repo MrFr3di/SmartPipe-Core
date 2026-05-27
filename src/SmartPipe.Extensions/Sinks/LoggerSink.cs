@@ -29,13 +29,17 @@ public class LoggerSink<T> : ISink<T>
         {
             _logger.LogInformation(
                 "Processed item [TraceId: {TraceId}] successfully. Value: {@Value}",
-                result.TraceId, result.Value);
+                result.TraceId,
+                result.Value
+            );
         }
         else
         {
             _logger.LogError(
                 "Failed item [TraceId: {TraceId}]: {ErrorMessage}",
-                result.TraceId, result.Error?.Message);
+                result.TraceId,
+                result.Error?.Message
+            );
         }
 
         return Task.CompletedTask;

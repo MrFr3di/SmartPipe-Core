@@ -19,7 +19,10 @@ public interface ITransformer<TInput, TOutput>
     /// <param name="ctx">Input <see cref="ProcessingContext{TInput}"/> with payload and metadata.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns><see cref="ProcessingResult{TOutput}"/> with transformed data or error details.</returns>
-    ValueTask<ProcessingResult<TOutput>> TransformAsync(ProcessingContext<TInput> ctx, CancellationToken ct = default);
+    ValueTask<ProcessingResult<TOutput>> TransformAsync(
+        ProcessingContext<TInput> ctx,
+        CancellationToken ct = default
+    );
 
     /// <summary>Release resources.</summary>
     Task DisposeAsync();

@@ -26,7 +26,8 @@ public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="pipeline"/> or <paramref name="logger"/> is null.</exception>
     public SmartPipeHostedService(
         SmartPipeChannel<TInput, TOutput> pipeline,
-        ILogger<SmartPipeHostedService<TInput, TOutput>> logger)
+        ILogger<SmartPipeHostedService<TInput, TOutput>> logger
+    )
     {
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -38,8 +39,11 @@ public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
     /// <param name="ct">Cancellation token for stopping the pipeline.</param>
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        _logger.LogInformation("SmartPipe pipeline starting for {TInput} → {TOutput}",
-            typeof(TInput).Name, typeof(TOutput).Name);
+        _logger.LogInformation(
+            "SmartPipe pipeline starting for {TInput} → {TOutput}",
+            typeof(TInput).Name,
+            typeof(TOutput).Name
+        );
 
         try
         {
@@ -51,7 +55,7 @@ public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
             _logger.LogInformation("SmartPipe pipeline cancelled, draining...");
             await DrainPipelineAsync();
         }
-       catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex)
         {
             _logger.LogError(ex, "SmartPipe pipeline failed due to invalid operation");
             throw;

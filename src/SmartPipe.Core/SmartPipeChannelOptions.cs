@@ -47,12 +47,18 @@ public class SmartPipeChannelOptions
     public RetryPolicy? DefaultRetryPolicy { get; set; }
 
     /// <summary>Feature flags for optional pipeline components.</summary>
-    public Dictionary<string, bool> FeatureFlags { get; } = new()
-    {
-        ["RetryQueue"] = false, ["Metrics"] = true, ["CircuitBreaker"] = false,
-        ["ObjectPool"] = true, ["DebugSampling"] = false, ["CuckooFilter"] = false, ["JumpHash"] = false,
-        ["SecretScanner"] = false // off by default 
-    };
+    public Dictionary<string, bool> FeatureFlags { get; } =
+        new()
+        {
+            ["RetryQueue"] = false,
+            ["Metrics"] = true,
+            ["CircuitBreaker"] = false,
+            ["ObjectPool"] = false,
+            ["DebugSampling"] = false,
+            ["CuckooFilter"] = false,
+            ["JumpHash"] = false,
+            ["SecretScanner"] = false, // off by default
+        };
 
     /// <summary>Check if a feature flag is enabled.</summary>
     /// <param name="f">Feature flag name.</param>

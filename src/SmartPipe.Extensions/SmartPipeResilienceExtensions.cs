@@ -24,7 +24,8 @@ public static class SmartPipeResilienceExtensions
     public static IServiceCollection AddSmartPipe<TInput, TOutput>(
         this IServiceCollection services,
         Action<SmartPipeChannel<TInput, TOutput>> configurePipeline,
-        Action<ResiliencePipelineBuilder>? configureResilience = null)
+        Action<ResiliencePipelineBuilder>? configureResilience = null
+    )
     {
         if (configureResilience != null)
         {
@@ -56,7 +57,8 @@ public static class SmartPipeResilienceExtensions
     public static IServiceCollection AddSmartPipeHostedService<TInput, TOutput>(
         this IServiceCollection services,
         Action<SmartPipeChannel<TInput, TOutput>> configurePipeline,
-        Action<ResiliencePipelineBuilder>? configureResilience = null)
+        Action<ResiliencePipelineBuilder>? configureResilience = null
+    )
     {
         services.AddSmartPipe(configurePipeline, configureResilience);
         services.AddHostedService<SmartPipeHostedService<TInput, TOutput>>();

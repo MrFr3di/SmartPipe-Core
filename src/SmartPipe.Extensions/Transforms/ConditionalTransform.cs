@@ -29,7 +29,10 @@ public class ConditionalTransform<T> : ITransformer<T, T>
     public Task InitializeAsync(CancellationToken ct = default) => _transform.InitializeAsync(ct);
 
     /// <inheritdoc/>
-    public async ValueTask<ProcessingResult<T>> TransformAsync(ProcessingContext<T> ctx, CancellationToken ct = default)
+    public async ValueTask<ProcessingResult<T>> TransformAsync(
+        ProcessingContext<T> ctx,
+        CancellationToken ct = default
+    )
     {
         if (_condition(ctx.Payload))
             return await _transform.TransformAsync(ctx, ct);

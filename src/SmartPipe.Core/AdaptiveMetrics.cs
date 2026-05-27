@@ -13,7 +13,9 @@ namespace SmartPipe.Core;
 /// </summary>
 public class AdaptiveMetrics
 {
-    private double _emaLatencyMs, _emaThroughput, _emaVelocity;
+    private double _emaLatencyMs,
+        _emaThroughput,
+        _emaVelocity;
     private double _prevEmaLatencyMs;
     private long _lastTimestamp;
 
@@ -46,7 +48,8 @@ public class AdaptiveMetrics
         double instantVelocity = newLat - oldPrev;
         double beta = 0.1;
         double oldVel = Volatile.Read(ref _emaVelocity);
-        double newVel = oldVel < 0.001 ? instantVelocity : beta * instantVelocity + (1.0 - beta) * oldVel;
+        double newVel =
+            oldVel < 0.001 ? instantVelocity : beta * instantVelocity + (1.0 - beta) * oldVel;
         Interlocked.Exchange(ref _emaVelocity, newVel);
 
         // Throughput EMA using Stopwatch for reliable time measurement

@@ -25,7 +25,7 @@ public class CsvFileSource<T> : ISource<T>
             Delimiter = delimiter,
             HasHeaderRecord = true,
             MissingFieldFound = null,
-            BadDataFound = null
+            BadDataFound = null,
         };
     }
 
@@ -33,7 +33,9 @@ public class CsvFileSource<T> : ISource<T>
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+        [EnumeratorCancellation] CancellationToken ct = default
+    )
     {
         using var reader = new StreamReader(_path);
         using var csv = new CsvReader(reader, _config);

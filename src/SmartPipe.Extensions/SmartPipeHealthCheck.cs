@@ -25,7 +25,10 @@ public class SmartPipeLivenessCheck<TIn, TOut> : IHealthCheck
     /// <param name="ctx">The health check context.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A healthy result if the pipeline is running; otherwise unhealthy.</returns>
-    public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext ctx, CancellationToken ct = default)
+    public Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext ctx,
+        CancellationToken ct = default
+    )
     {
         // A faulted pipeline is dead — it cannot recover without intervention
         if (_pipe.State == PipelineState.Faulted)
@@ -62,14 +65,17 @@ public class SmartPipeReadinessCheck<TIn, TOut> : IHealthCheck
     /// <returns>
     /// Healthy if ready; Degraded if queue size exceeds 1000 or failures detected.
     /// </returns>
-    public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext ctx, CancellationToken ct = default)
+    public Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext ctx,
+        CancellationToken ct = default
+    )
     {
         var m = _pipe.Metrics;
         var data = new Dictionary<string, object>
         {
             ["QueueSize"] = m.QueueSize,
             ["Failures"] = m.ItemsFailed,
-            ["AvgLatencyMs"] = m.AvgLatencyMs
+            ["AvgLatencyMs"] = m.AvgLatencyMs,
         };
 
         if (m.QueueSize > 1000)

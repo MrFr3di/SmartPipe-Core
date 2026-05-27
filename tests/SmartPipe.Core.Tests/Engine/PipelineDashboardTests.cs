@@ -37,7 +37,8 @@ public class PipelineDashboardTests
             TimeSpan.FromSeconds(30),
             45.5,
             "Closed",
-            metrics);
+            metrics
+        );
 
         // Assert
         Assert.Equal(PipelineState.Running, dashboard.State);

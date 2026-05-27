@@ -1,31 +1,148 @@
 #nullable enable
 
+using System.Threading.Channels;
+
 namespace SmartPipe.Core;
 
 /// <summary>Fluent API for declarative pipeline construction.</summary>
 public static class PipelineBuilder
 {
-    /// <summary>Start building from a source.</summary>
+    /// <summary>Start building from a legacy source.</summary>
+    /// <typeparam name="T">Payload type emitted by the source.</typeparam>
+    /// <param name="source">Legacy source instance.</param>
+    /// <returns>A pipeline builder.</returns>
     public static PipelineBuilder<T> From<T>(ISource<T> source) => new(source);
+
+    /// <summary>Start building from an envelope-aware source.</summary>
+    /// <typeparam name="T">Payload type emitted by the source.</typeparam>
+    /// <param name="source">Envelope-aware source instance.</param>
+    /// <returns>A pipeline builder.</returns>
+    public static PipelineBuilder<T> From<T>(IPipelineSource<T> source) => new(source);
+
+    /// <summary>Start building from a factory that creates an envelope-aware source for each run.</summary>
+    /// <typeparam name="T">Payload type emitted by the source.</typeparam>
+    /// <param name="sourceFactory">Factory invoked once per runtime.</param>
+    /// <param name="serviceProvider">Optional service provider passed to the factory.</param>
+    /// <returns>A reusable factory-based pipeline builder.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="sourceFactory"/> is null.</exception>
+    public static PipelineBuilder<T> FromFactory<T>(
+        Func<IServiceProvider?, IPipelineSource<T>> sourceFactory,
+        IServiceProvider? serviceProvider = null
+    ) => new(sourceFactory, serviceProvider);
 }
 
 /// <summary>Pipeline builder with input type.</summary>
+/// <typeparam name="TInput">Initial source payload type.</typeparam>
 public class PipelineBuilder<TInput>
 {
-    private readonly ISource<TInput> _source;
+    private readonly ISource<TInput>? _source;
+    private readonly IPipelineSource<TInput>? _modernSource;
+    private readonly Func<IServiceProvider?, IPipelineSource<TInput>>? _modernSourceFactory;
+    private readonly IServiceProvider? _serviceProvider;
 
     internal PipelineBuilder(ISource<TInput> source) => _source = source;
 
+    internal PipelineBuilder(IPipelineSource<TInput> source) => _modernSource = source;
+
+    internal PipelineBuilder(
+        Func<IServiceProvider?, IPipelineSource<TInput>> sourceFactory,
+        IServiceProvider? serviceProvider
+    )
+    {
+        _modernSourceFactory =
+            sourceFactory ?? throw new ArgumentNullException(nameof(sourceFactory));
+        _serviceProvider = serviceProvider;
+    }
+
     /// <summary>Add a transformer (ITransformer).</summary>
-    public PipelineBuilder<TInput, TOutput> Transform<TOutput>(ITransformer<TInput, TOutput> transformer)
+    /// <typeparam name="TOutput">Transformer output type.</typeparam>
+    /// <param name="transformer">Legacy transformer instance.</param>
+    /// <returns>A pipeline builder with configured input and output types.</returns>
+    public PipelineBuilder<TInput, TOutput> Transform<TOutput>(
+        ITransformer<TInput, TOutput> transformer
+    )
     {
         var channel = new SmartPipeChannel<TInput, TOutput>();
-        channel.AddSource(_source);
+        channel.AddSource(
+            _source
+                ?? throw new InvalidOperationException(
+                    "Legacy transformers require a legacy source. Use IPipelineTransformer for envelope-aware sources."
+                )
+        );
         channel.AddTransformer(transformer);
         return new PipelineBuilder<TInput, TOutput>(channel);
     }
 
+    /// <summary>Adds an envelope-aware transformer as the first typed stage.</summary>
+    /// <typeparam name="TOutput">Transformer output payload type.</typeparam>
+    /// <param name="transformer">Envelope-aware transformer.</param>
+    /// <param name="failureOptions">Optional failure policy for this stage.</param>
+    /// <param name="deadLetterOptions">Optional dead-letter persistence options for this stage.</param>
+    /// <returns>A typed pipeline builder.</returns>
+    public PipelineBuilder<TInput, TOutput> Transform<TOutput>(
+        IPipelineTransformer<TInput, TOutput> transformer,
+        StageFailureOptions? failureOptions = null,
+        StageDeadLetterOptions<TInput>? deadLetterOptions = null
+    )
+    {
+        var source =
+            _modernSource
+            ?? new LegacySourceAdapter<TInput>(
+                _source
+                    ?? throw new InvalidOperationException(
+                        "A source is required before adding a transformer."
+                    )
+            );
+        var spec = new TypedPipelineSpec<TInput, TInput>(
+            $"pipeline-{Guid.NewGuid():N}",
+            source,
+            []
+        );
+        return new PipelineBuilder<TInput, TOutput>(
+            spec.AddStage(transformer, failureOptions, deadLetterOptions));
+    }
+
+    /// <summary>Adds an envelope-aware transformer factory as the first typed stage.</summary>
+    /// <typeparam name="TOutput">Transformer output payload type.</typeparam>
+    /// <param name="transformerFactory">Factory invoked once per runtime.</param>
+    /// <returns>A reusable typed pipeline builder.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="transformerFactory"/> is null.</exception>
+    public PipelineBuilder<TInput, TOutput> TransformFactory<TOutput>(
+        Func<IServiceProvider?, IPipelineTransformer<TInput, TOutput>> transformerFactory
+    )
+    {
+        ArgumentNullException.ThrowIfNull(transformerFactory);
+        if (_modernSourceFactory is null)
+            throw new InvalidOperationException(
+                "TransformFactory requires a source registered with PipelineBuilder.FromFactory."
+            );
+
+        return new PipelineBuilder<TInput, TOutput>(
+            () =>
+            {
+                var source =
+                    _modernSourceFactory(_serviceProvider)
+                    ?? throw new InvalidOperationException("The source factory returned null.");
+                var transformer =
+                    transformerFactory(_serviceProvider)
+                    ?? throw new InvalidOperationException(
+                        "The transformer factory returned null."
+                    );
+                var spec = new TypedPipelineSpec<TInput, TInput>(
+                    $"pipeline-{Guid.NewGuid():N}",
+                    source,
+                    [],
+                    isFactoryBased: true
+                );
+                return spec.AddStage(transformer);
+            },
+            _serviceProvider
+        );
+    }
+
     /// <summary>Add a lightweight middleware (<see cref="Func{TInput, TInput}"/>). Same input/output type.</summary>
+    /// <param name="middleware">Middleware delegate.</param>
+    /// <returns>A pipeline builder with the same input and output type.</returns>
     public PipelineBuilder<TInput, TInput> Transform(Func<TInput, TInput> middleware)
     {
         return Transform(new MiddlewareTransformer<TInput>(middleware));
@@ -33,30 +150,265 @@ public class PipelineBuilder<TInput>
 }
 
 /// <summary>Pipeline builder with input and output types.</summary>
+/// <typeparam name="TInput">Initial source payload type.</typeparam>
+/// <typeparam name="TOutput">Current output payload type.</typeparam>
 public class PipelineBuilder<TInput, TOutput>
 {
-    private readonly SmartPipeChannel<TInput, TOutput> _channel;
+    private readonly SmartPipeChannel<TInput, TOutput>? _channel;
+    private readonly TypedPipelineSpec<TInput, TOutput>? _typedSpec;
+    private readonly Func<TypedPipelineSpec<TInput, TOutput>>? _typedSpecFactory;
+    private readonly IServiceProvider? _serviceProvider;
 
     internal PipelineBuilder(SmartPipeChannel<TInput, TOutput> channel) => _channel = channel;
 
+    internal PipelineBuilder(TypedPipelineSpec<TInput, TOutput> typedSpec) =>
+        _typedSpec = typedSpec;
+
+    internal PipelineBuilder(
+        Func<TypedPipelineSpec<TInput, TOutput>> typedSpecFactory,
+        IServiceProvider? serviceProvider
+    )
+    {
+        _typedSpecFactory =
+            typedSpecFactory ?? throw new ArgumentNullException(nameof(typedSpecFactory));
+        _serviceProvider = serviceProvider;
+    }
+
     /// <summary>Add another transformer (same types).</summary>
+    /// <param name="transformer">Legacy transformer instance.</param>
+    /// <returns>The current builder.</returns>
     public PipelineBuilder<TInput, TOutput> Pipe(ITransformer<TInput, TOutput> transformer)
     {
+        if (_channel is null)
+            throw new InvalidOperationException(
+                "Legacy Pipe is available only for legacy channel pipelines. Use Transform<TNext>(IPipelineTransformer<TOutput,TNext>) for typed stages."
+            );
+
         _channel.AddTransformer(transformer);
         return this;
     }
 
+    /// <summary>Adds another envelope-aware typed stage.</summary>
+    /// <typeparam name="TNext">Next stage output payload type.</typeparam>
+    /// <param name="transformer">Envelope-aware transformer.</param>
+    /// <param name="failureOptions">Optional failure policy for this stage.</param>
+    /// <param name="deadLetterOptions">Optional dead-letter persistence options for this stage.</param>
+    /// <returns>A typed pipeline builder whose current output type is <typeparamref name="TNext"/>.</returns>
+    public PipelineBuilder<TInput, TNext> Transform<TNext>(
+        IPipelineTransformer<TOutput, TNext> transformer,
+        StageFailureOptions? failureOptions = null,
+        StageDeadLetterOptions<TOutput>? deadLetterOptions = null
+    )
+    {
+        if (_typedSpec is null)
+            throw new InvalidOperationException(
+                "Typed Transform is available only for envelope-aware pipelines."
+            );
+
+        return new PipelineBuilder<TInput, TNext>(
+            _typedSpec.AddStage(transformer, failureOptions, deadLetterOptions));
+    }
+
+    /// <summary>Adds another envelope-aware typed stage using a factory invoked for each runtime.</summary>
+    /// <typeparam name="TNext">Next stage output payload type.</typeparam>
+    /// <param name="transformerFactory">Factory invoked once per runtime.</param>
+    /// <returns>A reusable typed pipeline builder whose current output type is <typeparamref name="TNext"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="transformerFactory"/> is null.</exception>
+    public PipelineBuilder<TInput, TNext> TransformFactory<TNext>(
+        Func<IServiceProvider?, IPipelineTransformer<TOutput, TNext>> transformerFactory
+    )
+    {
+        ArgumentNullException.ThrowIfNull(transformerFactory);
+        if (_typedSpecFactory is not null)
+        {
+            return new PipelineBuilder<TInput, TNext>(
+                () =>
+                {
+                    var transformer =
+                        transformerFactory(_serviceProvider)
+                        ?? throw new InvalidOperationException(
+                            "The transformer factory returned null."
+                        );
+                    return _typedSpecFactory().AddStage(transformer);
+                },
+                _serviceProvider
+            );
+        }
+
+        if (_typedSpec is null)
+            throw new InvalidOperationException(
+                "Typed TransformFactory is available only for envelope-aware pipelines."
+            );
+
+        var instance =
+            transformerFactory(_serviceProvider)
+            ?? throw new InvalidOperationException("The transformer factory returned null.");
+        return new PipelineBuilder<TInput, TNext>(_typedSpec.AddStage(instance));
+    }
+
+    /// <summary>Adds an observer to an envelope-aware typed pipeline.</summary>
+    /// <param name="observer">Observer instance.</param>
+    /// <param name="reliability">Observer reliability category.</param>
+    /// <param name="failurePolicy">Policy used when the observer throws.</param>
+    /// <returns>The current builder with observer configuration appended.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="observer"/> is null.</exception>
+    public PipelineBuilder<TInput, TOutput> WithObserver(
+        IPipelineObserver observer,
+        ObserverReliability reliability = ObserverReliability.BestEffort,
+        ObserverFailurePolicy failurePolicy = ObserverFailurePolicy.Log
+    )
+    {
+        ArgumentNullException.ThrowIfNull(observer);
+        var registration = new PipelineObserverRegistration(observer, reliability, failurePolicy);
+
+        if (_typedSpecFactory is not null)
+        {
+            return new PipelineBuilder<TInput, TOutput>(
+                () => _typedSpecFactory().WithObserver(registration),
+                _serviceProvider
+            );
+        }
+
+        if (_typedSpec is null)
+            throw new InvalidOperationException(
+                "Observers are available only for envelope-aware typed pipelines."
+            );
+
+        return new PipelineBuilder<TInput, TOutput>(_typedSpec.WithObserver(registration));
+    }
+
     /// <summary>Configure channel options.</summary>
+    /// <param name="configure">Configuration delegate.</param>
+    /// <returns>The current builder.</returns>
     public PipelineBuilder<TInput, TOutput> WithOptions(Action<SmartPipeChannelOptions> configure)
     {
+        if (_channel is null)
+            throw new InvalidOperationException(
+                "SmartPipeChannelOptions are available only for legacy channel pipelines in 1.1.0."
+            );
+
         configure(_channel.Options);
         return this;
     }
 
     /// <summary>Add a sink and run the pipeline.</summary>
+    /// <param name="sink">Legacy sink instance.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the pipeline stops.</returns>
     public async Task To(ISink<TOutput> sink, CancellationToken ct = default)
     {
+        if (_channel is null)
+            throw new InvalidOperationException(
+                "Legacy sinks require a legacy channel pipeline. Use To(IPipelineSink<TOutput>) for envelope-aware pipelines."
+            );
+
         _channel.AddSink(sink);
-        await _channel.RunAsync(ct);
+        await _channel.RunAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Starts the envelope-aware pipeline without an attached sink.</summary>
+    /// <param name="ct">Cancellation token linked to the run.</param>
+    /// <returns>A single-use pipeline run handle.</returns>
+    public PipelineRun<TOutput> Run(CancellationToken ct = default)
+    {
+        if (_typedSpec is null && _typedSpecFactory is null)
+            return RunLegacyAsPipelineRun(ct);
+
+        return StartTypedRun(null, sinkIsFactoryBased: false, ct);
+    }
+
+    /// <summary>Adds an envelope-aware sink and starts the typed pipeline.</summary>
+    /// <param name="sink">Envelope-aware sink instance.</param>
+    /// <param name="ct">Cancellation token linked to the run.</param>
+    /// <returns>A single-use pipeline run handle.</returns>
+    public PipelineRun<TOutput> To(IPipelineSink<TOutput> sink, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(sink);
+        if (_typedSpec is null && _typedSpecFactory is null)
+            throw new InvalidOperationException(
+                "Envelope-aware sinks require an envelope-aware typed pipeline."
+            );
+
+        return StartTypedRun(sink, sinkIsFactoryBased: false, ct);
+    }
+
+    /// <summary>Adds an envelope-aware sink factory and starts the typed pipeline.</summary>
+    /// <param name="sinkFactory">Factory invoked once per runtime.</param>
+    /// <param name="ct">Cancellation token linked to the run.</param>
+    /// <returns>A single-use pipeline run handle.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="sinkFactory"/> is null.</exception>
+    public PipelineRun<TOutput> ToFactory(
+        Func<IServiceProvider?, IPipelineSink<TOutput>> sinkFactory,
+        CancellationToken ct = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(sinkFactory);
+        if (_typedSpec is null && _typedSpecFactory is null)
+            throw new InvalidOperationException(
+                "Envelope-aware sink factories require an envelope-aware typed pipeline."
+            );
+
+        var sink =
+            sinkFactory(_serviceProvider)
+            ?? throw new InvalidOperationException("The sink factory returned null.");
+        return StartTypedRun(sink, sinkIsFactoryBased: true, ct);
+    }
+
+    private PipelineRun<TOutput> StartTypedRun(
+        IPipelineSink<TOutput>? sink,
+        bool sinkIsFactoryBased,
+        CancellationToken ct
+    )
+    {
+        var typedSpec =
+            _typedSpec
+            ?? _typedSpecFactory?.Invoke()
+            ?? throw new InvalidOperationException("No typed pipeline has been configured.");
+        var definition = typedSpec.CreateDefinition(sink, sinkIsFactoryBased);
+        var executionPlan = PipelineExecutionPlan.Compile(definition);
+        var runtime = new PipelineRuntime(executionPlan);
+        var executor = new TypedPipelineExecutor<TInput, TOutput>(runtime, typedSpec, sink, ct);
+        return executor.Start();
+    }
+
+    private PipelineRun<TOutput> RunLegacyAsPipelineRun(CancellationToken ct)
+    {
+        if (_channel is null)
+            throw new InvalidOperationException("No pipeline has been configured.");
+
+        var legacyReader = _channel.RunInBackground(ct);
+        var outputChannel = Channel.CreateUnbounded<PipelineOutput<TOutput>>();
+        var completion = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await foreach (
+                        var result in legacyReader.ReadAllAsync(ct).ConfigureAwait(false)
+                    )
+                    {
+                        var output = new PipelineOutput<TOutput>(null, result);
+                        await outputChannel.Writer.WriteAsync(output, ct).ConfigureAwait(false);
+                    }
+
+                    outputChannel.Writer.TryComplete();
+                }
+                catch (Exception ex)
+                {
+                    outputChannel.Writer.TryComplete(ex);
+                    throw;
+                }
+            },
+            CancellationToken.None
+        );
+
+        return new PipelineRun<TOutput>(
+            outputChannel.Reader,
+            completion,
+            () =>
+                completion.IsCompletedSuccessfully
+                    ? PipelineRunState.Completed
+                    : PipelineRunState.Running
+        );
     }
 }

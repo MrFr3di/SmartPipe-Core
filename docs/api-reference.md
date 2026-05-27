@@ -17,9 +17,11 @@ public interface IClock
 Provides testable access to current UTC time. Enables deterministic unit tests by mocking time.
 
 **Implementations:**
+
 - `TimeProviderClock` - Production implementation using `System.TimeProvider`
 
 **Usage:**
+
 ```csharp
 public class MyService
 {
@@ -54,12 +56,14 @@ public sealed class TimeProviderClock : IClock
 Production clock implementation using .NET's `System.TimeProvider` (available in .NET 8+).
 
 **Example:**
+
 ```csharp
 IClock clock = new TimeProviderClock();
 DateTime now = clock.UtcNow;
 ```
 
 **Dependency Injection:**
+
 ```csharp
 services.AddSingleton<IClock>(new TimeProviderClock());
 ```
@@ -96,10 +100,12 @@ public enum PipelineState
 ```
 
 **New State:** `Paused` - Pipeline is paused (producer suspended). Transitions:
+
 - `Running` → `Paused`: via `SmartPipeChannel.Pause()`
 - `Paused` → `Running`: via `SmartPipeChannel.Resume()`
 
 **Usage:**
+
 ```csharp
 var channel = new SmartPipeChannel<Input, Output>(options);
 channel.Pause();   // State = PipelineState.Paused
@@ -135,11 +141,13 @@ public class SmartPipeChannelOptions
 ```
 
 **New Property:** `DefaultRetryPolicy`
+
 - Type: `RetryPolicy?`
 - Default: `null`
 - Description: Per-pipeline retry policy for transient failures. If `null`, pipeline falls back to 3 retries with 1-second delay (exponential backoff).
 
 **Example:**
+
 ```csharp
 var options = new SmartPipeChannelOptions
 {
@@ -177,6 +185,7 @@ public class ProcessingContext<T>
 ```
 
 **Usage:**
+
 ```csharp
 var context = new ProcessingContext<MyData>(payload);
 context.Metadata[ProcessingContext<MyData>.LineageSource] = "my-source";
@@ -198,13 +207,13 @@ internal static class AtomicHelper
     /// <param name="location">Reference to the value to update.</param>
     /// <param name="update">Function that computes the new value from the current value.</param>
     /// <remarks>
-    /// Uses compare-exchange loop for lock-free thread-safe updates.
+    /// Uses a compare-exchange loop for atomic thread-safe updates.
     /// </remarks>
     public static void CompareExchangeLoop(ref double location, Func<double, double> update);
 }
 ```
 
-**⚠️ Internal Use Only:** This class is marked `internal` and is not part of the public API. It is used by `CircuitBreaker` for lock-free EWMA failure rate updates.
+**⚠️ Internal Use Only:** This class is marked `internal` and is not part of the public API. It is used by `CircuitBreaker` for atomic EWMA failure rate updates.
 
 **Not intended for direct consumption.** Subject to change without notice.
 

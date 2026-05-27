@@ -21,7 +21,11 @@ public class CsvFileSink<T> : ISink<T>
     public CsvFileSink(string path, string delimiter = ",", CultureInfo? culture = null)
     {
         _path = path;
-        _config = new CsvConfiguration(culture ?? CultureInfo.InvariantCulture) { Delimiter = delimiter, HasHeaderRecord = true };
+        _config = new CsvConfiguration(culture ?? CultureInfo.InvariantCulture)
+        {
+            Delimiter = delimiter,
+            HasHeaderRecord = true,
+        };
     }
 
     /// <inheritdoc />

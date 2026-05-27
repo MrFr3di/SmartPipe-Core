@@ -11,7 +11,8 @@ public readonly record struct SmartPipeError(
     string Message,
     ErrorType Type,
     string? Category = null,
-    Exception? InnerException = null)
+    Exception? InnerException = null
+)
 {
     /// <summary>Human-readable error representation.</summary>
     public override string ToString() =>

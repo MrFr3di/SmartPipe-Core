@@ -30,7 +30,8 @@ public class DapperSelector<T> : ISource<T>, IDisposable
         string sql,
         object? parameters = null,
         int commandTimeout = 30,
-        ILogger<DapperSelector<T>>? logger = null)
+        ILogger<DapperSelector<T>>? logger = null
+    )
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
         _sql = sql ?? throw new ArgumentNullException(nameof(sql));
@@ -47,9 +48,15 @@ public class DapperSelector<T> : ISource<T>, IDisposable
     }
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
+    )
     {
-        var reader = await _connection.ExecuteReaderAsync(_sql, _parameters, commandTimeout: _commandTimeout);
+        var reader = await _connection.ExecuteReaderAsync(
+            _sql,
+            _parameters,
+            commandTimeout: _commandTimeout
+        );
         _reader = reader; // Store for DisposeAsync
 
         try
@@ -79,8 +86,8 @@ public class DapperSelector<T> : ISource<T>, IDisposable
         for (int i = 0; i < reader.FieldCount; i++)
         {
             var property = properties.FirstOrDefault(p =>
-                p.Name.Equals(reader.GetName(i), StringComparison.OrdinalIgnoreCase)
-                && p.CanWrite);
+                p.Name.Equals(reader.GetName(i), StringComparison.OrdinalIgnoreCase) && p.CanWrite
+            );
 
             if (property != null && !reader.IsDBNull(i))
                 property.SetValue(instance, reader.GetValue(i));

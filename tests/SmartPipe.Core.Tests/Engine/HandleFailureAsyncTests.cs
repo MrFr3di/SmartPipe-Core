@@ -22,17 +22,24 @@ public class HandleFailureAsyncTests
         {
             BoundedCapacity = 10,
             MaxDegreeOfParallelism = 1,
-            ContinueOnError = true
+            ContinueOnError = true,
         };
         _options.EnableFeature("RetryQueue");
         _channel = new SmartPipeChannel<string, string>(_options);
         _cts = new CancellationTokenSource();
     }
 
-    private async ValueTask InvokeHandleFailureAsync(ProcessingContext<string> ctx, ProcessingResult<string> result, Activity? activity, CancellationToken ct)
+    private async ValueTask InvokeHandleFailureAsync(
+        ProcessingContext<string> ctx,
+        ProcessingResult<string> result,
+        Activity? activity,
+        CancellationToken ct
+    )
     {
-        var method = typeof(SmartPipeChannel<string, string>)
-            .GetMethod("HandleFailureAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+        var method = typeof(SmartPipeChannel<string, string>).GetMethod(
+            "HandleFailureAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(method);
         var task = (ValueTask)method.Invoke(_channel, new object[] { ctx, result, activity!, ct })!;
         await task;
@@ -40,24 +47,27 @@ public class HandleFailureAsyncTests
 
     private RetryQueue<string> GetRetryQueue()
     {
-        var field = typeof(SmartPipeChannel<string, string>)
-            .GetField("_retryQueue", BindingFlags.NonPublic | BindingFlags.Instance);
+        var field = typeof(SmartPipeChannel<string, string>).GetField(
+            "_retryQueue",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(field);
         return (RetryQueue<string>)field.GetValue(_channel)!;
     }
 
     private void SetContinueOnError(bool value)
     {
-        var property = typeof(SmartPipeChannelOptions)
-            .GetProperty("ContinueOnError");
+        var property = typeof(SmartPipeChannelOptions).GetProperty("ContinueOnError");
         Assert.NotNull(property);
         property.SetValue(_options, value);
     }
 
     private CancellationTokenSource GetInternalCts()
     {
-        var field = typeof(SmartPipeChannel<string, string>)
-            .GetField("_internalCts", BindingFlags.NonPublic | BindingFlags.Instance);
+        var field = typeof(SmartPipeChannel<string, string>).GetField(
+            "_internalCts",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
         Assert.NotNull(field);
         return (CancellationTokenSource)field.GetValue(_channel)!;
     }
@@ -142,7 +152,7 @@ public class HandleFailureAsyncTests
         var ctx = new ProcessingContext<string>("test-payload");
         var error = new SmartPipeError("test error", ErrorType.Transient, "Test");
         var result = ProcessingResult<string>.Failure(error, ctx.TraceId);
-        
+
         using var activity = new Activity("TestActivity");
         activity.Start();
 
@@ -150,7 +160,10 @@ public class HandleFailureAsyncTests
         await InvokeHandleFailureAsync(ctx, result, activity, _cts.Token);
 
         // Assert: Activity should have error tags
-        Assert.Equal(ErrorType.Transient.ToString(), activity.Tags.FirstOrDefault(t => t.Key == "smartpipe.error.type").Value);
+        Assert.Equal(
+            ErrorType.Transient.ToString(),
+            activity.Tags.FirstOrDefault(t => t.Key == "smartpipe.error.type").Value
+        );
         Assert.Equal(ActivityStatusCode.Error, activity.Status);
         Assert.Equal("test error", activity.StatusDescription);
     }

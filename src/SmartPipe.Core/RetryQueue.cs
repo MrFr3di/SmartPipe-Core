@@ -31,12 +31,17 @@ public class RetryQueue<T>
     /// <param name="deadLetterSink">Sink for exhausted retries.</param>
     /// <param name="clock">Optional clock for testability (defaults to TimeProviderClock()).</param>
     /// <param name="pollTimeoutMs">Timeout in milliseconds for polling when no items are ready. Default 100ms.</param>
-    public RetryQueue(int capacity = 10000, ILogger<RetryQueue<T>>? logger = null, ISink<object>? deadLetterSink = null, IClock? clock = null, int pollTimeoutMs = 100)
+    public RetryQueue(
+        int capacity = 10000,
+        ILogger<RetryQueue<T>>? logger = null,
+        ISink<object>? deadLetterSink = null,
+        IClock? clock = null,
+        int pollTimeoutMs = 100
+    )
     {
-        _channel = Channel.CreateBounded<RetryItem<T>>(new BoundedChannelOptions(capacity)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest
-        });
+        _channel = Channel.CreateBounded<RetryItem<T>>(
+            new BoundedChannelOptions(capacity) { FullMode = BoundedChannelFullMode.DropOldest }
+        );
         _logger = logger;
         _deadLetterSink = deadLetterSink;
         _clock = clock ?? new TimeProviderClock();
@@ -53,13 +58,23 @@ public class RetryQueue<T>
     /// <returns>True if enqueued; false if budget exhausted.</returns>
     /// <remarks>Routes to dead letter sink when retry budget is exhausted.</remarks>
     public async ValueTask<bool> EnqueueAsync(
-        ProcessingContext<T> ctx, RetryPolicy policy,
-        int retryCount, SmartPipeError error, CancellationToken ct = default, int? retryBudget = null)
+        ProcessingContext<T> ctx,
+        RetryPolicy policy,
+        int retryCount,
+        SmartPipeError error,
+        CancellationToken ct = default,
+        int? retryBudget = null
+    )
     {
         var effectiveBudget = retryBudget ?? policy.MaxRetries;
         if (retryCount >= effectiveBudget)
         {
-            _logger?.LogWarning("Retry budget exhausted for item {TraceId}, retry count {RetryCount} >= budget {Budget}", ctx.TraceId, retryCount, effectiveBudget);
+            _logger?.LogWarning(
+                "Retry budget exhausted for item {TraceId}, retry count {RetryCount} >= budget {Budget}",
+                ctx.TraceId,
+                retryCount,
+                effectiveBudget
+            );
             if (_deadLetterSink != null)
             {
                 var result = ProcessingResult<object>.Failure(error, ctx.TraceId);
@@ -87,20 +102,22 @@ public class RetryQueue<T>
     {
         using var cts = new CancellationTokenSource(_pollTimeoutMs);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, cts.Token);
-        
+
         try
         {
             // Always wait — removes the race condition between Count check and WaitToReadAsync
             await _channel.Reader.WaitToReadAsync(linked.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested || ct.IsCancellationRequested)
+        catch (OperationCanceledException)
+            when (cts.IsCancellationRequested || ct.IsCancellationRequested)
         {
             return null;
         }
 
         if (_channel.Reader.TryRead(out var item))
         {
-            if (item.RetryAt <= _clock.UtcNow) return item;
+            if (item.RetryAt <= _clock.UtcNow)
+                return item;
             _channel.Writer.TryWrite(item); // Not ready yet — re-queue
         }
         return null;

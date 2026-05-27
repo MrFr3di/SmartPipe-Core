@@ -29,7 +29,10 @@ public class ValidationTransform<T> : ITransformer<T, T>
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     /// <inheritdoc/>
-    public ValueTask<ProcessingResult<T>> TransformAsync(ProcessingContext<T> ctx, CancellationToken ct = default)
+    public ValueTask<ProcessingResult<T>> TransformAsync(
+        ProcessingContext<T> ctx,
+        CancellationToken ct = default
+    )
     {
         var errors = new List<string>();
 
@@ -43,14 +46,19 @@ public class ValidationTransform<T> : ITransformer<T, T>
         foreach (var rule in _rules)
         {
             var error = rule(ctx.Payload);
-            if (error != null) errors.Add(error);
+            if (error != null)
+                errors.Add(error);
         }
 
         if (errors.Count == 0)
             return ValueTask.FromResult(ProcessingResult<T>.Success(ctx.Payload, ctx.TraceId));
 
-        return ValueTask.FromResult(ProcessingResult<T>.Failure(
-            new SmartPipeError(string.Join("; ", errors), ErrorType.Permanent, "Validation"), ctx.TraceId));
+        return ValueTask.FromResult(
+            ProcessingResult<T>.Failure(
+                new SmartPipeError(string.Join("; ", errors), ErrorType.Permanent, "Validation"),
+                ctx.TraceId
+            )
+        );
     }
 
     /// <inheritdoc/>

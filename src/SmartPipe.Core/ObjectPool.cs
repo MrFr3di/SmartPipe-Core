@@ -8,7 +8,8 @@ namespace SmartPipe.Core;
 /// Uses version stamps to prevent ABA race conditions.
 /// Enforces a maximum total capacity to prevent unbounded growth under sustained load.</summary>
 /// <typeparam name="T">Type of pooled objects.</typeparam>
-public class ObjectPool<T> where T : class
+public class ObjectPool<T>
+    where T : class
 {
     private readonly T?[] _items;
     private readonly int[] _versions;
@@ -28,7 +29,8 @@ public class ObjectPool<T> where T : class
         _items = new T[capacity];
         _versions = new int[capacity];
         _maxCapacity = maxCapacity;
-        for (int i = 0; i < capacity; i++) _items[i] = _factory();
+        for (int i = 0; i < capacity; i++)
+            _items[i] = _factory();
         _index = capacity;
         _totalCreated = capacity;
     }
@@ -87,7 +89,8 @@ public class ObjectPool<T> where T : class
     /// If pool is full, the item is discarded and left for GC.</remarks>
     public void Return(T item)
     {
-        if (item == null) throw new ArgumentNullException(nameof(item));
+        if (item == null)
+            throw new ArgumentNullException(nameof(item));
 
         int i = Interlocked.Increment(ref _index) - 1;
         if (i >= 0 && i < _items.Length)

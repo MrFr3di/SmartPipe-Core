@@ -6,8 +6,11 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
-  test:
+  build-test-pack:
     runs-on: ubuntu-latest
     
     steps:
@@ -19,10 +22,39 @@ jobs:
         dotnet-version: '10.0.x'
     
     - name: Restore
-      run: dotnet restore
+      run: dotnet restore SmartPipe.Core.slnx
+
+    - name: Format verify (informational until repository formatting pass)
+      continue-on-error: true
+      run: dotnet format SmartPipe.Core.slnx --verify-no-changes --no-restore
     
     - name: Build
-      run: dotnet build --no-restore -c Release
+      run: dotnet build SmartPipe.Core.slnx --no-restore -c Release
     
-    - name: Test
-      run: dotnet test --no-build --verbosity normal -c Release
+    - name: Core tests with coverage
+      run: dotnet test tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build --verbosity normal -c Release --collect:"XPlat Code Coverage"
+
+    - name: Extensions tests
+      run: dotnet test tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build --verbosity normal -c Release
+
+    - name: Pack Core
+      run: dotnet pack src/SmartPipe.Core/SmartPipe.Core.csproj --no-build -c Release -o artifacts/packages
+
+    - name: Pack Extensions
+      run: dotnet pack src/SmartPipe.Extensions/SmartPipe.Extensions.csproj --no-build -c Release -o artifacts/packages
+
+    - name: Vulnerable package scan
+      run: dotnet list SmartPipe.Core.slnx package --vulnerable --include-transitive
+
+    - name: Deprecated package scan
+      run: dotnet list SmartPipe.Core.slnx package --deprecated --include-transitive
+
+    - name: Outdated package report
+      continue-on-error: true
+      run: dotnet list SmartPipe.Core.slnx package --outdated
+
+    - name: Upload packages
+      uses: actions/upload-artifact@v4
+      with:
+        name: packages
+        path: artifacts/packages

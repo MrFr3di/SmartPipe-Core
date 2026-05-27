@@ -1,5 +1,5 @@
-using System.Reflection;
 using System.Data;
+using System.Reflection;
 using Dapper;
 using SmartPipe.Core;
 
@@ -46,14 +46,19 @@ public class DbSink<T> : ISink<T>
     private static string GenerateInsertSql()
     {
         var type = typeof(T);
-        var tableAttr = type.GetCustomAttribute<System.ComponentModel.DataAnnotations.Schema.TableAttribute>();
+        var tableAttr =
+            type.GetCustomAttribute<System.ComponentModel.DataAnnotations.Schema.TableAttribute>();
         var tableName = tableAttr?.Name ?? type.Name;
         var props = type.GetProperties().Where(p => p.CanRead).ToList();
-        var columns = string.Join(", ", props.Select(p =>
-        {
-            var col = p.GetCustomAttribute<System.ComponentModel.DataAnnotations.Schema.ColumnAttribute>();
-            return col?.Name ?? p.Name;
-        }));
+        var columns = string.Join(
+            ", ",
+            props.Select(p =>
+            {
+                var col =
+                    p.GetCustomAttribute<System.ComponentModel.DataAnnotations.Schema.ColumnAttribute>();
+                return col?.Name ?? p.Name;
+            })
+        );
         var values = string.Join(", ", props.Select(p => $"@{p.Name}"));
         return $"INSERT INTO {tableName} ({columns}) VALUES ({values})";
     }

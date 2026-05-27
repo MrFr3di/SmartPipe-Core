@@ -26,7 +26,8 @@ public class HttpSelector<T> : ISource<T>
         HttpClient httpClient,
         string requestUri,
         ResiliencePipeline? pipeline = null,
-        ILogger<HttpSelector<T>>? logger = null)
+        ILogger<HttpSelector<T>>? logger = null
+    )
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _requestUri = requestUri ?? throw new ArgumentNullException(nameof(requestUri));
@@ -38,14 +39,19 @@ public class HttpSelector<T> : ISource<T>
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
+    )
     {
         _logger?.LogInformation("Fetching data from {Uri}", _requestUri);
 
-        var response = _pipeline != null
-            ? await _pipeline.ExecuteAsync(
-                async token => await _httpClient.GetAsync(_requestUri, token), ct)
-            : await _httpClient.GetAsync(_requestUri, ct);
+        var response =
+            _pipeline != null
+                ? await _pipeline.ExecuteAsync(
+                    async token => await _httpClient.GetAsync(_requestUri, token),
+                    ct
+                )
+                : await _httpClient.GetAsync(_requestUri, ct);
 
         response.EnsureSuccessStatusCode();
 

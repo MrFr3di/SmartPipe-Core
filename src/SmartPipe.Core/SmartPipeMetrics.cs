@@ -1,7 +1,9 @@
 #nullable enable
 
+using System.Buffers;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Text;
 using System.Text.Json;
 
 namespace SmartPipe.Core;
@@ -9,13 +11,30 @@ namespace SmartPipe.Core;
 /// <summary>OpenTelemetry-compatible metrics with export to JSON and Prometheus.</summary>
 public class SmartPipeMetrics
 {
-    private static readonly Meter Meter = new("SmartPipe.Core", 
-        typeof(SmartPipeMetrics).Assembly.GetName().Version?.ToString() ?? "1.0.0");
-    private static readonly Counter<long> ItemsProcessedCounter = Meter.CreateCounter<long>("smartpipe.items.processed", "items");
-    private static readonly Counter<long> ItemsFailedCounter = Meter.CreateCounter<long>("smartpipe.items.failed", "items");
-    private static readonly Counter<long> DuplicatesFilteredCounter = Meter.CreateCounter<long>("smartpipe.duplicates.filtered", "items");
-    private static readonly Counter<long> RetriesCounter = Meter.CreateCounter<long>("smartpipe.retries", "retries");
-    private static readonly Histogram<double> LatencyHistogram = Meter.CreateHistogram<double>("smartpipe.latency", "ms");
+    private static readonly Meter Meter = new(
+        "SmartPipe.Core",
+        typeof(SmartPipeMetrics).Assembly.GetName().Version?.ToString() ?? "1.0.0"
+    );
+    private static readonly Counter<long> ItemsProcessedCounter = Meter.CreateCounter<long>(
+        "smartpipe.items.processed",
+        "items"
+    );
+    private static readonly Counter<long> ItemsFailedCounter = Meter.CreateCounter<long>(
+        "smartpipe.items.failed",
+        "items"
+    );
+    private static readonly Counter<long> DuplicatesFilteredCounter = Meter.CreateCounter<long>(
+        "smartpipe.duplicates.filtered",
+        "items"
+    );
+    private static readonly Counter<long> RetriesCounter = Meter.CreateCounter<long>(
+        "smartpipe.retries",
+        "retries"
+    );
+    private static readonly Histogram<double> LatencyHistogram = Meter.CreateHistogram<double>(
+        "smartpipe.latency",
+        "ms"
+    );
 
     /// <summary>Total items successfully processed.</summary>
     public long ItemsProcessed;
@@ -56,13 +75,25 @@ public class SmartPipeMetrics
     }
 
     /// <summary>Record a failed item.</summary>
-    public void RecordFailed() { Interlocked.Increment(ref ItemsFailed); ItemsFailedCounter.Add(1); }
+    public void RecordFailed()
+    {
+        Interlocked.Increment(ref ItemsFailed);
+        ItemsFailedCounter.Add(1);
+    }
 
     /// <summary>Record a filtered duplicate.</summary>
-    public void RecordDuplicate() { Interlocked.Increment(ref DuplicatesFiltered); DuplicatesFilteredCounter.Add(1); }
+    public void RecordDuplicate()
+    {
+        Interlocked.Increment(ref DuplicatesFiltered);
+        DuplicatesFilteredCounter.Add(1);
+    }
 
     /// <summary>Record a retry attempt.</summary>
-    public void RecordRetry() { Interlocked.Increment(ref Retries); RetriesCounter.Add(1); }
+    public void RecordRetry()
+    {
+        Interlocked.Increment(ref Retries);
+        RetriesCounter.Add(1);
+    }
 
     /// <summary>Update the ObjectPool hit rate metric.</summary>
     /// <param name="hitRate">Pool hit rate between 0.0 and 1.0.</param>
@@ -72,21 +103,41 @@ public class SmartPipeMetrics
     }
 
     /// <summary>Export all metrics as a dictionary.</summary>
-    public Dictionary<string, object> Export() => new()
-    {
-        ["items_processed"] = ItemsProcessed,
-        ["items_failed"] = ItemsFailed,
-        ["duplicates_filtered"] = DuplicatesFiltered,
-        ["retries"] = Retries,
-        ["avg_latency_ms"] = AvgLatencyMs,
-        ["smooth_latency_ms"] = SmoothLatencyMs,
-        ["smooth_throughput"] = SmoothThroughput,
-        ["queue_size"] = QueueSize,
-        ["pool_hit_rate"] = PoolHitRate,
-    };
+    public Dictionary<string, object> Export() =>
+        new()
+        {
+            ["items_processed"] = ItemsProcessed,
+            ["items_failed"] = ItemsFailed,
+            ["duplicates_filtered"] = DuplicatesFiltered,
+            ["retries"] = Retries,
+            ["avg_latency_ms"] = AvgLatencyMs,
+            ["smooth_latency_ms"] = SmoothLatencyMs,
+            ["smooth_throughput"] = SmoothThroughput,
+            ["queue_size"] = QueueSize,
+            ["pool_hit_rate"] = PoolHitRate,
+        };
 
     /// <summary>Export as JSON string.</summary>
-    public string ExportJson() => JsonSerializer.Serialize(Export());
+    public string ExportJson()
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("items_processed", ItemsProcessed);
+            writer.WriteNumber("items_failed", ItemsFailed);
+            writer.WriteNumber("duplicates_filtered", DuplicatesFiltered);
+            writer.WriteNumber("retries", Retries);
+            writer.WriteNumber("avg_latency_ms", AvgLatencyMs);
+            writer.WriteNumber("smooth_latency_ms", SmoothLatencyMs);
+            writer.WriteNumber("smooth_throughput", SmoothThroughput);
+            writer.WriteNumber("queue_size", QueueSize);
+            writer.WriteNumber("pool_hit_rate", PoolHitRate);
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
 
     /// <summary>Export in Prometheus text format.</summary>
     public string ExportPrometheus()

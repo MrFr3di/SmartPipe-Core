@@ -13,7 +13,8 @@ public class MiddlewareTransformer<T> : ITransformer<T, T>
     private readonly Func<T, T> _func;
 
     /// <summary>Create from a delegate.</summary>
-    public MiddlewareTransformer(Func<T, T> func) => _func = func ?? throw new ArgumentNullException(nameof(func));
+    public MiddlewareTransformer(Func<T, T> func) =>
+        _func = func ?? throw new ArgumentNullException(nameof(func));
 
     /// <summary>
     /// Initializes the middleware transformer.
@@ -29,7 +30,10 @@ public class MiddlewareTransformer<T> : ITransformer<T, T>
     /// <param name="ctx">Processing context containing the input payload.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A ValueTask containing the processing result with the transformed output.</returns>
-    public ValueTask<ProcessingResult<T>> TransformAsync(ProcessingContext<T> ctx, CancellationToken ct = default)
+    public ValueTask<ProcessingResult<T>> TransformAsync(
+        ProcessingContext<T> ctx,
+        CancellationToken ct = default
+    )
     {
         try
         {
@@ -40,7 +44,10 @@ public class MiddlewareTransformer<T> : ITransformer<T, T>
         {
             return ValueTask.FromResult(
                 ProcessingResult<T>.Failure(
-                    new SmartPipeError(ex.Message, ErrorType.Permanent, "Middleware", ex), ctx.TraceId));
+                    new SmartPipeError(ex.Message, ErrorType.Permanent, "Middleware", ex),
+                    ctx.TraceId
+                )
+            );
         }
     }
 

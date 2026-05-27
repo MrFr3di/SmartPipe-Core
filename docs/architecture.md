@@ -36,7 +36,7 @@ The CircuitBreaker implements four states:
 - **Isolated**: Manually isolated state (via `Isolate()` method), blocks all requests indefinitely until manually reset.
 - **Performance:** `GetMetrics()` now creates the metrics dictionary with exact capacity (4), reducing internal resizing allocations
 
-The CircuitBreaker uses lock-free atomic operations for state transitions and combines EWMA (Exponentially Weighted Moving Average) for fast reaction with a sliding window for accurate threshold decisions.
+The CircuitBreaker uses atomic state transitions and combines EWMA (Exponentially Weighted Moving Average) for fast reaction with a sliding window for accurate threshold decisions.
 
 ## Core Components
 
@@ -48,9 +48,12 @@ Uses `Stopwatch.GetTimestamp()` for throughput calculation instead of `Environme
 
 Catch-all `catch (Exception)` block handles unexpected exception types (`ArgumentException`, `JsonException`) that previously crashed the consumer task.
 
-### ObjectPool and RetryQueue Coordination
+### ObjectPool Policy
 
-`HandleTransformResultAsync` returns context to the pool only for successful and filtered items. Retried items keep their context until retry completes, preventing a race where a retried item's context could be rented by another item.
+`ObjectPool` is disabled by default in the 1.1.0 runtime path. Source-created
+contexts are not returned to the pool, which avoids unclear ownership and
+double-return risks. Any future pooling path must have explicit ownership,
+reset, thread-safety, and benchmark evidence.
 
 ### DrainAsync
 
