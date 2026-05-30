@@ -216,3 +216,22 @@ public sealed record ObserverFailedEvent(
     DateTimeOffset TimestampUtc,
     Exception Exception
 ) : PipelineEvent(PipelineId, RunId, 0, null, 0, TimestampUtc);
+
+/// <summary>Event emitted when a circuit breaker opens for a stage.</summary>
+public sealed record CircuitBreakerOpenedEvent(
+    string PipelineId,
+    string RunId,
+    string StageId,
+    DateTimeOffset TimestampUtc
+) : PipelineEvent(PipelineId, RunId, 0, StageId, 0, TimestampUtc);
+
+/// <summary>Event emitted when an item is rejected by an open circuit breaker.</summary>
+public sealed record CircuitBreakerRejectedEvent(
+    string PipelineId,
+    string RunId,
+    ulong TraceId,
+    string StageId,
+    int Attempt,
+    DateTimeOffset TimestampUtc,
+    SmartPipeError Error
+) : PipelineEvent(PipelineId, RunId, TraceId, StageId, Attempt, TimestampUtc);

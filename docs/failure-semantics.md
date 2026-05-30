@@ -33,14 +33,19 @@ The timeout vocabulary is:
 - `ShutdownTimeout`: graceful shutdown before abort.
 
 In the 1.1.0 typed runtime, `AttemptTimeout` is enforced for envelope-aware
-transformer stages. `StageTimeout` is also used as an upper bound for each stage
-attempt, so a stage can time out even when an attempt-specific timeout is not
-configured. A timed-out attempt produces `StageResultKind.TimedOut`, a transient
-`SmartPipeError` with category `Timeout`, and a `StageFailedEvent`. The
-resulting terminal item then follows the same `OnPermanentFailure` action as
-other terminal stage failures. `PipelineTimeout`, sink attempt timeout
-enforcement, and full retry-delay budget enforcement remain planned hardening
-work and must not be claimed as complete.
+transformer stages. `StageTimeout` is a wall-clock budget for the whole stage,
+including execution attempts and retry delays. If a retry delay cannot fit into
+the remaining stage budget, retry is not scheduled. Budget exhaustion for
+retryable errors uses `OnRetryExhausted`. `AttemptTimeout` remains per-attempt.
+Effective attempt timeout remains `min(AttemptTimeout, remaining StageTimeout)`.
+A timed-out attempt produces `StageResultKind.TimedOut`, a transient
+`SmartPipeError` with category `Timeout`, and a `StageFailedEvent`. If no retry
+policy is configured, or the timeout error is not retryable, the terminal item
+uses `OnPermanentFailure`. If retry accepts the timeout error but the stage
+budget is exhausted before another retry can run, the runtime emits
+`RetryExhaustedEvent` and applies `OnRetryExhausted`. `PipelineTimeout` and sink
+attempt timeout enforcement remain planned hardening work and must not be
+claimed as complete.
 
 ## Retry
 
@@ -49,6 +54,21 @@ once per failed attempt. Retry exhaustion produces one terminal action.
 
 The safe default retry queue overflow policy is `Wait`; dropping retry items is
 only acceptable when explicitly configured.
+
+### Legacy RetryQueue overflow policy
+
+`SmartPipeChannelOptions.RetryQueueOverflowPolicy` controls behavior when the
+bounded retry queue is full (only when feature flag `"RetryQueue"` is enabled):
+
+- `Wait` — block until capacity is available. Respects cancellation token.
+- `FailFast` — do not enqueue; the overflowed item is treated as terminal failure.
+- `DeadLetter` — do not enqueue; write to `DeadLetterSink` if configured. Falls
+  back to terminal failure when no `DeadLetterSink` is configured.
+- `DropNewest` — drop the incoming item. Lossy; opt-in.
+- `DropOldest` — drop the oldest queued item. Lossy; opt-in.
+
+The default is `Wait`. Lossy policies (`DropNewest`, `DropOldest`) are opt-in
+and documented as at-most-once for dropped retry items.
 
 In the 1.1.0 typed runtime, `StageFailureOptions.Retry` is enforced for
 envelope-aware transformer stages that return a retryable `SmartPipeError`.
@@ -85,3 +105,25 @@ The stage writes `DeadLetterEnvelope<TStageInput>` through the configured
 serializer/redactor and emits `DeadLetterWrittenEvent`. The runtime leaves the
 target stream open; applications own stream lifetime, rotation, encryption,
 redaction policy, and access control.
+
+## Circuit Breaker (typed runtime, 1.1.x update4)
+
+The typed runtime supports stage-level circuit breaker policy for envelope-aware
+transformer stages. Each stage with a configured `CircuitBreakerPolicy` gets an
+independent circuit breaker instance scoped to the pipeline run.
+
+The circuit breaker check happens before every transformer attempt (including
+retries). When the breaker is open, the transformer is not called, and the item
+immediately follows the configured `OnPermanentFailure` action.
+
+Failure counting is per-attempt: every failed transformer attempt (including
+failed retries) is recorded. Successes are recorded when an attempt succeeds.
+
+A breaker-open rejection produces a `SmartPipeError` with `ErrorType.Permanent`
+and category `"CircuitBreaker"`. The rejection is terminal — it does not invoke
+the retry policy. The runtime emits `CircuitBreakerOpenedEvent` when the breaker
+transitions to open and `CircuitBreakerRejectedEvent` for each item rejected
+while the breaker is open.
+
+Legacy `SmartPipeChannel` circuit breaker behavior is unchanged by this update.
+Sink circuit breaker and `PipelineTimeout` remain out of scope.

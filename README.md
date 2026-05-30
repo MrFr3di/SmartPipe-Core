@@ -103,6 +103,8 @@ pipeline.AddTransformer(new MiddlewareTransformer<string>(text => text.Trim()));
 var result = await pipeline.ProcessSingleAsync(new ProcessingContext<string>("Long text to summarize..."));
 ```
 
+`SmartPipeChannel` is a compatibility runtime for legacy 1.x consumers. For new projects, prefer `PipelineBuilder` with envelope-aware `IPipeline*` interfaces. Mutation methods (`AddSource`, `AddTransformer`, `AddSink`) must be called before `RunAsync` or `RunInBackground`. `DrainAsync` waits for accepted items to finish processing; use `Cancel()` for immediate stop.
+
 ### API Aggregation (Fan-out → Aggregate)
 
 ```csharp

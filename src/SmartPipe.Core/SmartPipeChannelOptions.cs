@@ -34,6 +34,9 @@ public class SmartPipeChannelOptions
     /// <summary>Callback for real-time metrics updates.</summary>
     public Action<SmartPipeMetrics>? OnMetrics { get; set; }
 
+    /// <summary>When true, AddSource/AddTransformer/AddSink throw after pipeline start. Default false for backward compatibility.</summary>
+    public bool ThrowOnMutationAfterStart { get; set; } = false;
+
     /// <summary>Optional deduplication filter for input items.</summary>
     public DeduplicationFilter? DeduplicationFilter { get; set; }
 
@@ -45,6 +48,13 @@ public class SmartPipeChannelOptions
 
     /// <summary>Default retry policy for transient failures. If null, fallback to 3 retries with 1s delay.</summary>
     public RetryPolicy? DefaultRetryPolicy { get; set; }
+
+    /// <summary>
+    /// Controls how the legacy retry queue behaves when its bounded capacity is reached.
+    /// Defaults to <see cref="RetryQueueOverflowPolicy.Wait"/> for safe backpressure.
+    /// </summary>
+    public RetryQueueOverflowPolicy RetryQueueOverflowPolicy { get; set; } =
+        RetryQueueOverflowPolicy.Wait;
 
     /// <summary>Feature flags for optional pipeline components.</summary>
     public Dictionary<string, bool> FeatureFlags { get; } =

@@ -32,7 +32,10 @@ channels, workers, retry scheduler, cancellation, output stream, observer
 dispatcher, initialized components, and runtime-owned resource disposal.
 
 The legacy `SmartPipeChannel<TInput,TOutput>` execution engine remains available
-for 1.x compatibility. New typed pipelines should prefer:
+for 1.x compatibility. It supports single-stage pipelines with the 1.x `ISource<T>` /
+`ITransformer<TInput,TOutput>` / `ISink<T>` model, but does NOT implement envelope-aware
+execution, typed observers, or typed dead-letter semantics. New code should prefer the
+modern typed runtime via `PipelineBuilder`:
 
 ```csharp
 var run = PipelineBuilder
@@ -43,6 +46,14 @@ var run = PipelineBuilder
 
 await run.Completion;
 ```
+
+**Legacy lifecycle hardening (1.1.x update2):** `SmartPipeChannel` lifecycle operations have been hardened. `DrainAsync` now stops accepting new work and waits for all accepted items to complete processing through transformers and sinks before returning; it must NOT be used as an abort/discard operation. Mutation methods (`AddSource`, `AddTransformer`, `AddSink`) are rejected after the pipeline has started (when `ThrowOnMutationAfterStart` is enabled). `RunInBackground` throws on repeated calls. This update does NOT implement sink retry/timeout, `PipelineTimeout`, or circuit breaker semantics — those remain out of scope for the legacy runtime.
+
+The legacy `RetryQueue<T>` now supports explicit overflow policies via
+`SmartPipeChannelOptions.RetryQueueOverflowPolicy`. When the retry queue reaches
+capacity, the policy determines whether to wait, fail immediately, dead-letter,
+or drop items. The default is `Wait` (blocking backpressure). This update does
+not redesign retry scheduling/execution separation — that remains future hardening.
 
 ## Component Lifetimes
 
@@ -127,12 +138,16 @@ the runtime applies `OnPermanentFailure`:
   `PipelineFailureActionException`.
 
 `TimeoutPolicy.AttemptTimeout` is enforced for typed transformer stages.
-`StageTimeout` is used as the total stage budget available to an attempt. A
-timed-out attempt is converted into a terminal `TimedOut` result with a
-transient `SmartPipeError` in the `Timeout` category, emits `StageFailedEvent`,
-and then follows the configured terminal failure action. This keeps timeout,
-dead-letter, skip, stop, and fault behavior on one runtime path. Full retry-delay
-budget enforcement is still a hardening item and is not described as complete.
+`StageTimeout` is a wall-clock budget for the whole stage, including execution
+attempts and retry delays. A timed-out attempt is converted into a `TimedOut`
+stage result with a transient `SmartPipeError` in the `Timeout` category and
+emits `StageFailedEvent`. If the timeout is not retryable, the item follows
+`OnPermanentFailure`; if retry accepts it but the retry budget is exhausted, the
+runtime emits `RetryExhaustedEvent` and applies `OnRetryExhausted`. If a retry
+delay cannot fit into the remaining stage budget, retry is not scheduled.
+`AttemptTimeout` remains per-attempt. Effective attempt timeout remains
+`min(AttemptTimeout, remaining StageTimeout)`. `PipelineTimeout` and sink
+timeout/retry policy remain out of scope.
 
 `StageFailureOptions.Retry` is also enforced for typed transformer stages. A
 retryable failure emits `StageFailedEvent`, `RetryScheduledEvent`, updates the
@@ -142,3 +157,42 @@ stage again. When the retry budget is exhausted, the runtime emits
 
 The runtime does not dispose stage dead-letter streams. Storage lifetime,
 rotation, encryption, and payload redaction remain application-owned decisions.
+
+## Circuit Breaker (typed runtime update4)
+
+Typed transformer stages can configure a circuit breaker policy:
+
+```csharp
+var run = PipelineBuilder
+    .From(source)
+    .Transform(
+        transformer,
+        new StageFailureOptions
+        {
+            CircuitBreaker = new CircuitBreakerPolicy
+            {
+                FailureThreshold = 5,
+                BreakDuration = TimeSpan.FromSeconds(30),
+            },
+            OnPermanentFailure = FailureAction.Skip,
+        })
+    .Run();
+```
+
+Each stage with a `CircuitBreakerPolicy` owns an independent breaker instance
+scoped to the run. The breaker is checked before every attempt (initial and
+retry). When open, the transformer is not called — the item is rejected with a
+permanent `SmartPipeError` (category `"CircuitBreaker"`) and follows
+`OnPermanentFailure`.
+
+The breaker records every failed attempt (including retries) as a failure and
+every successful attempt as a success. Breaker-open rejection is terminal and
+does not invoke retry.
+
+The runtime emits `CircuitBreakerOpenedEvent` when the breaker opens and
+`CircuitBreakerRejectedEvent` for each rejected item. Half-open behavior is
+driven by `BreakDuration` and respects the existing `CircuitBreaker` state
+machine.
+
+Legacy `SmartPipeChannel` circuit breaker is unchanged. Sink and
+`PipelineTimeout` circuit breaker remain future hardening.

@@ -9,8 +9,8 @@ namespace SmartPipe.Core;
 /// <summary>Lock-free retry queue with cryptographically secure jitter.</summary>
 /// <typeparam name="T">Type of payload.</typeparam>
 /// <remarks>
-/// Uses <see cref="BoundedChannelFullMode.DropOldest"/> when capacity is reached.
 /// Applies cryptographic jitter to retry delays to prevent thundering herd.
+/// Uses <see cref="RetryQueueOverflowPolicy"/> to control overflow behavior.
 /// </remarks>
 public class RetryQueue<T>
 {
@@ -18,6 +18,8 @@ public class RetryQueue<T>
     private readonly ILogger<RetryQueue<T>>? _logger;
     private readonly ISink<object>? _deadLetterSink;
     private readonly IClock _clock;
+    private readonly RetryQueueOverflowPolicy _overflowPolicy;
+    private readonly int _capacity;
 
     /// <summary>Default timeout for polling when no items are available. Configurable via constructor.</summary>
     private readonly int _pollTimeoutMs;
@@ -30,17 +32,30 @@ public class RetryQueue<T>
     /// <param name="logger">Optional logger.</param>
     /// <param name="deadLetterSink">Sink for exhausted retries.</param>
     /// <param name="clock">Optional clock for testability (defaults to TimeProviderClock()).</param>
+    /// <param name="overflowPolicy">Policy for handling queue overflow (defaults to Wait).</param>
     /// <param name="pollTimeoutMs">Timeout in milliseconds for polling when no items are ready. Default 100ms.</param>
     public RetryQueue(
         int capacity = 10000,
         ILogger<RetryQueue<T>>? logger = null,
         ISink<object>? deadLetterSink = null,
         IClock? clock = null,
+        RetryQueueOverflowPolicy overflowPolicy = RetryQueueOverflowPolicy.Wait,
         int pollTimeoutMs = 100
     )
     {
+        _overflowPolicy = overflowPolicy;
+        _capacity = capacity;
+        var fullMode = overflowPolicy switch
+        {
+            RetryQueueOverflowPolicy.Wait => BoundedChannelFullMode.Wait,
+            RetryQueueOverflowPolicy.DropOldest => BoundedChannelFullMode.DropOldest,
+            RetryQueueOverflowPolicy.DropNewest => BoundedChannelFullMode.DropWrite,
+            RetryQueueOverflowPolicy.FailFast => BoundedChannelFullMode.Wait,
+            RetryQueueOverflowPolicy.DeadLetter => BoundedChannelFullMode.Wait,
+            _ => BoundedChannelFullMode.Wait
+        };
         _channel = Channel.CreateBounded<RetryItem<T>>(
-            new BoundedChannelOptions(capacity) { FullMode = BoundedChannelFullMode.DropOldest }
+            new BoundedChannelOptions(capacity) { FullMode = fullMode }
         );
         _logger = logger;
         _deadLetterSink = deadLetterSink;
@@ -87,8 +102,44 @@ public class RetryQueue<T>
         var jitteredDelay = ApplyJitter(baseDelay);
         var retryAt = _clock.UtcNow + jitteredDelay;
         var item = new RetryItem<T>(ctx, policy, retryCount + 1, error, retryAt, retryBudget ?? -1);
-        _channel.Writer.TryWrite(item);
-        return true;
+
+        switch (_overflowPolicy)
+        {
+            case RetryQueueOverflowPolicy.Wait:
+                await _channel.Writer.WriteAsync(item, ct).ConfigureAwait(false);
+                return true;
+
+            case RetryQueueOverflowPolicy.FailFast:
+                if (Count >= _capacity)
+                    return false;
+                _channel.Writer.TryWrite(item);
+                return true;
+
+            case RetryQueueOverflowPolicy.DeadLetter:
+                if (Count >= _capacity)
+                {
+                    if (_deadLetterSink != null)
+                    {
+                        var deadResult = ProcessingResult<object>.Failure(error, ctx.TraceId);
+                        await _deadLetterSink.WriteAsync(deadResult, ct).ConfigureAwait(false);
+                    }
+                    return false;
+                }
+                _channel.Writer.TryWrite(item);
+                return true;
+
+            case RetryQueueOverflowPolicy.DropNewest:
+                _channel.Writer.TryWrite(item); // Will drop via BoundedChannelFullMode.DropWrite
+                return true; // Always returns true — dropped items are silently lost (documented as lossy)
+
+            case RetryQueueOverflowPolicy.DropOldest:
+                _channel.Writer.TryWrite(item); // Will drop via BoundedChannelFullMode.DropOldest
+                return true; // Always returns true
+
+            default:
+                _channel.Writer.TryWrite(item);
+                return true;
+        }
     }
 
     /// <summary>Tries to get the next retry item that is ready.</summary>
@@ -118,7 +169,18 @@ public class RetryQueue<T>
         {
             if (item.RetryAt <= _clock.UtcNow)
                 return item;
-            _channel.Writer.TryWrite(item); // Not ready yet — re-queue
+            // Not ready yet — attempt re-queue with policy awareness
+            if (_overflowPolicy == RetryQueueOverflowPolicy.FailFast || _overflowPolicy == RetryQueueOverflowPolicy.DeadLetter)
+            {
+                // Cannot re-queue — treat as terminal failure
+                if (_deadLetterSink != null && _overflowPolicy == RetryQueueOverflowPolicy.DeadLetter)
+                {
+                    var result = ProcessingResult<object>.Failure(item.Error, item.Context.TraceId);
+                    await _deadLetterSink.WriteAsync(result, ct).ConfigureAwait(false);
+                }
+                return null;
+            }
+            _channel.Writer.TryWrite(item); // Re-queue
         }
         return null;
     }

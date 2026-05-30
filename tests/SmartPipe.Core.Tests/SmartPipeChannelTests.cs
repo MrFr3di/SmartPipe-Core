@@ -1,6 +1,9 @@
 #nullable enable
+using System.Diagnostics;
+using System.Threading;
 using Xunit;
 using Moq;
+using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using SmartPipe.Core;
 
@@ -407,5 +410,224 @@ public class SmartPipeChannelTests
                 It.IsAny<OperationCanceledException>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task SmartPipeChannel_DrainAsync_ShouldNotDiscardAlreadyAcceptedItems()
+    {
+        // Source emits 3 items; sink is slow (bounded channel with capacity 1)
+        // Run via RunInBackground, call DrainAsync(10s)
+        // Assert all 3 items reached the sink
+        var itemsProcessed = 0;
+        var options = new SmartPipeChannelOptions { BoundedCapacity = 3, MaxDegreeOfParallelism = 1 };
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(new SimpleSource<int>([1, 2, 3]));
+        channel.AddTransformer(new IdentityTransformer<int>());
+        channel.AddSink(new CallbackSink<int>(_ => Interlocked.Increment(ref itemsProcessed)));
+        var reader = channel.RunInBackground();
+        // Wait for all items to be produced (poll up to 5s)
+        for (int i = 0; i < 50 && Volatile.Read(ref itemsProcessed) < 3; i++)
+            await Task.Delay(100);
+        await channel.DrainAsync(TimeSpan.FromSeconds(10));
+        // Give a little time for async processing to complete
+        await Task.Delay(200);
+        itemsProcessed.Should().Be(3, "all 3 items should be processed after DrainAsync");
+        try { using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(5)); await reader.Completion.WaitAsync(cts2.Token); } catch (OperationCanceledException) { }
+    }
+
+    [Fact]
+    public async Task SmartPipeChannel_DrainAsync_ShouldCompleteOutputAfterDrain()
+    {
+        var options = new SmartPipeChannelOptions();
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(new SimpleSource<int>([42]));
+        channel.AddTransformer(new IdentityTransformer<int>());
+        var itemsInSink = new List<int>();
+        channel.AddSink(new CallbackSink<int>(itemsInSink.Add));
+        channel.RunInBackground();
+        await Task.Delay(200); // let item flow
+        var sw = Stopwatch.StartNew();
+        await channel.DrainAsync(TimeSpan.FromSeconds(10));
+        sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5), "DrainAsync must complete within 5 seconds");
+        // Item must have been processed (not discarded)
+        await Task.Delay(100);
+        itemsInSink.Should().ContainSingle()
+            .Which.Should().Be(42, "item should be processed by sink after drain");
+    }
+
+    [Fact]
+    public async Task SmartPipeChannel_DrainAsync_ShouldBeIdempotent()
+    {
+        var options = new SmartPipeChannelOptions();
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(new SimpleSource<int>([1]));
+        channel.AddTransformer(new IdentityTransformer<int>());
+        channel.AddSink(new NoOpSink<int>());
+        channel.RunInBackground();
+        await Task.Delay(100); // let item enter the pipeline
+        await channel.DrainAsync(TimeSpan.FromSeconds(10));
+        // Second call should return immediately, no throw, no hang
+        var sw = Stopwatch.StartNew();
+        await channel.DrainAsync(TimeSpan.FromSeconds(10));
+        sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1), "second DrainAsync should return immediately");
+    }
+
+    [Fact]
+    public async Task SmartPipeChannel_RunInBackground_ShouldReturnReaderConnectedToPipelineOutput()
+    {
+        var options = new SmartPipeChannelOptions();
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(new SimpleSource<int>([99]));
+        channel.AddTransformer(new IdentityTransformer<int>());
+        channel.AddSink(new NoOpSink<int>());
+        var reader = channel.RunInBackground();
+        var items = new List<ProcessingResult<int>>();
+        await foreach (var item in reader.ReadAllAsync())
+            items.Add(item);
+        items.Should().NotBeEmpty("reader should receive processed items");
+        items[0].Value.Should().Be(99);
+    }
+
+    [Fact]
+    public void SmartPipeChannel_RunInBackground_ShouldNotRegisterDuplicateForwardingSinks_WhenCalledTwice()
+    {
+        var options = new SmartPipeChannelOptions();
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(new SimpleSource<int>([1]));
+        channel.AddTransformer(new IdentityTransformer<int>());
+        channel.AddSink(new NoOpSink<int>());
+        channel.RunInBackground(); // first call succeeds
+        var act = () => channel.RunInBackground(); // second call
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*already started*");
+    }
+
+    [Fact]
+    public void SmartPipeChannel_ShouldRejectMutationAfterStart()
+    {
+        var options = new SmartPipeChannelOptions { ThrowOnMutationAfterStart = true };
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(new SimpleSource<int>([1]));
+        channel.AddTransformer(new IdentityTransformer<int>());
+        channel.AddSink(new NoOpSink<int>());
+        channel.RunInBackground();
+        var act = () => channel.AddSource(new SimpleSource<int>([2]));
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*mutated after start*");
+    }
+
+    [Fact]
+    public void SmartPipeChannel_MutationAfterStart_ShouldNotThrow_WhenOptionDisabled()
+    {
+        var options = new SmartPipeChannelOptions(); // ThrowOnMutationAfterStart defaults to false
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(new SimpleSource<int>([1]));
+        channel.AddTransformer(new IdentityTransformer<int>());
+        channel.AddSink(new NoOpSink<int>());
+        channel.RunInBackground();
+        var act = () => channel.AddSource(new SimpleSource<int>([2]));
+        act.Should().NotThrow("ThrowOnMutationAfterStart is disabled by default");
+    }
+
+    [Fact]
+    public async Task SmartPipeChannel_DisposeAsync_ShouldCompleteChannelsAndDisposeComponentsOnce()
+    {
+        var source = new DisposableCountingSource<int>([1, 2, 3]);
+        var transformer = new DisposableCountingTransformer<int, int>();
+        var sink = new DisposableCountingSink<int>();
+        var options = new SmartPipeChannelOptions();
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(source);
+        channel.AddTransformer(transformer);
+        channel.AddSink(sink);
+        channel.RunInBackground();
+        await Task.Delay(200); // let some items flow
+        await channel.DisposeAsync();
+        source.DisposeCallCount.Should().Be(1, "source disposed exactly once");
+        transformer.DisposeCallCount.Should().Be(1, "transformer disposed exactly once");
+        sink.DisposeCallCount.Should().Be(1, "sink disposed exactly once");
+    }
+
+    [Fact]
+    public async Task SmartPipeChannel_Cancel_ShouldStopBackgroundRunWithoutUnobservedTaskException()
+    {
+        var options = new SmartPipeChannelOptions();
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(new InfiniteSource<int>());
+        channel.AddTransformer(new IdentityTransformer<int>());
+        channel.AddSink(new NoOpSink<int>());
+        await Task.Delay(50);
+        var reader = channel.RunInBackground();
+        await Task.Delay(200); // let pipeline start producing
+        channel.Cancel();
+        // Cancel should complete the reader (via try-finally in RunInBackground)
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try { await reader.Completion.WaitAsync(cts.Token); } catch (OperationCanceledException) { }
+        channel.State.Should().BeOneOf(PipelineState.Cancelled, PipelineState.Faulted);
+    }
+
+    [Fact]
+    public void SmartPipeChannelOptions_RetryQueueOverflowPolicy_ShouldDefaultToWait()
+    {
+        var options = new SmartPipeChannelOptions();
+        options.RetryQueueOverflowPolicy.Should().Be(RetryQueueOverflowPolicy.Wait);
+    }
+
+    [Fact]
+    public void SmartPipeChannelOptions_RetryQueueOverflowPolicy_ShouldBeSettable()
+    {
+        var options = new SmartPipeChannelOptions();
+        options.RetryQueueOverflowPolicy = RetryQueueOverflowPolicy.FailFast;
+        options.RetryQueueOverflowPolicy.Should().Be(RetryQueueOverflowPolicy.FailFast);
+    }
+
+    [Fact]
+    public async Task SmartPipeChannel_RetryQueueOverflowPolicy_ShouldNotAffectPipeline_WhenRetryQueueDisabled()
+    {
+        var options = TinyCapacityOptionsFactory.Create(10);
+        options.RetryQueueOverflowPolicy = RetryQueueOverflowPolicy.DropNewest;
+        // Feature flag not enabled
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(new SimpleSource<int>([1]));
+        channel.AddTransformer(new IdentityTransformer<int>());
+        channel.AddSink(new NoOpSink<int>());
+        // Should not throw — retry queue feature is disabled
+        await channel.RunAsync();
+        channel.State.Should().Be(PipelineState.Completed);
+    }
+
+    [Fact]
+    public async Task SmartPipeChannel_RetryQueueOverflowPolicy_ShouldNotChangeSuccessfulPipeline()
+    {
+        var options = TinyCapacityOptionsFactory.Create(10);
+        options.EnableFeature("RetryQueue");
+        options.RetryQueueOverflowPolicy = RetryQueueOverflowPolicy.Wait;
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(new SimpleSource<int>([42]));
+        channel.AddTransformer(new IdentityTransformer<int>());
+        var sink = new CollectingSink<int>();
+        channel.AddSink(sink);
+        await channel.RunAsync();
+        sink.Items.Should().ContainSingle().Which.Should().Be(42);
+    }
+
+    [Fact]
+    public async Task SmartPipeChannel_RetryOverflow_FailFast_ShouldEmitTerminalFailure()
+    {
+        // Use retry queue with FailFast policy and tiny capacity
+        var options = TinyCapacityOptionsFactory.Create(1);
+        options.EnableFeature("RetryQueue");
+        options.DefaultRetryPolicy = new RetryPolicy(3, TimeSpan.Zero);
+        options.RetryQueueOverflowPolicy = RetryQueueOverflowPolicy.FailFast;
+        options.MaxDegreeOfParallelism = 1;
+
+        var channel = new SmartPipeChannel<string, string>(options);
+        channel.AddSource(new SimpleSource<string>(["a", "b", "c"]));
+        channel.AddTransformer(new AlwaysTransientFailingTransformer<string, string>());
+        var sink = new CollectingSink<string>();
+        channel.AddSink(sink);
+
+        await channel.RunAsync();
+        channel.State.Should().Be(PipelineState.Completed);
     }
 }

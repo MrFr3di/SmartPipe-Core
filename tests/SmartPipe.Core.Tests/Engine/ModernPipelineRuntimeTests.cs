@@ -340,7 +340,8 @@ public class ModernPipelineRuntimeTests
 
         var act = async () => await run.Completion;
 
-        await act.Should().ThrowAsync<PipelineFailureActionException>()
+        await act.Should()
+            .ThrowAsync<PipelineFailureActionException>()
             .WithMessage("*Test failure*");
         observer.Events.OfType<PipelineFaultedEvent>().Should().ContainSingle();
     }
@@ -578,6 +579,174 @@ public class ModernPipelineRuntimeTests
         await run.Completion;
 
         recording.Events.OfType<ObserverFailedEvent>().Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task RetryDelayLongerThanRemainingStageTimeout_IsNotWaited()
+    {
+        var observer = new RecordingObserver();
+        var transformer = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 10,
+            value => value.ToString(CultureInfo.InvariantCulture)
+        );
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(7))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(maxRetries: 3, delay: TimeSpan.FromSeconds(5)),
+                    Timeout = new TimeoutPolicy { StageTimeout = TimeSpan.FromMilliseconds(50) },
+                    OnRetryExhausted = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+        outputs.Should().BeEmpty();
+        observer.Events.OfType<RetryScheduledEvent>().Should().BeEmpty();
+        observer.Events.OfType<RetryExhaustedEvent>().Should().ContainSingle();
+        observer.Events.OfType<StageFailedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task RetryIsNotScheduled_WhenDelayCannotFitIntoRemainingStageBudget()
+    {
+        var observer = new RecordingObserver();
+        var transformer = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 10,
+            value => value.ToString(CultureInfo.InvariantCulture)
+        );
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(7))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(maxRetries: 3, delay: TimeSpan.FromSeconds(5)),
+                    Timeout = new TimeoutPolicy { StageTimeout = TimeSpan.FromMilliseconds(50) },
+                    OnRetryExhausted = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+        outputs.Should().BeEmpty();
+        observer.Events.OfType<RetryScheduledEvent>().Should().BeEmpty();
+        observer.Events.OfType<RetryExhaustedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task RetryExhaustedEvent_IsEmitted_WhenRetryBudgetExhaustedByStageTimeout()
+    {
+        var observer = new RecordingObserver();
+        var transformer = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 10,
+            value => value.ToString(CultureInfo.InvariantCulture)
+        );
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(7))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(maxRetries: 3, delay: TimeSpan.FromMilliseconds(60)),
+                    Timeout = new TimeoutPolicy { StageTimeout = TimeSpan.FromMilliseconds(120) },
+                    OnRetryExhausted = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+        outputs.Should().BeEmpty();
+        observer.Events.OfType<RetryScheduledEvent>().Should().ContainSingle();
+        observer.Events.OfType<RetryAttemptedEvent>().Should().ContainSingle();
+        observer.Events.OfType<RetryExhaustedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task OnRetryExhausted_IsAppliedExactlyOnce_WhenBudgetExhausted()
+    {
+        var observer = new RecordingObserver();
+        var transformer = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 10,
+            value => value.ToString(CultureInfo.InvariantCulture)
+        );
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(7))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(maxRetries: 3, delay: TimeSpan.FromMilliseconds(60)),
+                    Timeout = new TimeoutPolicy { StageTimeout = TimeSpan.FromMilliseconds(120) },
+                    OnRetryExhausted = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+        outputs.Should().BeEmpty();
+        observer.Events.OfType<RetryExhaustedEvent>().Should().ContainSingle();
+        observer.Events.OfType<DeadLetterWrittenEvent>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task RetryStillSucceeds_WhenDelayAndNextAttemptFitInsideStageTimeout()
+    {
+        var observer = new RecordingObserver();
+        var transformer = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 1,
+            value => value.ToString(CultureInfo.InvariantCulture)
+        );
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(7))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.FromMilliseconds(50)),
+                    Timeout = new TimeoutPolicy { StageTimeout = TimeSpan.FromMilliseconds(200) },
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+        outputs.Single().Result.Value.Should().Be("7");
+        observer.Events.OfType<RetryScheduledEvent>().Should().ContainSingle();
+        observer.Events.OfType<RetryAttemptedEvent>().Should().ContainSingle();
+        observer.Events.OfType<RetryExhaustedEvent>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TimeoutAttemptThatExhaustsStageBudget_DoesNotScheduleRetry()
+    {
+        var observer = new RecordingObserver();
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(
+                new SlowStageTransformer<int, string>(),
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero),
+                    Timeout = new TimeoutPolicy { StageTimeout = TimeSpan.FromMilliseconds(30) },
+                    OnRetryExhausted = FailureAction.EmitFailureResult,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+        var result = outputs.Single().Result;
+        result.IsSuccess.Should().BeFalse();
+        result.Error!.Value.Category.Should().Be("Timeout");
+        observer.Events.OfType<RetryScheduledEvent>().Should().BeEmpty();
+        observer.Events.OfType<RetryExhaustedEvent>().Should().ContainSingle();
     }
 
     private static async Task<List<PipelineOutput<T>>> ReadOutputsAsync<T>(
@@ -855,7 +1024,11 @@ public class ModernPipelineRuntimeTests
             Calls++;
             if (Calls <= _failuresBeforeSuccess)
             {
-                var error = new SmartPipeError("Transient test failure", ErrorType.Transient, "Retryable");
+                var error = new SmartPipeError(
+                    "Transient test failure",
+                    ErrorType.Transient,
+                    "Retryable"
+                );
                 return ValueTask.FromResult(StageResult<TOutput>.Failure(error));
             }
 
@@ -897,4 +1070,387 @@ public class ModernPipelineRuntimeTests
             throw new InvalidOperationException("observer boom");
         }
     }
+
+    #region Circuit Breaker Tests
+
+    [Fact]
+    public async Task PipelineBuilder_ModernApi_ShouldRunWithoutCircuitBreaker_WhenPolicyNotConfigured()
+    {
+        var source = new EnvelopeSource<int>(1, 2, 3);
+        var sink = new EnvelopeCollectingSink<string>();
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new EnvelopeTransformer<int, double>(x => x + 0.5))
+            .Transform(
+                new EnvelopeTransformer<double, string>(x =>
+                    x.ToString(CultureInfo.InvariantCulture)
+                )
+            )
+            .To(sink);
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Select(x => x.Result.Value).Should().Equal("1.5", "2.5", "3.5");
+        outputs.Should().OnlyContain(x => x.Envelope != null);
+        sink.Payloads.Should().Equal("1.5", "2.5", "3.5");
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_ModernApi_ShouldCreateIndependentCircuitBreakers_PerStage()
+    {
+        var observer = new RecordingObserver();
+        var stage1Transformer = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 100, // Always fails
+            x => x.ToString(CultureInfo.InvariantCulture)
+        );
+        var stage2Transformer = new FlakyStageTransformer<string, int>(
+            failuresBeforeSuccess: 0, // Always succeeds
+            x => int.Parse(x)
+        );
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2))
+            .Transform(
+                stage1Transformer,
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 2,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                }
+            )
+            .Transform(
+                stage2Transformer,
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 5,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        // Stage 1 fails and skips items; stage 2 is never reached
+        outputs.Should().BeEmpty();
+        stage2Transformer.Calls.Should().Be(0);
+        observer.Events.Should().NotContain(e => e.StageId == "stage-2");
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldRejectWithoutCallingTransformer_WhenOpen()
+    {
+        var observer = new RecordingObserver();
+        var failingTransformer = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 999, // Always fails
+            x => x.ToString(CultureInfo.InvariantCulture)
+        );
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3, 4))
+            .Transform(
+                failingTransformer,
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 3,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        // First 3 items fail and open the breaker
+        // 4th item is rejected without calling transformer
+        failingTransformer.Calls.Should().Be(3); // Only 3 calls, not 4
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldApplyPermanentFailurePolicy_WhenOpen()
+    {
+        var observer = new RecordingObserver();
+        var failingTransformer = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 999, // Always fails
+            x => x.ToString(CultureInfo.InvariantCulture)
+        );
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3, 4))
+            .Transform(
+                failingTransformer,
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 3,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        // Items skipped, no outputs
+        outputs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldEmitRejectedEvent_WhenOpen()
+    {
+        var observer = new RecordingObserver();
+        var failingTransformer = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 999,
+            x => x.ToString(CultureInfo.InvariantCulture)
+        );
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3, 4))
+            .Transform(
+                failingTransformer,
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 3,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCount(1); // Only 4th item rejected
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldOpenAfterConfiguredFailedAttempts()
+    {
+        var observer = new RecordingObserver();
+        var failingTransformer = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 999,
+            x => x.ToString(CultureInfo.InvariantCulture)
+        );
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3, 4, 5))
+            .Transform(
+                failingTransformer,
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 3,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        // First 3 failures open the breaker
+        observer.Events.OfType<CircuitBreakerOpenedEvent>().Should().ContainSingle();
+        // Items 4 and 5 are rejected
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldRecordSuccess_OnSuccessfulAttempt()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3, 4))
+            .Transform(
+                new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 5,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        // All items succeed, no breaker opens
+        outputs.Select(x => x.Result.Value).Should().Equal("1", "2", "3", "4");
+        observer.Events.OfType<CircuitBreakerOpenedEvent>().Should().BeEmpty();
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldRecordFailedRetryAttempts_WhenRetryConfigured()
+    {
+        var observer = new RecordingObserver();
+
+        // Failing transformer that returns Transient errors (retryable by default).
+        // FlakyStageTransformer with high failuresBeforeSuccess: always fails with Transient errors.
+        var transformer = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 999,
+            x => x.ToString(CultureInfo.InvariantCulture)
+        );
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 3, // 3 failed attempts open the breaker
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    Retry = new RetryPolicy(maxRetries: 2, delay: TimeSpan.Zero),
+                    OnPermanentFailure = FailureAction.Skip,
+                    OnRetryExhausted = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        // Item 1: 3 attempts (initial + 2 retries), all fail with Transient errors.
+        // Breaker opens on 3rd failure. Item 1 exhausted and skipped.
+        // Item 2: rejected by open breaker.
+        // If only terminal results were counted, breaker would not open (only 1 exhaustion from item 1).
+        // The fact it opens proves per-attempt (including retry) failures are recorded.
+        outputs.Should().BeEmpty();
+        observer.Events.OfType<CircuitBreakerOpenedEvent>().Should().ContainSingle();
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().ContainSingle(); // Item 2
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldNotRetryRejectedOpenBreaker()
+    {
+        var observer = new RecordingObserver();
+        var failingTransformer = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 999,
+            x => x.ToString(CultureInfo.InvariantCulture)
+        );
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3, 4))
+            .Transform(
+                failingTransformer,
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 2, // Open after 2 failures
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero),
+                    OnRetryExhausted = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        // Item 1 fails (1 failure), retry fails (2 failures → breaker opens on 2nd failure)
+        // Item 1 exhausted and skipped. Items 2-4 rejected without retry.
+        // RetryScheduledEvent should only appear for item 1 (1 retry), not for rejected items 2-4
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCount(3); // Items 2, 3, 4
+        observer.Events.OfType<RetryScheduledEvent>().Should().HaveCount(1); // Only item 1 had a retry
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldTreatAttemptTimeoutAsFailure()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3))
+            .Transform(
+                new SlowStageTransformer<int, string>(),
+                new StageFailureOptions
+                {
+                    Timeout = new TimeoutPolicy { AttemptTimeout = TimeSpan.FromMilliseconds(20) },
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 2,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        // First 2 timeouts open breaker, 3rd is rejected
+        observer.Events.OfType<CircuitBreakerOpenedEvent>().Should().ContainSingle();
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_ModernApi_CircuitBreakerRejectedItems_ShouldNotHangRunCompletion()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3, 4, 5))
+            .Transform(
+                new FailingStageTransformer<int, string>(),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 2,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion; // Should complete without hang
+
+        observer.Events.OfType<PipelineCompletedEvent>().Should().ContainSingle();
+    }
+
+    #endregion
 }

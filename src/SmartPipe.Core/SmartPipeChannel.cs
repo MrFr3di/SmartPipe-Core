@@ -34,6 +34,9 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         _isPaused;
     private volatile PipelineState _state = PipelineState.NotStarted;
     private int _isDraining = 0; // 0 = not draining, 1 = draining
+    private int _disposed; // 0 = not disposed, 1 = disposed
+    private int _componentsDisposed;
+    private int _cancelCalled;
     private readonly AdaptiveParallelism? _adaptiveParallelism;
     private readonly AdaptiveMetrics _adaptiveMetrics = new();
     private readonly ExponentialHistogram _latencyHistogram = new();
@@ -96,7 +99,8 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
                 options.BoundedCapacity,
                 null,
                 options.DeadLetterSink,
-                _clock
+                _clock,
+                options.RetryQueueOverflowPolicy
             );
         if (options.IsEnabled("CircuitBreaker"))
             _circuitBreaker = new CircuitBreaker(clock: _clock);
@@ -114,6 +118,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     public void AddSource(ISource<TInput> source)
     {
         ArgumentNullException.ThrowIfNull(source);
+        ThrowIfStartedOrDisposed();
         _sources.Add(source);
     }
 
@@ -122,6 +127,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     public void AddTransformer(ITransformer<TInput, TOutput> t)
     {
         ArgumentNullException.ThrowIfNull(t);
+        ThrowIfStartedOrDisposed();
         _transformers.Add(t);
     }
 
@@ -130,7 +136,14 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     public void AddSink(ISink<TOutput> sink)
     {
         ArgumentNullException.ThrowIfNull(sink);
+        ThrowIfStartedOrDisposed();
         _sinks.Add(sink);
+    }
+
+    private void ThrowIfStartedOrDisposed()
+    {
+        if (_options.ThrowOnMutationAfterStart && (_state != PipelineState.NotStarted || _disposed == 1))
+            throw new InvalidOperationException("Pipeline cannot be mutated after start.");
     }
 
     /// <summary>Pauses the pipeline processing.</summary>
@@ -150,6 +163,10 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     /// <summary>Cancels the pipeline execution.</summary>
     public void Cancel()
     {
+        if (Interlocked.CompareExchange(ref _cancelCalled, 1, 0) != 0)
+            return;
+        _inputChannel?.Writer.TryComplete();
+        _outputChannel?.Writer.TryComplete();
         _internalCts.Cancel();
         TransitionState(PipelineState.Cancelled);
     }
@@ -162,39 +179,51 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             OnStateChanged?.Invoke(old, newState);
     }
 
-    /// <summary>Drains the pipeline by completing the input channel and flushing remaining items.</summary>
+    /// <summary>Drains the pipeline by completing the input channel and waiting for all accepted items to finish processing.</summary>
     /// <param name="timeout">Maximum time to wait for draining.</param>
     /// <param name="ct">Cancellation token to abort the drain operation.</param>
-    /// <remarks>Only one drain operation runs at a time.</remarks>
+    /// <remarks>Idempotent: subsequent calls return immediately. Does not discard items.</remarks>
     public async Task DrainAsync(TimeSpan timeout, CancellationToken ct = default)
     {
-        Pause();
-
-        // Only one drain operation may own the channel completion path.
         if (Interlocked.CompareExchange(ref _isDraining, 1, 0) != 0)
-            return; // Already draining
+            return;
 
-        try
+        _inputChannel?.Writer.TryComplete();
+        if (_inputChannel != null)
         {
-            _inputChannel?.Writer.TryComplete(); // Use TryComplete — channel may already be closed
-            var sw = Stopwatch.StartNew();
-            while (_inputChannel?.Reader.TryRead(out _) == true && sw.Elapsed < timeout)
+            using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            waitCts.CancelAfter(timeout);
+            try
             {
-                ct.ThrowIfCancellationRequested(); // Check cancellation token
+                await _inputChannel.Reader.Completion.WaitAsync(waitCts.Token).ConfigureAwait(false);
             }
-            _outputChannel?.Writer.TryComplete();
+            catch (OperationCanceledException) { }
         }
-        finally
+
+        _outputChannel?.Writer.TryComplete();
+        if (_outputChannel != null)
         {
-            Interlocked.Exchange(ref _isDraining, 0);
+            using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            waitCts.CancelAfter(timeout);
+            try
+            {
+                await _outputChannel.Reader.Completion.WaitAsync(waitCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { }
         }
     }
 
-    /// <summary>
-    /// Disposes the pipeline by draining pending items and releasing resources.
-    /// </summary>
-    /// <returns>A ValueTask representing the asynchronous disposal operation.</returns>
-    private int _disposed; // 0 = not disposed, 1 = disposed
+    private async Task DisposeComponentsAsync()
+    {
+        if (Interlocked.CompareExchange(ref _componentsDisposed, 1, 0) != 0)
+            return;
+        foreach (var s in _sources)
+            await s.DisposeAsync().ConfigureAwait(false);
+        foreach (var t in _transformers)
+            await t.DisposeAsync().ConfigureAwait(false);
+        foreach (var s in _sinks)
+            await s.DisposeAsync().ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Disposes the pipeline by draining pending items and releasing all resources.
@@ -208,6 +237,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
 
         using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await DrainAsync(TimeSpan.FromSeconds(5), drainCts.Token).ConfigureAwait(false);
+        await DisposeComponentsAsync().ConfigureAwait(false);
         _internalCts?.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -222,6 +252,9 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     /// <remarks>Creates bounded channel with <see cref="SmartPipeChannelOptions.BoundedCapacity"/>.</remarks>
     public ChannelReader<ProcessingResult<TOutput>> RunInBackground(CancellationToken ct = default)
     {
+        if (_state != PipelineState.NotStarted)
+            throw new InvalidOperationException("Pipeline already started.");
+
         var channel = Channel.CreateBounded<ProcessingResult<TOutput>>(
             new BoundedChannelOptions(
                 _options.BoundedCapacity > 0 ? _options.BoundedCapacity : 1000
@@ -231,21 +264,12 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             }
         );
         AddSink(new ChannelForwardingSink<TOutput>(channel.Writer));
-        _ = Task.Run(
-            async () =>
-            {
-                try
-                {
-                    await RunAsync(ct).ConfigureAwait(false);
-                    channel.Writer.TryComplete();
-                }
-                catch (Exception ex)
-                {
-                    channel.Writer.TryComplete(ex);
-                }
-            },
-            CancellationToken.None
-        );
+        TransitionState(PipelineState.Running);
+        _ = Task.Run(async () =>
+        {
+            try { await RunAsync(ct).ConfigureAwait(false); }
+            finally { channel.Writer.TryComplete(); }
+        }, CancellationToken.None);
         return channel.Reader;
     }
 
@@ -367,12 +391,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
 
     private async Task DisposePipelineAsync(CancellationToken token)
     {
-        foreach (var s in _sources)
-            await s.DisposeAsync().ConfigureAwait(false);
-        foreach (var t in _transformers)
-            await t.DisposeAsync().ConfigureAwait(false);
-        foreach (var s in _sinks)
-            await s.DisposeAsync().ConfigureAwait(false);
+        await DisposeComponentsAsync().ConfigureAwait(false);
     }
 
     /// <summary>Processes a single item through the transformer chain.</summary>
