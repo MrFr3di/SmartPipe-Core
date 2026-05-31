@@ -115,6 +115,29 @@ public class RetryQueueAdvancedTests
     }
 
     [Fact]
+    public async Task RetryQueue_FailFast_ShouldReturnFalse_WhenTryWriteFailsAtCapacity()
+    {
+        var queue = new RetryQueue<string>(1, overflowPolicy: RetryQueueOverflowPolicy.FailFast);
+        var policy = new RetryPolicy(maxRetries: 3, delay: TimeSpan.FromMinutes(1));
+
+        var first = await queue.EnqueueAsync(
+            new ProcessingContext<string>("first"),
+            policy,
+            0,
+            new SmartPipeError("first", ErrorType.Transient));
+        var second = await queue.EnqueueAsync(
+            new ProcessingContext<string>("second"),
+            policy,
+            0,
+            new SmartPipeError("second", ErrorType.Transient));
+
+        first.Should().BeTrue();
+        second.Should().BeFalse("FailFast must report the actual failed write at capacity");
+        queue.PendingCount.Should().Be(1);
+        queue.HasPendingItems.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task RetryQueueOverflowPolicy_DeadLetter_ShouldWriteToDeadLetterSink_WhenQueueFull()
     {
         var sink = new CollectingDeadLetterSink();
@@ -128,6 +151,33 @@ public class RetryQueueAdvancedTests
 
         result.Should().BeFalse();
         sink.Count.Should().Be(1, "overflowed item should be written to dead-letter sink exactly once");
+    }
+
+    [Fact]
+    public async Task RetryQueue_DeadLetter_ShouldDeadLetter_WhenTryWriteFailsAtCapacity()
+    {
+        var sink = new CollectingDeadLetterSink();
+        var queue = new RetryQueue<string>(
+            1,
+            deadLetterSink: sink,
+            overflowPolicy: RetryQueueOverflowPolicy.DeadLetter);
+        var policy = new RetryPolicy(maxRetries: 3, delay: TimeSpan.FromMinutes(1));
+
+        var first = await queue.EnqueueAsync(
+            new ProcessingContext<string>("first"),
+            policy,
+            0,
+            new SmartPipeError("first", ErrorType.Transient));
+        var second = await queue.EnqueueAsync(
+            new ProcessingContext<string>("second"),
+            policy,
+            0,
+            new SmartPipeError("second", ErrorType.Transient));
+
+        first.Should().BeTrue();
+        second.Should().BeFalse("DeadLetter policy must report the failed write at capacity");
+        sink.Count.Should().Be(1, "overflowed item should be dead-lettered exactly once");
+        queue.PendingCount.Should().Be(1);
     }
 
     [Fact]
@@ -193,5 +243,112 @@ public class RetryQueueAdvancedTests
         var result = await queue.EnqueueAsync(ctx, policy, 1, new SmartPipeError("e", ErrorType.Transient));
 
         result.Should().BeFalse("Budget exhausted should return false regardless of overflow policy");
+    }
+
+    [Fact]
+    public async Task RetryQueue_FailFast_ShouldPreserveNotReadyDelayedRetry()
+    {
+        // Arrange: FailFast overflow with a controllable clock — retry scheduled far in the future
+        var clock = new FakeClock { UtcNow = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) };
+        var queue = new RetryQueue<string>(
+            capacity: 2,
+            overflowPolicy: RetryQueueOverflowPolicy.FailFast,
+            clock: clock,
+            pollTimeoutMs: 5000);
+
+        var ctx = new ProcessingContext<string>("delayed-item");
+        var policy = new RetryPolicy(maxRetries: 3, delay: TimeSpan.FromHours(1));
+
+        await queue.EnqueueAsync(ctx, policy, 0, new SmartPipeError("e", ErrorType.Transient));
+
+        // Act: poll — item should not be ready (1 hour delay)
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        var item = await queue.TryGetNextAsync(cts.Token);
+
+        // Assert: not ready returns null but item remains in queue
+        item.Should().BeNull("item with 1-hour delay should not be ready");
+        queue.Count.Should().Be(1, "not-ready item must be preserved in the queue, not dropped");
+        queue.PendingCount.Should().Be(1, "not-ready polling must not remove the pending schedule");
+
+        // Now advance the clock and poll again — item should be retrievable
+        clock.UtcNow = clock.UtcNow.AddHours(2);
+        var readyItem = await queue.TryGetNextAsync();
+        readyItem.Should().NotBeNull("item should be ready after clock advanced past its RetryAt");
+        readyItem!.Value.Context.Payload.Should().Be("delayed-item");
+        queue.HasPendingItems.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RetryQueue_DeadLetter_ShouldPreserveNotReadyDelayedRetry()
+    {
+        // Arrange: DeadLetter overflow with dead-letter sink — retry scheduled far in the future
+        var clock = new FakeClock { UtcNow = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) };
+        var sink = new CollectingDeadLetterSink();
+        var queue = new RetryQueue<string>(
+            capacity: 2,
+            overflowPolicy: RetryQueueOverflowPolicy.DeadLetter,
+            deadLetterSink: sink,
+            clock: clock,
+            pollTimeoutMs: 5000);
+
+        var ctx = new ProcessingContext<string>("delayed-item");
+        var policy = new RetryPolicy(maxRetries: 3, delay: TimeSpan.FromHours(1));
+
+        await queue.EnqueueAsync(ctx, policy, 0, new SmartPipeError("e", ErrorType.Transient));
+
+        // Act: poll — item should not be ready
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        var item = await queue.TryGetNextAsync(cts.Token);
+
+        // Assert: not ready returns null, item stays in queue, NOT dead-lettered
+        item.Should().BeNull("item with 1-hour delay should not be ready");
+        queue.Count.Should().Be(1, "not-ready item must be preserved in the queue");
+        queue.PendingCount.Should().Be(1, "not-ready polling must preserve pending state");
+        sink.Count.Should().Be(0, "not-ready item must NOT be written to dead-letter sink");
+
+        // Verify it can be retrieved later
+        clock.UtcNow = clock.UtcNow.AddHours(2);
+        var readyItem = await queue.TryGetNextAsync();
+        readyItem.Should().NotBeNull("item should be ready after clock advanced");
+        readyItem!.Value.Context.Payload.Should().Be("delayed-item");
+        queue.HasPendingItems.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RetryQueue_NotReadyPolling_ShouldNotDeadLetterScheduledItem()
+    {
+        // Arrange: DeadLetter overflow — no dead-letter sink — retry scheduled in the future
+        var clock = new FakeClock { UtcNow = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) };
+        var queue = new RetryQueue<string>(
+            capacity: 2,
+            overflowPolicy: RetryQueueOverflowPolicy.DeadLetter,
+            deadLetterSink: null,
+            clock: clock,
+            pollTimeoutMs: 5000);
+
+        var ctx = new ProcessingContext<string>("scheduled-item");
+        var policy = new RetryPolicy(maxRetries: 3, delay: TimeSpan.FromMinutes(30));
+
+        await queue.EnqueueAsync(ctx, policy, 0, new SmartPipeError("e", ErrorType.Transient));
+        queue.Count.Should().Be(1);
+
+        // Act: multiple poll attempts while item is not ready
+        for (int i = 0; i < 3; i++)
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+            var item = await queue.TryGetNextAsync(cts.Token);
+            item.Should().BeNull("item should not be ready yet");
+        }
+
+        // Assert: item is still preserved after repeated not-ready polls
+        queue.Count.Should().Be(1, "repeated not-ready polls must preserve the scheduled item");
+        queue.PendingCount.Should().Be(1, "repeated not-ready polls must keep pending state");
+
+        // Advance clock and verify item becomes available
+        clock.UtcNow = clock.UtcNow.AddHours(1);
+        var readyItem = await queue.TryGetNextAsync();
+        readyItem.Should().NotBeNull();
+        readyItem!.Value.Context.Payload.Should().Be("scheduled-item");
+        queue.HasPendingItems.Should().BeFalse();
     }
 }

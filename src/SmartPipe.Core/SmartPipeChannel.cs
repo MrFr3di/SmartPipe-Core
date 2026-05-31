@@ -16,6 +16,8 @@ namespace SmartPipe.Core;
 /// </remarks>
 public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
 {
+    private const string RetryCountMetadataKey = "__smartpipe_retry_count";
+
     private static readonly ActivitySource _activitySource = new(
         "SmartPipe.Core",
         typeof(SmartPipeChannel<,>).Assembly.GetName().Version?.ToString() ?? "1.0.0"
@@ -37,6 +39,10 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     private int _disposed; // 0 = not disposed, 1 = disposed
     private int _componentsDisposed;
     private int _cancelCalled;
+    private volatile bool _drainRequested;
+    private int _activeConsumerCount;
+    private TaskCompletionSource _runCompletion =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly AdaptiveParallelism? _adaptiveParallelism;
     private readonly AdaptiveMetrics _adaptiveMetrics = new();
     private readonly ExponentialHistogram _latencyHistogram = new();
@@ -93,6 +99,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         }
         _clock = clock ?? new TimeProviderClock();
         _logger = logger;
+        _runCompletion.TrySetResult(); // No pipeline run active yet
         _backpressure = new BackpressureStrategy(options.BoundedCapacity);
         if (options.IsEnabled("RetryQueue"))
             _retryQueue = new RetryQueue<TInput>(
@@ -179,37 +186,69 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             OnStateChanged?.Invoke(old, newState);
     }
 
-    /// <summary>Drains the pipeline by completing the input channel and waiting for all accepted items to finish processing.</summary>
+    /// <summary>Drains the pipeline by signaling the producer to stop and waiting for all consumer tasks to finish processing accepted work.</summary>
     /// <param name="timeout">Maximum time to wait for draining.</param>
     /// <param name="ct">Cancellation token to abort the drain operation.</param>
-    /// <remarks>Idempotent: subsequent calls return immediately. Does not discard items.</remarks>
+    /// <remarks>Idempotent: subsequent calls return immediately. Does not discard items. Output writer is completed only after all consumers finish.</remarks>
     public async Task DrainAsync(TimeSpan timeout, CancellationToken ct = default)
     {
         if (Interlocked.CompareExchange(ref _isDraining, 1, 0) != 0)
             return;
 
-        _inputChannel?.Writer.TryComplete();
-        if (_inputChannel != null)
-        {
-            using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            waitCts.CancelAfter(timeout);
-            try
-            {
-                await _inputChannel.Reader.Completion.WaitAsync(waitCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) { }
-        }
+        _drainRequested = true;
+        var completed = false;
 
-        _outputChannel?.Writer.TryComplete();
-        if (_outputChannel != null)
+        // Wait for the entire pipeline run to complete.
+        // RunPipelineAsync handles graceful shutdown: producer stops,
+        // consumers process remaining items including requeued retries,
+        // then output writer is completed.
+        try
         {
-            using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            waitCts.CancelAfter(timeout);
-            try
+            await WaitWithTimeoutAsync(_runCompletion.Task, timeout, ct, "Pipeline drain timed out before the run completed.")
+                .ConfigureAwait(false);
+
+            // Ensure output reader is fully consumed (belt-and-suspenders after run completion)
+            if (_outputChannel != null)
             {
-                await _outputChannel.Reader.Completion.WaitAsync(waitCts.Token).ConfigureAwait(false);
+                await WaitWithTimeoutAsync(
+                        _outputChannel.Reader.Completion,
+                        timeout,
+                        ct,
+                        "Pipeline drain timed out before output completion."
+                    )
+                    .ConfigureAwait(false);
             }
-            catch (OperationCanceledException) { }
+
+            completed = true;
+        }
+        finally
+        {
+            if (!completed)
+                Interlocked.Exchange(ref _isDraining, 0);
+        }
+    }
+
+    private static async Task WaitWithTimeoutAsync(
+        Task task,
+        TimeSpan timeout,
+        CancellationToken ct,
+        string timeoutMessage
+    )
+    {
+        using var timeoutCts = new CancellationTokenSource(timeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+
+        try
+        {
+            await task.WaitAsync(linkedCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+        {
+            throw new TimeoutException(timeoutMessage);
         }
     }
 
@@ -265,10 +304,33 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         );
         AddSink(new ChannelForwardingSink<TOutput>(channel.Writer));
         TransitionState(PipelineState.Running);
+
+        // Create a fresh completion source synchronously so DrainAsync can observe it
+        // without racing against the background task startup.
+        var runTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _runCompletion = runTcs;
         _ = Task.Run(async () =>
         {
-            try { await RunAsync(ct).ConfigureAwait(false); }
-            finally { channel.Writer.TryComplete(); }
+            try
+            {
+                await RunAsync(ct).ConfigureAwait(false);
+                channel.Writer.TryComplete();
+                runTcs.TrySetResult();
+            }
+            catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
+            {
+                channel.Writer.TryComplete(ex);
+                runTcs.TrySetCanceled(ct);
+            }
+            catch (Exception ex)
+            {
+                channel.Writer.TryComplete(ex);
+                runTcs.TrySetException(ex);
+            }
+            finally
+            {
+                channel.Writer.TryComplete();
+            }
         }, CancellationToken.None);
         return channel.Reader;
     }
@@ -324,15 +386,18 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         catch (OperationCanceledException) when (totalTimeoutCts.IsCancellationRequested)
         {
             HandleRunAsyncErrors(activity, "TotalRequestTimeout");
+            _runCompletion.TrySetException(new TimeoutException("Pipeline total request timeout expired."));
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             TransitionState(PipelineState.Cancelled);
+            _runCompletion.TrySetCanceled(token);
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Pipeline faulted due to unhandled exception");
             TransitionState(PipelineState.Faulted);
+            _runCompletion.TrySetException(ex);
             throw;
         }
     }
@@ -356,18 +421,31 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         var sink = ConsumeOutputAsync(token);
         await producerTask.ConfigureAwait(false);
         _producerCompleted = true;
+
+        // Allow retry task to complete before closing the input channel.
+        // Retries may requeue items back into the input channel via HandleRetryRequeued,
+        // so the input writer must remain open until all retry processing is done.
+        if (retryTask != null)
+            await retryTask.ConfigureAwait(false);
+
         _inputChannel!.Writer.Complete();
         await Task.WhenAll(consumers).ConfigureAwait(false);
         _outputChannel!.Writer.Complete();
-        if (retryTask != null)
-            await retryTask.ConfigureAwait(false);
         await sink.ConfigureAwait(false);
         await monitor.ConfigureAwait(false);
         await DisposePipelineAsync(token).ConfigureAwait(false);
         ChannelPool.CloseChannel(_inputChannel);
         ChannelPool.CloseChannel(_outputChannel);
+        if (Volatile.Read(ref _cancelCalled) != 0 || token.IsCancellationRequested)
+        {
+            TransitionState(PipelineState.Cancelled);
+            _runCompletion.TrySetCanceled(token);
+            return;
+        }
+
         activity?.SetStatus(ActivityStatusCode.Ok);
         TransitionState(PipelineState.Completed);
+        _runCompletion.TrySetResult();
     }
 
     private async Task InitializePipelineAsync(CancellationToken token)
@@ -452,7 +530,10 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         try
         {
             await foreach (var ctx in source.ReadAsync(ct).ConfigureAwait(false))
+            {
+                if (_drainRequested) break;
                 await ProcessSourceItemAsync(ctx, ct).ConfigureAwait(false);
+            }
         }
         catch (InvalidOperationException ex) when (ct.IsCancellationRequested == false)
         {
@@ -545,8 +626,16 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
                     continue;
                 if (!await HandleCircuitBreakerAsync(ctx, ct).ConfigureAwait(false))
                     continue;
-                var (result, elapsed) = await ProcessTransformAsync(ctx, ct).ConfigureAwait(false);
-                await HandleTransformResultAsync(ctx, result, elapsed, ct).ConfigureAwait(false);
+                Interlocked.Increment(ref _activeConsumerCount);
+                try
+                {
+                    var (result, elapsed) = await ProcessTransformAsync(ctx, ct).ConfigureAwait(false);
+                    await HandleTransformResultAsync(ctx, result, elapsed, ct).ConfigureAwait(false);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _activeConsumerCount);
+                }
             }
         }
         catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
@@ -783,21 +872,19 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         Metrics.RecordRetry();
         var policy = _options.DefaultRetryPolicy ?? new RetryPolicy(3, TimeSpan.FromSeconds(1));
         bool enqueued = await _retryQueue
-            .EnqueueAsync(ctx, policy, 0, result.Error!.Value, ct)
+            .EnqueueAsync(ctx, policy, GetRetryCount(ctx), result.Error!.Value, ct)
             .ConfigureAwait(false);
 
-        if (!enqueued && _options.DeadLetterSink != null)
+        if (!enqueued)
         {
-            var deadLetterError = new SmartPipeError(
-                result.Error?.Message ?? "Retry exhausted",
-                ErrorType.Permanent
+            var retryItem = new RetryItem<TInput>(
+                ctx,
+                policy,
+                GetRetryCount(ctx),
+                result.Error!.Value,
+                _clock.UtcNow
             );
-            await _options
-                .DeadLetterSink.WriteAsync(
-                    ProcessingResult<object>.Failure(deadLetterError, ctx.TraceId),
-                    ct
-                )
-                .ConfigureAwait(false);
+            await HandleRetryBudgetExhaustedAsync(retryItem, ct).ConfigureAwait(false);
         }
     }
 
@@ -898,20 +985,17 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
 
     private bool ShouldBreakRetryLoop()
     {
-        return _producerCompleted && _inputChannel!.Reader.Completion.IsCompleted;
+        // Producer is done, no consumers are actively processing,
+        // and the input channel is drained — no more retries can be generated.
+        return _producerCompleted
+            && Volatile.Read(ref _activeConsumerCount) == 0
+            && (_inputChannel?.Reader.Count ?? 0) == 0
+            && (_retryQueue?.HasPendingItems != true);
     }
 
     private async Task HandleRetryItemAsync(RetryItem<TInput> ri, CancellationToken ct)
     {
-        var retryBudget = ri.RetryBudget == -1 ? (int?)null : ri.RetryBudget;
-        bool enqueued = await _retryQueue!
-            .EnqueueAsync(ri.Context, ri.Policy, ri.RetryCount, ri.Error, ct, retryBudget)
-            .ConfigureAwait(false);
-
-        if (!enqueued)
-            await HandleRetryBudgetExhaustedAsync(ri, ct).ConfigureAwait(false);
-        else
-            HandleRetryRequeued(ri);
+        await WriteRetryToInputAsync(ri, ct).ConfigureAwait(false);
     }
 
     private async Task HandleRetryBudgetExhaustedAsync(RetryItem<TInput> ri, CancellationToken ct)
@@ -934,15 +1018,34 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         }
     }
 
-    private void HandleRetryRequeued(RetryItem<TInput> ri)
+    private async Task WriteRetryToInputAsync(RetryItem<TInput> ri, CancellationToken ct)
     {
-        if (
-            !_inputChannel!.Reader.Completion.IsCompleted
-            && !_inputChannel.Writer.TryWrite(ri.Context)
-        )
+        ri.Context.Metadata[RetryCountMetadataKey] = ri.RetryCount.ToString(
+            System.Globalization.CultureInfo.InvariantCulture
+        );
+
+        try
         {
-            // Channel closed or full - exit
+            await _inputChannel!.Writer.WriteAsync(ri.Context, ct).ConfigureAwait(false);
         }
+        catch (ChannelClosedException ex)
+        {
+            _logger?.LogDebug(ex, "Input channel closed while requeueing retry item");
+            await HandleRetryBudgetExhaustedAsync(ri, ct).ConfigureAwait(false);
+        }
+    }
+
+    private static int GetRetryCount(ProcessingContext<TInput> ctx)
+    {
+        return ctx.Metadata.TryGetValue(RetryCountMetadataKey, out var value)
+            && int.TryParse(
+                value,
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var retryCount
+            )
+            ? retryCount
+            : 0;
     }
 
     private async Task MonitorParallelismAsync(CancellationToken ct)

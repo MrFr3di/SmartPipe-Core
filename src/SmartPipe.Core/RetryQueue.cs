@@ -1,7 +1,9 @@
 #nullable enable
 
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Channels;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 
 namespace SmartPipe.Core;
@@ -20,12 +22,20 @@ public class RetryQueue<T>
     private readonly IClock _clock;
     private readonly RetryQueueOverflowPolicy _overflowPolicy;
     private readonly int _capacity;
+    private readonly ConcurrentQueue<RetryItem<T>> _preservedNotReadyItems = new();
+    private int _pendingCount;
 
     /// <summary>Default timeout for polling when no items are available. Configurable via constructor.</summary>
     private readonly int _pollTimeoutMs;
 
     /// <summary>Gets the number of items waiting for retry.</summary>
     public int Count => _channel.Reader.Count;
+
+    /// <summary>Gets the number of accepted retry items that have not been returned or removed permanently.</summary>
+    public int PendingCount => Volatile.Read(ref _pendingCount);
+
+    /// <summary>Gets a value indicating whether the retry queue has accepted retry items still pending.</summary>
+    public bool HasPendingItems => PendingCount > 0;
 
     /// <summary>Creates a new retry queue.</summary>
     /// <param name="capacity">Maximum queue capacity.</param>
@@ -106,39 +116,27 @@ public class RetryQueue<T>
         switch (_overflowPolicy)
         {
             case RetryQueueOverflowPolicy.Wait:
-                await _channel.Writer.WriteAsync(item, ct).ConfigureAwait(false);
-                return true;
+                return await EnqueueWaitAsync(item, ct).ConfigureAwait(false);
 
             case RetryQueueOverflowPolicy.FailFast:
-                if (Count >= _capacity)
-                    return false;
-                _channel.Writer.TryWrite(item);
-                return true;
+                return TryEnqueueNonLossy(item);
 
             case RetryQueueOverflowPolicy.DeadLetter:
-                if (Count >= _capacity)
-                {
-                    if (_deadLetterSink != null)
-                    {
-                        var deadResult = ProcessingResult<object>.Failure(error, ctx.TraceId);
-                        await _deadLetterSink.WriteAsync(deadResult, ct).ConfigureAwait(false);
-                    }
-                    return false;
-                }
-                _channel.Writer.TryWrite(item);
-                return true;
+                if (TryEnqueueNonLossy(item))
+                    return true;
+                await WriteDeadLetterAsync(ctx, error, ct).ConfigureAwait(false);
+                return false;
 
             case RetryQueueOverflowPolicy.DropNewest:
-                _channel.Writer.TryWrite(item); // Will drop via BoundedChannelFullMode.DropWrite
-                return true; // Always returns true — dropped items are silently lost (documented as lossy)
+                EnqueueLossy(item, incrementWhenFull: false); // DropWrite may drop incoming item.
+                return true; // Lossy by design.
 
             case RetryQueueOverflowPolicy.DropOldest:
-                _channel.Writer.TryWrite(item); // Will drop via BoundedChannelFullMode.DropOldest
-                return true; // Always returns true
+                EnqueueLossy(item, incrementWhenFull: false); // DropOldest replaces an existing item when full.
+                return true; // Lossy by design.
 
             default:
-                _channel.Writer.TryWrite(item);
-                return true;
+                return TryEnqueueNonLossy(item);
         }
     }
 
@@ -151,6 +149,9 @@ public class RetryQueue<T>
     /// </remarks>
     public async ValueTask<RetryItem<T>?> TryGetNextAsync(CancellationToken ct = default)
     {
+        if (_preservedNotReadyItems.TryDequeue(out var preservedItem))
+            return await HandleDequeuedItemAsync(preservedItem, ct).ConfigureAwait(false);
+
         using var cts = new CancellationTokenSource(_pollTimeoutMs);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, cts.Token);
 
@@ -166,23 +167,110 @@ public class RetryQueue<T>
         }
 
         if (_channel.Reader.TryRead(out var item))
-        {
-            if (item.RetryAt <= _clock.UtcNow)
-                return item;
-            // Not ready yet — attempt re-queue with policy awareness
-            if (_overflowPolicy == RetryQueueOverflowPolicy.FailFast || _overflowPolicy == RetryQueueOverflowPolicy.DeadLetter)
-            {
-                // Cannot re-queue — treat as terminal failure
-                if (_deadLetterSink != null && _overflowPolicy == RetryQueueOverflowPolicy.DeadLetter)
-                {
-                    var result = ProcessingResult<object>.Failure(item.Error, item.Context.TraceId);
-                    await _deadLetterSink.WriteAsync(result, ct).ConfigureAwait(false);
-                }
-                return null;
-            }
-            _channel.Writer.TryWrite(item); // Re-queue
-        }
+            return await HandleDequeuedItemAsync(item, ct).ConfigureAwait(false);
+
         return null;
+    }
+
+    private async ValueTask<RetryItem<T>?> HandleDequeuedItemAsync(
+        RetryItem<T> item,
+        CancellationToken ct
+    )
+    {
+        if (item.RetryAt <= _clock.UtcNow)
+        {
+            DecrementPending();
+            return item;
+        }
+
+        // Not-ready items remain logically pending while they are requeued.
+        // Overflow policy does not apply to internal scheduler preservation.
+        if (!await RequeueNotReadyItemAsync(item, ct).ConfigureAwait(false))
+            DecrementPending();
+
+        return null;
+    }
+
+    private async ValueTask<bool> EnqueueWaitAsync(RetryItem<T> item, CancellationToken ct)
+    {
+        while (await _channel.Writer.WaitToWriteAsync(ct).ConfigureAwait(false))
+        {
+            IncrementPending();
+            if (_channel.Writer.TryWrite(item))
+                return true;
+            DecrementPending();
+        }
+        return false;
+    }
+
+    private bool TryEnqueueNonLossy(RetryItem<T> item)
+    {
+        IncrementPending();
+        if (_channel.Writer.TryWrite(item))
+            return true;
+        DecrementPending();
+        return false;
+    }
+
+    private void EnqueueLossy(RetryItem<T> item, bool incrementWhenFull)
+    {
+        var wasFull = PendingCount >= _capacity;
+        if (!wasFull || incrementWhenFull)
+            IncrementPending();
+
+        if (_channel.Writer.TryWrite(item))
+            return;
+
+        if (!wasFull || incrementWhenFull)
+            DecrementPending();
+    }
+
+    private ValueTask<bool> RequeueNotReadyItemAsync(
+        RetryItem<T> item,
+        CancellationToken ct
+    )
+    {
+        if (_channel.Writer.TryWrite(item))
+            return ValueTask.FromResult(true);
+
+        if (ct.IsCancellationRequested)
+        {
+            _logger?.LogDebug("Retry queue requeue cancelled for item {TraceId}", item.Context.TraceId);
+            return ValueTask.FromResult(false);
+        }
+
+        // If concurrent enqueues fill the bounded channel between TryRead and TryWrite,
+        // preserve the already-accepted delayed item outside the channel. Waiting for
+        // channel capacity here can deadlock because this retry loop is also the reader
+        // that would free the capacity.
+        _preservedNotReadyItems.Enqueue(item);
+        return ValueTask.FromResult(true);
+    }
+
+    private async ValueTask WriteDeadLetterAsync(
+        ProcessingContext<T> ctx,
+        SmartPipeError error,
+        CancellationToken ct
+    )
+    {
+        if (_deadLetterSink == null)
+            return;
+
+        var deadResult = ProcessingResult<object>.Failure(error, ctx.TraceId);
+        await _deadLetterSink.WriteAsync(deadResult, ct).ConfigureAwait(false);
+    }
+
+    private void IncrementPending() => Interlocked.Increment(ref _pendingCount);
+
+    private void DecrementPending()
+    {
+        int current;
+        do
+        {
+            current = Volatile.Read(ref _pendingCount);
+            if (current == 0)
+                return;
+        } while (Interlocked.CompareExchange(ref _pendingCount, current - 1, current) != current);
     }
 
     private static TimeSpan ApplyJitter(TimeSpan baseDelay)

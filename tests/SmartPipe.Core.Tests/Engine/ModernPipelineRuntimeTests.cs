@@ -59,7 +59,7 @@ public class ModernPipelineRuntimeTests
         var envelope = outputs.Single().Envelope;
         envelope.Should().NotBeNull();
         envelope!.TraceId.Should().Be(42);
-        envelope.Attempt.Should().Be(2);
+        envelope.Attempt.Should().Be(0);
         envelope.Metadata.GetString("tenant").Should().Be("alpha");
         envelope.Lineage.Should().NotBeEmpty();
     }
@@ -721,6 +721,92 @@ public class ModernPipelineRuntimeTests
         observer.Events.OfType<RetryScheduledEvent>().Should().ContainSingle();
         observer.Events.OfType<RetryAttemptedEvent>().Should().ContainSingle();
         observer.Events.OfType<RetryExhaustedEvent>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task RetryAttempt_ShouldResetForNextStage_WhenPreviousStageSucceededAfterRetry()
+    {
+        var observer = new RecordingObserver();
+        var stage1Transformer = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 1,
+            value => value.ToString(CultureInfo.InvariantCulture)
+        );
+        var stage2Transformer = new EnvelopeTransformer<string, string>(x => $"final:{x}");
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(99))
+            .Transform(
+                stage1Transformer,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero),
+                }
+            )
+            .Transform(stage2Transformer)
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Single().Result.Value.Should().Be("final:99");
+        // Stage 1 retried once, then succeeded.
+        observer.Events.OfType<RetryScheduledEvent>().Should().ContainSingle();
+        observer.Events.OfType<RetryAttemptedEvent>().Should().ContainSingle();
+        // Stage 2 started with Attempt=0, not inherited from stage 1.
+        var stage2Started = observer.Events.OfType<StageStartedEvent>().Single(e => e.StageId == "stage-2");
+        stage2Started.Attempt.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RetryBudget_ShouldBePerStage()
+    {
+        var observer = new RecordingObserver();
+        var stage1 = new FlakyStageTransformer<int, string>(
+            failuresBeforeSuccess: 10, // Always fails
+            x => x.ToString(CultureInfo.InvariantCulture)
+        );
+        var stage2 = new FlakyStageTransformer<string, int>(
+            failuresBeforeSuccess: 1, // Succeeds after 1 retry
+            x => int.Parse(x)
+        );
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(42))
+            .Transform(
+                stage1,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero),
+                    OnRetryExhausted = FailureAction.Skip,
+                }
+            )
+            .Transform(
+                stage2,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero),
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        // Stage 1 exhausted its retry budget and was skipped.
+        // Stage 2 was never reached because stage 1's skip terminates the item.
+        outputs.Should().BeEmpty();
+        observer.Events.OfType<RetryExhaustedEvent>().Should().ContainSingle();
+        // Verify stage 1 had its own independent attempt counting.
+        var stage1Attempts = observer.Events
+            .OfType<StageStartedEvent>()
+            .Where(e => e.StageId == "stage-1")
+            .Select(e => e.Attempt)
+            .ToList();
+        stage1Attempts.Should().Equal(0, 1); // Initial = 0, first retry = 1
+        // Stage 2 was never started because stage 1 was skipped.
+        observer.Events.OfType<StageStartedEvent>().Select(e => e.StageId).Should().NotContain("stage-2");
     }
 
     [Fact]
@@ -1450,6 +1536,126 @@ public class ModernPipelineRuntimeTests
         await run.Completion; // Should complete without hang
 
         observer.Events.OfType<PipelineCompletedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task CircuitBreaker_Open_DeadLetter_ShouldWriteDeadLetterAndTerminalFailureOutput()
+    {
+        await using var stream = new MemoryStream();
+        var serializer = new JsonLinesDeadLetterSerializer<int>();
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3))
+            .Transform(
+                new FailingStageTransformer<int, string>(),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 2,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.DeadLetter,
+                },
+                new StageDeadLetterOptions<int>(stream, serializer)
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        // All 3 items should produce terminal failure output.
+        // Items 1 and 2 fail the stage normally → DeadLetter + terminal failure.
+        // Item 3 is rejected by the open breaker → must also produce DeadLetter + terminal failure.
+        outputs.Should().HaveCount(3);
+        outputs.Should().OnlyContain(o => !o.Result.IsSuccess);
+
+        // Dead-letter should be written for all items, including breaker-rejected ones.
+        observer.Events.OfType<DeadLetterWrittenEvent>().Should().HaveCount(3);
+
+        // Circuit breaker rejection events confirm item 3 was rejected.
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task DeadLetter_ShouldBehaveConsistently_ForStageFailureAndBreakerRejection()
+    {
+        // Pipeline A: stage failure DeadLetter without circuit breaker.
+        await using var streamA = new MemoryStream();
+        var serializerA = new JsonLinesDeadLetterSerializer<int>();
+        var observerA = new RecordingObserver();
+
+        var runA = PipelineBuilder
+            .From(new EnvelopeSource<int>(42))
+            .Transform(
+                new FailingStageTransformer<int, string>(),
+                new StageFailureOptions { OnPermanentFailure = FailureAction.DeadLetter },
+                new StageDeadLetterOptions<int>(streamA, serializerA)
+            )
+            .WithObserver(observerA)
+            .Run();
+
+        var outputsA = await ReadOutputsAsync(runA.Outputs);
+        await runA.Completion;
+
+        // Pipeline B: breaker-triggered DeadLetter (breaker opens after 1 failure).
+        await using var streamB = new MemoryStream();
+        var serializerB = new JsonLinesDeadLetterSerializer<int>();
+        var observerB = new RecordingObserver();
+
+        var runB = PipelineBuilder
+            .From(new EnvelopeSource<int>(42, 99))
+            .Transform(
+                new FailingStageTransformer<int, string>(),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 1,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.DeadLetter,
+                },
+                new StageDeadLetterOptions<int>(streamB, serializerB)
+            )
+            .WithObserver(observerB)
+            .Run();
+
+        var outputsB = await ReadOutputsAsync(runB.Outputs);
+        await runB.Completion;
+
+        // Both pipelines must produce terminal failure output for every item.
+        outputsA.Single().Result.IsSuccess.Should().BeFalse();
+        outputsB.Should().HaveCount(2);
+        outputsB.Should().OnlyContain(o => !o.Result.IsSuccess);
+
+        // Both pipelines must write dead-letter for every item.
+        observerA.Events.OfType<DeadLetterWrittenEvent>().Should().ContainSingle();
+        observerB.Events.OfType<DeadLetterWrittenEvent>().Should().HaveCount(2);
+
+        // Pipeline B must have one breaker rejection (for item 2).
+        observerB.Events.OfType<CircuitBreakerRejectedEvent>().Should().ContainSingle();
+
+        // Dead-letter envelope contents must be consistent.
+        streamA.Position = 0;
+        streamB.Position = 0;
+        var dlqA = new List<DeadLetterEnvelope<int>>();
+        var dlqB = new List<DeadLetterEnvelope<int>>();
+        await foreach (var e in serializerA.ReadAsync(streamA))
+            dlqA.Add(e);
+        await foreach (var e in serializerB.ReadAsync(streamB))
+            dlqB.Add(e);
+
+        dlqA.Single().OriginalPayload.Should().Be(42);
+        dlqA.Single().Error.Category.Should().Be("TestFailure");
+
+        dlqB.Should().HaveCount(2);
+        dlqB[0].OriginalPayload.Should().Be(42);
+        dlqB[0].Error.Category.Should().Be("TestFailure");
+        dlqB[1].OriginalPayload.Should().Be(99);
+        dlqB[1].Error.Category.Should().Be("CircuitBreaker");
     }
 
     #endregion

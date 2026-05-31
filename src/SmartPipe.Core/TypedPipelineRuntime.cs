@@ -305,7 +305,7 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
                 StageOutcome.Succeeded,
                 includeForError: false
             ),
-            Attempt = input.Attempt,
+            Attempt = 0,
             CreatedAtUtc = input.CreatedAtUtc,
         };
 
@@ -487,6 +487,10 @@ internal readonly record struct DeadLetterWriteResult(
 
 internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 {
+    // Prevents scheduling retries when the remaining StageTimeout budget is too small
+    // to execute a meaningful next attempt after retry delay.
+    private static readonly TimeSpan MinimumRetryAttemptBudget = TimeSpan.FromMilliseconds(5);
+
     private readonly PipelineRuntime _runtime;
     private readonly TypedPipelineSpec<TInput, TOutput> _spec;
     private readonly IPipelineSink<TOutput>? _sink;
@@ -701,8 +705,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                             cbError
                         );
 
-                    // For EmitFailureResult and StopPipeline, write terminal output
-                    if (action == FailureAction.EmitFailureResult || action == FailureAction.StopPipeline)
+                    // For EmitFailureResult, StopPipeline, and DeadLetter, write terminal output
+                    if (action == FailureAction.EmitFailureResult || action == FailureAction.StopPipeline || action == FailureAction.DeadLetter)
                     {
                         var inputEnvelope = (ProcessingEnvelope<TInput>)current;
                         var terminalOutcome = TypedStageExecutionResult.Terminal(
@@ -1126,10 +1130,20 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         if (remaining is null)
             return new RetryDecision(RetryDecisionKind.Retry, nextAttempt, delay);
 
-        if (remaining <= TimeSpan.Zero)
+        // Remaining budget must allow a meaningful next attempt after delay.
+        // 'Meaningful' means the effective attempt timeout for the retry attempt
+        // would be strictly greater than zero, accounting for the delay.
+        var budgetAfterDelay = remaining.Value - delay;
+        if (budgetAfterDelay <= TimeSpan.Zero)
             return new RetryDecision(RetryDecisionKind.Exhausted, 0, TimeSpan.Zero);
 
-        if (delay >= remaining)
+        // If an attempt timeout is configured, the remaining budget after delay
+        // must be at least that value for the retry to complete a full attempt.
+        var attemptTimeout = NormalizeTimeout(stage.FailureOptions.Timeout?.AttemptTimeout);
+        if (attemptTimeout is not null && budgetAfterDelay < attemptTimeout.Value)
+            return new RetryDecision(RetryDecisionKind.Exhausted, 0, TimeSpan.Zero);
+
+        if (budgetAfterDelay <= MinimumRetryAttemptBudget)
             return new RetryDecision(RetryDecisionKind.Exhausted, 0, TimeSpan.Zero);
 
         return new RetryDecision(RetryDecisionKind.Retry, nextAttempt, delay);

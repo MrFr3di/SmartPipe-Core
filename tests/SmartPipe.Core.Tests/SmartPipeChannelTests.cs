@@ -445,7 +445,8 @@ public class SmartPipeChannelTests
         var itemsInSink = new List<int>();
         channel.AddSink(new CallbackSink<int>(itemsInSink.Add));
         channel.RunInBackground();
-        await Task.Delay(200); // let item flow
+        for (int i = 0; i < 50 && itemsInSink.Count == 0; i++)
+            await Task.Delay(100);
         var sw = Stopwatch.StartNew();
         await channel.DrainAsync(TimeSpan.FromSeconds(10));
         sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5), "DrainAsync must complete within 5 seconds");
@@ -567,6 +568,44 @@ public class SmartPipeChannelTests
     }
 
     [Fact]
+    public async Task SmartPipeChannel_DrainAsync_ShouldPropagateRunFault()
+    {
+        var options = new SmartPipeChannelOptions();
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(new ThrowingInitializeSource<int>());
+        channel.AddTransformer(new IdentityTransformer<int>());
+        channel.AddSink(new NoOpSink<int>());
+
+        channel.RunInBackground();
+        await Task.Delay(100);
+
+        await channel.Invoking(c => c.DrainAsync(TimeSpan.FromSeconds(5)))
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*source initialization failed*");
+    }
+
+    [Fact]
+    public async Task SmartPipeChannel_DrainAsync_ShouldRespectCallerCancellation()
+    {
+        var options = new SmartPipeChannelOptions();
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(new InfiniteSource<int>());
+        channel.AddTransformer(new SlowTransformer<int>(TimeSpan.FromSeconds(5)));
+        channel.AddSink(new NoOpSink<int>());
+        channel.RunInBackground();
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await channel.Invoking(c => c.DrainAsync(TimeSpan.FromSeconds(30), cts.Token))
+            .Should()
+            .ThrowAsync<OperationCanceledException>();
+
+        channel.Cancel();
+    }
+
+    [Fact]
     public void SmartPipeChannelOptions_RetryQueueOverflowPolicy_ShouldDefaultToWait()
     {
         var options = new SmartPipeChannelOptions();
@@ -628,6 +667,98 @@ public class SmartPipeChannelTests
         channel.AddSink(sink);
 
         await channel.RunAsync();
+        channel.State.Should().Be(PipelineState.Completed);
+    }
+
+    [Fact]
+    public async Task SmartPipeChannel_DrainAsync_ShouldNotCloseOutputBeforeAcceptedWorkFinishes()
+    {
+        // Arrange: pipeline with a slow transformer so consumers are still processing when DrainAsync is called.
+        var options = new SmartPipeChannelOptions { BoundedCapacity = 5, MaxDegreeOfParallelism = 1 };
+        var channel = new SmartPipeChannel<int, int>(options);
+        var source = new AcceptedTrackingSource<int>([1, 2, 3]);
+        channel.AddSource(source);
+        // Transformer takes 200ms per item — consumers will still be busy when drain is called.
+        channel.AddTransformer(new SlowTransformer<int>(TimeSpan.FromMilliseconds(200)));
+        var items = new List<int>();
+        channel.AddSink(new CallbackSink<int>(items.Add));
+        channel.RunInBackground();
+
+        // Wait until the source loop has handed all items to the pipeline before drain is requested.
+        for (int i = 0; i < 50 && source.AcceptedCount < 3; i++)
+            await Task.Delay(100);
+        source.AcceptedCount.Should().Be(3, "the test verifies drain of accepted work");
+
+        // Act: call DrainAsync while consumers are still processing accepted items.
+        var sw = Stopwatch.StartNew();
+        await channel.DrainAsync(TimeSpan.FromSeconds(10));
+        sw.Stop();
+
+        // Assert: all 3 items must have been processed, even though DrainAsync was called
+        // while consumers were still busy. The drain must wait for consumer completion,
+        // not close the output channel prematurely.
+        await Task.Delay(100);
+        items.Should().HaveCount(3, "all accepted items should be processed before output is closed");
+        items.Should().BeEquivalentTo(new[] { 1, 2, 3 });
+        // Drain should not be instant — it waited for consumer processing.
+        sw.Elapsed.Should().BeGreaterThan(TimeSpan.FromMilliseconds(100),
+            "drain waited for consumer processing");
+    }
+
+    [Fact]
+    public async Task SmartPipeChannel_DelayedRetry_ShouldExecuteAfterProducerCompletion()
+    {
+        // Arrange: single-item source, transformer that fails transiently on first call
+        // then succeeds on retry. RetryQueue must be enabled.
+        var options = new SmartPipeChannelOptions
+        {
+            BoundedCapacity = 10,
+            MaxDegreeOfParallelism = 1,
+            ContinueOnError = true,
+            DefaultRetryPolicy = new RetryPolicy(3, TimeSpan.FromMilliseconds(10))
+        };
+        options.EnableFeature("RetryQueue");
+
+        var channel = new SmartPipeChannel<string, string>(options);
+        channel.AddSource(new SimpleSource<string>(["retry-me"]));
+        var transformer = new RetrySucceedingTransformer<string>();
+        channel.AddTransformer(transformer);
+        var sink = new CollectingSink<string>();
+        channel.AddSink(sink);
+
+        // Act: producer completes after one item; retry should not be silently dropped.
+        await channel.RunAsync();
+
+        // Assert: transformer was called twice (first fail, then retry success).
+        transformer.CallCount.Should().Be(2, "first call fails transiently, second (retry) succeeds");
+        sink.Items.Should().ContainSingle()
+            .Which.Should().Be("retry-me", "retry was requeued and processed successfully");
+        channel.State.Should().Be(PipelineState.Completed);
+    }
+
+    [Fact]
+    public async Task SmartPipeChannel_DelayedRetry_ShouldKeepRetryLoopAliveUntilRetryQueueEmpty()
+    {
+        var options = new SmartPipeChannelOptions
+        {
+            BoundedCapacity = 10,
+            MaxDegreeOfParallelism = 1,
+            ContinueOnError = true,
+            DefaultRetryPolicy = new RetryPolicy(3, TimeSpan.FromMilliseconds(250))
+        };
+        options.EnableFeature("RetryQueue");
+
+        var channel = new SmartPipeChannel<string, string>(options);
+        channel.AddSource(new SimpleSource<string>(["retry-me"]));
+        var transformer = new RetrySucceedingTransformer<string>();
+        channel.AddTransformer(transformer);
+        var sink = new CollectingSink<string>();
+        channel.AddSink(sink);
+
+        await channel.RunAsync();
+
+        transformer.CallCount.Should().Be(2);
+        sink.Items.Should().ContainSingle().Which.Should().Be("retry-me");
         channel.State.Should().Be(PipelineState.Completed);
     }
 }

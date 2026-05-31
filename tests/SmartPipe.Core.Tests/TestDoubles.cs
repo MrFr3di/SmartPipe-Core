@@ -25,6 +25,31 @@ internal class SimpleSource<T> : ISource<T>
     public Task DisposeAsync() => Task.CompletedTask;
 }
 
+internal class AcceptedTrackingSource<T> : ISource<T>
+{
+    private readonly T[] _items;
+    private int _acceptedCount;
+
+    public AcceptedTrackingSource(params T[] items) => _items = items;
+
+    public int AcceptedCount => Volatile.Read(ref _acceptedCount);
+
+    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(CancellationToken ct = default)
+    {
+        foreach (var item in _items)
+        {
+            ct.ThrowIfCancellationRequested();
+            yield return new ProcessingContext<T>(item);
+            Interlocked.Increment(ref _acceptedCount);
+            await Task.Yield();
+        }
+    }
+
+    public Task DisposeAsync() => Task.CompletedTask;
+}
+
 internal class PassthroughTransformer<T> : ITransformer<T, T>
 {
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
@@ -147,6 +172,20 @@ internal class InfiniteSource<T> : ISource<T>
     public Task DisposeAsync() => Task.CompletedTask;
 }
 
+internal class ThrowingInitializeSource<T> : ISource<T>
+{
+    public Task InitializeAsync(CancellationToken ct = default) =>
+        throw new InvalidOperationException("source initialization failed");
+
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(CancellationToken ct = default)
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
+
+    public Task DisposeAsync() => Task.CompletedTask;
+}
+
 internal class AlwaysTransientFailingTransformer<TIn, TOut> : ITransformer<TIn, TOut>
 {
     public int CallCount;
@@ -159,6 +198,11 @@ internal class AlwaysTransientFailingTransformer<TIn, TOut> : ITransformer<TIn, 
             ctx.TraceId));
     }
     public Task DisposeAsync() => Task.CompletedTask;
+}
+
+internal class FakeClock : IClock
+{
+    public DateTime UtcNow { get; set; } = DateTime.UtcNow;
 }
 
 internal class CollectingDeadLetterSink : ISink<object>
@@ -195,6 +239,36 @@ internal class DelayedRetryPolicy : RetryPolicy
     private readonly TimeSpan _delay;
     public DelayedRetryPolicy(int maxRetries, TimeSpan delay)
         : base(maxRetries, delay) { _delay = delay; }
+}
+
+internal class SlowTransformer<T> : ITransformer<T, T>
+{
+    private readonly TimeSpan _delay;
+    public SlowTransformer(TimeSpan delay) => _delay = delay;
+    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public async ValueTask<ProcessingResult<T>> TransformAsync(ProcessingContext<T> ctx, CancellationToken ct = default)
+    {
+        await Task.Delay(_delay, ct);
+        return ProcessingResult<T>.Success(ctx.Payload, ctx.TraceId);
+    }
+    public Task DisposeAsync() => Task.CompletedTask;
+}
+
+internal class RetrySucceedingTransformer<T> : ITransformer<T, T>
+{
+    private int _callCount;
+    public int CallCount => _callCount;
+    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask<ProcessingResult<T>> TransformAsync(ProcessingContext<T> ctx, CancellationToken ct = default)
+    {
+        int call = Interlocked.Increment(ref _callCount);
+        if (call == 1)
+            return ValueTask.FromResult(ProcessingResult<T>.Failure(
+                new SmartPipeError("Transient failure – will succeed on retry", ErrorType.Transient, "Test"),
+                ctx.TraceId));
+        return ValueTask.FromResult(ProcessingResult<T>.Success(ctx.Payload, ctx.TraceId));
+    }
+    public Task DisposeAsync() => Task.CompletedTask;
 }
 
 internal static class TinyCapacityOptionsFactory
