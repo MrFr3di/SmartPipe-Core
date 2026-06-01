@@ -2,6 +2,7 @@
 
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -58,6 +59,31 @@ public class DeadLetterSinkTests
         {
             File.Delete(tempFile);
         }
+    }
+
+    [Fact]
+    public async Task WriteAsync_WithSourceGeneratedTypeInfo_ShouldStoreFailureResult()
+    {
+        await using var memoryStream = new MemoryStream();
+        var sink = new DeadLetterSink<AotDeadLetterItem>(
+            "dummy.json",
+            DeadLetterSinkTestJsonContext.Default.ProcessingResultAotDeadLetterItem,
+            logger: null,
+            stream: memoryStream);
+
+        var error = new SmartPipeError("source-gen failure", ErrorType.Permanent);
+        var result = ProcessingResult<AotDeadLetterItem>.Failure(error, 99UL);
+
+        await sink.WriteAsync(result);
+        await sink.DisposeAsync();
+
+        memoryStream.Position = 0;
+        using var reader = new StreamReader(memoryStream, Encoding.UTF8, leaveOpen: true);
+        var content = await reader.ReadToEndAsync();
+
+        content.Should().Contain("source-gen failure");
+        content.Should().Contain("\"TraceId\":99");
+        content.Should().Contain("\"IsSuccess\":false");
     }
 
     /// <summary>
@@ -262,3 +288,9 @@ public class DeadLetterSinkTests
         }
     }
 }
+
+public sealed record AotDeadLetterItem(int Id, string Name);
+
+[JsonSerializable(typeof(AotDeadLetterItem))]
+[JsonSerializable(typeof(ProcessingResult<AotDeadLetterItem>))]
+internal sealed partial class DeadLetterSinkTestJsonContext : JsonSerializerContext;

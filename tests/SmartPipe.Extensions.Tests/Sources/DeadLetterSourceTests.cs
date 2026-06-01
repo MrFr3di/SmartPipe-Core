@@ -1,5 +1,6 @@
 #nullable enable
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using SmartPipe.Core;
@@ -86,6 +87,42 @@ public class DeadLetterSourceTests
 
             Assert.NotEmpty(items);
             Assert.Equal("item1", items[0].Payload);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ReadAsync_WithSourceGeneratedTypeInfo_ReturnsLegacyDeadLetterValue()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var json = """
+            [
+              {
+                "Value": { "Id": 5, "Name": "five" },
+                "IsSuccess": false,
+                "Error": { "Message": "failed", "Type": "Permanent" },
+                "TraceId": 5
+              }
+            ]
+            """;
+            await File.WriteAllTextAsync(path, json);
+
+            var source = new DeadLetterSource<AotDeadLetterSourceItem>(
+                path,
+                DeadLetterSourceTestJsonContext.Default.AotDeadLetterSourceItem);
+            var result = new List<ProcessingContext<AotDeadLetterSourceItem>>();
+
+            await foreach (var item in source.ReadAsync())
+                result.Add(item);
+
+            Assert.Single(result);
+            Assert.Equal(new AotDeadLetterSourceItem(5, "five"), result[0].Payload);
         }
         finally
         {
@@ -382,3 +419,8 @@ public class DeadLetterSourceTests
         public string? Name { get; set; }
     }
 }
+
+public sealed record AotDeadLetterSourceItem(int Id, string Name);
+
+[JsonSerializable(typeof(AotDeadLetterSourceItem))]
+internal sealed partial class DeadLetterSourceTestJsonContext : JsonSerializerContext;

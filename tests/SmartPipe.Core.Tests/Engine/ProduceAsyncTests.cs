@@ -45,7 +45,7 @@ public class ProduceAsyncTests
         method.Invoke(_channel, new object[] { source });
     }
 
-    private void InitializePipeline()
+    private async Task InitializePipelineAsync()
     {
         var method = typeof(SmartPipeChannel<string, string>).GetMethod(
             "InitializePipelineAsync",
@@ -53,7 +53,7 @@ public class ProduceAsyncTests
         );
         Assert.NotNull(method);
         var task = (Task)method.Invoke(_channel, new object[] { _cts.Token })!;
-        task.GetAwaiter().GetResult();
+        await task;
     }
 
     /// <summary>
@@ -70,7 +70,7 @@ public class ProduceAsyncTests
         };
         var source = new TestSource(new[] { "item1" });
         AddSource(source);
-        InitializePipeline();
+        await InitializePipelineAsync();
 
         // Act
         var task = InvokeProduceAsync(_cts.Token);
@@ -95,7 +95,7 @@ public class ProduceAsyncTests
         };
         var source = new TestSource(new[] { "item1" });
         AddSource(source);
-        InitializePipeline();
+        await InitializePipelineAsync();
 
         // Act
         var task = InvokeProduceAsync(_cts.Token);
@@ -122,7 +122,7 @@ public class ProduceAsyncTests
         var source2 = new TestSource(new[] { "item3" });
         AddSource(source1);
         AddSource(source2);
-        InitializePipeline();
+        await InitializePipelineAsync();
 
         // Act
         var task = InvokeProduceAsync(_cts.Token);
@@ -142,7 +142,7 @@ public class ProduceAsyncTests
         // Arrange
         var source = new TestSource(new[] { "item1" });
         AddSource(source);
-        InitializePipeline(); // Initialize channels
+        await InitializePipelineAsync(); // Initialize channels
 
         var produceTask = InvokeProduceAsync(_cts.Token);
         await Task.Delay(100); // Let the method start processing
@@ -162,7 +162,7 @@ public class ProduceAsyncTests
         var source = NSubstitute.Substitute.For<ISource<string>>();
         source.ReadAsync(Arg.Any<CancellationToken>()).Returns(ThrowingAsyncEnumerable());
         AddSource(source);
-        InitializePipeline();
+        await InitializePipelineAsync();
 
         // Act: Should not throw
         var task = InvokeProduceAsync(_cts.Token);
@@ -186,7 +186,7 @@ public class ProduceAsyncTests
         AddSource(source1);
         AddSource(source2);
         AddSource(source3);
-        InitializePipeline();
+        await InitializePipelineAsync();
 
         int sourceCount = 0;
         _options.OnProgress = (current, total, elapsed, _) =>
@@ -205,8 +205,11 @@ public class ProduceAsyncTests
 
     private async IAsyncEnumerable<ProcessingContext<string>> ThrowingAsyncEnumerable()
     {
-        throw new InvalidOperationException("Test exception");
-        // ReSharper disable once IteratorNeverReturns
+        await Task.Yield();
+        Exception? exception = new InvalidOperationException("Test exception");
+        if (exception is not null)
+            throw exception;
+
         yield break;
     }
 
@@ -225,8 +228,7 @@ public class ProduceAsyncTests
         public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
         public async IAsyncEnumerable<ProcessingContext<string>> ReadAsync(
-            CancellationToken ct = default
-        )
+            [EnumeratorCancellation] CancellationToken ct = default)
         {
             foreach (var item in _items)
             {

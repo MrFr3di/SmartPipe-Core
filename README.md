@@ -298,6 +298,11 @@ fault the run and should be reserved for policy decisions.
 
 Claims such as `production-ready`, `0 allocations`, `0 dependencies`, `lock-free`, exact coverage, exact test counts, AOT-ready, and dead-letter replay are not used as release claims unless there is reproducible evidence from CI, package validation, benchmarks, or consumer harnesses.
 
+The historical release notes below preserve context from previous releases. Exact
+test counts, coverage percentages, benchmark deltas, and component totals in
+those sections are historical notes for that release line, not current 1.1.0
+release evidence.
+
 ## What's New in v1.0.6
 
 
@@ -336,7 +341,7 @@ Claims such as `production-ready`, `0 allocations`, `0 dependencies`, `lock-free
 
 ## What's New in v1.0.4
 
-- **22 new features** (243 tests, 96.4% coverage)
+- **22 new features** (historical release note; exact test and coverage numbers are not current 1.1.0 release evidence)
 - **P-Controller Parallelism** — smooth thread scaling, no binary jumps
 - **Double EMA + Prediction** — velocity tracking + one-step latency forecast
 - **Hybrid CircuitBreaker** — EWMA early warning + Sliding window decisions
@@ -351,7 +356,7 @@ Claims such as `production-ready`, `0 allocations`, `0 dependencies`, `lock-free
 
 ## What's New in v1.0.3
 
-- **13 new features** (215 tests, 96.3% coverage)
+- **13 new features** (historical release note; exact test and coverage numbers are not current 1.1.0 release evidence)
 - **Middleware Transformer** — `Func<T,T>` as lightweight ITransformer
 - **Rendezvous Channel** — (BoundedCapacity=0)
 - **HyperLogLogEstimator** — Count-Distinct with O(1) memory
@@ -373,12 +378,12 @@ Claims such as `production-ready`, `0 allocations`, `0 dependencies`, `lock-free
 - **SmartPipeHealthCheck** — pipeline health for YARP/Kubernetes
 - **Adaptive EMA** — dynamic α for spike detection
 - **Dynamic Watermark** — throughput-based backpressure
-- **96.3% code coverage** (up from 86.5%)
-- **47 new tests**, 0 regressions in benchmarks
+- Historical coverage reporting was expanded in this release line; current release coverage claims must come from CI artifacts.
+- Historical test coverage was expanded in this release line; current test-count claims must come from CI artifacts.
 
 ## Documentation
 
-- [Complete Feature Reference](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/features.md) — all 24 components in detail
+- [Complete Feature Reference](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/features.md) — component reference
 - [Architecture Overview](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/architecture.md) — pipeline flow and design
 - [API Reference](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/api-reference.md) — interfaces and configuration
 - [Contributing Guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CONTRIBUTING.md)

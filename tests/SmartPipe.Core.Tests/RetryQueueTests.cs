@@ -16,11 +16,12 @@ public class RetryQueueTests
         var policy = new RetryPolicy(3, TimeSpan.FromSeconds(1));
         var error = new SmartPipeError("test", ErrorType.Transient);
         var item = new RetryItem<string>(ctx, policy, 0, error, DateTime.UtcNow);
-        Assert.NotNull(item);
+        Assert.Same(ctx, item.Context);
+        Assert.Same(policy, item.Policy);
     }
 
     [Fact]
-    public void TryRetry_ReturnsTrue_WhenRetryCountLessThanMax()
+    public async Task TryRetry_ReturnsTrue_WhenRetryCountLessThanMax()
     {
         // Arrange
         var queue = new RetryQueue<string>(10);
@@ -28,7 +29,7 @@ public class RetryQueueTests
         var policy = new RetryPolicy(maxRetries: 3, delay: TimeSpan.Zero);
 
         // Act & Assert - EnqueueAsync returns true when retryCount < maxRetries
-        var result = queue.EnqueueAsync(ctx, policy, 0, new SmartPipeError("e", ErrorType.Transient)).Result;
+        var result = await queue.EnqueueAsync(ctx, policy, 0, new SmartPipeError("e", ErrorType.Transient));
         Assert.True(result);
     }
 

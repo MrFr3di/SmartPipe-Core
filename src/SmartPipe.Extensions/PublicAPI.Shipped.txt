@@ -1,0 +1,140 @@
+#nullable enable
+override SmartPipe.Extensions.SmartPipeHostedService<TInput, TOutput>.ExecuteAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+override SmartPipe.Extensions.SmartPipeHostedService<TInput, TOutput>.StopAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.ChannelMerge
+SmartPipe.Extensions.Selectors.CsvFileSource<T>
+SmartPipe.Extensions.Selectors.CsvFileSource<T>.CsvFileSource(string! path, string! delimiter = ",", System.Globalization.CultureInfo? culture = null) -> void
+SmartPipe.Extensions.Selectors.CsvFileSource<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Selectors.CsvFileSource<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Selectors.CsvFileSource<T>.ReadAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingContext<T>!>!
+SmartPipe.Extensions.Selectors.DapperSelector<T>
+SmartPipe.Extensions.Selectors.DapperSelector<T>.DapperSelector(System.Data.IDbConnection! connection, string! sql, object? parameters = null, int commandTimeout = 30, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.DapperSelector<T>!>? logger = null) -> void
+SmartPipe.Extensions.Selectors.DapperSelector<T>.Dispose() -> void
+SmartPipe.Extensions.Selectors.DapperSelector<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Selectors.DapperSelector<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Selectors.DapperSelector<T>.ReadAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingContext<T>!>!
+SmartPipe.Extensions.Selectors.DeadLetterSource<T>
+SmartPipe.Extensions.Selectors.DeadLetterSource<T>.DeadLetterSource(string! path) -> void
+SmartPipe.Extensions.Selectors.DeadLetterSource<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Selectors.DeadLetterSource<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Selectors.DeadLetterSource<T>.ReadAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingContext<T>!>!
+SmartPipe.Extensions.Selectors.EfCoreSelector<T>
+SmartPipe.Extensions.Selectors.EfCoreSelector<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Selectors.EfCoreSelector<T>.EfCoreSelector(Microsoft.EntityFrameworkCore.DbContext! dbContext, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.EfCoreSelector<T!>!>? logger = null) -> void
+SmartPipe.Extensions.Selectors.EfCoreSelector<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Selectors.EfCoreSelector<T>.ReadAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingContext<T!>!>!
+SmartPipe.Extensions.Selectors.EfCoreSelector<T>.WithQuery(System.Func<Microsoft.EntityFrameworkCore.DbSet<T!>!, System.Linq.IQueryable<T!>!>! configure) -> SmartPipe.Extensions.Selectors.EfCoreSelector<T!>!
+SmartPipe.Extensions.Selectors.HttpSelector<T>
+SmartPipe.Extensions.Selectors.HttpSelector<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Selectors.HttpSelector<T>.HttpSelector(System.Net.Http.HttpClient! httpClient, string! requestUri, Polly.ResiliencePipeline? pipeline = null, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.HttpSelector<T>!>? logger = null) -> void
+SmartPipe.Extensions.Selectors.HttpSelector<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Selectors.HttpSelector<T>.ReadAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingContext<T>!>!
+SmartPipe.Extensions.Selectors.JsonFileSource<T>
+SmartPipe.Extensions.Selectors.JsonFileSource<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Selectors.JsonFileSource<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Selectors.JsonFileSource<T>.JsonFileSource(string! path) -> void
+SmartPipe.Extensions.Selectors.JsonFileSource<T>.ReadAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingContext<T>!>!
+SmartPipe.Extensions.Sinks.CsvFileSink<T>
+SmartPipe.Extensions.Sinks.CsvFileSink<T>.CsvFileSink(string! path, string! delimiter = ",", System.Globalization.CultureInfo? culture = null) -> void
+SmartPipe.Extensions.Sinks.CsvFileSink<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.CsvFileSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.CsvFileSink<T>.WriteAsync(SmartPipe.Core.ProcessingResult<T> result, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.DbSink<T>
+SmartPipe.Extensions.Sinks.DbSink<T>.DbSink(System.Data.IDbConnection! connection, string? sql = null) -> void
+SmartPipe.Extensions.Sinks.DbSink<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.DbSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.DbSink<T>.WriteAsync(SmartPipe.Core.ProcessingResult<T> result, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.DeadLetterSink<T>
+SmartPipe.Extensions.Sinks.DeadLetterSink<T>.DeadLetterSink(string! path = "dead_letter.json", Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Sinks.DeadLetterSink<T>!>? logger = null, System.IO.Stream? stream = null) -> void
+SmartPipe.Extensions.Sinks.DeadLetterSink<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.DeadLetterSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.DeadLetterSink<T>.WriteAsync(SmartPipe.Core.ProcessingResult<T> result, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.HttpSink<T>
+SmartPipe.Extensions.Sinks.HttpSink<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.HttpSink<T>.HttpSink(System.Net.Http.HttpClient! http, string! url, Polly.ResiliencePipeline? resilience = null) -> void
+SmartPipe.Extensions.Sinks.HttpSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.HttpSink<T>.WriteAsync(SmartPipe.Core.ProcessingResult<T> result, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.JsonFileSink<T>
+SmartPipe.Extensions.Sinks.JsonFileSink<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.JsonFileSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.JsonFileSink<T>.JsonFileSink(string! path, int flushInterval = 1000) -> void
+SmartPipe.Extensions.Sinks.JsonFileSink<T>.WriteAsync(SmartPipe.Core.ProcessingResult<T> result, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.LoggerSink<T>
+SmartPipe.Extensions.Sinks.LoggerSink<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.LoggerSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Sinks.LoggerSink<T>.LoggerSink(Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Sinks.LoggerSink<T>!>! logger) -> void
+SmartPipe.Extensions.Sinks.LoggerSink<T>.WriteAsync(SmartPipe.Core.ProcessingResult<T> result, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.SmartPipeHostedService<TInput, TOutput>
+SmartPipe.Extensions.SmartPipeHostedService<TInput, TOutput>.SmartPipeHostedService(SmartPipe.Core.SmartPipeChannel<TInput, TOutput>! pipeline, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.SmartPipeHostedService<TInput, TOutput>!>! logger) -> void
+SmartPipe.Extensions.SmartPipeLivenessCheck<TIn, TOut>
+SmartPipe.Extensions.SmartPipeLivenessCheck<TIn, TOut>.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
+SmartPipe.Extensions.SmartPipeLivenessCheck<TIn, TOut>.SmartPipeLivenessCheck(SmartPipe.Core.SmartPipeChannel<TIn, TOut>! p) -> void
+SmartPipe.Extensions.SmartPipeReadinessCheck<TIn, TOut>
+SmartPipe.Extensions.SmartPipeReadinessCheck<TIn, TOut>.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
+SmartPipe.Extensions.SmartPipeReadinessCheck<TIn, TOut>.SmartPipeReadinessCheck(SmartPipe.Core.SmartPipeChannel<TIn, TOut>! p) -> void
+SmartPipe.Extensions.SmartPipeResilienceExtensions
+SmartPipe.Extensions.SmartPipeServiceCollectionExtensions
+SmartPipe.Extensions.Transforms.CompositeTransform<T>
+SmartPipe.Extensions.Transforms.CompositeTransform<T>.CompositeTransform(params SmartPipe.Core.ITransformer<T, T>![]! transforms) -> void
+SmartPipe.Extensions.Transforms.CompositeTransform<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.CompositeTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.CompositeTransform<T>.TransformAsync(SmartPipe.Core.ProcessingContext<T>! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<T>>
+SmartPipe.Extensions.Transforms.CompressionAlgorithm
+SmartPipe.Extensions.Transforms.CompressionAlgorithm.Brotli = 0 -> SmartPipe.Extensions.Transforms.CompressionAlgorithm
+SmartPipe.Extensions.Transforms.CompressionAlgorithm.GZip = 1 -> SmartPipe.Extensions.Transforms.CompressionAlgorithm
+SmartPipe.Extensions.Transforms.CompressionTransform
+SmartPipe.Extensions.Transforms.CompressionTransform.CompressionTransform(SmartPipe.Extensions.Transforms.CompressionAlgorithm algorithm = SmartPipe.Extensions.Transforms.CompressionAlgorithm.Brotli, System.IO.Compression.CompressionLevel level = System.IO.Compression.CompressionLevel.Optimal) -> void
+SmartPipe.Extensions.Transforms.CompressionTransform.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.CompressionTransform.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.CompressionTransform.TransformAsync(SmartPipe.Core.ProcessingContext<byte[]!>! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<byte[]!>>
+SmartPipe.Extensions.Transforms.ConditionalTransform<T>
+SmartPipe.Extensions.Transforms.ConditionalTransform<T>.ConditionalTransform(System.Func<T, bool>! condition, SmartPipe.Core.ITransformer<T, T>! transform) -> void
+SmartPipe.Extensions.Transforms.ConditionalTransform<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.ConditionalTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.ConditionalTransform<T>.TransformAsync(SmartPipe.Core.ProcessingContext<T>! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<T>>
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.CsvTransform(string! delimiter = ",", System.Globalization.CultureInfo? culture = null, System.Action<CsvHelper.Configuration.CsvConfiguration!>? configure = null) -> void
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingContext<TInput>! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<TOutput>>
+SmartPipe.Extensions.Transforms.FilterTransform<T>
+SmartPipe.Extensions.Transforms.FilterTransform<T>.And(SmartPipe.Extensions.Transforms.FilterTransform<T>! other) -> SmartPipe.Extensions.Transforms.FilterTransform<T>!
+SmartPipe.Extensions.Transforms.FilterTransform<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.FilterTransform<T>.FilterTransform(System.Func<T, bool>! predicate) -> void
+SmartPipe.Extensions.Transforms.FilterTransform<T>.FilterTransform(System.Func<T, System.Threading.Tasks.Task<bool>!>! asyncPredicate) -> void
+SmartPipe.Extensions.Transforms.FilterTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.FilterTransform<T>.Not() -> SmartPipe.Extensions.Transforms.FilterTransform<T>!
+SmartPipe.Extensions.Transforms.FilterTransform<T>.Or(SmartPipe.Extensions.Transforms.FilterTransform<T>! other) -> SmartPipe.Extensions.Transforms.FilterTransform<T>!
+SmartPipe.Extensions.Transforms.FilterTransform<T>.TransformAsync(SmartPipe.Core.ProcessingContext<T>! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<T>>
+SmartPipe.Extensions.Transforms.FilterValidationExtensions
+SmartPipe.Extensions.Transforms.JsonTransform<TInput, TOutput>
+SmartPipe.Extensions.Transforms.JsonTransform<TInput, TOutput>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.JsonTransform<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.JsonTransform<TInput, TOutput>.JsonTransform(System.Text.Json.JsonSerializerOptions? options = null) -> void
+SmartPipe.Extensions.Transforms.JsonTransform<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingContext<TInput>! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<TOutput>>
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.MapsterTransform(Mapster.TypeAdapterConfig? config = null) -> void
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingContext<TInput>! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<TOutput>>
+SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>
+SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>.PollyResilienceTransform(Polly.ResiliencePipeline! pipeline, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>!>? logger = null) -> void
+SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>.TransformAsync(SmartPipe.Core.ProcessingContext<T>! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<T>>
+SmartPipe.Extensions.Transforms.ValidationTransform<T>
+SmartPipe.Extensions.Transforms.ValidationTransform<T>.DisposeAsync() -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.ValidationTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SmartPipe.Extensions.Transforms.ValidationTransform<T>.Require(System.Func<T, bool>! condition, string! message) -> SmartPipe.Extensions.Transforms.ValidationTransform<T>!
+SmartPipe.Extensions.Transforms.ValidationTransform<T>.TransformAsync(SmartPipe.Core.ProcessingContext<T>! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<T>>
+SmartPipe.Extensions.Transforms.ValidationTransform<T>.ValidationTransform() -> void
+static SmartPipe.Extensions.ChannelMerge.Merge<T>(System.Threading.Channels.ChannelReader<T>! first, System.Threading.Channels.ChannelReader<T>! second, System.Threading.Channels.BoundedChannelOptions? options = null) -> System.Threading.Channels.ChannelReader<T>!
+static SmartPipe.Extensions.SmartPipeResilienceExtensions.AddSmartPipe<TInput, TOutput>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SmartPipe.Core.SmartPipeChannel<TInput, TOutput>!>! configurePipeline, System.Action<Polly.ResiliencePipelineBuilder!>? configureResilience = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SmartPipe.Extensions.SmartPipeResilienceExtensions.AddSmartPipeHostedService<TInput, TOutput>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SmartPipe.Core.SmartPipeChannel<TInput, TOutput>!>! configurePipeline, System.Action<Polly.ResiliencePipelineBuilder!>? configureResilience = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SmartPipe.Extensions.SmartPipeServiceCollectionExtensions.AddSmartPipe<TInput, TOutput>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SmartPipe.Core.SmartPipeChannel<TInput, TOutput>!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SmartPipe.Extensions.SmartPipeServiceCollectionExtensions.AddSmartPipe<TInput, TOutput>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SmartPipe.Core.SmartPipeChannelOptions!>! configureOptions, System.Action<SmartPipe.Core.SmartPipeChannel<TInput, TOutput>!>? configurePipeline = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SmartPipe.Extensions.SmartPipeServiceCollectionExtensions.AddSmartPipe<TInput, TOutput>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SmartPipe.Extensions.Transforms.FilterTransform<T>.operator !(SmartPipe.Extensions.Transforms.FilterTransform<T>! a) -> SmartPipe.Extensions.Transforms.FilterTransform<T>!
+static SmartPipe.Extensions.Transforms.FilterTransform<T>.operator &(SmartPipe.Extensions.Transforms.FilterTransform<T>! a, SmartPipe.Extensions.Transforms.FilterTransform<T>! b) -> SmartPipe.Extensions.Transforms.FilterTransform<T>!
+static SmartPipe.Extensions.Transforms.FilterTransform<T>.operator |(SmartPipe.Extensions.Transforms.FilterTransform<T>! a, SmartPipe.Extensions.Transforms.FilterTransform<T>! b) -> SmartPipe.Extensions.Transforms.FilterTransform<T>!
+static SmartPipe.Extensions.Transforms.FilterValidationExtensions.ToFilter<T>(this SmartPipe.Extensions.Transforms.ValidationTransform<T>! validator) -> SmartPipe.Extensions.Transforms.FilterTransform<T>!

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using System.Runtime.CompilerServices;
 using SmartPipe.Core;
 
 namespace SmartPipe.Core.Tests.Engine;
@@ -9,7 +10,8 @@ internal class SimpleSource<T> : ISource<T>
     private readonly T[] _items;
     public SimpleSource(params T[] items) => _items = items;
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         foreach (var item in _items)
         {

@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using SmartPipe.Core;
@@ -13,7 +14,8 @@ internal class SimpleSource<T> : ISource<T>
     private readonly T[] _items;
     public SimpleSource(params T[] items) => _items = items;
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         foreach (var item in _items)
         {
@@ -36,7 +38,8 @@ internal class AcceptedTrackingSource<T> : ISource<T>
 
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         foreach (var item in _items)
         {
@@ -126,7 +129,8 @@ internal class DisposableCountingSource<T> : ISource<T>
     public int DisposeCallCount => _disposeCallCount;
     public DisposableCountingSource(params T[] items) => _items = items;
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         foreach (var item in _items)
         {
@@ -161,7 +165,8 @@ internal class InfiniteSource<T> : ISource<T>
 {
     private int _count;
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -177,7 +182,8 @@ internal class ThrowingInitializeSource<T> : ISource<T>
     public Task InitializeAsync(CancellationToken ct = default) =>
         throw new InvalidOperationException("source initialization failed");
 
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         await Task.CompletedTask;
         yield break;

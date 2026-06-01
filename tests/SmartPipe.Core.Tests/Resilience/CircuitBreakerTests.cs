@@ -100,7 +100,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
-    public void StressTest_CleanupWindow_RaceCondition()
+    public async Task StressTest_CleanupWindow_RaceCondition()
     {
         // Arrange
         var samplingDuration = TimeSpan.FromMilliseconds(100); // Short window to trigger frequent cleanup
@@ -123,9 +123,7 @@ public class CircuitBreakerTests
         int cleanupThreads = 5;
         int testDurationSeconds = 10;
         int itemsEnqueued = 0;
-        int itemsDequeued = 0;
         var enqueueLock = new object();
-        var dequeueLock = new object();
 
         // Track operations for verification
         var exceptions = new ConcurrentQueue<Exception>();
@@ -181,7 +179,7 @@ public class CircuitBreakerTests
         cts.Cancel();
 
         // Wait for all tasks to complete
-        Task.WaitAll(recordTasks.Concat(cleanupTasks).ToArray(), TimeSpan.FromSeconds(5));
+        await Task.WhenAll(recordTasks.Concat(cleanupTasks)).WaitAsync(TimeSpan.FromSeconds(5));
 
         // Assert: Check for exceptions
         if (!exceptions.IsEmpty)

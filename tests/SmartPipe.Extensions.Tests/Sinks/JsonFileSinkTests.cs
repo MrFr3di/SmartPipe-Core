@@ -1,4 +1,5 @@
 #nullable enable
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Sinks;
@@ -64,8 +65,40 @@ public class JsonFileSinkTests
             $"Expected IOException-derived exception, got {ex?.GetType().Name ?? "null"}");
     }
 
+    [Fact]
+    public async Task WriteAsync_WithSourceGeneratedTypeInfo_WritesJson()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var sink = new JsonFileSink<AotJsonSinkItem>(
+                path,
+                JsonFileSinkTestJsonContext.Default.ListAotJsonSinkItem,
+                flushInterval: 1);
+
+            await sink.WriteAsync(
+                ProcessingResult<AotJsonSinkItem>.Success(new AotJsonSinkItem(7, "seven"), 1));
+            await sink.DisposeAsync();
+
+            var content = await File.ReadAllTextAsync(path);
+            Assert.Contains("\"Id\":7", content);
+            Assert.Contains("\"Name\":\"seven\"", content);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
     private class TestItem
     {
         public string? Value { get; set; }
     }
 }
+
+public sealed record AotJsonSinkItem(int Id, string Name);
+
+[JsonSerializable(typeof(AotJsonSinkItem))]
+[JsonSerializable(typeof(List<AotJsonSinkItem>))]
+internal sealed partial class JsonFileSinkTestJsonContext : JsonSerializerContext;

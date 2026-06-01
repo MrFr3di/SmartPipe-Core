@@ -145,7 +145,8 @@ public class ProcessSourceItemAsyncTests
         // Assert: Item should be in the input channel
         var itemRead = inputChannel.Reader.TryRead(out var readCtx);
         Assert.True(itemRead);
-        Assert.Equal(ctx.TraceId, readCtx.TraceId);
+        Assert.NotNull(readCtx);
+        Assert.Equal(ctx.TraceId, readCtx!.TraceId);
     }
 
     /// <summary>

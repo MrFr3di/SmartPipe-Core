@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
+using System.Diagnostics.CodeAnalysis;
 using SmartPipe.Core;
 
 namespace SmartPipe.Extensions.Sinks;
@@ -10,19 +12,57 @@ public class JsonFileSink<T> : ISink<T>
 {
     private readonly string _path;
     private readonly int _flushInterval;
+    private readonly Func<List<T>, string> _serializeBatch;
     private readonly List<T> _buffer = [];
     private readonly Lock _bufferLock = new();
     private int _count;
-    private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = false };
+
+    /// <summary>Create JSON file sink for given path.</summary>
+    /// <param name="path">Output file path.</param>
+    /// <exception cref="ArgumentNullException">Thrown when path is null.</exception>
+    [RequiresUnreferencedCode("JsonSerializerOptions-based JSON file writing may require reflection metadata. Use the JsonTypeInfo constructor for trimming and NativeAOT.")]
+    [RequiresDynamicCode("JsonSerializerOptions-based JSON file writing may require runtime code generation. Use the JsonTypeInfo constructor for NativeAOT.")]
+    public JsonFileSink(string path)
+        : this(path, flushInterval: 1000)
+    {
+    }
 
     /// <summary>Create JSON file sink for given path.</summary>
     /// <param name="path">Output file path.</param>
     /// <param name="flushInterval">Number of items to buffer before flushing to disk (default: 1000).</param>
     /// <exception cref="ArgumentNullException">Thrown when path is null.</exception>
+    [RequiresUnreferencedCode("JsonSerializerOptions-based JSON file writing may require reflection metadata. Use the JsonTypeInfo constructor for trimming and NativeAOT.")]
+    [RequiresDynamicCode("JsonSerializerOptions-based JSON file writing may require runtime code generation. Use the JsonTypeInfo constructor for NativeAOT.")]
+#pragma warning disable RS0027 // Existing 1.x optional constructor preserved for source compatibility.
     public JsonFileSink(string path, int flushInterval = 1000)
     {
         _path = path ?? throw new ArgumentNullException(nameof(path));
         _flushInterval = flushInterval;
+        var options = new JsonSerializerOptions { WriteIndented = false };
+        _serializeBatch = batch => JsonSerializer.Serialize(batch, options);
+    }
+#pragma warning restore RS0027
+
+    /// <summary>Create JSON file sink for given path using source-generated JSON metadata.</summary>
+    /// <param name="path">Output file path.</param>
+    /// <param name="batchTypeInfo">Source-generated type information for buffered batches.</param>
+    /// <exception cref="ArgumentNullException">Thrown when path or type information is null.</exception>
+    public JsonFileSink(string path, JsonTypeInfo<List<T>> batchTypeInfo)
+        : this(path, batchTypeInfo, flushInterval: 1000)
+    {
+    }
+
+    /// <summary>Create JSON file sink for given path using source-generated JSON metadata.</summary>
+    /// <param name="path">Output file path.</param>
+    /// <param name="batchTypeInfo">Source-generated type information for buffered batches.</param>
+    /// <param name="flushInterval">Number of items to buffer before flushing to disk.</param>
+    /// <exception cref="ArgumentNullException">Thrown when path or type information is null.</exception>
+    public JsonFileSink(string path, JsonTypeInfo<List<T>> batchTypeInfo, int flushInterval)
+    {
+        _path = path ?? throw new ArgumentNullException(nameof(path));
+        ArgumentNullException.ThrowIfNull(batchTypeInfo);
+        _flushInterval = flushInterval;
+        _serializeBatch = batch => JsonSerializer.Serialize(batch, batchTypeInfo);
     }
 
     /// <inheritdoc />
@@ -64,7 +104,7 @@ public class JsonFileSink<T> : ISink<T>
 
     private async Task FlushBatchAsync(List<T> batch, CancellationToken ct)
     {
-        var json = JsonSerializer.Serialize(batch, _jsonOptions);
+        var json = _serializeBatch(batch);
         await File.AppendAllTextAsync(_path, json + Environment.NewLine, ct).ConfigureAwait(false);
     }
 }

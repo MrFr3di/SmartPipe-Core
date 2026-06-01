@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Diagnostics.CodeAnalysis;
 namespace SmartPipe.Core;
 
 /// <summary>Replay-safe dead-letter record that preserves original payload and runtime context.</summary>
@@ -79,6 +80,8 @@ public sealed class StageDeadLetterOptions<T>
     /// <param name="serializer">Serializer used to persist envelopes. Uses JSON Lines by default.</param>
     /// <param name="redactor">Redactor applied before persistence. Uses no-op redaction by default.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> is null.</exception>
+    [RequiresUnreferencedCode("The default dead-letter serializer uses reflection-based JSON metadata. Pass a source-generated serializer or use the JsonTypeInfo constructor for trimming and NativeAOT.")]
+    [RequiresDynamicCode("The default dead-letter serializer may require runtime code generation. Pass a source-generated serializer or use the JsonTypeInfo constructor for NativeAOT.")]
     public StageDeadLetterOptions(
         Stream stream,
         IDeadLetterSerializer<T>? serializer = null,

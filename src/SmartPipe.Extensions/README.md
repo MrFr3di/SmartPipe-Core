@@ -14,7 +14,7 @@ Extensions for SmartPipe.Core providing ready-to-use selectors, transforms, sink
 | `DapperSelector<T>` | Dapper | High-performance SQL queries |
 | `CsvFileSource<T>` | CsvHelper | Read CSV files |
 | `JsonFileSource<T>` | System.Text.Json | Read JSON arrays and NDJSON |
-| `DeadLetterSource<T>` | System.Text.Json | Replay failed items |
+| `DeadLetterSource<T>` | System.Text.Json | Read persisted failed-item records |
 
 ## Transforms
 

@@ -343,14 +343,14 @@ public class DapperSelectorTests
     }
 
     [Fact]
-    public void DisposeAsync_ThenDispose_DoesNotThrow()
+    public async Task DisposeAsync_ThenDispose_DoesNotThrow()
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
         
         var selector = new DapperSelector<TestEntity>(connection, "SELECT 1");
 
-        selector.DisposeAsync().Wait();
+        await selector.DisposeAsync();
         selector.Dispose(); // Should not throw
     }
 
@@ -421,7 +421,7 @@ public class DapperSelectorTests
     }
 
     [Fact]
-    public void MapRow_WithInt64ToTestEntity_ConvertsCorrectly()
+    public async Task MapRow_WithInt64ToTestEntity_ConvertsCorrectly()
     {
         // Test entity with int Id property (not long)
         var connection = new SqliteConnection("DataSource=:memory:");
@@ -432,10 +432,10 @@ public class DapperSelectorTests
 
         // SQLite returns Id as long (Int64), but TestEntity.Id is long too, so this should work
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM TestConv");
-        selector.InitializeAsync().Wait();
+        await selector.InitializeAsync();
 
         var results = new List<ProcessingContext<TestEntity>>();
-        foreach (var item in selector.ReadAsync().ToBlockingEnumerable())
+        await foreach (var item in selector.ReadAsync())
         {
             results.Add(item);
         }
@@ -448,7 +448,7 @@ public class DapperSelectorTests
     }
 
     [Fact]
-    public void MapRow_WithAllTypes_HandlesConversions()
+    public async Task MapRow_WithAllTypes_HandlesConversions()
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
@@ -457,10 +457,10 @@ public class DapperSelectorTests
         connection.Execute("INSERT INTO TestTypes (Id, Name, Value, Active) VALUES (1, 'Test', 123.45, 1)");
 
         var selector = new DapperSelector<AllTypesEntity>(connection, "SELECT * FROM TestTypes");
-        selector.InitializeAsync().Wait();
+        await selector.InitializeAsync();
 
         var results = new List<ProcessingContext<AllTypesEntity>>();
-        foreach (var item in selector.ReadAsync().ToBlockingEnumerable())
+        await foreach (var item in selector.ReadAsync())
         {
             results.Add(item);
         }
@@ -475,7 +475,7 @@ public class DapperSelectorTests
     }
 
     [Fact]
-    public void MapRow_WithMissingColumns_SetsDefaultValues()
+    public async Task MapRow_WithMissingColumns_SetsDefaultValues()
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
@@ -485,10 +485,10 @@ public class DapperSelectorTests
         connection.Execute("INSERT INTO TestPartial (Id) VALUES (1)");
 
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM TestPartial");
-        selector.InitializeAsync().Wait();
+        await selector.InitializeAsync();
 
         var results = new List<ProcessingContext<TestEntity>>();
-        foreach (var item in selector.ReadAsync().ToBlockingEnumerable())
+        await foreach (var item in selector.ReadAsync())
         {
             results.Add(item);
         }

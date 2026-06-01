@@ -1,7 +1,9 @@
 #nullable enable
 
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SmartPipe.Core;
@@ -18,15 +20,46 @@ public class DeadLetterSink<T> : ISink<T>
 {
     private readonly string _path;
     private readonly ILogger<DeadLetterSink<T>> _logger;
+    private readonly Func<ProcessingResult<T>, string> _serialize;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly Stream? _testStream;
     private StreamWriter? _writer;
     private bool _disposed;
 
+    /// <summary>Create dead letter sink with default file path.</summary>
+    [RequiresUnreferencedCode("Reflection-based dead-letter JSON serialization is not trimming-safe. Use the JsonTypeInfo constructor for trimming and NativeAOT.")]
+    [RequiresDynamicCode("Reflection-based dead-letter JSON serialization may require runtime code generation. Use the JsonTypeInfo constructor for NativeAOT.")]
+    public DeadLetterSink()
+        : this(path: "dead_letter.json", logger: null, stream: null)
+    {
+    }
+
+    /// <summary>Create dead letter sink with given file path.</summary>
+    /// <param name="path">Output JSON file path.</param>
+    [RequiresUnreferencedCode("Reflection-based dead-letter JSON serialization is not trimming-safe. Use the JsonTypeInfo constructor for trimming and NativeAOT.")]
+    [RequiresDynamicCode("Reflection-based dead-letter JSON serialization may require runtime code generation. Use the JsonTypeInfo constructor for NativeAOT.")]
+    public DeadLetterSink(string path)
+        : this(path, logger: null, stream: null)
+    {
+    }
+
+    /// <summary>Create dead letter sink with given file path and logger.</summary>
+    /// <param name="path">Output JSON file path.</param>
+    /// <param name="logger">Logger instance via DI.</param>
+    [RequiresUnreferencedCode("Reflection-based dead-letter JSON serialization is not trimming-safe. Use the JsonTypeInfo constructor for trimming and NativeAOT.")]
+    [RequiresDynamicCode("Reflection-based dead-letter JSON serialization may require runtime code generation. Use the JsonTypeInfo constructor for NativeAOT.")]
+    public DeadLetterSink(string path, ILogger<DeadLetterSink<T>>? logger)
+        : this(path, logger, stream: null)
+    {
+    }
+
     /// <summary>Create dead letter sink with given file path.</summary>
     /// <param name="path">Output JSON file path (default: "dead_letter.json").</param>
     /// <param name="logger">Logger instance via DI.</param>
     /// <param name="stream">Optional test stream. If provided, writer is created immediately.</param>
+    [RequiresUnreferencedCode("Reflection-based dead-letter JSON serialization is not trimming-safe. Use the JsonTypeInfo constructor for trimming and NativeAOT.")]
+    [RequiresDynamicCode("Reflection-based dead-letter JSON serialization may require runtime code generation. Use the JsonTypeInfo constructor for NativeAOT.")]
+#pragma warning disable RS0027 // Existing 1.x optional constructor preserved for source compatibility.
     public DeadLetterSink(
         string path = "dead_letter.json",
         ILogger<DeadLetterSink<T>>? logger = null,
@@ -36,6 +69,42 @@ public class DeadLetterSink<T> : ISink<T>
         _path = path;
         _logger = logger ?? NullLogger<DeadLetterSink<T>>.Instance;
         _testStream = stream;
+        _serialize = static result => JsonSerializer.Serialize(result);
+
+        if (_testStream != null)
+        {
+            _writer = new StreamWriter(_testStream, Encoding.UTF8, 1024, leaveOpen: true);
+        }
+    }
+#pragma warning restore RS0027
+
+    /// <summary>Create dead letter sink with source-generated JSON metadata.</summary>
+    /// <param name="path">Output JSON file path.</param>
+    /// <param name="resultTypeInfo">Source-generated type information for legacy processing results.</param>
+    /// <exception cref="ArgumentNullException">Thrown when path or type information is null.</exception>
+    public DeadLetterSink(string path, JsonTypeInfo<ProcessingResult<T>> resultTypeInfo)
+        : this(path, resultTypeInfo, logger: null, stream: null)
+    {
+    }
+
+    /// <summary>Create dead letter sink with source-generated JSON metadata.</summary>
+    /// <param name="path">Output JSON file path.</param>
+    /// <param name="resultTypeInfo">Source-generated type information for legacy processing results.</param>
+    /// <param name="logger">Logger instance via DI.</param>
+    /// <param name="stream">Optional test stream. If provided, writer is created immediately.</param>
+    /// <exception cref="ArgumentNullException">Thrown when path or type information is null.</exception>
+    public DeadLetterSink(
+        string path,
+        JsonTypeInfo<ProcessingResult<T>> resultTypeInfo,
+        ILogger<DeadLetterSink<T>>? logger,
+        Stream? stream
+    )
+    {
+        _path = path ?? throw new ArgumentNullException(nameof(path));
+        ArgumentNullException.ThrowIfNull(resultTypeInfo);
+        _logger = logger ?? NullLogger<DeadLetterSink<T>>.Instance;
+        _testStream = stream;
+        _serialize = result => JsonSerializer.Serialize(result, resultTypeInfo);
 
         if (_testStream != null)
         {
@@ -74,7 +143,7 @@ public class DeadLetterSink<T> : ISink<T>
                     "Sink not initialized. Call InitializeAsync first."
                 );
 
-            var json = JsonSerializer.Serialize(result);
+            var json = _serialize(result);
             await WriteWithRetryAsync(json, ct);
         }
         finally

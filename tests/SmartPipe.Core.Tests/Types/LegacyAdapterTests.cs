@@ -1,4 +1,5 @@
 using FluentAssertions;
+using System.Runtime.CompilerServices;
 using SmartPipe.Core;
 
 namespace SmartPipe.Core.Tests.Types;
@@ -58,7 +59,8 @@ public class LegacyAdapterTests
 
         public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
-        public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(CancellationToken ct = default)
+        public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
         {
             yield return _context;
             await Task.Yield();

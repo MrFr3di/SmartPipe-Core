@@ -1,5 +1,6 @@
 #nullable enable
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using SmartPipe.Core;
@@ -402,8 +403,75 @@ public class JsonFileSourceTests
         }
     }
 
+    [Fact]
+    public async Task ReadAsync_WithSourceGeneratedTypeInfo_ReadsJsonArray()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, """[{"Id":1,"Name":"one"},{"Id":2,"Name":"two"}]""");
+
+            var source = new JsonFileSource<AotJsonFileItem>(
+                path,
+                JsonFileSourceTestJsonContext.Default.ListAotJsonFileItem,
+                JsonFileSourceTestJsonContext.Default.AotJsonFileItem);
+            var items = new List<ProcessingContext<AotJsonFileItem>>();
+
+            await foreach (var item in source.ReadAsync())
+                items.Add(item);
+
+            Assert.Equal(2, items.Count);
+            Assert.Equal(new AotJsonFileItem(1, "one"), items[0].Payload);
+            Assert.Equal(new AotJsonFileItem(2, "two"), items[1].Payload);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ReadAsync_WithSourceGeneratedTypeInfo_ReadsNdjson()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(
+                path,
+                """
+                {"Id":3,"Name":"three"}
+                {"Id":4,"Name":"four"}
+                """);
+
+            var source = new JsonFileSource<AotJsonFileItem>(
+                path,
+                JsonFileSourceTestJsonContext.Default.ListAotJsonFileItem,
+                JsonFileSourceTestJsonContext.Default.AotJsonFileItem);
+            var items = new List<ProcessingContext<AotJsonFileItem>>();
+
+            await foreach (var item in source.ReadAsync())
+                items.Add(item);
+
+            Assert.Equal(2, items.Count);
+            Assert.Equal(new AotJsonFileItem(3, "three"), items[0].Payload);
+            Assert.Equal(new AotJsonFileItem(4, "four"), items[1].Payload);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
     private class TestItem
     {
         public string? Value { get; set; }
     }
 }
+
+public sealed record AotJsonFileItem(int Id, string Name);
+
+[JsonSerializable(typeof(AotJsonFileItem))]
+[JsonSerializable(typeof(List<AotJsonFileItem>))]
+internal sealed partial class JsonFileSourceTestJsonContext : JsonSerializerContext;

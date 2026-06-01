@@ -169,7 +169,7 @@ public class SmartPipeChannelTests
     }
 
     [Fact]
-    public void HandleFailureAsync_ShouldRetry_WhenRetryCountLessThanMax()
+    public async Task HandleFailureAsync_ShouldRetry_WhenRetryCountLessThanMax()
     {
         // Arrange
         var options = new SmartPipeChannelOptions
@@ -191,11 +191,11 @@ public class SmartPipeChannelTests
         // Act & Assert - should not throw
         Assert.NotNull(method);
         var valueTask = (ValueTask)method.Invoke(pipeline, new object[] { ctx, result, null!, CancellationToken.None })!;
-        valueTask.AsTask().Wait();
+        await valueTask;
     }
 
     [Fact]
-    public void HandleFailureAsync_ShouldNotRetry_WhenMaxRetriesExceeded()
+    public async Task HandleFailureAsync_ShouldNotRetry_WhenMaxRetriesExceeded()
     {
         // Arrange
         var options = new SmartPipeChannelOptions
@@ -217,7 +217,7 @@ public class SmartPipeChannelTests
         // Act & Assert - should complete without throwing (ContinueOnError=false cancels via token, no exception)
         Assert.NotNull(method);
         var valueTask = (ValueTask)method.Invoke(pipeline, new object[] { ctx, result, null!, CancellationToken.None })!;
-        valueTask.AsTask().GetAwaiter().GetResult();
+        await valueTask;
     }
 
     [Fact]

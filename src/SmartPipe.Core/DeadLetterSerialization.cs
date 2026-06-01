@@ -41,14 +41,17 @@ public interface IDeadLetterSerializer<T>
 /// </remarks>
 public sealed class JsonLinesDeadLetterSerializer<T> : IDeadLetterSerializer<T>
 {
-    private readonly JsonSerializerOptions? _options;
-    private readonly JsonTypeInfo<DeadLetterEnvelope<T>>? _typeInfo;
+    private readonly Func<DeadLetterEnvelope<T>, Stream, CancellationToken, ValueTask> _write;
+    private readonly Func<Stream, CancellationToken, IAsyncEnumerable<DeadLetterEnvelope<T>>> _read;
 
     /// <summary>Creates a serializer using reflection-based System.Text.Json metadata.</summary>
     /// <param name="options">Optional JSON options.</param>
+    [RequiresUnreferencedCode("Reflection-based dead-letter JSON serialization is not trimming-safe. Use the JsonTypeInfo constructor.")]
+    [RequiresDynamicCode("Reflection-based dead-letter JSON serialization may require runtime code generation. Use the JsonTypeInfo constructor for NativeAOT.")]
     public JsonLinesDeadLetterSerializer(JsonSerializerOptions? options = null)
     {
-        _options = options;
+        _write = (envelope, stream, ct) => WriteReflectionAsync(envelope, stream, options, ct);
+        _read = (stream, ct) => ReadReflectionAsync(stream, options, ct);
     }
 
     /// <summary>Creates a serializer using source-generated JSON metadata.</summary>
@@ -56,21 +59,13 @@ public sealed class JsonLinesDeadLetterSerializer<T> : IDeadLetterSerializer<T>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="typeInfo"/> is null.</exception>
     public JsonLinesDeadLetterSerializer(JsonTypeInfo<DeadLetterEnvelope<T>> typeInfo)
     {
-        _typeInfo = typeInfo ?? throw new ArgumentNullException(nameof(typeInfo));
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        _write = (envelope, stream, ct) => WriteWithTypeInfoAsync(envelope, stream, typeInfo, ct);
+        _read = (stream, ct) => ReadWithTypeInfoAsync(stream, typeInfo, ct);
     }
 
     /// <inheritdoc />
-    [UnconditionalSuppressMessage(
-        "Aot",
-        "IL3050:RequiresDynamicCode",
-        Justification = "The reflection-based path is documented as non-AOT; callers can use the JsonTypeInfo constructor."
-    )]
-    [UnconditionalSuppressMessage(
-        "Trimming",
-        "IL2026:RequiresUnreferencedCode",
-        Justification = "The reflection-based path is documented as non-trim-safe; callers can use the JsonTypeInfo constructor."
-    )]
-    public async ValueTask WriteAsync(
+    public ValueTask WriteAsync(
         DeadLetterEnvelope<T> envelope,
         Stream stream,
         CancellationToken ct = default
@@ -78,35 +73,46 @@ public sealed class JsonLinesDeadLetterSerializer<T> : IDeadLetterSerializer<T>
     {
         ArgumentNullException.ThrowIfNull(envelope);
         ArgumentNullException.ThrowIfNull(stream);
-        if (_typeInfo != null)
-            await JsonSerializer
-                .SerializeAsync(stream, envelope, _typeInfo, ct)
-                .ConfigureAwait(false);
-        else
-            await JsonSerializer
-                .SerializeAsync(stream, envelope, _options, ct)
-                .ConfigureAwait(false);
-
-        await stream.WriteAsync("\n"u8.ToArray(), ct).ConfigureAwait(false);
+        return _write(envelope, stream, ct);
     }
 
     /// <inheritdoc />
-    [UnconditionalSuppressMessage(
-        "Aot",
-        "IL3050:RequiresDynamicCode",
-        Justification = "The reflection-based path is documented as non-AOT; callers can use the JsonTypeInfo constructor."
-    )]
-    [UnconditionalSuppressMessage(
-        "Trimming",
-        "IL2026:RequiresUnreferencedCode",
-        Justification = "The reflection-based path is documented as non-trim-safe; callers can use the JsonTypeInfo constructor."
-    )]
-    public async IAsyncEnumerable<DeadLetterEnvelope<T>> ReadAsync(
+    public IAsyncEnumerable<DeadLetterEnvelope<T>> ReadAsync(
         Stream stream,
-        [EnumeratorCancellation] CancellationToken ct = default
+        CancellationToken ct = default
     )
     {
         ArgumentNullException.ThrowIfNull(stream);
+        return _read(stream, ct);
+    }
+
+    private static async ValueTask WriteWithTypeInfoAsync(
+        DeadLetterEnvelope<T> envelope,
+        Stream stream,
+        JsonTypeInfo<DeadLetterEnvelope<T>> typeInfo,
+        CancellationToken ct)
+    {
+        await JsonSerializer.SerializeAsync(stream, envelope, typeInfo, ct).ConfigureAwait(false);
+        await stream.WriteAsync("\n"u8.ToArray(), ct).ConfigureAwait(false);
+    }
+
+    [RequiresUnreferencedCode("Reflection-based dead-letter JSON serialization is not trimming-safe. Use the JsonTypeInfo constructor.")]
+    [RequiresDynamicCode("Reflection-based dead-letter JSON serialization may require runtime code generation. Use the JsonTypeInfo constructor for NativeAOT.")]
+    private static async ValueTask WriteReflectionAsync(
+        DeadLetterEnvelope<T> envelope,
+        Stream stream,
+        JsonSerializerOptions? options,
+        CancellationToken ct)
+    {
+        await JsonSerializer.SerializeAsync(stream, envelope, options, ct).ConfigureAwait(false);
+        await stream.WriteAsync("\n"u8.ToArray(), ct).ConfigureAwait(false);
+    }
+
+    private static async IAsyncEnumerable<DeadLetterEnvelope<T>> ReadWithTypeInfoAsync(
+        Stream stream,
+        JsonTypeInfo<DeadLetterEnvelope<T>> typeInfo,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
         using var reader = new StreamReader(stream, leaveOpen: true);
         while (true)
         {
@@ -118,10 +124,32 @@ public sealed class JsonLinesDeadLetterSerializer<T> : IDeadLetterSerializer<T>
             if (string.IsNullOrWhiteSpace(line))
                 continue;
 
-            DeadLetterEnvelope<T>? envelope =
-                _typeInfo != null
-                    ? JsonSerializer.Deserialize(line, _typeInfo)
-                    : JsonSerializer.Deserialize<DeadLetterEnvelope<T>>(line, _options);
+            var envelope = JsonSerializer.Deserialize(line, typeInfo);
+            if (envelope != null)
+                yield return envelope;
+        }
+    }
+
+    [RequiresUnreferencedCode("Reflection-based dead-letter JSON serialization is not trimming-safe. Use the JsonTypeInfo constructor.")]
+    [RequiresDynamicCode("Reflection-based dead-letter JSON serialization may require runtime code generation. Use the JsonTypeInfo constructor for NativeAOT.")]
+    private static async IAsyncEnumerable<DeadLetterEnvelope<T>> ReadReflectionAsync(
+        Stream stream,
+        JsonSerializerOptions? options,
+        [EnumeratorCancellation] CancellationToken ct = default
+    )
+    {
+        using var reader = new StreamReader(stream, leaveOpen: true);
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+            if (line is null)
+                yield break;
+
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            var envelope = JsonSerializer.Deserialize<DeadLetterEnvelope<T>>(line, options);
 
             if (envelope != null)
                 yield return envelope;

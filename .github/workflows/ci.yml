@@ -24,6 +24,9 @@ jobs:
     - name: Restore
       run: dotnet restore SmartPipe.Core.slnx
 
+    - name: Verify NuGet lock files
+      run: dotnet restore SmartPipe.Core.slnx --locked-mode
+
     - name: Format verify (informational until repository formatting pass)
       continue-on-error: true
       run: dotnet format SmartPipe.Core.slnx --verify-no-changes --no-restore
@@ -37,11 +40,403 @@ jobs:
     - name: Extensions tests
       run: dotnet test tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build --verbosity normal -c Release
 
+    - name: Test and benchmark warning gate
+      run: |
+        dotnet build tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-restore -c Release -warnaserror
+        dotnet build tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-restore -c Release -warnaserror
+        dotnet build benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj --no-restore -c Release -warnaserror
+
     - name: Pack Core
       run: dotnet pack src/SmartPipe.Core/SmartPipe.Core.csproj --no-build -c Release -o artifacts/packages
 
     - name: Pack Extensions
       run: dotnet pack src/SmartPipe.Extensions/SmartPipe.Extensions.csproj --no-build -c Release -o artifacts/packages
+
+    - name: Consumer smoke
+      run: |
+        dotnet new console -n SmartPipe.ConsumerSmoke -o artifacts/consumer-smoke
+        dotnet new nugetconfig -o artifacts/consumer-smoke --force
+        dotnet nuget add source "$PWD/artifacts/packages" --name smartpipe-local --configfile artifacts/consumer-smoke/NuGet.Config
+        dotnet add artifacts/consumer-smoke/SmartPipe.ConsumerSmoke.csproj package SmartPipe.Core --version 1.1.0 --source "$PWD/artifacts/packages"
+        dotnet add artifacts/consumer-smoke/SmartPipe.ConsumerSmoke.csproj package SmartPipe.Extensions --version 1.1.0
+        cat > artifacts/consumer-smoke/Program.cs <<'CS'
+        using System.Globalization;
+        using System.Runtime.CompilerServices;
+        using SmartPipe.Core;
+        using SmartPipe.Extensions.Transforms;
+
+        await ConsumerSmoke.RunAsync();
+
+        internal static class ConsumerSmoke
+        {
+            public static async Task RunAsync()
+            {
+                await VerifyLegacyPipelineAsync();
+                await VerifyRunInBackgroundAsync();
+                await VerifyModernTypedPipelineAsync();
+                await VerifyExtensionsReferenceAsync();
+                Console.WriteLine("SmartPipe consumer smoke passed.");
+            }
+
+            private static async Task VerifyLegacyPipelineAsync()
+            {
+                var sink = new CollectingSink<string>();
+                var channel = new SmartPipeChannel<int, string>();
+                channel.AddSource(new LegacySource<int>(1, 2, 3));
+                channel.AddTransformer(new LegacyTransformer<int, string>(value => $"legacy:{value}"));
+                channel.AddSink(sink);
+                await channel.RunAsync();
+                RequireSequence(sink.Values, ["legacy:1", "legacy:2", "legacy:3"], "legacy pipeline");
+            }
+
+            private static async Task VerifyRunInBackgroundAsync()
+            {
+                var channel = new SmartPipeChannel<int, int>();
+                channel.AddSource(new LegacySource<int>(7));
+                channel.AddTransformer(new LegacyTransformer<int, int>(value => value * 2));
+                var reader = channel.RunInBackground();
+                var results = new List<ProcessingResult<int>>();
+                await foreach (var result in reader.ReadAllAsync())
+                    results.Add(result);
+                if (results.Count != 1 || !results[0].IsSuccess || results[0].Value != 14)
+                    throw new InvalidOperationException("RunInBackground did not return expected output.");
+            }
+
+            private static async Task VerifyModernTypedPipelineAsync()
+            {
+                var sink = new EnvelopeCollectingSink<string>();
+                var run = PipelineBuilder
+                    .From(new EnvelopeSource<int>(4, 5))
+                    .Transform(new EnvelopeTransformer<int, double>(value => value + 0.5))
+                    .Transform(new EnvelopeTransformer<double, string>(value => value.ToString("0.0", CultureInfo.InvariantCulture)))
+                    .To(sink);
+                var outputs = new List<PipelineOutput<string>>();
+                await foreach (var output in run.Outputs.ReadAllAsync())
+                    outputs.Add(output);
+                await run.Completion;
+                RequireSequence(outputs.Select(output => output.Result.Value!).ToArray(), ["4.5", "5.5"], "modern typed pipeline outputs");
+                RequireSequence(sink.Values, ["4.5", "5.5"], "modern typed pipeline sink");
+            }
+
+            private static async Task VerifyExtensionsReferenceAsync()
+            {
+                var filter = new FilterTransform<int>(value => value > 3);
+                await filter.InitializeAsync();
+                var accepted = await filter.TransformAsync(new ProcessingContext<int>(5));
+                var rejected = await filter.TransformAsync(new ProcessingContext<int>(2));
+                await filter.DisposeAsync();
+                if (!accepted.IsSuccess || accepted.Value != 5)
+                    throw new InvalidOperationException("FilterTransform did not accept the expected payload.");
+                if (rejected.IsSuccess)
+                    throw new InvalidOperationException("FilterTransform did not reject the expected payload.");
+            }
+
+            private static void RequireSequence<T>(IReadOnlyList<T> actual, IReadOnlyList<T> expected, string scenario)
+            {
+                if (actual.Count != expected.Count)
+                    throw new InvalidOperationException($"{scenario} returned {actual.Count} items, expected {expected.Count}.");
+                for (var i = 0; i < expected.Count; i++)
+                {
+                    if (!EqualityComparer<T>.Default.Equals(actual[i], expected[i]))
+                        throw new InvalidOperationException($"{scenario} item {i} was {actual[i]}, expected {expected[i]}.");
+                }
+            }
+        }
+
+        internal sealed class LegacySource<T>(params T[] values) : ISource<T>
+        {
+            public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+            public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([EnumeratorCancellation] CancellationToken ct = default)
+            {
+                foreach (var value in values)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    yield return new ProcessingContext<T>(value);
+                    await Task.Yield();
+                }
+            }
+            public Task DisposeAsync() => Task.CompletedTask;
+        }
+
+        internal sealed class LegacyTransformer<TInput, TOutput>(Func<TInput, TOutput> transform) : ITransformer<TInput, TOutput>
+        {
+            public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+            public ValueTask<ProcessingResult<TOutput>> TransformAsync(ProcessingContext<TInput> ctx, CancellationToken ct = default)
+                => ValueTask.FromResult(ProcessingResult<TOutput>.Success(transform(ctx.Payload), ctx.TraceId));
+            public Task DisposeAsync() => Task.CompletedTask;
+        }
+
+        internal sealed class CollectingSink<T> : ISink<T>
+        {
+            public List<T> Values { get; } = [];
+            public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+            public ValueTask WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
+            {
+                if (result.IsSuccess)
+                    Values.Add(result.Value!);
+                return ValueTask.CompletedTask;
+            }
+            public Task DisposeAsync() => Task.CompletedTask;
+        }
+
+        internal sealed class EnvelopeSource<T>(params T[] values) : IPipelineSource<T>
+        {
+            public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+            public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync([EnumeratorCancellation] CancellationToken ct = default)
+            {
+                foreach (var value in values)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    yield return ProcessingEnvelope<T>.Create(value);
+                    await Task.Yield();
+                }
+            }
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+
+        internal sealed class EnvelopeTransformer<TInput, TOutput>(Func<TInput, TOutput> transform) : IPipelineTransformer<TInput, TOutput>
+        {
+            public ValueTask<StageResult<TOutput>> TransformAsync(ProcessingEnvelope<TInput> envelope, CancellationToken ct = default)
+                => ValueTask.FromResult(StageResult<TOutput>.Success(transform(envelope.Payload)));
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+
+        internal sealed class EnvelopeCollectingSink<T> : IPipelineSink<T>
+        {
+            public List<T> Values { get; } = [];
+            public ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
+            {
+                Values.Add(envelope.Payload);
+                return ValueTask.CompletedTask;
+            }
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+        CS
+        dotnet run --project artifacts/consumer-smoke/SmartPipe.ConsumerSmoke.csproj -c Release
+
+    - name: Trimmed consumer smoke
+      run: |
+        dotnet publish artifacts/consumer-smoke/SmartPipe.ConsumerSmoke.csproj -c Release -r linux-x64 --self-contained true -p:PublishTrimmed=true -o artifacts/consumer-smoke-trim
+        ./artifacts/consumer-smoke-trim/SmartPipe.ConsumerSmoke
+
+    - name: NativeAOT consumer smoke
+      run: |
+        dotnet publish artifacts/consumer-smoke/SmartPipe.ConsumerSmoke.csproj -c Release -r linux-x64 --self-contained true -p:PublishAot=true -o artifacts/consumer-smoke-aot
+        ./artifacts/consumer-smoke-aot/SmartPipe.ConsumerSmoke
+
+    - name: JSON and dead-letter AOT smoke
+      run: |
+        dotnet new console -n SmartPipe.JsonDeadLetterAotSmoke -o artifacts/json-deadletter-aot-smoke
+        cat > artifacts/json-deadletter-aot-smoke/NuGet.Config <<'XML'
+        <?xml version="1.0" encoding="utf-8"?>
+        <configuration>
+          <packageSources>
+            <clear />
+            <add key="smartpipe-local" value="../packages" />
+            <add key="nuget" value="https://api.nuget.org/v3/index.json" />
+          </packageSources>
+          <packageSourceMapping>
+            <packageSource key="smartpipe-local">
+              <package pattern="SmartPipe.*" />
+            </packageSource>
+            <packageSource key="nuget">
+              <package pattern="*" />
+            </packageSource>
+          </packageSourceMapping>
+        </configuration>
+        XML
+        cat > artifacts/json-deadletter-aot-smoke/SmartPipe.JsonDeadLetterAotSmoke.csproj <<'XML'
+        <Project Sdk="Microsoft.NET.Sdk">
+          <PropertyGroup>
+            <OutputType>Exe</OutputType>
+            <TargetFramework>net10.0</TargetFramework>
+            <ImplicitUsings>enable</ImplicitUsings>
+            <Nullable>enable</Nullable>
+            <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+          </PropertyGroup>
+          <ItemGroup>
+            <PackageReference Include="SmartPipe.Core" Version="1.1.0" />
+            <PackageReference Include="SmartPipe.Extensions" Version="1.1.0" />
+          </ItemGroup>
+        </Project>
+        XML
+        cat > artifacts/json-deadletter-aot-smoke/Program.cs <<'CS'
+        using System.Text;
+        using System.Text.Json;
+        using System.Text.Json.Serialization;
+        using SmartPipe.Core;
+        using SmartPipe.Extensions.Selectors;
+        using SmartPipe.Extensions.Sinks;
+        using SmartPipe.Extensions.Transforms;
+
+        await AotSmoke.RunAsync();
+
+        internal static class AotSmoke
+        {
+            public static async Task RunAsync()
+            {
+                var workDir = Path.Combine(Path.GetTempPath(), "smartpipe-update12-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(workDir);
+                try
+                {
+                    await VerifyJsonTransformAsync();
+                    await VerifyJsonFileSinkAndArraySourceAsync(workDir);
+                    await VerifyJsonFileSourceNdjsonAsync(workDir);
+                    await VerifyModernDeadLetterSerializerAsync();
+                    await VerifyLegacyDeadLetterSinkAsync();
+                    await VerifyLegacyDeadLetterSourceAsync(workDir);
+                    Console.WriteLine("SmartPipe JSON/dead-letter AOT smoke passed.");
+                }
+                finally
+                {
+                    try { Directory.Delete(workDir, recursive: true); } catch { }
+                }
+            }
+
+            private static async Task VerifyJsonTransformAsync()
+            {
+                var transform = new JsonTransform<AotPayload, AotPayload>(
+                    AotSmokeJsonContext.Default.AotPayload,
+                    AotSmokeJsonContext.Default.AotPayload);
+                await transform.InitializeAsync();
+                var result = await transform.TransformAsync(new ProcessingContext<AotPayload>(new AotPayload(1, "transform")));
+                await transform.DisposeAsync();
+                Require(result.IsSuccess && result.Value == new AotPayload(1, "transform"), "JsonTransform source-generated path failed.");
+            }
+
+            private static async Task VerifyJsonFileSinkAndArraySourceAsync(string workDir)
+            {
+                var path = Path.Combine(workDir, "payloads.json");
+                var sink = new JsonFileSink<AotPayload>(path, AotSmokeJsonContext.Default.ListAotPayload, flushInterval: 2);
+                await sink.InitializeAsync();
+                await sink.WriteAsync(ProcessingResult<AotPayload>.Success(new AotPayload(2, "sink-a"), 20));
+                await sink.WriteAsync(ProcessingResult<AotPayload>.Success(new AotPayload(3, "sink-b"), 30));
+                await sink.DisposeAsync();
+
+                var source = new JsonFileSource<AotPayload>(path, AotSmokeJsonContext.Default.ListAotPayload, AotSmokeJsonContext.Default.AotPayload);
+                await source.InitializeAsync();
+                var values = await ReadLegacySourceAsync(source);
+                await source.DisposeAsync();
+                RequireSequence(values, [new AotPayload(2, "sink-a"), new AotPayload(3, "sink-b")], "JsonFileSink/JsonFileSource array path");
+            }
+
+            private static async Task VerifyJsonFileSourceNdjsonAsync(string workDir)
+            {
+                var path = Path.Combine(workDir, "payloads.ndjson");
+                await File.WriteAllLinesAsync(path,
+                [
+                    JsonSerializer.Serialize(new AotPayload(4, "ndjson-a"), AotSmokeJsonContext.Default.AotPayload),
+                    JsonSerializer.Serialize(new AotPayload(5, "ndjson-b"), AotSmokeJsonContext.Default.AotPayload),
+                ]);
+                var source = new JsonFileSource<AotPayload>(path, AotSmokeJsonContext.Default.ListAotPayload, AotSmokeJsonContext.Default.AotPayload);
+                await source.InitializeAsync();
+                var values = await ReadLegacySourceAsync(source);
+                await source.DisposeAsync();
+                RequireSequence(values, [new AotPayload(4, "ndjson-a"), new AotPayload(5, "ndjson-b")], "JsonFileSource NDJSON path");
+            }
+
+            private static async Task VerifyModernDeadLetterSerializerAsync()
+            {
+                var serializer = new JsonLinesDeadLetterSerializer<AotPayload>(AotSmokeJsonContext.Default.DeadLetterEnvelopeAotPayload);
+                await using var stream = new MemoryStream();
+                var envelope = new DeadLetterEnvelope<AotPayload>
+                {
+                    SchemaVersion = 1,
+                    PipelineId = "pipeline-aot",
+                    RunId = "run-aot",
+                    TraceId = 42,
+                    StageId = "stage-json",
+                    StageName = "Json stage",
+                    OriginalPayload = new AotPayload(6, "dead-letter"),
+                    Metadata = MetadataBag.Empty.Set("source", "update12"),
+                    Error = new SmartPipeError("boom", ErrorType.Permanent, "AotSmoke"),
+                    Attempt = 2,
+                    FailedAtUtc = DateTimeOffset.UnixEpoch,
+                };
+                await serializer.WriteAsync(envelope, stream);
+                stream.Position = 0;
+                var roundTripped = new List<DeadLetterEnvelope<AotPayload>>();
+                await foreach (var item in serializer.ReadAsync(stream))
+                    roundTripped.Add(item);
+                Require(roundTripped.Count == 1 && roundTripped[0].OriginalPayload == envelope.OriginalPayload, "Modern dead-letter serializer failed.");
+            }
+
+            private static async Task VerifyLegacyDeadLetterSinkAsync()
+            {
+                await using var stream = new MemoryStream();
+                var sink = new DeadLetterSink<AotPayload>(
+                    "legacy-dead-letter.json",
+                    AotSmokeJsonContext.Default.ProcessingResultAotPayload,
+                    logger: null,
+                    stream: stream);
+                await sink.InitializeAsync();
+                await sink.WriteAsync(ProcessingResult<AotPayload>.Failure(new SmartPipeError("legacy failure", ErrorType.Permanent, "AotSmoke"), 60));
+                await sink.DisposeAsync();
+                Require(Encoding.UTF8.GetString(stream.ToArray()).Contains("legacy failure", StringComparison.Ordinal), "Legacy DeadLetterSink source-generated path failed.");
+            }
+
+            private static async Task VerifyLegacyDeadLetterSourceAsync(string workDir)
+            {
+                var path = Path.Combine(workDir, "legacy-dead-letter-source.json");
+                await File.WriteAllTextAsync(path, """
+                [
+                  {
+                    "IsSuccess": false,
+                    "Value": {
+                      "Id": 7,
+                      "Name": "legacy-source"
+                    },
+                    "TraceId": 70
+                  }
+                ]
+                """);
+                var source = new DeadLetterSource<AotPayload>(path, AotSmokeJsonContext.Default.AotPayload);
+                await source.InitializeAsync();
+                var values = await ReadLegacySourceAsync(source);
+                await source.DisposeAsync();
+                RequireSequence(values, [new AotPayload(7, "legacy-source")], "Legacy DeadLetterSource source-generated path");
+            }
+
+            private static async Task<List<T>> ReadLegacySourceAsync<T>(ISource<T> source, CancellationToken ct = default)
+            {
+                var values = new List<T>();
+                await foreach (var context in source.ReadAsync(ct).WithCancellation(ct))
+                    values.Add(context.Payload);
+                return values;
+            }
+
+            private static void Require(bool condition, string message)
+            {
+                if (!condition)
+                    throw new InvalidOperationException(message);
+            }
+
+            private static void RequireSequence<T>(IReadOnlyList<T> actual, IReadOnlyList<T> expected, string scenario)
+            {
+                Require(actual.Count == expected.Count, $"{scenario} returned {actual.Count} items, expected {expected.Count}.");
+                for (var i = 0; i < expected.Count; i++)
+                {
+                    if (!EqualityComparer<T>.Default.Equals(actual[i], expected[i]))
+                        throw new InvalidOperationException($"{scenario} item {i} was {actual[i]}, expected {expected[i]}.");
+                }
+            }
+        }
+
+        internal sealed record AotPayload(int Id, string Name);
+
+        [JsonSerializable(typeof(AotPayload))]
+        [JsonSerializable(typeof(List<AotPayload>))]
+        [JsonSerializable(typeof(ProcessingResult<AotPayload>))]
+        [JsonSerializable(typeof(DeadLetterEnvelope<AotPayload>))]
+        [JsonSerializable(typeof(SmartPipeError))]
+        [JsonSerializable(typeof(MetadataBag))]
+        internal sealed partial class AotSmokeJsonContext : JsonSerializerContext;
+        CS
+        dotnet run --project artifacts/json-deadletter-aot-smoke/SmartPipe.JsonDeadLetterAotSmoke.csproj -c Release
+        dotnet publish artifacts/json-deadletter-aot-smoke/SmartPipe.JsonDeadLetterAotSmoke.csproj -c Release -r linux-x64 --self-contained true -p:PublishTrimmed=true -o artifacts/json-deadletter-aot-smoke-trim
+        ./artifacts/json-deadletter-aot-smoke-trim/SmartPipe.JsonDeadLetterAotSmoke
+        dotnet publish artifacts/json-deadletter-aot-smoke/SmartPipe.JsonDeadLetterAotSmoke.csproj -c Release -r linux-x64 --self-contained true -p:PublishAot=true -o artifacts/json-deadletter-aot-smoke-aot
+        ./artifacts/json-deadletter-aot-smoke-aot/SmartPipe.JsonDeadLetterAotSmoke
 
     - name: Vulnerable package scan
       run: dotnet list SmartPipe.Core.slnx package --vulnerable --include-transitive
