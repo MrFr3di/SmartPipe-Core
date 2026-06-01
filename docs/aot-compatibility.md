@@ -1,13 +1,14 @@
 # AOT And Trimming Compatibility
 
-SmartPipe.Core 1.1.0 uses an evidence-first AOT posture.
+SmartPipe.Core 1.1.0 uses an evidence-first trim and NativeAOT posture.
+
+The current documentation does not make a broad package-wide `AOT-ready` claim.
+Compatibility statements are limited to the focused scenarios that are covered
+by project build, CI, and consumer validation.
 
 ## Core
 
-Do not set `IsAotCompatible=true` until a consumer publish harness completes
-without actionable IL warnings.
-
-Before making a public compatibility claim, Core may enable analyzer properties:
+Core may enable analyzer properties such as:
 
 ```xml
 <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
@@ -15,85 +16,43 @@ Before making a public compatibility claim, Core may enable analyzer properties:
 <VerifyReferenceAotCompatibility>true</VerifyReferenceAotCompatibility>
 ```
 
-These analyzer properties are not the same as a public AOT-ready claim.
+Analyzer-clean builds are necessary evidence, but not sufficient for a broad
+public AOT compatibility claim. Publish-and-run consumer harnesses are still
+required.
 
-Current local analyzer status:
+Current posture:
 
-- Core builds with trim/AOT analyzers enabled and no analyzer warnings after
-  moving to stable `Microsoft.Extensions.Logging.Abstractions` 10.x.
-- Update6 local consumer evidence:
-  - `PublishTrimmed=true` for the package-installed consumer smoke passed and
-    the trimmed executable ran successfully. Evidence:
-    `.work/runtime/trimming.md`.
-  - `PublishAot=true` for the package-installed consumer smoke passed and the
-    native executable ran successfully. Evidence:
-    `.work/runtime/nativeaot.md`.
-- Core still must not make a broad AOT-ready release claim until the coverage is
-  expanded beyond the smoke harness and reviewed for package-specific warnings.
+- Core builds with trim/AOT analyzer checks enabled in the package project.
+- Focused package-installed trim and NativeAOT consumer smoke scenarios have
+  been validated.
+- Broad API-surface and every-integration AOT compatibility is not claimed.
 
 ## Extensions
 
-`SmartPipe.Extensions` must maintain an explicit AOT status matrix by integration
-area. Reflection-heavy or runtime-codegen integrations such as object mappers,
-ORMs, and serializers may be partial or unsupported unless configured with
-source-generated metadata or package-specific AOT support.
+`SmartPipe.Extensions` contains integrations whose AOT behavior depends on the
+underlying package and usage pattern. Reflection-heavy or runtime-codegen paths
+must remain scoped unless a focused harness covers them.
 
-If preview dependencies return, `SmartPipe.Extensions` must use a preview package
-version instead of stable `1.1.0`. The current 1.1.0 project file uses stable
-Microsoft 10.x package references.
+Current posture:
 
-Update6 evidence is smoke-level only for Extensions because the consumer harness
-references `SmartPipe.Extensions` and exercises `FilterTransform<T>`. It does
-not prove AOT compatibility for EF Core, Dapper, Mapster, CSV, HTTP, or hosting
-integrations.
+- Analyzer-clean for the current Extensions project build.
+- Smoke-verified for package install, legacy runtime, typed runtime,
+  `RunInBackground`, and a low-risk transform scenario.
+- Focused source-generated JSON and dead-letter scenarios have trim and
+  NativeAOT smoke evidence.
+- CSV, Dapper, EF Core, Mapster, HTTP, hosting, and other integration-specific
+  paths are not covered by a broad AOT claim.
 
-Update7 repeated trim and NativeAOT smoke after dependency-governance changes.
-Evidence: `.work/runtime/update7-trim-aot.md`. The verdict remains unchanged:
-smoke-level evidence is useful, but it is not a package-wide AOT-ready claim.
+## Source-Generated JSON Paths
 
-Update10 adds CI trim and NativeAOT smoke for the package-installed consumer
-scenario on `linux-x64`. Evidence: `.work/agent/update10-trim-aot-ci.md`.
-This makes regressions in the current smoke path visible in pull requests, but
-does not expand the claim beyond the exercised Core path and one low-risk
-Extensions transform.
+Prefer source-generated metadata overloads for trim and NativeAOT scenarios:
 
-Update11 classifies `SmartPipe.Extensions` by integration area. Evidence:
-`.work/runtime/extensions-aot-matrix.md`.
+- `JsonTransform<TInput,TOutput>(JsonTypeInfo<TInput>, JsonTypeInfo<TOutput>)`;
+- `JsonFileSource<T>(string, JsonTypeInfo<List<T>>, JsonTypeInfo<T>)`;
+- `JsonFileSink<T>(string, JsonTypeInfo<List<T>>, int)`;
+- `DeadLetterSource<T>(string, JsonTypeInfo<T>)`;
+- `DeadLetterSink<T>(string, JsonTypeInfo<ProcessingResult<T>>, ...)`;
+- `JsonLinesDeadLetterSerializer<T>(JsonTypeInfo<DeadLetterEnvelope<T>>)`.
 
-Current Extensions posture:
-
-- Analyzer-clean: the Extensions project builds with trim/AOT analyzers enabled
-  and no warnings.
-- Smoke-verified: package install, legacy runtime, typed runtime,
-  `RunInBackground`, and `FilterTransform<T>`.
-- Conditional/risk areas: JSON, dead-letter, CSV, Dapper, EF Core, and Mapster
-  paths require focused harnesses before any broader AOT compatibility claim.
-
-Update12 adds focused source-generated JSON evidence:
-
-- `JsonTransform<TInput,TOutput>` has a `JsonTypeInfo<TInput>` /
-  `JsonTypeInfo<TOutput>` constructor for trim/NativeAOT scenarios.
-- `JsonFileSource<T>` and `JsonFileSink<T>` have source-generated metadata
-  constructors for DTO arrays, NDJSON items, and buffered batches.
-- Legacy `DeadLetterSink<T>` and `DeadLetterSource<T>` have source-generated
-  metadata constructors for the legacy `ProcessingResult<T>` file shape.
-- Modern `JsonLinesDeadLetterSerializer<T>` has a source-generated
-  `JsonTypeInfo<DeadLetterEnvelope<T>>` path that was publish-and-run tested
-  under trimming and NativeAOT.
-
-The older `JsonSerializerOptions`/reflection-based constructors remain for
-1.x compatibility and are explicitly marked as not trim/NativeAOT-safe. Legacy
-Extensions dead-letter remains a diagnostic record format, not replay-safe
-dead-letter storage. Replay-safe dead-letter uses `DeadLetterEnvelope<T>` plus
-`JsonLinesDeadLetterSerializer<T>` with source-generated metadata.
-
-Evidence:
-
-- `.work/runtime/extensions-aot-matrix.md`
-- `.work/runtime/trimming.md`
-- `.work/runtime/nativeaot.md`
-- `.work/agent/update12-json-deadletter-aot.md`
-
-This is still not a broad `SmartPipe.Extensions` AOT-ready claim. CSV, Dapper,
-EF Core, Mapster, HTTP, hosting, and other integration paths remain
-package-specific compatibility areas until covered by their own harnesses.
+Reflection/options-based JSON constructors remain for compatibility and should
+not be documented as trim- or NativeAOT-safe.

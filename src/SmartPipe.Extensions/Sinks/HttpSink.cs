@@ -36,12 +36,18 @@ public class HttpSink<T> : ISink<T>
             await _resilience.ExecuteAsync(
                 async token =>
                 {
-                    await _http.PostAsJsonAsync(_url, result.Value, token);
+                    await PostAsync(result.Value, token);
                 },
                 ct
             );
         else
-            await _http.PostAsJsonAsync(_url, result.Value, ct);
+            await PostAsync(result.Value, ct);
+    }
+
+    private async Task PostAsync(T value, CancellationToken ct)
+    {
+        using var response = await _http.PostAsJsonAsync(_url, value, ct);
+        response.EnsureSuccessStatusCode();
     }
 
     /// <inheritdoc />

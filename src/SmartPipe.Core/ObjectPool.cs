@@ -14,18 +14,60 @@ public class ObjectPool<T>
     private readonly T?[] _items;
     private readonly int[] _versions;
     private readonly Func<T> _factory;
+    private readonly Action<T>? _reset;
     private readonly int _maxCapacity;
     private int _index;
     private int _totalCreated;
 
     /// <summary>Creates a new object pool with pre-allocated objects.</summary>
     /// <param name="factory">Factory function to create new objects.</param>
+    /// <exception cref="ArgumentNullException">Thrown when factory is null.</exception>
+    public ObjectPool(Func<T> factory)
+        : this(factory, capacity: 256, maxCapacity: 1024)
+    {
+    }
+
+    /// <summary>Creates a new object pool with pre-allocated objects.</summary>
+    /// <param name="factory">Factory function to create new objects.</param>
+    /// <param name="capacity">Initial pool capacity (number of pre-allocated objects).</param>
+    /// <exception cref="ArgumentNullException">Thrown when factory is null.</exception>
+    public ObjectPool(Func<T> factory, int capacity)
+        : this(factory, capacity, maxCapacity: 1024)
+    {
+    }
+
+    /// <summary>Creates a new object pool with pre-allocated objects.</summary>
+    /// <param name="factory">Factory function to create new objects.</param>
     /// <param name="capacity">Initial pool capacity (number of pre-allocated objects).</param>
     /// <param name="maxCapacity">Maximum total objects this pool can create. If exceeded, returned objects are discarded.</param>
     /// <exception cref="ArgumentNullException">Thrown when factory is null.</exception>
+#pragma warning disable RS0027 // Existing 1.x optional constructor preserved for source compatibility.
     public ObjectPool(Func<T> factory, int capacity = 256, int maxCapacity = 1024)
+        : this(factory, reset: null, capacity, maxCapacity)
+    {
+    }
+#pragma warning restore RS0027
+
+    /// <summary>Creates a new object pool with pre-allocated objects and an optional reset callback.</summary>
+    /// <param name="factory">Factory function to create new objects.</param>
+    /// <param name="reset">Optional callback invoked before an object is stored for reuse.</param>
+    /// <param name="capacity">Initial pool capacity (number of pre-allocated objects).</param>
+    /// <exception cref="ArgumentNullException">Thrown when factory is null.</exception>
+    public ObjectPool(Func<T> factory, Action<T>? reset, int capacity)
+        : this(factory, reset, capacity, maxCapacity: 1024)
+    {
+    }
+
+    /// <summary>Creates a new object pool with pre-allocated objects and an optional reset callback.</summary>
+    /// <param name="factory">Factory function to create new objects.</param>
+    /// <param name="reset">Optional callback invoked before an object is stored for reuse.</param>
+    /// <param name="capacity">Initial pool capacity (number of pre-allocated objects).</param>
+    /// <param name="maxCapacity">Maximum total objects this pool can create. If exceeded, returned objects are discarded.</param>
+    /// <exception cref="ArgumentNullException">Thrown when factory is null.</exception>
+    public ObjectPool(Func<T> factory, Action<T>? reset, int capacity, int maxCapacity)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
+        _reset = reset;
         _items = new T[capacity];
         _versions = new int[capacity];
         _maxCapacity = maxCapacity;
@@ -91,6 +133,8 @@ public class ObjectPool<T>
     {
         if (item == null)
             throw new ArgumentNullException(nameof(item));
+
+        _reset?.Invoke(item);
 
         int i = Interlocked.Increment(ref _index) - 1;
         if (i >= 0 && i < _items.Length)

@@ -6,13 +6,19 @@ using System.Threading;
 
 namespace SmartPipe.Core;
 
-/// <summary>Bloom filter for deduplication. False positive possible (~0.1%), false negative impossible.
-/// Thread-safe: all public methods synchronize access to the internal BitArray.
-/// Optional TTL support: elements expire after a configurable time-to-live.
-/// Memory: O(1) regardless of items processed.</summary>
+/// <summary>
+/// Bloom-style filter for deduplication. False positives are possible; false negatives are not expected
+/// for items that are still inside the retention window.
+/// </summary>
+/// <remarks>
+/// Non-TTL mode behaves like a standard non-deleting Bloom filter. TTL mode uses per-bit counters so
+/// expiry of one item does not clear bits still held by another non-expired item. Public methods
+/// synchronize access to the internal bitset and TTL counters.
+/// </remarks>
 public class DeduplicationFilter
 {
     private readonly BitArray _bits;
+    private readonly int[]? _ttlBitCounts;
     private readonly int _hashCount,
         _size;
     private long _itemsSeen;
@@ -43,6 +49,7 @@ public class DeduplicationFilter
 
         if (ttl.HasValue)
         {
+            _ttlBitCounts = new int[_size];
             // Allocate ring buffer for TTL tracking (1 entry per expected item)
             _ttlEntries = new (ulong, DateTime)[Math.Min(expectedItems, 10_000_000)];
         }
@@ -68,12 +75,14 @@ public class DeduplicationFilter
                 int index = (int)((h1 + (long)i * h2) % _size);
                 if (index < 0)
                     index += _size;
-                if (!_bits[index])
+                if (!IsSet(index))
                 {
                     allSet = false;
-                    _bits[index] = true;
                 }
             }
+
+            if (!allSet)
+                AddBits(h1, h2);
 
             // Track new entry for TTL
             if (_ttlEntries != null && !allSet)
@@ -112,11 +121,51 @@ public class DeduplicationFilter
                     int index = (int)((h1 + (long)j * h2) % _size);
                     if (index < 0)
                         index += _size;
-                    _bits[index] = false; // Clear bit — may introduce false negatives for other items sharing this bit
+                    RemoveBit(index);
                 }
                 _ttlEntries[i % _ttlEntries.Length] = (0, default); // Clear slot
             }
         }
+    }
+
+    private bool IsSet(int index)
+    {
+        return _ttlBitCounts is null ? _bits[index] : _ttlBitCounts[index] > 0;
+    }
+
+    private void AddBits(int h1, int h2)
+    {
+        for (int i = 0; i < _hashCount; i++)
+        {
+            int index = (int)((h1 + (long)i * h2) % _size);
+            if (index < 0)
+                index += _size;
+
+            if (_ttlBitCounts is null)
+            {
+                _bits[index] = true;
+            }
+            else
+            {
+                _ttlBitCounts[index]++;
+                _bits[index] = true;
+            }
+        }
+    }
+
+    private void RemoveBit(int index)
+    {
+        if (_ttlBitCounts is null)
+        {
+            _bits[index] = false;
+            return;
+        }
+
+        if (_ttlBitCounts[index] > 0)
+            _ttlBitCounts[index]--;
+
+        if (_ttlBitCounts[index] == 0)
+            _bits[index] = false;
     }
 
     private static int Hash1(ulong x)

@@ -45,6 +45,26 @@ public class HttpSinkTests
     }
 
     [Fact]
+    public async Task WriteAsync_ThrowsHttpRequestException_WhenResponseIsNotSuccessful()
+    {
+        var mockHandler = new Mock<HttpMessageHandler>();
+        mockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError));
+
+        var client = new HttpClient(mockHandler.Object);
+        var sink = new HttpSink<TestItem>(client, "http://test.com");
+
+        var result = ProcessingResult<TestItem>.Success(new TestItem { Value = "test" }, 1);
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() => sink.WriteAsync(result));
+
+        Assert.Equal(System.Net.HttpStatusCode.InternalServerError, ex.StatusCode);
+    }
+
+    [Fact]
     public async Task WriteAsync_DoesNotPost_WhenResultIsFailure()
     {
         var mockHandler = new Mock<HttpMessageHandler>();

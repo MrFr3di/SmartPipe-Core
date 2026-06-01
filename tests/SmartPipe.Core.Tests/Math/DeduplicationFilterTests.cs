@@ -52,4 +52,78 @@ public class DeduplicationFilterTests
         var filter = new DeduplicationFilter(expectedItems: 100, falsePositiveRate: 0.01);
         filter.ContainsAndAdd(1UL).Should().BeFalse();
     }
+
+    [Fact]
+    public void TtlCleanup_ShouldNotCreateFalseNegativeForNonExpiredItemSharingBits()
+    {
+        var ttl = TimeSpan.FromMilliseconds(120);
+        var first = 1UL;
+        var second = FindValueSharingSomeButNotAllBits(first, expectedItems: 10, falsePositiveRate: 0.01);
+        var filter = new DeduplicationFilter(expectedItems: 10, falsePositiveRate: 0.01, ttl: ttl);
+
+        filter.ContainsAndAdd(first).Should().BeFalse();
+        Thread.Sleep(70);
+        filter.ContainsAndAdd(second).Should().BeFalse();
+
+        Thread.Sleep(70);
+
+        filter.ContainsAndAdd(second).Should().BeTrue();
+    }
+
+    private static ulong FindValueSharingSomeButNotAllBits(
+        ulong first,
+        long expectedItems,
+        double falsePositiveRate)
+    {
+        var firstIndexes = GetIndexes(first, expectedItems, falsePositiveRate);
+
+        for (ulong candidate = first + 1; candidate < 100_000; candidate++)
+        {
+            var candidateIndexes = GetIndexes(candidate, expectedItems, falsePositiveRate);
+            if (candidateIndexes.Overlaps(firstIndexes) && !candidateIndexes.SetEquals(firstIndexes))
+                return candidate;
+        }
+
+        throw new InvalidOperationException("Could not find a deterministic shared-bit candidate.");
+    }
+
+    private static HashSet<int> GetIndexes(ulong value, long expectedItems, double falsePositiveRate)
+    {
+        var size = (int)(-expectedItems * System.Math.Log(falsePositiveRate) / (System.Math.Log(2) * System.Math.Log(2)));
+        var hashCount = System.Math.Max(1, (int)(size / (double)expectedItems * System.Math.Log(2)));
+        var indexes = new HashSet<int>();
+        var h1 = Hash1(value);
+        var h2 = Hash2(value);
+
+        for (int i = 0; i < hashCount; i++)
+        {
+            var index = (int)((h1 + (long)i * h2) % size);
+            if (index < 0)
+                index += size;
+            indexes.Add(index);
+        }
+
+        return indexes;
+    }
+
+    private static int Hash1(ulong x)
+    {
+        ulong h = 14695981039346656037;
+        for (int i = 0; i < 8; i++)
+        {
+            h ^= (byte)(x >> (i * 8));
+            h *= 1099511628211;
+        }
+        return (int)h;
+    }
+
+    private static int Hash2(ulong x)
+    {
+        x ^= x >> 33;
+        x *= 0xFF51AFD7ED558CCD;
+        x ^= x >> 33;
+        x *= 0xC4CEB9FE1A85EC53;
+        x ^= x >> 33;
+        return (int)x;
+    }
 }

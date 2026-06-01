@@ -39,6 +39,24 @@ public class ObjectPoolTests
     }
 
     [Fact]
+    public void Return_ShouldResetObject_WhenResetCallbackIsConfigured()
+    {
+        var pool = new ObjectPool<TestObject>(
+            factory: () => new TestObject(),
+            reset: static item => item.Value = 0,
+            capacity: 1);
+
+        var obj = pool.Rent();
+        obj.Value = 42;
+
+        pool.Return(obj);
+
+        var reused = pool.Rent();
+        reused.Should().BeSameAs(obj);
+        reused.Value.Should().Be(0);
+    }
+
+    [Fact]
     public void StressTest_20Threads_ZeroObjectLoss()
     {
         const int poolCapacity = 100;

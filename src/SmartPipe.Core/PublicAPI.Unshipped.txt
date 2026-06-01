@@ -1,1 +1,5 @@
 #nullable enable
+SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory) -> void
+SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory, int capacity) -> void
+SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory, System.Action<T!>? reset, int capacity) -> void
+SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory, System.Action<T!>? reset, int capacity, int maxCapacity) -> void

@@ -1,102 +1,135 @@
 # Architecture
 
-## Pipeline Flow
+SmartPipe.Core has two public runtime paths:
 
-The SmartPipe.Core pipeline uses a **P-controller (Proportional controller)** based approach for flow control and adaptive parallelism, replacing threshold-based binary decisions with smooth, proportional adjustments.
+- the legacy 1.x compatibility runtime built around
+  `SmartPipeChannel<TInput,TOutput>`;
+- the 1.1.0 envelope-aware typed runtime built around `PipelineBuilder`,
+  `PipelineDefinition`, `PipelineExecutionPlan`, and `PipelineRuntime`.
 
-### P-Controller with Dead Zone and Anti-Windup
+## Runtime Layers
 
-The pipeline employs P-controllers in two key areas:
+### PipelineDefinition
 
-1. **Adaptive Parallelism** (`AdaptiveParallelism`): Adjusts thread count based on latency error
-   - **Dead Zone**: Ignores latency errors smaller than 5ms to prevent thrashing on minor fluctuations
-   - **Anti-Windup**: Prevents error accumulation when at min/max limits — if `_current >= _max` and error > 0, or `_current <= _min` and error < 0, no adjustment is made
-   - **Proportional Band**: An error of 20ms results in a 1-thread adjustment (raw adjustment = |error| / 20)
-   - **CAP**: Maximum adjustment capped at 3 threads per iteration to prevent aggressive changes
+`PipelineDefinition` is an immutable declarative topology. It records pipeline
+identity, component registrations, stage definitions, component ownership,
+lineage mode, and stage failure metadata.
 
-2. **Backpressure Strategy** (`BackpressureStrategy`): Smoothly adjusts delay proportional to queue fill error
-   - Calculates error as `fillRatio - targetFillRatio`
-   - Applies P-controller gain (Kp = 1.0) to compute delay: `delayMs = KpGain * error * DelayScaleFactor`
-   - Delay clamped between 0ms and 200ms
-   - Target fill ratio adapts based on throughput (high throughput → lower target, low throughput → higher target)
+Concrete component instances are single-use unless the component explicitly
+declares `Reusable` or `SingletonExternal` through
+`IPipelineComponentDescriptor`. Factory-based definitions create fresh
+runtime-owned components for each run.
 
-### ExponentialHistogram Percentile Caching
+### PipelineExecutionPlan
 
-The `ExponentialHistogram` now caches `P50`, `P95`, and `P99` values. Percentiles are recomputed only when `_totalCount` changes, avoiding redundant bucket scans.
+`PipelineExecutionPlan` is the compiled form of a definition. The current
+implementation validates adjacent stage type flow and component reusability
+rules before a runtime is created.
 
-- **Read path**: `GetPercentile()` uses `Volatile.Read` instead of `Interlocked.CompareExchange`, preventing cache line invalidations under concurrent reads.
+### PipelineRuntime
 
-### CircuitBreaker States
+`PipelineRuntime` is a single-use execution owner. It owns run identity and
+marks the definition as used. The typed path runs envelope-aware source,
+transformer, and sink components through this boundary and returns a
+`PipelineRun<TOutput>` handle.
 
-The CircuitBreaker implements four states:
+```csharp
+var run = PipelineBuilder
+    .From(source)
+    .Transform(firstStage)
+    .Transform(secondStage)
+    .To(sink);
 
-- **Closed**: Normal operation, all requests pass through. Failures are tracked via hybrid EWMA + sliding window detection.
-- **Open**: Circuit is tripped, requests are blocked. Transitions to HalfOpen after `breakDuration` expires.
-- **HalfOpen**: Testing if the circuit can be closed. Allows up to `maxHalfOpenRequests` concurrent requests. On sufficient success, transitions to Closed; on failure, returns to Open.
-- **Isolated**: Manually isolated state (via `Isolate()` method), blocks all requests indefinitely until manually reset.
-- **Performance:** `GetMetrics()` now creates the metrics dictionary with exact capacity (4), reducing internal resizing allocations
+await run.Completion;
+```
 
-The CircuitBreaker uses atomic state transitions and combines EWMA (Exponentially Weighted Moving Average) for fast reaction with a sliding window for accurate threshold decisions.
+## Legacy Runtime
 
-## Core Components
+`SmartPipeChannel<TInput,TOutput>` remains available for 1.x compatibility. It
+supports `ISource<T>`, `ITransformer<TInput,TOutput>`, and `ISink<T>`.
 
-### AdaptiveMetrics — Stopwatch.GetTimestamp
+Legacy runtime boundaries:
 
-Uses `Stopwatch.GetTimestamp()` for throughput calculation instead of `Environment.TickCount64`, which wraps around after ~49.7 days. Includes guard against abnormally large elapsed time (>10 seconds) to prevent errors after system resume.
+- `DrainAsync` waits for accepted work to finish and must not be used as an
+  abort operation.
+- `Cancel()` is the immediate stop operation.
+- `RunInBackground` can be called once per pipeline instance.
+- `ThrowOnMutationAfterStart` can reject `AddSource`, `AddTransformer`, and
+  `AddSink` after start.
+- Legacy circuit breaker behavior is separate from typed stage-level circuit
+  breaker policies.
 
-### TransformWithTimeoutAsync — Exception Handling
+## Component Lifetimes
 
-Catch-all `catch (Exception)` block handles unexpected exception types (`ArgumentException`, `JsonException`) that previously crashed the consumer task.
+`PipelineComponentLifetime` values:
 
-### ObjectPool Policy
+- `SingleUse`: default for concrete source, transformer, and sink instances;
+- `Reusable`: component can participate in more than one run;
+- `SingletonExternal`: component is owned outside the runtime.
 
-`ObjectPool` is disabled by default in the 1.1.0 runtime path. Source-created
-contexts are not returned to the pool, which avoids unclear ownership and
-double-return risks. Any future pooling path must have explicit ownership,
-reset, thread-safety, and benchmark evidence.
+Factory APIs make reusable definitions explicit:
 
-### DrainAsync
+```csharp
+var builder = PipelineBuilder
+    .FromFactory(_ => new Source())
+    .TransformFactory(_ => new ParseStage())
+    .TransformFactory(_ => new ValidateStage());
 
-Accepts a `CancellationToken`. Uses `TryComplete()` instead of `Complete()` on channels to prevent `ChannelClosedException` when called concurrently.
+var firstRun = builder.Run();
+var secondRun = builder.Run();
+```
 
-### SmartPipeHostedService
+## Output Model
 
-`StopAsync` calls `pipeline.DisposeAsync()`. `Faulted` state exceptions are logged rather than rethrown.
+`PipelineRun<T>.Outputs` is the primary typed output stream. Each
+`PipelineOutput<T>` contains:
 
-### RetryQueue Polling
+- `Result`: the compatibility `ProcessingResult<T>`;
+- `Envelope`: the final `ProcessingEnvelope<T>` when available.
 
-`TryGetNextAsync` always waits for items (removed race between `Count == 0` check and `WaitToReadAsync`). Single `CancellationTokenSource` per call. `TryWrite` for re-queueing.
+`PipelineRun<T>.ReadResultsAsync()` projects the same stream into legacy-style
+results for consumers that do not need envelope data.
 
-### PipelineDashboard
+## Observer Model
 
-Readonly record struct. `CBState` → `CbState`. Static `PipelineDashboard.Empty` for defaults. Constructor-based creation.
+Typed pipelines attach observers with `WithObserver`. Events carry pipeline id,
+run id, trace id, optional stage id, attempt, and UTC timestamp.
 
-### DbSink
+Observer reliability values:
 
-`ExecuteAsync()` instead of `Execute()` to avoid blocking the thread pool.
+- `BestEffort`: routine logging and metrics;
+- `Reliable`: audit-oriented observers;
+- `Critical`: policy observers that may fault a run.
 
-### DapperSelector
+Observer dispatch is inline in 1.1.0. Non-critical observer failures are
+reported through `ObserverFailedEvent`; critical observer failures or
+`FaultPipeline` observer policies fault the run.
 
-`ReadAsync` wraps reader in `try/finally` for immediate disposal on early exit or exception.
+## Stage Failure Model
 
-### SmartPipeResilienceExtensions
+Typed transformer stages can attach `StageFailureOptions` and
+`StageDeadLetterOptions<TStageInput>`.
 
-Removed dead code that created `PollyResilienceTransform` without adding it to the pipeline.
+Supported terminal actions:
 
-### ChannelMerge
+- `EmitFailureResult`;
+- `DeadLetter`;
+- `Skip`;
+- `StopPipeline`;
+- `FaultPipeline`.
 
-Optional `BoundedChannelOptions` parameter for bounded output channels.
+Typed stages support retry, attempt timeout, stage timeout, per-stage circuit
+breaker policy, and replay-safe dead-letter records. Sink retry/timeout and
+typed `PipelineTimeout` are not claimed for 1.1.0.
 
-## Resilience Order
+## Diagnostics And Adaptive Components
 
-The pipeline applies resilience patterns in the following order:
+The library includes adaptive and diagnostic primitives such as
+`AdaptiveMetrics`, `AdaptiveParallelism`, `BackpressureStrategy`,
+`CircuitBreaker`, `RetryQueue<T>`, `ExponentialHistogram`,
+`DeduplicationFilter`, `CuckooFilter`, `HyperLogLogEstimator`, and
+`ReservoirSampler`.
 
-1. **CircuitBreaker** → Fast-fail when circuit is open, preventing resource exhaustion
-2. **Retry** → Transient failure recovery with backoff and jitter
-3. **Timeout** → Per-attempt timeout (`AttemptTimeout`) via `PipelineCancellation.WithTimeoutAsync()`
-
-This order ensures:
-- Open circuits fail immediately without attempting retries
-- Transient failures are retried before timing out the entire request
-- Timeouts bound total latency per transform attempt
-- RetryQueue polling uses a single `CancellationTokenSource` per `TryGetNextAsync` call. Re-queueing uses `TryWrite` to avoid blocking.
+Do not turn those primitives into release claims such as zero allocations,
+lock-free behavior, or exact performance improvements unless benchmark and CI
+evidence exists for the current release.
