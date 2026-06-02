@@ -27,6 +27,11 @@ Current posture:
   been validated.
 - Broad API-surface and every-integration AOT compatibility is not claimed.
 
+`ProcessingEnvelope<T>.Create`, `PipelineRuntimeOptions`, `IPipelineClock`,
+observer dispatch options, and circuit breaker evaluation options are
+AOT-neutral configuration APIs. They do not introduce reflection or dynamic
+code paths.
+
 ## Extensions
 
 `SmartPipe.Extensions` contains integrations whose AOT behavior depends on the

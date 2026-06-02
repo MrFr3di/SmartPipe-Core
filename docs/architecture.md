@@ -43,6 +43,11 @@ var run = PipelineBuilder
 await run.Completion;
 ```
 
+Typed runtime options are additive and opt-in. Without `PipelineRuntimeOptions`,
+the runtime keeps the existing output channel behavior, inline observer
+dispatch, system clock usage, retry behavior, sink behavior, and consecutive
+failure circuit breaker mode.
+
 ## Legacy Runtime
 
 `SmartPipeChannel<TInput,TOutput>` remains available for 1.x compatibility. It
@@ -105,6 +110,9 @@ Observer dispatch is inline in 1.1.0. Non-critical observer failures are
 reported through `ObserverFailedEvent`; critical observer failures or
 `FaultPipeline` observer policies fault the run.
 
+Buffered observer dispatch is available through `PipelineRuntimeOptions` as an
+explicit bounded mode. The default remains inline.
+
 ## Stage Failure Model
 
 Typed transformer stages can attach `StageFailureOptions` and
@@ -133,3 +141,7 @@ The library includes adaptive and diagnostic primitives such as
 Do not turn those primitives into release claims such as zero allocations,
 lock-free behavior, or exact performance improvements unless benchmark and CI
 evidence exists for the current release.
+
+SmartPipe.Core remains an in-process pipeline runtime. Durable local-first
+storage, SQLite checkpoints, outbox/inbox, sync, and conflict resolution belong
+to future packages such as `SmartPipe.LocalFirst.*`.

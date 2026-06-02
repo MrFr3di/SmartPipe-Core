@@ -19,6 +19,7 @@ public sealed class PipelineRuntime
         ExecutionPlan = executionPlan ?? throw new ArgumentNullException(nameof(executionPlan));
         ExecutionPlan.Definition.MarkRuntimeCreated();
         RunId = Guid.NewGuid().ToString("N");
+        Options = ExecutionPlan.Definition.RuntimeOptions;
     }
 
     /// <summary>Gets the execution plan owned by this runtime.</summary>
@@ -26,4 +27,7 @@ public sealed class PipelineRuntime
 
     /// <summary>Gets the runtime run identifier.</summary>
     public string RunId { get; }
+
+    /// <summary>Gets runtime execution options.</summary>
+    public PipelineRuntimeOptions Options { get; }
 }

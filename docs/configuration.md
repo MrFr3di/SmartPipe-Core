@@ -86,8 +86,13 @@ Typed transformer stages can receive `StageFailureOptions`:
 
 `CircuitBreakerPolicy` supports:
 
-- `FailureThreshold`: default `5`;
-- `BreakDuration`: default `30 seconds`.
+- `EvaluationMode`: default `ConsecutiveFailures`;
+- `FailureThreshold`: default `5`, used by the default consecutive-failure mode;
+- `BreakDuration`: default `30 seconds`;
+- `FailureRatio`: default `0.1`, used only by opt-in `FailureRatio` mode;
+- `SamplingDuration`: default `30 seconds`, used only by opt-in `FailureRatio` mode;
+- `MinimumThroughput`: default `100`, used only by opt-in `FailureRatio` mode;
+- `MaxHalfOpenRequests`: default `1`, used only by opt-in `FailureRatio` mode.
 
 `FailureAction` values are:
 
@@ -107,4 +112,53 @@ builder.WithObserver(observer, reliability, failurePolicy);
 
 Implemented reliability values are `BestEffort`, `Reliable`, and `Critical`.
 Implemented failure policies are `Ignore`, `Log`, `FaultPipeline`, and
-`RemoveObserver`. Observer dispatch is inline in 1.1.0.
+`RemoveObserver`.
+
+## Pipeline Identity
+
+Envelope-aware typed pipelines can set an operational pipeline id:
+
+```csharp
+var run = PipelineBuilder
+    .From(source)
+    .WithPipelineId("orders-sync")
+    .Transform(transformer)
+    .Run();
+```
+
+If `WithPipelineId` is not called, current generated pipeline id behavior is
+preserved. If it is called, observer events and normalized output envelopes use
+the configured id.
+
+## Runtime Options
+
+`PipelineRuntimeOptions` configures opt-in typed runtime behavior:
+
+| Option | Default | Notes |
+|---|---|---|
+| `OutputCapacity` | `null` | Null preserves current unbounded output behavior. A value creates a bounded output channel. |
+| `OutputFullMode` | `Wait` | Used only when `OutputCapacity` is set. |
+| `ObserverDispatch` | `ObserverDispatchOptions.Inline` | Inline dispatch preserves current event ordering and failure behavior. |
+| `Clock` | `SystemPipelineClock.Instance` | Used by typed runtime event timestamps and time budget decisions. |
+
+Bounded output with `Wait` can apply backpressure if consumers do not read
+outputs. It is intentionally not the default.
+
+## Clock / Time Provider
+
+Typed runtime options accept `IPipelineClock`. `SystemPipelineClock` is the
+default. `TimeProviderPipelineClock` adapts a .NET `TimeProvider` for tests and
+custom time sources.
+
+## Observer Dispatch
+
+`ObserverDispatchOptions` supports:
+
+- `Inline`: default, preserves current dispatch behavior;
+- `BufferedBestEffort`: bounded background queue where dropped events are
+  allowed when configured by full-mode behavior;
+- `BufferedReliable`: bounded background queue intended to flush before
+  completion when `FlushOnCompletion` is true.
+
+Buffered modes are opt-in and bounded. They do not introduce unbounded
+fire-and-forget observer queues.

@@ -46,6 +46,7 @@ IPipelineSink<OrderDto> sink = new OrderSink();
 
 var run = PipelineBuilder
     .From(source)
+    .WithPipelineId("orders-sync")
     .Transform(transformer)
     .To(sink);
 
@@ -60,6 +61,21 @@ await run.Completion;
 
 `PipelineRun<T>.Outputs` carries the final `ProcessingResult<T>` and, when
 available, the final `ProcessingEnvelope<T>`.
+
+Runtime options are optional and preserve defaults when omitted:
+
+```csharp
+var run = PipelineBuilder
+    .From(source)
+    .WithRuntimeOptions(new PipelineRuntimeOptions
+    {
+        OutputCapacity = 1024,
+        ObserverDispatch = ObserverDispatchOptions.Inline,
+        Clock = SystemPipelineClock.Instance,
+    })
+    .Transform(transformer)
+    .Run();
+```
 
 ## RunInBackground Quick Start
 

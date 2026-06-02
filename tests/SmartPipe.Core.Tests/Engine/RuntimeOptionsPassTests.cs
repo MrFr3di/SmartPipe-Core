@@ -1,0 +1,1178 @@
+using System.Globalization;
+using System.Threading.Channels;
+using FluentAssertions;
+using SmartPipe.Core;
+
+namespace SmartPipe.Core.Tests.Engine;
+
+public class RuntimeOptionsPassTests
+{
+    [Fact]
+    public void ProcessingEnvelope_Create_ShouldPopulateRequiredDefaults()
+    {
+        var before = DateTimeOffset.UtcNow;
+
+        var envelope = ProcessingEnvelope<int>.Create(42);
+
+        envelope.Payload.Should().Be(42);
+        envelope.PipelineId.Should().Be("default");
+        envelope.RunId.Should().NotBeNullOrWhiteSpace();
+        envelope.TraceId.Should().NotBe(0);
+        envelope.Metadata.Should().BeSameAs(MetadataBag.Empty);
+        envelope.Lineage.Should().BeEmpty();
+        envelope.Attempt.Should().Be(0);
+        envelope.CreatedAtUtc.Should().BeOnOrAfter(before);
+        envelope.CreatedAtUtc.Should().BeOnOrBefore(DateTimeOffset.UtcNow.AddSeconds(1));
+    }
+
+    [Fact]
+    public void ProcessingEnvelope_Create_WithExplicitValues_ShouldPreserveValues()
+    {
+        var timestamp = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        var metadata = MetadataBag.Empty.Set("tenant", "alpha");
+
+        var envelope = ProcessingEnvelope<int>.Create(
+            7,
+            "orders-sync",
+            "run-1",
+            123,
+            metadata,
+            timestamp
+        );
+
+        envelope.Payload.Should().Be(7);
+        envelope.PipelineId.Should().Be("orders-sync");
+        envelope.RunId.Should().Be("run-1");
+        envelope.TraceId.Should().Be(123);
+        envelope.Metadata.Should().BeSameAs(metadata);
+        envelope.Lineage.Should().BeEmpty();
+        envelope.Attempt.Should().Be(0);
+        envelope.CreatedAtUtc.Should().Be(timestamp);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ProcessingEnvelope_Create_ShouldRejectInvalidPipelineId(string? pipelineId)
+    {
+        var act = () => ProcessingEnvelope<int>.Create(1, pipelineId!, "run", 1);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("pipelineId");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ProcessingEnvelope_Create_ShouldRejectInvalidRunId(string? runId)
+    {
+        var act = () => ProcessingEnvelope<int>.Create(1, "pipeline", runId!, 1);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("runId");
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_WithoutPipelineId_ShouldKeepExistingEnvelopePipelineId()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Single().Envelope!.PipelineId.Should().Be("source-pipeline");
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_WithPipelineId_ShouldUseConfiguredIdInOutputEnvelope()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithPipelineId("orders-sync")
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Single().Envelope!.PipelineId.Should().Be("orders-sync");
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_WithPipelineId_ShouldUseConfiguredIdInEvents()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithPipelineId("billing.import.v1")
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.Events.Should().NotBeEmpty();
+        observer.Events.Should().OnlyContain(e => e.PipelineId == "billing.import.v1");
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_WithPipelineId_ShouldNotChangeRunIdGeneration()
+    {
+        var sourceEnvelope = ProcessingEnvelope<int>.Create(
+            1,
+            "source-pipeline",
+            "source-run",
+            123
+        );
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(sourceEnvelope))
+            .WithPipelineId("configured-pipeline")
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Single().Envelope!.PipelineId.Should().Be("configured-pipeline");
+        outputs.Single().Envelope!.RunId.Should().Be("source-run");
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_WithPipelineId_ShouldNotChangeTraceIdGeneration()
+    {
+        var sourceEnvelope = ProcessingEnvelope<int>.Create(
+            1,
+            "source-pipeline",
+            "source-run",
+            987
+        );
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(sourceEnvelope))
+            .WithPipelineId("configured-pipeline")
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Single().Envelope!.TraceId.Should().Be(987);
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_WithPipelineId_ShouldUseConfiguredIdInDeadLetterRecord()
+    {
+        await using var stream = new MemoryStream();
+        var serializer = new JsonLinesDeadLetterSerializer<int>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(42))
+            .WithPipelineId("dead-letter-pipeline")
+            .Transform(
+                new FailingTransformer<int, string>(),
+                new StageFailureOptions { OnPermanentFailure = FailureAction.DeadLetter },
+                new StageDeadLetterOptions<int>(stream, serializer)
+            )
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        stream.Position = 0;
+        var deadLetters = new List<DeadLetterEnvelope<int>>();
+        await foreach (var envelope in serializer.ReadAsync(stream))
+            deadLetters.Add(envelope);
+
+        deadLetters.Single().PipelineId.Should().Be("dead-letter-pipeline");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void PipelineBuilder_WithPipelineId_ShouldRejectInvalidValues(string? pipelineId)
+    {
+        var act = () => PipelineBuilder.From(new EnvelopeSource<int>(1)).WithPipelineId(pipelineId!);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("pipelineId");
+    }
+
+    [Fact]
+    public async Task RuntimeOptions_Default_WithSinkAndUnreadOutputs_ShouldStillComplete()
+    {
+        var sink = new EnvelopeCollectingSink<string>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2))
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .To(sink);
+
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        sink.Payloads.Should().Equal("1", "2");
+    }
+
+    [Fact]
+    public async Task RuntimeOptions_OutputCapacity_ShouldCreateBoundedOutputWhenConfigured()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3))
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    OutputCapacity = 1,
+                    OutputFullMode = BoundedChannelFullMode.Wait,
+                }
+            )
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Select(o => o.Result.Value).Should().Equal("1", "2", "3");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void RuntimeOptions_OutputCapacity_ShouldRejectInvalidCapacity(int capacity)
+    {
+        var act = () =>
+            PipelineBuilder
+                .From(new EnvelopeSource<int>(1))
+                .WithRuntimeOptions(new PipelineRuntimeOptions { OutputCapacity = capacity });
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("OutputCapacity");
+    }
+
+    [Fact]
+    public void RuntimeOptions_OutputFullMode_ShouldRejectUndefinedValue()
+    {
+        var act = () =>
+            PipelineBuilder
+                .From(new EnvelopeSource<int>(1))
+                .WithRuntimeOptions(
+                    new PipelineRuntimeOptions
+                    {
+                        OutputCapacity = 1,
+                        OutputFullMode = (BoundedChannelFullMode)999,
+                    }
+                );
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("OutputFullMode");
+    }
+
+    [Fact]
+    public async Task RuntimeOptions_CustomClock_ShouldBeUsedByTypedRuntimeEvents()
+    {
+        var now = new DateTimeOffset(2026, 6, 2, 10, 0, 0, TimeSpan.Zero);
+        var clock = new ManualPipelineClock(now);
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithRuntimeOptions(new PipelineRuntimeOptions { Clock = clock })
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.Events.Should().OnlyContain(e => e.TimestampUtc == now);
+    }
+
+    [Fact]
+    public async Task RuntimeOptions_CustomClock_ShouldControlEnvelopeCreatedAtUtc_WhenSourceLeavesDefault()
+    {
+        var now = new DateTimeOffset(2026, 6, 2, 11, 0, 0, TimeSpan.Zero);
+        var clock = new ManualPipelineClock(now);
+        var sourceEnvelope = new ProcessingEnvelope<int>
+        {
+            PipelineId = "source-pipeline",
+            RunId = "source-run",
+            TraceId = 44,
+            Payload = 1,
+            Metadata = MetadataBag.Empty,
+            Lineage = [],
+            Attempt = 0,
+            CreatedAtUtc = default,
+        };
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(sourceEnvelope))
+            .WithRuntimeOptions(new PipelineRuntimeOptions { Clock = clock })
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Single().Envelope!.CreatedAtUtc.Should().Be(now);
+    }
+
+    [Fact]
+    public async Task PipelineClock_Custom_ShouldControlStageTimeoutBudget()
+    {
+        var clock = new ManualPipelineClock(new DateTimeOffset(2026, 6, 2, 12, 30, 0, TimeSpan.Zero));
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithRuntimeOptions(new PipelineRuntimeOptions { Clock = clock })
+            .Transform(
+                new AdvancingFailingTransformer<int, string>(
+                    clock,
+                    TimeSpan.FromMilliseconds(20),
+                    ErrorType.Transient
+                ),
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(
+                        maxRetries: 2,
+                        delay: TimeSpan.Zero,
+                        strategy: BackoffStrategy.Fixed
+                    ),
+                    Timeout = new TimeoutPolicy { StageTimeout = TimeSpan.FromMilliseconds(10) },
+                    OnRetryExhausted = FailureAction.EmitFailureResult,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Single().Result.IsSuccess.Should().BeFalse();
+        observer.Events.OfType<RetryScheduledEvent>().Should().BeEmpty();
+        observer.Events.OfType<RetryExhaustedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task PipelineClock_Custom_ShouldControlRetryDelayScheduling()
+    {
+        var clock = new ManualPipelineClock(new DateTimeOffset(2026, 6, 2, 12, 45, 0, TimeSpan.Zero));
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithRuntimeOptions(new PipelineRuntimeOptions { Clock = clock })
+            .Transform(
+                new AdvancingFailingTransformer<int, string>(
+                    clock,
+                    TimeSpan.FromMilliseconds(2),
+                    ErrorType.Transient
+                ),
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(
+                        maxRetries: 2,
+                        delay: TimeSpan.FromMilliseconds(10),
+                        strategy: BackoffStrategy.Fixed
+                    ),
+                    Timeout = new TimeoutPolicy { StageTimeout = TimeSpan.FromMilliseconds(10) },
+                    OnRetryExhausted = FailureAction.EmitFailureResult,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Single().Result.IsSuccess.Should().BeFalse();
+        observer.Events.OfType<RetryScheduledEvent>().Should().BeEmpty();
+        observer.Events.OfType<RetryExhaustedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ObserverDispatch_Default_ShouldRemainInline()
+    {
+        var observer = new ThreadRecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.ThreadIds.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task ObserverDispatch_BufferedReliable_ShouldFlushBeforeCompletion()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = ObserverDispatchMode.BufferedReliable,
+                        Capacity = 16,
+                        FullMode = BoundedChannelFullMode.Wait,
+                        FlushOnCompletion = true,
+                    },
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.Events.OfType<PipelineCompletedEvent>().Should().ContainSingle();
+        observer.Events.OfType<StageSucceededEvent>().Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task ObserverDispatch_BufferedReliable_ShouldApplyBackpressureWhenQueueFull()
+    {
+        var observer = new SlowObserver(TimeSpan.FromMilliseconds(5));
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(Enumerable.Range(1, 12).ToArray()))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = ObserverDispatchMode.BufferedReliable,
+                        Capacity = 1,
+                        FullMode = BoundedChannelFullMode.Wait,
+                        FlushOnCompletion = true,
+                    },
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        outputs.Should().HaveCount(12);
+        observer.EventsSeen.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task ObserverDispatch_BufferedModes_ShouldCompleteDispatcherExactlyOnce()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = ObserverDispatchMode.BufferedReliable,
+                        Capacity = 8,
+                        FlushOnCompletion = true,
+                    },
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+        await run.DisposeAsync();
+        await run.DisposeAsync();
+
+        observer.Events.OfType<PipelineCompletedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ObserverDispatch_BufferedModes_ShouldNotDispatchAfterCompletion()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = ObserverDispatchMode.BufferedReliable,
+                        Capacity = 8,
+                        FlushOnCompletion = true,
+                    },
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+        var countAfterCompletion = observer.Events.Count;
+
+        await run.DisposeAsync();
+        await Task.Delay(25);
+
+        observer.Events.Should().HaveCount(countAfterCompletion);
+    }
+
+    [Fact]
+    public async Task ObserverDispatch_BufferedBestEffort_ShouldNotBlockPipelineOnSlowObserver()
+    {
+        var observer = new SlowObserver(TimeSpan.FromMilliseconds(50));
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(Enumerable.Range(1, 30).ToArray()))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = ObserverDispatchMode.BufferedBestEffort,
+                        Capacity = 1,
+                        FullMode = BoundedChannelFullMode.DropWrite,
+                        FlushOnCompletion = false,
+                    },
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        observer.EventsSeen.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task ObserverDispatch_BufferedBestEffort_ShouldNotFaultPipelineOnThrowingObserver()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = ObserverDispatchMode.BufferedBestEffort,
+                        Capacity = 8,
+                        FailureMode = ObserverFailureMode.Ignore,
+                    },
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(new ThrowingObserver())
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task ObserverDispatch_BufferedReliable_ShouldRespectFailureMode()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = ObserverDispatchMode.BufferedReliable,
+                        Capacity = 8,
+                        FailureMode = ObserverFailureMode.FaultPipeline,
+                    },
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(new ThrowingObserver(), failurePolicy: ObserverFailurePolicy.Ignore)
+            .Run();
+
+        var act = async () => await run.Completion;
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task RuntimeOptions_Stress_BufferedObservers_NoHang_NoUnobservedExceptions()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(Enumerable.Range(1, 100).ToArray()))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = ObserverDispatchMode.BufferedReliable,
+                        Capacity = 128,
+                        FullMode = BoundedChannelFullMode.Wait,
+                        FlushOnCompletion = true,
+                    },
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        outputs.Should().HaveCount(100);
+        observer.Events.OfType<PipelineCompletedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task RuntimeOptions_Stress_BoundedOutput_WithConsumer_NoLostItems()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(Enumerable.Range(1, 100).ToArray()))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    OutputCapacity = 4,
+                    OutputFullMode = BoundedChannelFullMode.Wait,
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Select(o => o.Result.Value).Should().Equal(Enumerable.Range(1, 100));
+    }
+
+    [Fact]
+    public async Task CircuitBreaker_Default_ShouldPreserveExistingFailureThresholdBehavior()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3))
+            .Transform(
+                new FailingTransformer<int, string>(),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 2,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.Events.OfType<CircuitBreakerOpenedEvent>().Should().ContainSingle();
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task CircuitBreaker_RatioMode_ShouldNotOpenBeforeMinimumThroughput()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2))
+            .Transform(
+                new FailingTransformer<int, string>(),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        EvaluationMode = CircuitBreakerEvaluationMode.FailureRatio,
+                        FailureRatio = 0.5,
+                        MinimumThroughput = 3,
+                        SamplingDuration = TimeSpan.FromMinutes(1),
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.Events.OfType<CircuitBreakerOpenedEvent>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CircuitBreaker_RatioMode_ShouldOpenWhenFailureRatioReached()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3, 4))
+            .Transform(
+                new FailingTransformer<int, string>(),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        EvaluationMode = CircuitBreakerEvaluationMode.FailureRatio,
+                        FailureRatio = 0.5,
+                        MinimumThroughput = 2,
+                        SamplingDuration = TimeSpan.FromMinutes(1),
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.Events.OfType<CircuitBreakerOpenedEvent>().Should().ContainSingle();
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCountGreaterThanOrEqualTo(1);
+    }
+
+    [Fact]
+    public async Task PipelineClock_Custom_ShouldControlCircuitBreakerSamplingWindow()
+    {
+        var observer = new RecordingObserver();
+        var clock = new ManualPipelineClock(new DateTimeOffset(2026, 6, 2, 12, 0, 0, TimeSpan.Zero));
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2))
+            .WithRuntimeOptions(new PipelineRuntimeOptions { Clock = clock })
+            .Transform(
+                new AdvancingFailingTransformer<int, string>(clock, TimeSpan.FromSeconds(2)),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        EvaluationMode = CircuitBreakerEvaluationMode.FailureRatio,
+                        FailureRatio = 0.5,
+                        MinimumThroughput = 2,
+                        SamplingDuration = TimeSpan.FromSeconds(1),
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.Events.OfType<CircuitBreakerOpenedEvent>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CircuitBreaker_RatioMode_ShouldNotManageRetry()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(
+                new FailingTransformer<int, string>(ErrorType.Transient),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        EvaluationMode = CircuitBreakerEvaluationMode.FailureRatio,
+                        FailureRatio = 1,
+                        MinimumThroughput = 10,
+                        SamplingDuration = TimeSpan.FromMinutes(1),
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.EmitFailureResult,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Single().Result.IsSuccess.Should().BeFalse();
+        observer.Events.OfType<RetryScheduledEvent>().Should().BeEmpty();
+        observer.Events.OfType<RetryAttemptedEvent>().Should().BeEmpty();
+        observer.Events.OfType<RetryExhaustedEvent>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TypedRuntime_RatioCircuitBreaker_ShouldUseSamplingModeOnlyWhenConfigured()
+    {
+        var observer = new RecordingObserver();
+        var transformer = new CountingFailingTransformer<int, string>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        EvaluationMode = CircuitBreakerEvaluationMode.FailureRatio,
+                        FailureRatio = 1,
+                        MinimumThroughput = 1,
+                        SamplingDuration = TimeSpan.FromMinutes(1),
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        transformer.CallCount.Should().Be(1);
+        observer.Events.OfType<CircuitBreakerOpenedEvent>().Should().ContainSingle();
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task PipelineClock_Stress_TimeoutRetryBudget_Deterministic()
+    {
+        var clock = new ManualPipelineClock(new DateTimeOffset(2026, 6, 2, 13, 0, 0, TimeSpan.Zero));
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(Enumerable.Range(1, 10).ToArray()))
+            .WithRuntimeOptions(new PipelineRuntimeOptions { Clock = clock })
+            .Transform(
+                new AdvancingFailingTransformer<int, string>(
+                    clock,
+                    TimeSpan.FromMilliseconds(10),
+                    ErrorType.Transient
+                ),
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(
+                        maxRetries: 2,
+                        delay: TimeSpan.FromMilliseconds(5),
+                        strategy: BackoffStrategy.Fixed
+                    ),
+                    Timeout = new TimeoutPolicy { StageTimeout = TimeSpan.FromMilliseconds(12) },
+                    OnRetryExhausted = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        outputs.Should().BeEmpty();
+        observer.Events.OfType<RetryScheduledEvent>().Should().BeEmpty();
+        observer.Events.OfType<RetryExhaustedEvent>().Should().HaveCount(10);
+    }
+
+    [Fact]
+    public async Task TypedRuntime_CircuitBreaker_RatioMode_DeadLetter_ShouldStillEmitTerminalOutput()
+    {
+        await using var stream = new MemoryStream();
+        var serializer = new JsonLinesDeadLetterSerializer<int>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3))
+            .Transform(
+                new FailingTransformer<int, string>(),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        EvaluationMode = CircuitBreakerEvaluationMode.FailureRatio,
+                        FailureRatio = 0.5,
+                        MinimumThroughput = 2,
+                        SamplingDuration = TimeSpan.FromMinutes(1),
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.DeadLetter,
+                },
+                new StageDeadLetterOptions<int>(stream, serializer)
+            )
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Should().HaveCount(3);
+        outputs.Should().OnlyContain(o => !o.Result.IsSuccess);
+    }
+
+    private static async Task<List<PipelineOutput<T>>> ReadOutputsAsync<T>(
+        ChannelReader<PipelineOutput<T>> reader
+    )
+    {
+        var outputs = new List<PipelineOutput<T>>();
+        await foreach (var output in reader.ReadAllAsync())
+            outputs.Add(output);
+        return outputs;
+    }
+
+    private sealed class EnvelopeSource<T> : IPipelineSource<T>
+    {
+        private readonly ProcessingEnvelope<T>[] _items;
+
+        public EnvelopeSource(params T[] payloads)
+        {
+            _items = payloads
+                .Select(payload =>
+                    ProcessingEnvelope<T>.Create(
+                        payload,
+                        "source-pipeline",
+                        "source-run",
+                        (ulong)Random.Shared.Next(1, int.MaxValue)
+                    )
+                )
+                .ToArray();
+        }
+
+        public EnvelopeSource(params ProcessingEnvelope<T>[] items)
+        {
+            _items = items;
+        }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
+        )
+        {
+            foreach (var item in _items)
+            {
+                ct.ThrowIfCancellationRequested();
+                yield return item;
+                await Task.Yield();
+            }
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class EnvelopeTransformer<TInput, TOutput>
+        : IPipelineTransformer<TInput, TOutput>
+    {
+        private readonly Func<TInput, TOutput> _transform;
+
+        public EnvelopeTransformer(Func<TInput, TOutput> transform)
+        {
+            _transform = transform;
+        }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<TOutput>> TransformAsync(
+            ProcessingEnvelope<TInput> envelope,
+            CancellationToken ct = default
+        )
+        {
+            return ValueTask.FromResult(StageResult<TOutput>.Success(_transform(envelope.Payload)));
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class FailingTransformer<TInput, TOutput>
+        : IPipelineTransformer<TInput, TOutput>
+    {
+        private readonly ErrorType _errorType;
+
+        public FailingTransformer(ErrorType errorType = ErrorType.Permanent)
+        {
+            _errorType = errorType;
+        }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<TOutput>> TransformAsync(
+            ProcessingEnvelope<TInput> envelope,
+            CancellationToken ct = default
+        )
+        {
+            return ValueTask.FromResult(
+                StageResult<TOutput>.Failure(
+                    new SmartPipeError("boom", _errorType, "TestFailure")
+                )
+            );
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class AdvancingFailingTransformer<TInput, TOutput>
+        : IPipelineTransformer<TInput, TOutput>
+    {
+        private readonly ManualPipelineClock _clock;
+        private readonly TimeSpan _advanceBy;
+        private readonly ErrorType _errorType;
+
+        public AdvancingFailingTransformer(
+            ManualPipelineClock clock,
+            TimeSpan advanceBy,
+            ErrorType errorType = ErrorType.Permanent
+        )
+        {
+            _clock = clock;
+            _advanceBy = advanceBy;
+            _errorType = errorType;
+        }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<TOutput>> TransformAsync(
+            ProcessingEnvelope<TInput> envelope,
+            CancellationToken ct = default
+        )
+        {
+            _clock.Advance(_advanceBy);
+            return ValueTask.FromResult(
+                StageResult<TOutput>.Failure(
+                    new SmartPipeError("boom", _errorType, "TestFailure")
+                )
+            );
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CountingFailingTransformer<TInput, TOutput>
+        : IPipelineTransformer<TInput, TOutput>
+    {
+        public int CallCount { get; private set; }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<TOutput>> TransformAsync(
+            ProcessingEnvelope<TInput> envelope,
+            CancellationToken ct = default
+        )
+        {
+            CallCount++;
+            return ValueTask.FromResult(
+                StageResult<TOutput>.Failure(
+                    new SmartPipeError("boom", ErrorType.Permanent, "TestFailure")
+                )
+            );
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class EnvelopeCollectingSink<T> : IPipelineSink<T>
+    {
+        private readonly List<T> _payloads = [];
+
+        public IReadOnlyList<T> Payloads => _payloads;
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
+        {
+            _payloads.Add(envelope.Payload);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class RecordingObserver : IPipelineObserver
+    {
+        private readonly List<PipelineEvent> _events = [];
+
+        public IReadOnlyList<PipelineEvent> Events => _events;
+
+        public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            lock (_events)
+                _events.Add(pipelineEvent);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class ThreadRecordingObserver : IPipelineObserver
+    {
+        private readonly List<int> _threadIds = [];
+
+        public IReadOnlyList<int> ThreadIds => _threadIds;
+
+        public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            _threadIds.Add(Environment.CurrentManagedThreadId);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingObserver : IPipelineObserver
+    {
+        public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            throw new InvalidOperationException("observer boom");
+        }
+    }
+
+    private sealed class SlowObserver : IPipelineObserver
+    {
+        private readonly TimeSpan _delay;
+
+        public SlowObserver(TimeSpan delay)
+        {
+            _delay = delay;
+        }
+
+        public int EventsSeen { get; private set; }
+
+        public async ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            EventsSeen++;
+            await Task.Delay(_delay, ct);
+        }
+    }
+
+    private sealed class ManualPipelineClock : IPipelineClock
+    {
+        private DateTimeOffset _now;
+
+        public ManualPipelineClock(DateTimeOffset now)
+        {
+            _now = now;
+        }
+
+        public DateTimeOffset GetUtcNow() => _now;
+
+        public long GetTimestamp() => _now.UtcTicks;
+
+        public TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp) =>
+            TimeSpan.FromTicks(endingTimestamp - startingTimestamp);
+
+        public void Advance(TimeSpan value)
+        {
+            _now += value;
+        }
+    }
+}

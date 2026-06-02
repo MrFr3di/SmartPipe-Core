@@ -78,10 +78,29 @@ retry queue when the corresponding feature is enabled.
 Typed transformer stages can configure `CircuitBreakerPolicy`. Each configured
 stage gets an independent breaker for each run.
 
+The default evaluation mode is `ConsecutiveFailures`, preserving the existing
+`FailureThreshold` and `BreakDuration` behavior.
+
+The opt-in `FailureRatio` mode evaluates:
+
+- `FailureRatio`;
+- `SamplingDuration`;
+- `MinimumThroughput`;
+- `BreakDuration`;
+- `MaxHalfOpenRequests`.
+
+Ratio mode does not open before the sampling window has at least
+`MinimumThroughput` samples. When the ratio threshold is met, the breaker opens,
+rejects requests during `BreakDuration`, and then allows half-open probes using
+the underlying circuit breaker implementation.
+
 The breaker is checked before every transformer attempt, including retries. When
 open, the transformer is not called. The item is rejected with a permanent
 `SmartPipeError` in the `CircuitBreaker` category and follows
 `OnPermanentFailure`. Breaker-open rejection is terminal and does not retry.
+
+Circuit breaker policy does not manage retry. Retry remains configured through
+`RetryPolicy` on the stage failure options.
 
 Legacy `SmartPipeChannel` circuit breaker behavior is unchanged by typed runtime
 stage policies.
@@ -108,6 +127,16 @@ For trim and NativeAOT scenarios, prefer the
 Typed pipelines can emit structured lifecycle, stage, sink, retry, circuit
 breaker, dead-letter, and observer-failure events through `IPipelineObserver`.
 
-In 1.1.0 observer dispatch is inline. Best-effort observer failures are reported
-through `ObserverFailedEvent`. Critical observers or registrations configured
-with `FaultPipeline` can fault the run.
+Inline observer dispatch is the default. Best-effort observer failures are
+reported through `ObserverFailedEvent`. Critical observers or registrations
+configured with `FaultPipeline` can fault the run.
+
+`PipelineRuntimeOptions.ObserverDispatch` can opt into bounded buffered
+dispatch:
+
+- `BufferedBestEffort`: reduces hot-path blocking risk and may drop events when
+  configured with dropping full modes;
+- `BufferedReliable`: uses a bounded queue and can apply backpressure when the
+  queue is full.
+
+Buffered observer failure behavior is controlled by `ObserverFailureMode`.

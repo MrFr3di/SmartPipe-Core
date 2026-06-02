@@ -38,6 +38,20 @@ public sealed class PipelineDefinition
 {
     private int _runtimeCreated;
 
+    internal PipelineDefinition(
+        string pipelineId,
+        PipelineRuntimeOptions runtimeOptions,
+        IEnumerable<PipelineComponentRegistration>? components = null,
+        IEnumerable<PipelineStageDefinition>? stages = null,
+        ComponentOwnershipOptions? ownershipOptions = null,
+        LineageMode lineageMode = LineageMode.Minimal
+    )
+        : this(pipelineId, components, stages, ownershipOptions, lineageMode)
+    {
+        RuntimeOptions = runtimeOptions ?? throw new ArgumentNullException(nameof(runtimeOptions));
+        RuntimeOptions.Validate();
+    }
+
     /// <summary>Creates a pipeline definition.</summary>
     /// <param name="pipelineId">Pipeline identifier.</param>
     /// <param name="components">Registered components.</param>
@@ -59,6 +73,7 @@ public sealed class PipelineDefinition
         Stages = (stages ?? []).ToArray();
         OwnershipOptions = ownershipOptions ?? new ComponentOwnershipOptions();
         LineageMode = lineageMode;
+        RuntimeOptions = new PipelineRuntimeOptions();
     }
 
     /// <summary>Gets the pipeline identifier.</summary>
@@ -75,6 +90,9 @@ public sealed class PipelineDefinition
 
     /// <summary>Gets lineage recording mode.</summary>
     public LineageMode LineageMode { get; }
+
+    /// <summary>Gets runtime execution options.</summary>
+    public PipelineRuntimeOptions RuntimeOptions { get; }
 
     /// <summary>Gets a value indicating whether this definition can safely create multiple runtimes.</summary>
     public bool IsReusable =>

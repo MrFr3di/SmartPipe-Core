@@ -40,6 +40,16 @@ public enum RetryQueueOverflowPolicy
     DropOldest,
 }
 
+/// <summary>Evaluation model used by a stage circuit breaker.</summary>
+public enum CircuitBreakerEvaluationMode
+{
+    /// <summary>Use the existing consecutive failure threshold behavior.</summary>
+    ConsecutiveFailures,
+
+    /// <summary>Use failure-ratio evaluation over a sampling window.</summary>
+    FailureRatio,
+}
+
 /// <summary>Configures timeout behavior for a pipeline stage.</summary>
 public sealed class TimeoutPolicy
 {
@@ -58,6 +68,46 @@ public sealed class CircuitBreakerPolicy
 
     /// <summary>Gets the cooldown duration before probing recovery.</summary>
     public TimeSpan BreakDuration { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Gets the circuit breaker evaluation mode.</summary>
+    public CircuitBreakerEvaluationMode EvaluationMode { get; init; } =
+        CircuitBreakerEvaluationMode.ConsecutiveFailures;
+
+    /// <summary>Gets the failure ratio threshold for ratio mode.</summary>
+    public double FailureRatio { get; init; } = 0.1;
+
+    /// <summary>Gets the sampling window for ratio mode.</summary>
+    public TimeSpan SamplingDuration { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Gets the minimum number of samples required before ratio evaluation can open the breaker.</summary>
+    public int MinimumThroughput { get; init; } = 100;
+
+    /// <summary>Gets the maximum number of concurrent half-open probes in ratio mode.</summary>
+    public int MaxHalfOpenRequests { get; init; } = 1;
+
+    internal void Validate()
+    {
+        if (FailureThreshold <= 0)
+            throw new ArgumentOutOfRangeException(nameof(FailureThreshold), FailureThreshold, "Failure threshold must be greater than zero.");
+
+        if (BreakDuration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(BreakDuration), BreakDuration, "Break duration must be greater than zero.");
+
+        if (!Enum.IsDefined(EvaluationMode))
+            throw new ArgumentOutOfRangeException(nameof(EvaluationMode), EvaluationMode, "Circuit breaker evaluation mode is invalid.");
+
+        if (FailureRatio <= 0 || FailureRatio > 1 || double.IsNaN(FailureRatio))
+            throw new ArgumentOutOfRangeException(nameof(FailureRatio), FailureRatio, "Failure ratio must be greater than zero and less than or equal to one.");
+
+        if (SamplingDuration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(SamplingDuration), SamplingDuration, "Sampling duration must be greater than zero.");
+
+        if (MinimumThroughput <= 0)
+            throw new ArgumentOutOfRangeException(nameof(MinimumThroughput), MinimumThroughput, "Minimum throughput must be greater than zero.");
+
+        if (MaxHalfOpenRequests <= 0)
+            throw new ArgumentOutOfRangeException(nameof(MaxHalfOpenRequests), MaxHalfOpenRequests, "Maximum half-open requests must be greater than zero.");
+    }
 }
 
 /// <summary>Configures retry, timeout, circuit breaker, and terminal failure behavior for a stage.</summary>

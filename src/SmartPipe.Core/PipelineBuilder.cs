@@ -39,6 +39,8 @@ public class PipelineBuilder<TInput>
     private readonly IPipelineSource<TInput>? _modernSource;
     private readonly Func<IServiceProvider?, IPipelineSource<TInput>>? _modernSourceFactory;
     private readonly IServiceProvider? _serviceProvider;
+    private string? _pipelineId;
+    private PipelineRuntimeOptions? _runtimeOptions;
 
     internal PipelineBuilder(ISource<TInput> source) => _source = source;
 
@@ -52,6 +54,29 @@ public class PipelineBuilder<TInput>
         _modernSourceFactory =
             sourceFactory ?? throw new ArgumentNullException(nameof(sourceFactory));
         _serviceProvider = serviceProvider;
+    }
+
+    /// <summary>Configures the pipeline identifier for envelope-aware typed runs.</summary>
+    /// <param name="pipelineId">Pipeline identifier.</param>
+    /// <returns>The current builder.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="pipelineId"/> is empty.</exception>
+    public PipelineBuilder<TInput> WithPipelineId(string pipelineId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(pipelineId);
+        _pipelineId = pipelineId;
+        return this;
+    }
+
+    /// <summary>Configures runtime options for envelope-aware typed runs.</summary>
+    /// <param name="options">Runtime options.</param>
+    /// <returns>The current builder.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
+    public PipelineBuilder<TInput> WithRuntimeOptions(PipelineRuntimeOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        _runtimeOptions = options;
+        return this;
     }
 
     /// <summary>Add a transformer (ITransformer).</summary>
@@ -94,9 +119,11 @@ public class PipelineBuilder<TInput>
                     )
             );
         var spec = new TypedPipelineSpec<TInput, TInput>(
-            $"pipeline-{Guid.NewGuid():N}",
+            _pipelineId ?? $"pipeline-{Guid.NewGuid():N}",
             source,
-            []
+            [],
+            runtimeOptions: _runtimeOptions,
+            forcePipelineId: _pipelineId is not null
         );
         return new PipelineBuilder<TInput, TOutput>(
             spec.AddStage(transformer, failureOptions, deadLetterOptions));
@@ -129,10 +156,12 @@ public class PipelineBuilder<TInput>
                         "The transformer factory returned null."
                     );
                 var spec = new TypedPipelineSpec<TInput, TInput>(
-                    $"pipeline-{Guid.NewGuid():N}",
+                    _pipelineId ?? $"pipeline-{Guid.NewGuid():N}",
                     source,
                     [],
-                    isFactoryBased: true
+                    isFactoryBased: true,
+                    runtimeOptions: _runtimeOptions,
+                    forcePipelineId: _pipelineId is not null
                 );
                 return spec.AddStage(transformer);
             },
@@ -275,6 +304,53 @@ public class PipelineBuilder<TInput, TOutput>
             );
 
         return new PipelineBuilder<TInput, TOutput>(_typedSpec.WithObserver(registration));
+    }
+
+    /// <summary>Configures the pipeline identifier for an envelope-aware typed pipeline.</summary>
+    /// <param name="pipelineId">Pipeline identifier.</param>
+    /// <returns>A builder with the configured pipeline identifier.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="pipelineId"/> is empty.</exception>
+    public PipelineBuilder<TInput, TOutput> WithPipelineId(string pipelineId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(pipelineId);
+        if (_typedSpecFactory is not null)
+        {
+            return new PipelineBuilder<TInput, TOutput>(
+                () => _typedSpecFactory().WithPipelineId(pipelineId),
+                _serviceProvider
+            );
+        }
+
+        if (_typedSpec is null)
+            throw new InvalidOperationException(
+                "Pipeline identifiers are available only for envelope-aware typed pipelines."
+            );
+
+        return new PipelineBuilder<TInput, TOutput>(_typedSpec.WithPipelineId(pipelineId));
+    }
+
+    /// <summary>Configures runtime options for an envelope-aware typed pipeline.</summary>
+    /// <param name="options">Runtime options.</param>
+    /// <returns>A builder with runtime options configured.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
+    public PipelineBuilder<TInput, TOutput> WithRuntimeOptions(PipelineRuntimeOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        if (_typedSpecFactory is not null)
+        {
+            return new PipelineBuilder<TInput, TOutput>(
+                () => _typedSpecFactory().WithRuntimeOptions(options),
+                _serviceProvider
+            );
+        }
+
+        if (_typedSpec is null)
+            throw new InvalidOperationException(
+                "Runtime options are available only for envelope-aware typed pipelines."
+            );
+
+        return new PipelineBuilder<TInput, TOutput>(_typedSpec.WithRuntimeOptions(options));
     }
 
     /// <summary>Configure channel options.</summary>

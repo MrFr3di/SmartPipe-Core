@@ -16,10 +16,14 @@ internal sealed class TypedPipelineSpec<TInput, TOutput>
         ComponentOwnershipOptions? ownershipOptions = null,
         LineageMode lineageMode = LineageMode.Minimal,
         bool isFactoryBased = false,
-        IEnumerable<PipelineObserverRegistration>? observers = null
+        IEnumerable<PipelineObserverRegistration>? observers = null,
+        PipelineRuntimeOptions? runtimeOptions = null,
+        bool forcePipelineId = false
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pipelineId);
+        runtimeOptions ??= new PipelineRuntimeOptions();
+        runtimeOptions.Validate();
         PipelineId = pipelineId;
         Source = source ?? throw new ArgumentNullException(nameof(source));
         _stages = stages ?? throw new ArgumentNullException(nameof(stages));
@@ -27,6 +31,8 @@ internal sealed class TypedPipelineSpec<TInput, TOutput>
         LineageMode = lineageMode;
         IsFactoryBased = isFactoryBased;
         Observers = (observers ?? []).ToArray();
+        RuntimeOptions = runtimeOptions;
+        ForcePipelineId = forcePipelineId;
     }
 
     public string PipelineId { get; }
@@ -42,6 +48,10 @@ internal sealed class TypedPipelineSpec<TInput, TOutput>
     public bool IsFactoryBased { get; }
 
     public IReadOnlyList<PipelineObserverRegistration> Observers { get; }
+
+    public PipelineRuntimeOptions RuntimeOptions { get; }
+
+    public bool ForcePipelineId { get; }
 
     public bool IsReusable =>
         IsFactoryBased
@@ -73,7 +83,9 @@ internal sealed class TypedPipelineSpec<TInput, TOutput>
             OwnershipOptions,
             LineageMode,
             IsFactoryBased,
-            Observers
+            Observers,
+            RuntimeOptions,
+            ForcePipelineId
         );
     }
 
@@ -87,7 +99,42 @@ internal sealed class TypedPipelineSpec<TInput, TOutput>
             OwnershipOptions,
             LineageMode,
             IsFactoryBased,
-            Observers.Concat([observer])
+            Observers.Concat([observer]),
+            RuntimeOptions,
+            ForcePipelineId
+        );
+    }
+
+    public TypedPipelineSpec<TInput, TOutput> WithPipelineId(string pipelineId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(pipelineId);
+        return new TypedPipelineSpec<TInput, TOutput>(
+            pipelineId,
+            Source,
+            _stages,
+            OwnershipOptions,
+            LineageMode,
+            IsFactoryBased,
+            Observers,
+            RuntimeOptions,
+            forcePipelineId: true
+        );
+    }
+
+    public TypedPipelineSpec<TInput, TOutput> WithRuntimeOptions(PipelineRuntimeOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        return new TypedPipelineSpec<TInput, TOutput>(
+            PipelineId,
+            Source,
+            _stages,
+            OwnershipOptions,
+            LineageMode,
+            IsFactoryBased,
+            Observers,
+            options,
+            ForcePipelineId
         );
     }
 
@@ -110,6 +157,7 @@ internal sealed class TypedPipelineSpec<TInput, TOutput>
 
         return new PipelineDefinition(
             PipelineId,
+            RuntimeOptions,
             components,
             _stages.Select(stage => new PipelineStageDefinition(
                 stage.StageId,
@@ -186,12 +234,14 @@ internal interface ITypedPipelineStage
     ValueTask<TypedStageExecutionResult> ExecuteAsync(
         object envelope,
         LineageMode lineageMode,
+        IPipelineClock clock,
         CancellationToken ct
     );
 
     TypedStageExecutionResult CreateTimedOutResult(
         object envelope,
         LineageMode lineageMode,
+        IPipelineClock clock,
         DateTimeOffset startedAtUtc,
         TimeSpan timeout,
         Exception? exception
@@ -200,6 +250,7 @@ internal interface ITypedPipelineStage
     ValueTask<DeadLetterWriteResult> WriteDeadLetterAsync(
         object envelope,
         SmartPipeError error,
+        IPipelineClock clock,
         CancellationToken ct
     );
 
@@ -254,18 +305,19 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
     public async ValueTask<TypedStageExecutionResult> ExecuteAsync(
         object envelope,
         LineageMode lineageMode,
+        IPipelineClock clock,
         CancellationToken ct
     )
     {
         var input = (ProcessingEnvelope<TInput>)envelope;
-        var started = DateTimeOffset.UtcNow;
+        var started = clock.GetUtcNow();
         var result = await _transformer.TransformAsync(input, ct).ConfigureAwait(false);
         if (!result.IsValid)
             throw new InvalidOperationException(
                 "default(StageResult<T>) is invalid. Use StageResult factory methods."
             );
 
-        var completed = DateTimeOffset.UtcNow;
+        var completed = clock.GetUtcNow();
         if (!result.IsSuccess)
         {
             var failedLineage = AppendLineage(
@@ -315,13 +367,14 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
     public TypedStageExecutionResult CreateTimedOutResult(
         object envelope,
         LineageMode lineageMode,
+        IPipelineClock clock,
         DateTimeOffset startedAtUtc,
         TimeSpan timeout,
         Exception? exception
     )
     {
         var input = (ProcessingEnvelope<TInput>)envelope;
-        var completed = DateTimeOffset.UtcNow;
+        var completed = clock.GetUtcNow();
         var lineage = AppendLineage(
             input.Lineage,
             lineageMode,
@@ -349,6 +402,7 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
     public async ValueTask<DeadLetterWriteResult> WriteDeadLetterAsync(
         object envelope,
         SmartPipeError error,
+        IPipelineClock clock,
         CancellationToken ct
     )
     {
@@ -370,7 +424,7 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
             Metadata = input.Metadata,
             Error = error,
             Attempt = input.Attempt,
-            FailedAtUtc = DateTimeOffset.UtcNow,
+            FailedAtUtc = clock.GetUtcNow(),
         };
 
         var redacted = _deadLetterOptions.Redactor.Redact(deadLetter);
@@ -494,9 +548,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly PipelineRuntime _runtime;
     private readonly TypedPipelineSpec<TInput, TOutput> _spec;
     private readonly IPipelineSink<TOutput>? _sink;
-    private readonly Channel<PipelineOutput<TOutput>> _outputs = Channel.CreateUnbounded<
-        PipelineOutput<TOutput>
-    >();
+    private readonly PipelineRuntimeOptions _options;
+    private readonly IPipelineClock _clock;
+    private readonly Channel<PipelineOutput<TOutput>> _outputs;
+    private readonly IPipelineObserverDispatcher _observerDispatcher;
     private readonly CancellationTokenSource _cts;
     private readonly Dictionary<string, CircuitBreaker> _breakers = [];
     private PipelineRunState _state = PipelineRunState.NotStarted;
@@ -513,7 +568,30 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _spec = spec ?? throw new ArgumentNullException(nameof(spec));
         _sink = sink;
+        _options = _runtime.Options;
+        _clock = _options.Clock;
+        _outputs = CreateOutputChannel(_options);
+        _observerDispatcher = PipelineObserverDispatcher.Create(
+            _spec.Observers,
+            _options.ObserverDispatch
+        );
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+    }
+
+    private static Channel<PipelineOutput<TOutput>> CreateOutputChannel(PipelineRuntimeOptions options)
+    {
+        options.Validate();
+        if (options.OutputCapacity is null)
+            return Channel.CreateUnbounded<PipelineOutput<TOutput>>();
+
+        return Channel.CreateBounded<PipelineOutput<TOutput>>(
+            new BoundedChannelOptions(options.OutputCapacity.Value)
+            {
+                FullMode = options.OutputFullMode,
+                SingleReader = false,
+                SingleWriter = true,
+            }
+        );
     }
 
     public PipelineRun<TOutput> Start()
@@ -567,7 +645,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             return;
 
         _cts.Cancel();
-        await DisposeComponentsAsync(CancellationToken.None).ConfigureAwait(false);
+            await DisposeComponentsAsync(CancellationToken.None).ConfigureAwait(false);
+        await _observerDispatcher.DisposeAsync().ConfigureAwait(false);
         _cts.Dispose();
     }
 
@@ -580,7 +659,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     new PipelineStartedEvent(
                         _spec.PipelineId,
                         _runtime.RunId,
-                        DateTimeOffset.UtcNow
+                        _clock.GetUtcNow()
                     ),
                     _cts.Token
                 )
@@ -601,11 +680,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     new PipelineCompletedEvent(
                         _spec.PipelineId,
                         _runtime.RunId,
-                        DateTimeOffset.UtcNow
+                        _clock.GetUtcNow()
                     ),
                     _cts.Token
                 )
                 .ConfigureAwait(false);
+            await _observerDispatcher.CompleteAsync(_cts.Token).ConfigureAwait(false);
             _outputs.Writer.TryComplete();
         }
         catch (OperationCanceledException ex) when (_cts.IsCancellationRequested)
@@ -617,10 +697,11 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     new PipelineCancelledEvent(
                         _spec.PipelineId,
                         _runtime.RunId,
-                        DateTimeOffset.UtcNow
+                        _clock.GetUtcNow()
                     )
                 )
                 .ConfigureAwait(false);
+            await TryCompleteObserversAsync().ConfigureAwait(false);
             _outputs.Writer.TryComplete(ex);
             throw;
         }
@@ -631,17 +712,31 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     new PipelineFaultedEvent(
                         _spec.PipelineId,
                         _runtime.RunId,
-                        DateTimeOffset.UtcNow,
+                        _clock.GetUtcNow(),
                         ex
                     )
                 )
                 .ConfigureAwait(false);
+            await TryCompleteObserversAsync().ConfigureAwait(false);
             _outputs.Writer.TryComplete(ex);
             throw;
         }
         finally
         {
             await DisposeComponentsAsync(CancellationToken.None).ConfigureAwait(false);
+            await _observerDispatcher.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private async ValueTask TryCompleteObserversAsync()
+    {
+        try
+        {
+            await _observerDispatcher.CompleteAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Run failure/cancellation should remain the primary completion cause.
         }
     }
 
@@ -664,7 +759,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         foreach (var stage in _spec.Stages)
         {
             var breaker = GetOrCreateBreaker(stage);
-            var stageStartedAtUtc = DateTimeOffset.UtcNow;
+            var stageStartedAtUtc = _clock.GetUtcNow();
             while (true)
             {
                 var correlation = stage.GetCorrelation(current);
@@ -684,7 +779,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                                 correlation.TraceId,
                                 stage.StageId,
                                 correlation.Attempt,
-                                DateTimeOffset.UtcNow,
+                                _clock.GetUtcNow(),
                                 cbError
                             ),
                             ct
@@ -729,7 +824,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                             stage.StageId,
                             stage.StageName,
                             correlation.Attempt,
-                            DateTimeOffset.UtcNow
+                            _clock.GetUtcNow()
                         ),
                         ct
                     )
@@ -750,7 +845,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                                 correlation.TraceId,
                                 stage.StageId,
                                 correlation.Attempt,
-                                DateTimeOffset.UtcNow,
+                                _clock.GetUtcNow(),
                                 new SmartPipeError(
                                     ex.Message,
                                     ErrorType.Permanent,
@@ -777,7 +872,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                                     _spec.PipelineId,
                                     _runtime.RunId,
                                     stage.StageId,
-                                    DateTimeOffset.UtcNow
+                                    _clock.GetUtcNow()
                                 ),
                                 ct
                             )
@@ -798,7 +893,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                                 outcome.TraceId,
                                 stage.StageId,
                                 outcome.Attempt,
-                                DateTimeOffset.UtcNow,
+                                _clock.GetUtcNow(),
                                 error
                             ),
                             ct
@@ -829,7 +924,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                                     outcome.TraceId,
                                     stage.StageId,
                                     decision.NextAttempt,
-                                    DateTimeOffset.UtcNow
+                                    _clock.GetUtcNow()
                                 ),
                                 ct
                             )
@@ -873,7 +968,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                             stage.StageId,
                             stage.StageName,
                             correlation.Attempt,
-                            DateTimeOffset.UtcNow
+                            _clock.GetUtcNow()
                         ),
                         ct
                     )
@@ -900,7 +995,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                         _runtime.RunId,
                         outputEnvelope.TraceId,
                         outputEnvelope.Attempt,
-                        DateTimeOffset.UtcNow
+                        _clock.GetUtcNow()
                     ),
                     ct
                 )
@@ -918,7 +1013,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                             _runtime.RunId,
                             outputEnvelope.TraceId,
                             outputEnvelope.Attempt,
-                            DateTimeOffset.UtcNow,
+                            _clock.GetUtcNow(),
                             ex
                         ),
                         ct
@@ -947,7 +1042,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     outcome.TraceId,
                     stage.StageId,
                     retryAttempt,
-                    DateTimeOffset.UtcNow,
+                    _clock.GetUtcNow(),
                     delay,
                     error
                 ),
@@ -970,7 +1065,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     outcome.TraceId,
                     stage.StageId,
                     outcome.Attempt,
-                    DateTimeOffset.UtcNow,
+                    _clock.GetUtcNow(),
                     error
                 ),
                 ct
@@ -987,13 +1082,14 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     {
         var attemptTimeout = GetEffectiveAttemptTimeout(stage, stageStartedAtUtc);
         if (attemptTimeout is null || attemptTimeout == Timeout.InfiniteTimeSpan)
-            return await stage.ExecuteAsync(current, _spec.LineageMode, ct).ConfigureAwait(false);
+            return await stage.ExecuteAsync(current, _spec.LineageMode, _clock, ct).ConfigureAwait(false);
 
-        var startedAtUtc = DateTimeOffset.UtcNow;
+        var startedAtUtc = _clock.GetUtcNow();
         if (attemptTimeout <= TimeSpan.Zero)
             return stage.CreateTimedOutResult(
                 current,
                 _spec.LineageMode,
+                _clock,
                 startedAtUtc,
                 TimeSpan.Zero,
                 null
@@ -1001,7 +1097,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(attemptTimeout.Value);
-        var execution = stage.ExecuteAsync(current, _spec.LineageMode, timeoutCts.Token).AsTask();
+        var execution = stage.ExecuteAsync(current, _spec.LineageMode, _clock, timeoutCts.Token).AsTask();
 
         try
         {
@@ -1013,6 +1109,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             return stage.CreateTimedOutResult(
                 current,
                 _spec.LineageMode,
+                _clock,
                 startedAtUtc,
                 attemptTimeout.Value,
                 ex
@@ -1025,6 +1122,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             return stage.CreateTimedOutResult(
                 current,
                 _spec.LineageMode,
+                _clock,
                 startedAtUtc,
                 attemptTimeout.Value,
                 ex
@@ -1032,7 +1130,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
     }
 
-    private static TimeSpan? GetEffectiveAttemptTimeout(
+    private TimeSpan? GetEffectiveAttemptTimeout(
         ITypedPipelineStage stage,
         DateTimeOffset stageStartedAtUtc
     )
@@ -1048,7 +1146,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         return stageRemaining.Value < attemptTimeout.Value ? stageRemaining : attemptTimeout;
     }
 
-    private static TimeSpan? GetStageTimeoutRemaining(
+    private TimeSpan? GetStageTimeoutRemaining(
         ITypedPipelineStage stage,
         DateTimeOffset stageStartedAtUtc
     )
@@ -1057,7 +1155,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         if (stageTimeout is null)
             return null;
 
-        var elapsed = DateTimeOffset.UtcNow - stageStartedAtUtc;
+        var elapsed = _clock.GetUtcNow() - stageStartedAtUtc;
         return stageTimeout.Value - elapsed;
     }
 
@@ -1082,18 +1180,25 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     private ProcessingEnvelope<TInput> NormalizeEnvelope(ProcessingEnvelope<TInput> envelope)
     {
-        var pipelineId = string.IsNullOrWhiteSpace(envelope.PipelineId)
+        var pipelineId = _spec.ForcePipelineId || string.IsNullOrWhiteSpace(envelope.PipelineId)
             ? _spec.PipelineId
             : envelope.PipelineId;
         var runId = string.IsNullOrWhiteSpace(envelope.RunId) ? _runtime.RunId : envelope.RunId;
+        var createdAtUtc =
+            envelope.CreatedAtUtc == default ? _clock.GetUtcNow() : envelope.CreatedAtUtc;
 
-        if (pipelineId == envelope.PipelineId && runId == envelope.RunId)
+        if (
+            pipelineId == envelope.PipelineId
+            && runId == envelope.RunId
+            && createdAtUtc == envelope.CreatedAtUtc
+        )
             return envelope;
 
         return envelope with
         {
             PipelineId = pipelineId,
             RunId = runId,
+            CreatedAtUtc = createdAtUtc,
         };
     }
 
@@ -1110,7 +1215,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         TimeSpan Delay
     );
 
-    private static RetryDecision GetRetryDecision(
+    private RetryDecision GetRetryDecision(
         ITypedPipelineStage stage,
         SmartPipeError error,
         int attempt,
@@ -1175,7 +1280,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     )
     {
         var deadLetter = await stage
-            .WriteDeadLetterAsync(envelope, error, ct)
+            .WriteDeadLetterAsync(envelope, error, _clock, ct)
             .ConfigureAwait(false);
         await EmitAsync(
                 new DeadLetterWrittenEvent(
@@ -1185,7 +1290,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     deadLetter.StageId,
                     deadLetter.StageName,
                     deadLetter.Attempt,
-                    DateTimeOffset.UtcNow
+                    _clock.GetUtcNow()
                 ),
                 ct
             )
@@ -1209,20 +1314,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     private async ValueTask EmitAsync(PipelineEvent pipelineEvent, CancellationToken ct)
     {
-        foreach (var registration in _spec.Observers)
-        {
-            try
-            {
-                await registration.Observer.OnEventAsync(pipelineEvent, ct).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-                when (registration.FailurePolicy != ObserverFailurePolicy.FaultPipeline
-                    && registration.Reliability != ObserverReliability.Critical
-                )
-            {
-                await EmitObserverFailureAsync(registration, ex, ct).ConfigureAwait(false);
-            }
-        }
+        await _observerDispatcher.EmitAsync(pipelineEvent, ct).ConfigureAwait(false);
     }
 
     private async ValueTask TryEmitAsync(PipelineEvent pipelineEvent)
@@ -1234,39 +1326,6 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         catch
         {
             // Terminal notifications are best-effort and must not hide the primary run outcome.
-        }
-    }
-
-    private async ValueTask EmitObserverFailureAsync(
-        PipelineObserverRegistration failedRegistration,
-        Exception exception,
-        CancellationToken ct
-    )
-    {
-        var failureEvent = new ObserverFailedEvent(
-            _spec.PipelineId,
-            _runtime.RunId,
-            failedRegistration.Observer.GetType().Name,
-            DateTimeOffset.UtcNow,
-            exception
-        );
-
-        foreach (var registration in _spec.Observers)
-        {
-            if (ReferenceEquals(registration.Observer, failedRegistration.Observer))
-                continue;
-
-            try
-            {
-                await registration.Observer.OnEventAsync(failureEvent, ct).ConfigureAwait(false);
-            }
-            catch (Exception)
-                when (registration.FailurePolicy != ObserverFailurePolicy.FaultPipeline
-                    && registration.Reliability != ObserverReliability.Critical
-                )
-            {
-                // Best-effort observer failure notifications must not recurse indefinitely.
-            }
         }
     }
 
@@ -1290,17 +1349,44 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         return breaker;
     }
 
-    private static CircuitBreaker? CreateBreaker(ITypedPipelineStage stage)
+    private CircuitBreaker? CreateBreaker(ITypedPipelineStage stage)
     {
         var policy = stage.FailureOptions.CircuitBreaker;
         if (policy is null)
             return null;
+        policy.Validate();
+
+        if (policy.EvaluationMode == CircuitBreakerEvaluationMode.FailureRatio)
+        {
+            return new CircuitBreaker(
+                failureRatio: policy.FailureRatio,
+                samplingDuration: policy.SamplingDuration,
+                minimumThroughput: policy.MinimumThroughput,
+                breakDuration: policy.BreakDuration,
+                maxHalfOpenRequests: policy.MaxHalfOpenRequests,
+                clock: new PipelineClockAdapter(_clock)
+            );
+        }
+
         return new CircuitBreaker(
             failureRatio: 0.5,
             samplingDuration: policy.BreakDuration,
             minimumThroughput: policy.FailureThreshold,
             breakDuration: policy.BreakDuration,
-            maxHalfOpenRequests: 3
+            maxHalfOpenRequests: 3,
+            clock: new PipelineClockAdapter(_clock)
         );
     }
+}
+
+internal sealed class PipelineClockAdapter : IClock
+{
+    private readonly IPipelineClock _clock;
+
+    public PipelineClockAdapter(IPipelineClock clock)
+    {
+        _clock = clock;
+    }
+
+    public DateTime UtcNow => _clock.GetUtcNow().UtcDateTime;
 }

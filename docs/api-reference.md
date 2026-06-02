@@ -95,6 +95,18 @@ Carries typed payload plus run metadata:
 
 Use `FromContext` and `ToContext` to bridge legacy contexts.
 
+Factory helpers:
+
+```csharp
+var envelope = ProcessingEnvelope<Order>.Create(order);
+
+var explicitEnvelope = ProcessingEnvelope<Order>.Create(
+    order,
+    pipelineId: "orders-sync",
+    runId: "run-001",
+    traceId: 123);
+```
+
 ### StageResult<T>
 
 Typed stage result with:
@@ -153,6 +165,42 @@ Legacy chains use `ITransformer` and finish with `To(ISink<T>)`, which returns a
 Typed chains use `IPipelineTransformer` and finish with `Run()`,
 `To(IPipelineSink<T>)`, or `ToFactory(...)`, each returning `PipelineRun<T>`.
 
+Typed identity and runtime options are additive:
+
+```csharp
+var run = PipelineBuilder
+    .From(source)
+    .WithPipelineId("orders-sync")
+    .WithRuntimeOptions(new PipelineRuntimeOptions
+    {
+        OutputCapacity = 1024,
+        Clock = SystemPipelineClock.Instance,
+        ObserverDispatch = ObserverDispatchOptions.Inline,
+    })
+    .Transform(transformer)
+    .Run();
+```
+
+If `WithPipelineId` is not called, current generated pipeline id behavior is
+preserved. If `WithRuntimeOptions` is not called, output buffering, observer
+dispatch, clock, retry, sink, and circuit breaker defaults are preserved.
+
+### PipelineRuntimeOptions
+
+Runtime options:
+
+- `OutputCapacity`;
+- `OutputFullMode`;
+- `ObserverDispatch`;
+- `Clock`.
+
+`IPipelineClock` exposes `GetUtcNow`, `GetTimestamp`, and `GetElapsedTime`.
+`SystemPipelineClock` is the default. `TimeProviderPipelineClock` adapts a .NET
+`TimeProvider`.
+
+`ObserverDispatchOptions` supports `Inline`, `BufferedBestEffort`, and
+`BufferedReliable`. Inline is the default.
+
 ### PipelineDefinition
 
 Declarative topology containing pipeline id, component registrations, stage
@@ -198,6 +246,12 @@ Properties:
 ### CircuitBreakerPolicy
 
 Properties:
+
+- `EvaluationMode`;
+- `FailureRatio`;
+- `SamplingDuration`;
+- `MinimumThroughput`;
+- `MaxHalfOpenRequests`;
 
 - `FailureThreshold`;
 - `BreakDuration`.
