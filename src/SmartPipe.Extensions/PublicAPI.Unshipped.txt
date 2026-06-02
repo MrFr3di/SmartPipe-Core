@@ -1,13 +1,1 @@
 #nullable enable
-SmartPipe.Extensions.Selectors.DeadLetterSource<T>.DeadLetterSource(string! path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! valueTypeInfo) -> void
-SmartPipe.Extensions.Selectors.JsonFileSource<T>.JsonFileSource(string! path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Generic.List<T>!>! listTypeInfo, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! itemTypeInfo) -> void
-SmartPipe.Extensions.Sinks.DeadLetterSink<T>.DeadLetterSink() -> void
-SmartPipe.Extensions.Sinks.DeadLetterSink<T>.DeadLetterSink(string! path) -> void
-SmartPipe.Extensions.Sinks.DeadLetterSink<T>.DeadLetterSink(string! path, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Sinks.DeadLetterSink<T>!>? logger) -> void
-SmartPipe.Extensions.Sinks.DeadLetterSink<T>.DeadLetterSink(string! path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<SmartPipe.Core.ProcessingResult<T>>! resultTypeInfo) -> void
-SmartPipe.Extensions.Sinks.DeadLetterSink<T>.DeadLetterSink(string! path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<SmartPipe.Core.ProcessingResult<T>>! resultTypeInfo, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Sinks.DeadLetterSink<T>!>? logger, System.IO.Stream? stream) -> void
-SmartPipe.Extensions.Sinks.JsonFileSink<T>.JsonFileSink(string! path) -> void
-SmartPipe.Extensions.Sinks.JsonFileSink<T>.JsonFileSink(string! path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Generic.List<T>!>! batchTypeInfo) -> void
-SmartPipe.Extensions.Sinks.JsonFileSink<T>.JsonFileSink(string! path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Generic.List<T>!>! batchTypeInfo, int flushInterval) -> void
-SmartPipe.Extensions.Transforms.JsonTransform<TInput, TOutput>.JsonTransform() -> void
-SmartPipe.Extensions.Transforms.JsonTransform<TInput, TOutput>.JsonTransform(System.Text.Json.Serialization.Metadata.JsonTypeInfo<TInput>! inputTypeInfo, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TOutput>! outputTypeInfo) -> void

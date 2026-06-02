@@ -68,6 +68,7 @@ Use `RunInBackground` when a legacy pipeline should expose its output as a
 
 ```csharp
 var pipeline = new SmartPipeChannel<int, int>();
+pipeline.AddSource(new NumbersSource([1, 2, 3]));
 pipeline.AddTransformer(new MiddlewareTransformer<int>(x => x * 2));
 
 var reader = pipeline.RunInBackground();
@@ -75,6 +76,24 @@ var reader = pipeline.RunInBackground();
 await foreach (var result in reader.ReadAllAsync())
 {
     // Consume result.
+}
+
+sealed class NumbersSource(IEnumerable<int> values) : ISource<int>
+{
+    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+    public async IAsyncEnumerable<ProcessingContext<int>> ReadAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        foreach (var value in values)
+        {
+            ct.ThrowIfCancellationRequested();
+            yield return new ProcessingContext<int>(value);
+            await Task.Yield();
+        }
+    }
+
+    public Task DisposeAsync() => Task.CompletedTask;
 }
 ```
 

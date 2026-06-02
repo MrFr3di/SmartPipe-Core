@@ -209,7 +209,11 @@ SmartPipe.Core.NoOpDeadLetterRedactor<T>
 SmartPipe.Core.NoOpDeadLetterRedactor<T>.NoOpDeadLetterRedactor() -> void
 SmartPipe.Core.NoOpDeadLetterRedactor<T>.Redact(SmartPipe.Core.DeadLetterEnvelope<T>! envelope) -> SmartPipe.Core.DeadLetterEnvelope<T>!
 SmartPipe.Core.ObjectPool<T>
+SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory) -> void
+SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory, int capacity) -> void
 SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory, int capacity = 256, int maxCapacity = 1024) -> void
+SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory, System.Action<T!>? reset, int capacity) -> void
+SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory, System.Action<T!>? reset, int capacity, int maxCapacity) -> void
 SmartPipe.Core.ObjectPool<T>.Rent() -> T!
 SmartPipe.Core.ObjectPool<T>.Return(T! item) -> void
 SmartPipe.Core.ObserverFailedEvent

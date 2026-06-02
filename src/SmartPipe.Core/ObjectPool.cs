@@ -4,9 +4,10 @@ using System.Threading;
 
 namespace SmartPipe.Core;
 
-/// <summary>Lock-free object pool with ABA-safe Rent/Return.
-/// Uses version stamps to prevent ABA race conditions.
-/// Enforces a maximum total capacity to prevent unbounded growth under sustained load.</summary>
+/// <summary>
+/// Thread-safe object pool that uses <see cref="Interlocked"/> operations for rent and return coordination.
+/// Enforces a maximum total capacity to prevent unbounded growth under sustained load.
+/// </summary>
 /// <typeparam name="T">Type of pooled objects.</typeparam>
 public class ObjectPool<T>
     where T : class

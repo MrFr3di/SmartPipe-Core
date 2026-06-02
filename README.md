@@ -61,14 +61,14 @@ await run.Completion;
 
 ## Docs
 
-- [Getting started](docs/getting-started.md)
-- [Configuration](docs/configuration.md)
-- [Resilience and failure semantics](docs/resilience.md)
-- [Runtime architecture](docs/architecture.md)
-- [API reference](docs/api-reference.md)
-- [AOT and trimming compatibility](docs/aot-compatibility.md)
-- [1.0 to 1.1 migration guide](docs/migration/1.0-to-1.1.md)
-- [Changelog](CHANGELOG.md)
+- [Getting started](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/getting-started.md)
+- [Configuration](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/configuration.md)
+- [Resilience and failure semantics](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/resilience.md)
+- [Runtime architecture](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/architecture.md)
+- [API reference](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/api-reference.md)
+- [AOT and trimming compatibility](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/aot-compatibility.md)
+- [1.0 to 1.1 migration guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/1.0-to-1.1.md)
+- [Changelog](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CHANGELOG.md)
 
 ## Requirements
 
@@ -87,15 +87,6 @@ await run.Completion;
   `LegacySourceAdapter<T>`, `LegacyTransformerAdapter<TInput,TOutput>`, and
   `LegacySinkAdapter<T>`.
 
-## Claims Policy
-
-Release-facing documentation does not claim exactly-once delivery,
-package-wide AOT readiness, zero dependencies, zero allocations, exact coverage,
-or exact current test counts unless committed CI, package, benchmark, or
-consumer validation proves the claim. Legacy Extensions dead-letter records
-are diagnostic; replay-safe dead-letter uses `DeadLetterEnvelope<T>` and
-`JsonLinesDeadLetterSerializer<T>`.
-
 ## License
 
-MIT License.
+MIT [License](https://github.com/MrFr3di/SmartPipe-Core/blob/main/License.md).

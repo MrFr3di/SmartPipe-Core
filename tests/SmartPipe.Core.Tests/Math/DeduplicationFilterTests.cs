@@ -53,6 +53,32 @@ public class DeduplicationFilterTests
         filter.ContainsAndAdd(1UL).Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenExpectedItemsIsInvalid(long expectedItems)
+    {
+        var act = () => new DeduplicationFilter(expectedItems: expectedItems);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("expectedItems");
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-0.1)]
+    [InlineData(1.0)]
+    [InlineData(1.1)]
+    [InlineData(double.NaN)]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenFalsePositiveRateIsInvalid(
+        double falsePositiveRate)
+    {
+        var act = () => new DeduplicationFilter(falsePositiveRate: falsePositiveRate);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("falsePositiveRate");
+    }
+
     [Fact]
     public void TtlCleanup_ShouldNotCreateFalseNegativeForNonExpiredItemSharingBits()
     {

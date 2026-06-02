@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace SmartPipe.Core;
 
-/// <summary>Lock-free retry queue with cryptographically secure jitter.</summary>
+/// <summary>Thread-safe retry queue with cryptographically secure jitter.</summary>
 /// <typeparam name="T">Type of payload.</typeparam>
 /// <remarks>
 /// Applies cryptographic jitter to retry delays to prevent thundering herd.

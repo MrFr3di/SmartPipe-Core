@@ -23,7 +23,7 @@ public enum CircuitState
 }
 
 /// <summary>
-/// Lock-free Circuit Breaker with hybrid failure detection:
+/// Thread-safe circuit breaker with hybrid failure detection:
 /// EWMA for fast reaction + Sliding window for accurate threshold decisions.
 /// </summary>
 /// <remarks>

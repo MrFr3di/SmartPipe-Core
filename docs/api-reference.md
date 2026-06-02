@@ -348,6 +348,7 @@ new DeadLetterSink<T>(
     Stream? stream = null);
 ```
 
-`src/SmartPipe.Extensions/PublicAPI.Unshipped.txt` currently contains these
-JSON/dead-letter overloads as 1.1.0 additions. Core `PublicAPI.Unshipped.txt`
-contains no public entries beyond `#nullable enable`.
+These overloads are accepted into the `1.1.0` public API baseline and are
+recorded in `src/SmartPipe.Extensions/PublicAPI.Shipped.txt`. Core and
+Extensions `PublicAPI.Unshipped.txt` files contain no public entries beyond
+`#nullable enable` for this release-candidate state.
