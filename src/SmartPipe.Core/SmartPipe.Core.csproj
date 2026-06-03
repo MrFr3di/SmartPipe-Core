@@ -10,7 +10,7 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageIcon>icon.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageTags>etl;pipeline;channels;resilience;circuit-breaker;retry;deduplication;opentelemetry;performance</PackageTags>
+    <PackageTags>etl;pipeline;channels;in-process;streaming;dataflow;resilience;circuit-breaker;retry;dead-letter;deduplication;performance</PackageTags>
     <RepositoryUrl>https://github.com/MrFr3di/SmartPipe-Core</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageProjectUrl>https://github.com/MrFr3di/SmartPipe-Core</PackageProjectUrl>

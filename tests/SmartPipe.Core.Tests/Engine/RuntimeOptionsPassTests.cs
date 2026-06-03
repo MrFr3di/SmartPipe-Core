@@ -73,6 +73,30 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
+    public void ProcessingEnvelope_FromContext_WithClock_ShouldUseClockTimestamp()
+    {
+        var now = new DateTimeOffset(2026, 6, 3, 8, 15, 0, TimeSpan.Zero);
+        var clock = new ManualPipelineClock(now);
+        var context = new ProcessingContext<int>(42, new Dictionary<string, string>())
+        {
+            TraceId = 123,
+        };
+
+        var envelope = ProcessingEnvelope<int>.FromContext(
+            context,
+            clock,
+            "legacy-pipeline",
+            "legacy-run"
+        );
+
+        envelope.Payload.Should().Be(42);
+        envelope.TraceId.Should().Be(123);
+        envelope.PipelineId.Should().Be("legacy-pipeline");
+        envelope.RunId.Should().Be("legacy-run");
+        envelope.CreatedAtUtc.Should().Be(now);
+    }
+
+    [Fact]
     public async Task PipelineBuilder_WithoutPipelineId_ShouldKeepExistingEnvelopePipelineId()
     {
         var run = PipelineBuilder
@@ -237,6 +261,37 @@ public class RuntimeOptionsPassTests
         await run.Completion;
 
         outputs.Select(o => o.Result.Value).Should().Equal("1", "2", "3");
+    }
+
+    [Fact]
+    public async Task RuntimeOptions_BoundedOutput_WithSinkAndUnreadOutputs_ShouldRequireOutputConsumer()
+    {
+        var sink = new EnvelopeCollectingSink<string>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    OutputCapacity = 1,
+                    OutputFullMode = BoundedChannelFullMode.Wait,
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .To(sink);
+
+        await Task.Delay(100);
+
+        run.Completion.IsCompleted.Should().BeFalse(
+            "bounded output with Wait backpressures the run when outputs are not consumed"
+        );
+        sink.Payloads.Should().Equal("1");
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        outputs.Select(o => o.Result.Value).Should().Equal("1", "2");
+        sink.Payloads.Should().Equal("1", "2");
     }
 
     [Theory]
@@ -612,6 +667,51 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
+    public void ObserverDispatch_BufferedReliable_ShouldRejectFlushOnCompletionFalse()
+    {
+        var act = () =>
+            PipelineBuilder
+                .From(new EnvelopeSource<int>(1))
+                .WithRuntimeOptions(
+                    new PipelineRuntimeOptions
+                    {
+                        ObserverDispatch = new ObserverDispatchOptions
+                        {
+                            Mode = ObserverDispatchMode.BufferedReliable,
+                            FlushOnCompletion = false,
+                        },
+                    }
+                );
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("BufferedReliable requires FlushOnCompletion = true.");
+    }
+
+    [Fact]
+    public async Task ObserverDispatch_ObserverFailureEvent_ShouldUsePipelineClock()
+    {
+        var now = new DateTimeOffset(2026, 6, 3, 9, 30, 0, TimeSpan.Zero);
+        var clock = new ManualPipelineClock(now);
+        var recording = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithRuntimeOptions(new PipelineRuntimeOptions { Clock = clock })
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(new ThrowingObserver())
+            .WithObserver(recording)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        var failureEvents = recording.Events.OfType<ObserverFailedEvent>().ToArray();
+        failureEvents.Should().NotBeEmpty();
+        failureEvents.Should().OnlyContain(e => e.TimestampUtc == now);
+    }
+
+    [Fact]
     public async Task RuntimeOptions_Stress_BufferedObservers_NoHang_NoUnobservedExceptions()
     {
         var observer = new RecordingObserver();
@@ -663,7 +763,32 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
-    public async Task CircuitBreaker_Default_ShouldPreserveExistingFailureThresholdBehavior()
+    public async Task TypedPipeline_DrainAsync_ShouldMatchDocumentedCompletionWaitSemantics()
+    {
+        var source = new GateControlledSource<int>(1, 2);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .Run();
+
+        await source.FirstItemYielded.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await run.DrainAsync(TimeSpan.FromMilliseconds(50));
+
+        run.Completion.IsCompleted.Should().BeFalse(
+            "typed DrainAsync waits for completion but does not independently stop source enumeration"
+        );
+
+        source.ReleaseRemainingItems();
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        outputs.Select(o => o.Result.Value).Should().Equal(1, 2);
+    }
+
+    [Fact]
+    public async Task CircuitBreaker_CompatibilityThreshold_ShouldPreserveDefaultBehavior()
     {
         var observer = new RecordingObserver();
 
@@ -675,6 +800,7 @@ public class RuntimeOptionsPassTests
                 {
                     CircuitBreaker = new CircuitBreakerPolicy
                     {
+                        EvaluationMode = CircuitBreakerEvaluationMode.CompatibilityThreshold,
                         FailureThreshold = 2,
                         BreakDuration = TimeSpan.FromMinutes(5),
                     },
@@ -822,7 +948,7 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
-    public async Task TypedRuntime_RatioCircuitBreaker_ShouldUseSamplingModeOnlyWhenConfigured()
+    public async Task CircuitBreaker_FailureRatio_ShouldUseSamplingModeOnlyWhenConfigured()
     {
         var observer = new RecordingObserver();
         var transformer = new CountingFailingTransformer<int, string>();
@@ -971,6 +1097,55 @@ public class RuntimeOptionsPassTests
                 await Task.Yield();
             }
         }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class GateControlledSource<T> : IPipelineSource<T>
+    {
+        private readonly ProcessingEnvelope<T>[] _items;
+        private readonly TaskCompletionSource _releaseRemainingItems =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public GateControlledSource(params T[] payloads)
+        {
+            _items = payloads
+                .Select(payload =>
+                    ProcessingEnvelope<T>.Create(
+                        payload,
+                        "source-pipeline",
+                        "source-run",
+                        (ulong)Random.Shared.Next(1, int.MaxValue)
+                    )
+                )
+                .ToArray();
+        }
+
+        public TaskCompletionSource FirstItemYielded { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
+        )
+        {
+            if (_items.Length == 0)
+                yield break;
+
+            yield return _items[0];
+            FirstItemYielded.TrySetResult();
+
+            await _releaseRemainingItems.Task.WaitAsync(ct).ConfigureAwait(false);
+
+            for (var i = 1; i < _items.Length; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                yield return _items[i];
+            }
+        }
+
+        public void ReleaseRemainingItems() => _releaseRemainingItems.TrySetResult();
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

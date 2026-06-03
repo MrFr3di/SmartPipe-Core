@@ -43,8 +43,8 @@ public enum RetryQueueOverflowPolicy
 /// <summary>Evaluation model used by a stage circuit breaker.</summary>
 public enum CircuitBreakerEvaluationMode
 {
-    /// <summary>Use the existing consecutive failure threshold behavior.</summary>
-    ConsecutiveFailures,
+    /// <summary>Use the existing compatibility threshold behavior.</summary>
+    CompatibilityThreshold,
 
     /// <summary>Use failure-ratio evaluation over a sampling window.</summary>
     FailureRatio,
@@ -71,7 +71,7 @@ public sealed class CircuitBreakerPolicy
 
     /// <summary>Gets the circuit breaker evaluation mode.</summary>
     public CircuitBreakerEvaluationMode EvaluationMode { get; init; } =
-        CircuitBreakerEvaluationMode.ConsecutiveFailures;
+        CircuitBreakerEvaluationMode.CompatibilityThreshold;
 
     /// <summary>Gets the failure ratio threshold for ratio mode.</summary>
     public double FailureRatio { get; init; } = 0.1;

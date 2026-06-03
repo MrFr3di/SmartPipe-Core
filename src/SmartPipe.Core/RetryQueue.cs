@@ -275,7 +275,14 @@ public class RetryQueue<T>
 
     private static TimeSpan ApplyJitter(TimeSpan baseDelay)
     {
-        double jitterFactor = 0.75 + (RandomNumberGenerator.GetInt32(0, 101) / 100.0 * 0.25);
+        return ApplyJitter(baseDelay, RandomNumberGenerator.GetInt32(0, 101));
+    }
+
+    internal static TimeSpan ApplyJitter(TimeSpan baseDelay, int jitterBucket)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(jitterBucket);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(jitterBucket, 100);
+        double jitterFactor = 0.75 + (jitterBucket / 100.0 * 0.5);
         return TimeSpan.FromTicks((long)(baseDelay.Ticks * jitterFactor));
     }
 }

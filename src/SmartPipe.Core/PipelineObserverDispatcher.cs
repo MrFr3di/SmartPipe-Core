@@ -15,12 +15,14 @@ internal static class PipelineObserverDispatcher
 {
     public static IPipelineObserverDispatcher Create(
         IReadOnlyList<PipelineObserverRegistration> observers,
-        ObserverDispatchOptions options
+        ObserverDispatchOptions options,
+        IPipelineClock clock
     )
     {
         options.Validate();
+        ArgumentNullException.ThrowIfNull(clock);
         return options.Mode == ObserverDispatchMode.Inline
-            ? new InlinePipelineObserverDispatcher(observers)
+            ? new InlinePipelineObserverDispatcher(observers, clock)
             : new BufferedPipelineObserverDispatcher(observers, options);
     }
 }
@@ -28,10 +30,15 @@ internal static class PipelineObserverDispatcher
 internal sealed class InlinePipelineObserverDispatcher : IPipelineObserverDispatcher
 {
     private readonly IReadOnlyList<PipelineObserverRegistration> _observers;
+    private readonly IPipelineClock _clock;
 
-    public InlinePipelineObserverDispatcher(IReadOnlyList<PipelineObserverRegistration> observers)
+    public InlinePipelineObserverDispatcher(
+        IReadOnlyList<PipelineObserverRegistration> observers,
+        IPipelineClock clock
+    )
     {
         _observers = observers;
+        _clock = clock;
     }
 
     public async ValueTask EmitAsync(PipelineEvent pipelineEvent, CancellationToken ct)
@@ -66,7 +73,7 @@ internal sealed class InlinePipelineObserverDispatcher : IPipelineObserverDispat
             sourceEvent.PipelineId,
             sourceEvent.RunId,
             failedRegistration.Observer.GetType().Name,
-            DateTimeOffset.UtcNow,
+            _clock.GetUtcNow(),
             exception
         );
 

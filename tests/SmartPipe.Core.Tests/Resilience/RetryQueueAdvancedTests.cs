@@ -351,4 +351,18 @@ public class RetryQueueAdvancedTests
         readyItem!.Value.Context.Payload.Should().Be("scheduled-item");
         queue.HasPendingItems.Should().BeFalse();
     }
+
+    [Fact]
+    public void RetryQueue_ApplyJitter_ShouldUseSymmetricRangeAroundBaseDelay()
+    {
+        var baseDelay = TimeSpan.FromSeconds(1);
+
+        var minimum = RetryQueue<string>.ApplyJitter(baseDelay, 0);
+        var midpoint = RetryQueue<string>.ApplyJitter(baseDelay, 50);
+        var maximum = RetryQueue<string>.ApplyJitter(baseDelay, 100);
+
+        minimum.Should().Be(TimeSpan.FromMilliseconds(750));
+        midpoint.Should().Be(baseDelay);
+        maximum.Should().Be(TimeSpan.FromMilliseconds(1250));
+    }
 }

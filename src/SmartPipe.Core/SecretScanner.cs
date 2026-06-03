@@ -1,4 +1,5 @@
 #nullable enable
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace SmartPipe.Core;
@@ -13,26 +14,33 @@ public static class SecretScanner
     // - Double-encoded secrets: Base64 within Base64, or URL then Base64 (depth 2)
     // Depth 3 provides safety margin for edge cases with multiple nested encodings.
     private const int MaxRecursionDepth = 3;
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(250);
 
     private static readonly Regex[] Patterns =
     {
-        new(@"api[_-]?key\s*[:=]\s*['""].+?['""]", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new(@"password\s*[:=]\s*['""].+?['""]", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new(@"sk-[a-zA-Z0-9]{32,}", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new(
+        CreateRegex(@"api[_-]?key\s*[:=]\s*['""].+?['""]", RegexOptions.IgnoreCase),
+        CreateRegex(@"password\s*[:=]\s*['""].+?['""]", RegexOptions.IgnoreCase),
+        CreateRegex(@"sk-[a-zA-Z0-9]{32,}", RegexOptions.IgnoreCase),
+        CreateRegex(
             @"-----BEGIN\s(?:RSA|OPENSSH|DSA|EC)\sPRIVATE KEY-----",
-            RegexOptions.Singleline | RegexOptions.Compiled
+            RegexOptions.Singleline
         ),
-        new(@"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", RegexOptions.Compiled),
-        new(@"AKIA[0-9A-Z]{16}", RegexOptions.Compiled),
-        new(@"ghp_[A-Za-z0-9]{36}", RegexOptions.Compiled),
-        new(@"ya29\.[A-Za-z0-9_-]+", RegexOptions.Compiled),
+        CreateRegex(@"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
+        CreateRegex(@"AKIA[0-9A-Z]{16}"),
+        CreateRegex(@"ghp_[A-Za-z0-9]{36}"),
+        CreateRegex(@"ya29\.[A-Za-z0-9_-]+"),
     };
 
-    private static readonly Regex UrlEncodedPattern = new(
-        @"%[0-9A-Fa-f]{2}",
-        RegexOptions.Compiled
-    );
+    private static readonly Regex UrlEncodedPattern = CreateRegex(@"%[0-9A-Fa-f]{2}");
+
+    private static Regex CreateRegex(string pattern, RegexOptions options = RegexOptions.None)
+    {
+        return new Regex(
+            pattern,
+            options | RegexOptions.Compiled | RegexOptions.CultureInvariant,
+            RegexTimeout
+        );
+    }
 
     /// <summary>Check if content contains any secrets (API keys, passwords, private keys).</summary>
     /// <param name="content">String to scan.</param>
@@ -56,8 +64,17 @@ public static class SecretScanner
     private static bool CheckPatterns(string content)
     {
         foreach (var p in Patterns)
-            if (p.IsMatch(content))
-                return true;
+        {
+            try
+            {
+                if (p.IsMatch(content))
+                    return true;
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                return false;
+            }
+        }
         return false;
     }
 
@@ -98,21 +115,38 @@ public static class SecretScanner
     private static string ApplyPatternRedaction(string content)
     {
         foreach (var p in Patterns)
-            content = p.Replace(content, "***REDACTED***");
+        {
+            try
+            {
+                content = p.Replace(content, "***REDACTED***");
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                return content;
+            }
+        }
         return content;
     }
 
     private static string TryDecodeAndRedactBase64(string content, int depth)
     {
         if (TryDecodeBase64(content) is { } base64Decoded)
-            return RedactInternal(base64Decoded, depth + 1);
+        {
+            var redacted = RedactInternal(base64Decoded, depth + 1);
+            if (redacted != base64Decoded)
+                return Convert.ToBase64String(Encoding.UTF8.GetBytes(redacted));
+        }
         return content;
     }
 
     private static string TryDecodeAndRedactUrl(string content, int depth)
     {
         if (TryDecodeUrl(content) is { } urlDecoded)
-            return RedactInternal(urlDecoded, depth + 1);
+        {
+            var redacted = RedactInternal(urlDecoded, depth + 1);
+            if (redacted != urlDecoded)
+                return Uri.EscapeDataString(redacted);
+        }
         return content;
     }
 
@@ -149,7 +183,7 @@ public static class SecretScanner
         var buffer = new byte[content.Length];
         if (Convert.TryFromBase64String(content, buffer, out var bytesWritten))
         {
-            var decoded = System.Text.Encoding.UTF8.GetString(buffer, 0, bytesWritten);
+            var decoded = Encoding.UTF8.GetString(buffer, 0, bytesWritten);
             if (!string.IsNullOrEmpty(decoded) && decoded != content)
                 return decoded;
         }
@@ -181,8 +215,15 @@ public static class SecretScanner
         if (string.IsNullOrEmpty(content))
             return null;
 
-        if (!UrlEncodedPattern.IsMatch(content))
+        try
+        {
+            if (!UrlEncodedPattern.IsMatch(content))
+                return null;
+        }
+        catch (RegexMatchTimeoutException)
+        {
             return null;
+        }
 
         try
         {

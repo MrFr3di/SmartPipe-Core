@@ -53,7 +53,7 @@ public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             _logger.LogInformation("SmartPipe pipeline cancelled, draining...");
-            await DrainPipelineAsync();
+            await DrainPipelineAsync(ct);
         }
         catch (InvalidOperationException ex)
         {
@@ -79,24 +79,58 @@ public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
     public override async Task StopAsync(CancellationToken ct)
     {
         _logger.LogInformation("SmartPipe pipeline stopping, draining...");
-        await DrainPipelineAsync();
-        await _pipeline.DisposeAsync().ConfigureAwait(false);
-        await base.StopAsync(ct);
+        await DrainPipelineAsync(ct);
+        await base.StopAsync(ct).ConfigureAwait(false);
+        await DisposePipelineAsync().ConfigureAwait(false);
     }
 
     /// <summary>
     /// Drains the pipeline with the configured timeout.
     /// </summary>
-    private async Task DrainPipelineAsync()
+    private async Task DrainPipelineAsync(CancellationToken stoppingToken)
     {
-        using var drainCts = new CancellationTokenSource(DrainTimeout);
+        using var timeoutCts = new CancellationTokenSource(DrainTimeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            stoppingToken,
+            timeoutCts.Token
+        );
         try
         {
-            await _pipeline.DrainAsync(DrainTimeout, drainCts.Token);
+            await _pipeline.DrainAsync(DrainTimeout, linkedCts.Token);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex) when (stoppingToken.IsCancellationRequested)
         {
-            _logger.LogWarning("SmartPipe pipeline drain timed out after {Timeout}", DrainTimeout);
+            _logger.LogWarning(
+                ex,
+                "SmartPipe pipeline drain aborted by host cancellation"
+            );
+        }
+        catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "SmartPipe pipeline drain timed out after {Timeout}", DrainTimeout);
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.LogWarning(ex, "SmartPipe pipeline drain timed out after {Timeout}", DrainTimeout);
+        }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogInformation(
+                ex,
+                "SmartPipe pipeline drain observed pipeline cancellation"
+            );
+        }
+    }
+
+    private async Task DisposePipelineAsync()
+    {
+        try
+        {
+            await _pipeline.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogDebug(ex, "SmartPipe pipeline dispose observed cancellation after stop");
         }
     }
 }

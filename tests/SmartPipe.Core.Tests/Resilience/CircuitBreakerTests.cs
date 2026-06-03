@@ -92,6 +92,61 @@ public class CircuitBreakerTests
         metrics.Should().ContainKey("cb_ewma_failure_rate");
     }
 
+    [Fact]
+    public void CircuitBreaker_RatioMode_CleanupWindow_ShouldNotReorderSamples()
+    {
+        var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
+        var clock = new ManualClock(now);
+        var cb = new CircuitBreaker(samplingDuration: TimeSpan.FromMinutes(1), clock: clock);
+        var window = GetWindow(cb);
+        var first = (now.AddSeconds(-10), true);
+        var second = (now.AddSeconds(-5), false);
+        window.Enqueue(first);
+        window.Enqueue(second);
+
+        InvokeCleanupWindow(cb);
+
+        window.ToArray().Should().Equal(first, second);
+    }
+
+    [Fact]
+    public void CircuitBreaker_RatioMode_ShouldRemoveExpiredSamples()
+    {
+        var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
+        var clock = new ManualClock(now);
+        var cb = new CircuitBreaker(samplingDuration: TimeSpan.FromMinutes(1), clock: clock);
+        var window = GetWindow(cb);
+        var expired = (now.AddMinutes(-2), false);
+        var current = (now.AddSeconds(-5), true);
+        window.Enqueue(expired);
+        window.Enqueue(current);
+
+        InvokeCleanupWindow(cb);
+
+        window.ToArray().Should().Equal(current);
+    }
+
+    [Fact]
+    public void CircuitBreaker_RatioMode_ShouldNotKeepExpiredSamplesBehindNewerItems()
+    {
+        var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
+        var clock = new ManualClock(now);
+        var cb = new CircuitBreaker(samplingDuration: TimeSpan.FromMinutes(1), clock: clock);
+        var window = GetWindow(cb);
+        var expired1 = (now.AddMinutes(-2), false);
+        var expired2 = (now.AddMinutes(-3), false);
+        var current1 = (now.AddSeconds(-10), true);
+        var current2 = (now.AddSeconds(-5), true);
+        window.Enqueue(expired1);
+        window.Enqueue(expired2);
+        window.Enqueue(current1);
+        window.Enqueue(current2);
+
+        InvokeCleanupWindow(cb);
+
+        window.ToArray().Should().Equal(current1, current2);
+    }
+
     private readonly ITestOutputHelper _output;
 
     public CircuitBreakerTests(ITestOutputHelper output)
@@ -225,5 +280,37 @@ public class CircuitBreakerTests
         _output.WriteLine("Race condition test completed. If the TryPeek+TryDequeue pattern has a race,");
         _output.WriteLine("it could cause items to be incorrectly removed from the queue.");
         _output.WriteLine("The fix is to replace TryPeek+TryDequeue with TryDequeue+check pattern.");
+    }
+
+    private static ConcurrentQueue<(DateTime Timestamp, bool IsSuccess)> GetWindow(CircuitBreaker cb)
+    {
+        var windowField = typeof(CircuitBreaker).GetField(
+            "_window",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
+
+        windowField.Should().NotBeNull();
+        return (ConcurrentQueue<(DateTime Timestamp, bool IsSuccess)>)windowField!.GetValue(cb)!;
+    }
+
+    private static void InvokeCleanupWindow(CircuitBreaker cb)
+    {
+        var cleanupMethod = typeof(CircuitBreaker).GetMethod(
+            "CleanupWindow",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
+
+        cleanupMethod.Should().NotBeNull();
+        cleanupMethod!.Invoke(cb, null);
+    }
+
+    private sealed class ManualClock : IClock
+    {
+        public ManualClock(DateTime utcNow)
+        {
+            UtcNow = utcNow;
+        }
+
+        public DateTime UtcNow { get; }
     }
 }

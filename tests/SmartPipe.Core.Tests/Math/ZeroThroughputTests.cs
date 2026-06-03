@@ -130,7 +130,7 @@ public class ZeroThroughputTests
     }
 
     [Fact]
-    public async Task CircuitBreaker_ShouldOpen_AfterConsecutiveFailures()
+    public async Task CircuitBreaker_ShouldOpen_AfterThresholdFailures()
     {
         // Arrange
         var simulator = new PipelineSimulator(seed: 42);
@@ -156,9 +156,9 @@ public class ZeroThroughputTests
         // Act
         await channel.RunAsync();
 
-        // Assert - CircuitBreaker should have opened due to consecutive failures
+        // Assert - CircuitBreaker should have opened due to threshold failures
         // The CircuitBreaker opens when: failures >= minimumThroughput (10) AND failureRatio >= 0.5
-        // With 11 consecutive failures, it should definitely open
+        // With 11 threshold failures, it should definitely open
         var dashboard = channel.CreateDashboard();
         
         // Verify that the circuit breaker state was Open during processing

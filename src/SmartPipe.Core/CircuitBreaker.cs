@@ -240,17 +240,10 @@ public class CircuitBreaker
     private void CleanupWindow()
     {
         var cutoff = _clock.UtcNow - _samplingDuration;
-        while (_window.TryDequeue(out var item))
+
+        while (_window.TryPeek(out var item) && item.Timestamp < cutoff)
         {
-            if (item.Timestamp >= cutoff)
-            {
-                // Item is not expired - re-enqueue it since we incorrectly removed it.
-                // This handles the race condition where TryPeek+TryDequeue would
-                // incorrectly remove a non-expired item.
-                _window.Enqueue(item);
-                break;
-            }
-            // Item was expired, continue to next item
+            _window.TryDequeue(out _);
         }
     }
 }

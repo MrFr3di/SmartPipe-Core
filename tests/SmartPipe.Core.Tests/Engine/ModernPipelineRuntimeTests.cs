@@ -83,7 +83,7 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
-    public async Task PipelineBuilder_ModernApi_ShouldDisposeRuntimeOwnedComponentsOnce()
+    public async Task TypedRuntime_ShouldDisposeRuntimeOwnedSourceTransformerSink_OnSuccess()
     {
         var source = new CountingEnvelopeSource<int>(1);
         var transformer = new CountingEnvelopeTransformer<int, string>(x =>
@@ -100,6 +100,96 @@ public class ModernPipelineRuntimeTests
         source.DisposeCount.Should().Be(1);
         transformer.DisposeCount.Should().Be(1);
         sink.DisposeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TypedRuntime_ShouldDisposeRuntimeOwnedComponents_OnFailure()
+    {
+        var source = new CountingEnvelopeSource<int>(1);
+        var transformer = new CountingThrowingEnvelopeTransformer<int, string>();
+        var sink = new CountingEnvelopeSink<string>();
+
+        var run = PipelineBuilder.From(source).Transform(transformer).To(sink);
+
+        var act = async () => await run.Completion;
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*stage boom*");
+        source.DisposeCount.Should().Be(1);
+        transformer.DisposeCount.Should().Be(1);
+        sink.DisposeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TypedRuntime_ShouldNotDisposeSingletonExternalComponents()
+    {
+        var source = new CountingEnvelopeSource<int>(
+            PipelineComponentLifetime.SingletonExternal,
+            1
+        );
+        var transformer = new CountingEnvelopeTransformer<int, string>(
+            x => x.ToString(CultureInfo.InvariantCulture),
+            PipelineComponentLifetime.SingletonExternal
+        );
+        var sink = new CountingEnvelopeSink<string>(PipelineComponentLifetime.SingletonExternal);
+
+        var run = PipelineBuilder.From(source).Transform(transformer).To(sink);
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+        await run.DisposeAsync();
+
+        source.DisposeCount.Should().Be(0);
+        transformer.DisposeCount.Should().Be(0);
+        sink.DisposeCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task TypedRuntime_ShouldDisposeBufferedObserverDispatcherOnce()
+    {
+        var observer = new RecordingObserver();
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(
+                new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture))
+            )
+            .WithObserver(observer)
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = ObserverDispatchMode.BufferedReliable,
+                        Capacity = 16,
+                        FlushOnCompletion = true,
+                    },
+                }
+            )
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+        await run.DisposeAsync();
+        await run.DisposeAsync();
+
+        observer.Events.OfType<PipelineStartedEvent>().Should().ContainSingle();
+        observer.Events.OfType<PipelineCompletedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task TypedRuntime_ShouldDisposeOutputsAndCompleteRun_OnFailure()
+    {
+        var source = new CountingEnvelopeSource<int>(1);
+        var transformer = new CountingThrowingEnvelopeTransformer<int, string>();
+
+        var run = PipelineBuilder.From(source).Transform(transformer).Run();
+
+        var completionAct = async () => await run.Completion;
+        var outputsAct = async () => await ReadOutputsAsync(run.Outputs);
+
+        await completionAct.Should().ThrowAsync<InvalidOperationException>().WithMessage("*stage boom*");
+        await outputsAct.Should().ThrowAsync<InvalidOperationException>().WithMessage("*stage boom*");
+        source.DisposeCount.Should().Be(1);
+        transformer.DisposeCount.Should().Be(1);
     }
 
     [Fact]
@@ -959,14 +1049,22 @@ public class ModernPipelineRuntimeTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    private sealed class CountingEnvelopeSource<T> : IPipelineSource<T>
+    private sealed class CountingEnvelopeSource<T> : IPipelineSource<T>, IPipelineComponentDescriptor
     {
         private readonly EnvelopeSource<T> _inner;
 
         public CountingEnvelopeSource(params T[] payloads)
+            : this(PipelineComponentLifetime.SingleUse, payloads) { }
+
+        public CountingEnvelopeSource(PipelineComponentLifetime lifetime, params T[] payloads)
         {
             _inner = new EnvelopeSource<T>(payloads);
+            Lifetime = lifetime;
         }
+
+        public PipelineComponentLifetime Lifetime { get; }
+
+        public bool OwnsResources => Lifetime != PipelineComponentLifetime.SingletonExternal;
 
         public int DisposeCount { get; private set; }
 
@@ -993,14 +1091,26 @@ public class ModernPipelineRuntimeTests
     }
 
     private sealed class CountingEnvelopeTransformer<TInput, TOutput>
-        : IPipelineTransformer<TInput, TOutput>
+        : IPipelineTransformer<TInput, TOutput>,
+            IPipelineComponentDescriptor
     {
         private readonly EnvelopeTransformer<TInput, TOutput> _inner;
 
         public CountingEnvelopeTransformer(Func<TInput, TOutput> transform)
+            : this(transform, PipelineComponentLifetime.SingleUse) { }
+
+        public CountingEnvelopeTransformer(
+            Func<TInput, TOutput> transform,
+            PipelineComponentLifetime lifetime
+        )
         {
             _inner = new EnvelopeTransformer<TInput, TOutput>(transform);
+            Lifetime = lifetime;
         }
+
+        public PipelineComponentLifetime Lifetime { get; }
+
+        public bool OwnsResources => Lifetime != PipelineComponentLifetime.SingletonExternal;
 
         public int DisposeCount { get; private set; }
 
@@ -1018,8 +1128,42 @@ public class ModernPipelineRuntimeTests
         }
     }
 
-    private sealed class CountingEnvelopeSink<T> : IPipelineSink<T>
+    private sealed class CountingThrowingEnvelopeTransformer<TInput, TOutput>
+        : IPipelineTransformer<TInput, TOutput>
     {
+        public int DisposeCount { get; private set; }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<TOutput>> TransformAsync(
+            ProcessingEnvelope<TInput> envelope,
+            CancellationToken ct = default
+        )
+        {
+            throw new InvalidOperationException("stage boom");
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class CountingEnvelopeSink<T> : IPipelineSink<T>, IPipelineComponentDescriptor
+    {
+        public CountingEnvelopeSink()
+            : this(PipelineComponentLifetime.SingleUse) { }
+
+        public CountingEnvelopeSink(PipelineComponentLifetime lifetime)
+        {
+            Lifetime = lifetime;
+        }
+
+        public PipelineComponentLifetime Lifetime { get; }
+
+        public bool OwnsResources => Lifetime != PipelineComponentLifetime.SingletonExternal;
+
         public int DisposeCount { get; private set; }
 
         public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;

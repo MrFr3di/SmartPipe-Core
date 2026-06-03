@@ -45,8 +45,8 @@ await run.Completion;
 
 Typed runtime options are additive and opt-in. Without `PipelineRuntimeOptions`,
 the runtime keeps the existing output channel behavior, inline observer
-dispatch, system clock usage, retry behavior, sink behavior, and consecutive
-failure circuit breaker mode.
+dispatch, system clock usage, retry behavior, sink behavior, and compatibility
+threshold circuit breaker mode.
 
 ## Legacy Runtime
 
@@ -95,6 +95,10 @@ var secondRun = builder.Run();
 `PipelineRun<T>.ReadResultsAsync()` projects the same stream into legacy-style
 results for consumers that do not need envelope data.
 
+If typed `OutputCapacity` is configured with `OutputFullMode.Wait`, callers
+must consume `PipelineRun<T>.Outputs`. In sink-only worker scenarios, leave
+`OutputCapacity` unset so output remains unbounded and default-compatible.
+
 ## Observer Model
 
 Typed pipelines attach observers with `WithObserver`. Events carry pipeline id,
@@ -111,7 +115,10 @@ reported through `ObserverFailedEvent`; critical observer failures or
 `FaultPipeline` observer policies fault the run.
 
 Buffered observer dispatch is available through `PipelineRuntimeOptions` as an
-explicit bounded mode. The default remains inline.
+explicit bounded mode. The default remains inline. `BufferedReliable` requires
+flush-on-completion, and buffered observer failure handling follows the
+configured `ObserverFailureMode`; it is not a full inline-equivalent recursive
+observer-failure propagation model.
 
 ## Stage Failure Model
 
@@ -129,6 +136,10 @@ Supported terminal actions:
 Typed stages support retry, attempt timeout, stage timeout, per-stage circuit
 breaker policy, and replay-safe dead-letter records. Sink retry/timeout and
 typed `PipelineTimeout` are not claimed for 1.1.0.
+
+Typed `PipelineRun<T>.DrainAsync` in 1.1.0 waits for completion or timeout. It
+does not independently stop source enumeration unless the source cooperates
+through cancellation or natural completion.
 
 ## Diagnostics And Adaptive Components
 

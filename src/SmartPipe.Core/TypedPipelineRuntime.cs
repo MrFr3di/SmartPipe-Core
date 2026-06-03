@@ -573,7 +573,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _outputs = CreateOutputChannel(_options);
         _observerDispatcher = PipelineObserverDispatcher.Create(
             _spec.Observers,
-            _options.ObserverDispatch
+            _options.ObserverDispatch,
+            _clock
         );
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
     }

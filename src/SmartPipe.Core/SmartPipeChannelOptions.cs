@@ -82,4 +82,57 @@ public class SmartPipeChannelOptions
     /// <summary>Disable a feature flag.</summary>
     /// <param name="f">Feature flag name.</param>
     public void DisableFeature(string f) => FeatureFlags[f] = false;
+
+    internal void Validate()
+    {
+        if (UseRendezvous)
+        {
+            throw new InvalidOperationException(
+                "UseRendezvous=true sets capacity to 0, which violates the global constraint "
+                    + "\"BoundedCapacity set for all channels\". Disable UseRendezvous or remove this constraint."
+            );
+        }
+
+        if (MaxDegreeOfParallelism <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxDegreeOfParallelism),
+                MaxDegreeOfParallelism,
+                "MaxDegreeOfParallelism must be greater than zero."
+            );
+
+        if (BoundedCapacity <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(BoundedCapacity),
+                BoundedCapacity,
+                "BoundedCapacity must be greater than zero."
+            );
+
+        if (AttemptTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                nameof(AttemptTimeout),
+                AttemptTimeout,
+                "AttemptTimeout must be greater than zero."
+            );
+
+        if (TotalRequestTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                nameof(TotalRequestTimeout),
+                TotalRequestTimeout,
+                "TotalRequestTimeout must be greater than zero."
+            );
+
+        if (!Enum.IsDefined(FullMode))
+            throw new ArgumentOutOfRangeException(
+                nameof(FullMode),
+                FullMode,
+                "FullMode is invalid."
+            );
+
+        if (!Enum.IsDefined(RetryQueueOverflowPolicy))
+            throw new ArgumentOutOfRangeException(
+                nameof(RetryQueueOverflowPolicy),
+                RetryQueueOverflowPolicy,
+                "RetryQueueOverflowPolicy is invalid."
+            );
+    }
 }

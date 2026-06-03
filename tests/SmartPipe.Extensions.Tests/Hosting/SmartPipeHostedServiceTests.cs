@@ -1,5 +1,6 @@
 #nullable enable
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -53,6 +54,57 @@ public class SmartPipeHostedServiceTests
         public Task DisposeAsync() => Task.CompletedTask;
     }
 
+    private sealed class BlockingSource : ISource<TestItem>
+    {
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async IAsyncEnumerable<ProcessingContext<TestItem>> ReadAsync(
+            [EnumeratorCancellation] CancellationToken ct = default
+        )
+        {
+            Started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            yield break;
+        }
+
+        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task DisposeAsync() => Task.CompletedTask;
+    }
+
+    private sealed record LogEntry(LogLevel Level, string Message, Exception? Exception);
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        private readonly List<LogEntry> _entries = [];
+
+        public IReadOnlyList<LogEntry> Entries => _entries;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            _entries.Add(new LogEntry(logLevel, formatter(state, exception), exception));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static NullScope Instance { get; } = new();
+
+            public void Dispose() { }
+        }
+    }
+
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenPipelineIsNull()
     {
@@ -96,5 +148,46 @@ public class SmartPipeHostedServiceTests
         
         // Assert - no exceptions should occur
         Assert.True(true);
+    }
+
+    [Fact]
+    public async Task StopAsync_ShouldRespectHostCancellationTokenDuringDrain()
+    {
+        var source = new BlockingSource();
+        var pipeline = new SmartPipeChannel<TestItem, TestItem>();
+        pipeline.AddSource(source);
+        pipeline.AddTransformer(new TestTransformer());
+        pipeline.AddSink(new TestSink());
+        var logger = new RecordingLogger<SmartPipeHostedService<TestItem, TestItem>>();
+        var hostedService = new SmartPipeHostedService<TestItem, TestItem>(pipeline, logger);
+
+        await hostedService.StartAsync(CancellationToken.None);
+        await source.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        using var stopCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        var stopTask = hostedService.StopAsync(stopCts.Token);
+        var completed = await Task.WhenAny(stopTask, Task.Delay(TimeSpan.FromSeconds(1))) == stopTask;
+
+        if (!completed)
+        {
+            try
+            {
+                pipeline.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The stop path won the cleanup race.
+            }
+        }
+
+        await stopTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(completed);
+        Assert.Contains(
+            logger.Entries,
+            entry =>
+                entry.Level == LogLevel.Warning
+                && entry.Message.Contains("host cancellation", StringComparison.OrdinalIgnoreCase)
+        );
     }
 }

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using SmartPipe.Core;
+using System.Threading.Channels;
 
 namespace SmartPipe.Core.Tests.Engine;
 
@@ -69,5 +70,102 @@ public class SmartPipeChannelOptionsTests
         var ex = Assert.Throws<InvalidOperationException>(
             () => new SmartPipeChannel<object, object>(options));
         Assert.Contains("BoundedCapacity", ex.Message);
+    }
+
+    [Fact]
+    public void Validate_ShouldAcceptDefaults()
+    {
+        var options = new SmartPipeChannelOptions();
+
+        var act = () => options.Validate();
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_ShouldRejectInvalidMaxDegreeOfParallelism(int value)
+    {
+        var options = new SmartPipeChannelOptions { MaxDegreeOfParallelism = value };
+
+        var act = () => options.Validate();
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName(nameof(SmartPipeChannelOptions.MaxDegreeOfParallelism));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_ShouldRejectInvalidBoundedCapacity(int value)
+    {
+        var options = new SmartPipeChannelOptions { BoundedCapacity = value };
+
+        var act = () => options.Validate();
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName(nameof(SmartPipeChannelOptions.BoundedCapacity));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_ShouldRejectInvalidTimeouts(int milliseconds)
+    {
+        var timeout = TimeSpan.FromMilliseconds(milliseconds);
+        var options = new SmartPipeChannelOptions
+        {
+            AttemptTimeout = timeout,
+            TotalRequestTimeout = timeout,
+        };
+
+        var act = () => options.Validate();
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void Validate_ShouldRejectUndefinedFullMode()
+    {
+        var options = new SmartPipeChannelOptions
+        {
+            FullMode = (BoundedChannelFullMode)999,
+        };
+
+        var act = () => options.Validate();
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName(nameof(SmartPipeChannelOptions.FullMode));
+    }
+
+    [Fact]
+    public void Validate_ShouldRejectUndefinedRetryQueueOverflowPolicy()
+    {
+        var options = new SmartPipeChannelOptions
+        {
+            RetryQueueOverflowPolicy = (RetryQueueOverflowPolicy)999,
+        };
+
+        var act = () => options.Validate();
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName(nameof(SmartPipeChannelOptions.RetryQueueOverflowPolicy));
+    }
+
+    [Fact]
+    public void Constructor_ShouldValidateOptions()
+    {
+        var options = new SmartPipeChannelOptions { MaxDegreeOfParallelism = 0 };
+
+        var act = () => new SmartPipeChannel<object, object>(options);
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName(nameof(SmartPipeChannelOptions.MaxDegreeOfParallelism));
     }
 }

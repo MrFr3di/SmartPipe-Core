@@ -105,6 +105,12 @@ var explicitEnvelope = ProcessingEnvelope<Order>.Create(
     pipelineId: "orders-sync",
     runId: "run-001",
     traceId: 123);
+
+var legacyEnvelope = ProcessingEnvelope<Order>.FromContext(
+    legacyContext,
+    SystemPipelineClock.Instance,
+    pipelineId: "legacy",
+    runId: "legacy-run");
 ```
 
 ### StageResult<T>
@@ -199,7 +205,8 @@ Runtime options:
 `TimeProvider`.
 
 `ObserverDispatchOptions` supports `Inline`, `BufferedBestEffort`, and
-`BufferedReliable`. Inline is the default.
+`BufferedReliable`. Inline is the default. `BufferedReliable` requires
+`FlushOnCompletion = true`.
 
 ### PipelineDefinition
 
@@ -217,6 +224,10 @@ PipelineExecutionPlan.Compile(PipelineDefinition definition);
 ### PipelineRuntime
 
 Single-use runtime owner with `ExecutionPlan` and `RunId`.
+
+Typed `PipelineRun<T>.DrainAsync` is a completion-wait helper in 1.1.0. It does
+not independently stop source enumeration unless the source cooperates through
+cancellation or natural completion.
 
 ## Failure And Resilience Types
 
@@ -255,6 +266,10 @@ Properties:
 
 - `FailureThreshold`;
 - `BreakDuration`.
+
+`CircuitBreakerEvaluationMode` values are `CompatibilityThreshold` and
+`FailureRatio`. `CompatibilityThreshold` is the default; `FailureRatio` is an
+opt-in sampling mode.
 
 ### RetryQueueOverflowPolicy
 
@@ -403,6 +418,7 @@ new DeadLetterSink<T>(
 ```
 
 These overloads are accepted into the `1.1.0` public API baseline and are
-recorded in `src/SmartPipe.Extensions/PublicAPI.Shipped.txt`. Core and
-Extensions `PublicAPI.Unshipped.txt` files contain no public entries beyond
-`#nullable enable` for this release-candidate state.
+recorded in `src/SmartPipe.Extensions/PublicAPI.Shipped.txt`. Accepted Core
+runtime-option APIs are recorded in `src/SmartPipe.Core/PublicAPI.Shipped.txt`.
+Core and Extensions `PublicAPI.Unshipped.txt` files contain no public entries
+beyond `#nullable enable` for stable 1.1.0.

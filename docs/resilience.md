@@ -15,8 +15,14 @@ application idempotency choices.
 
 ## Drain And Cancel
 
-`DrainAsync` is a graceful compatibility-runtime operation. It stops accepting
-new work and waits for accepted work to complete through transformers and sinks.
+Legacy `SmartPipeChannel.DrainAsync` is a graceful compatibility-runtime
+operation. It stops accepting new work and waits for accepted work to complete
+through transformers and sinks.
+
+Typed `PipelineRun<T>.DrainAsync` in 1.1.0 is a completion-wait helper. It
+waits for run/output completion or timeout. It does not independently stop
+source enumeration unless the source cooperates through cancellation or natural
+completion.
 
 `Cancel()` is the immediate stop operation.
 
@@ -60,6 +66,10 @@ Typed retry applies to envelope-aware transformer stages when:
 The runtime emits retry events, updates `ProcessingEnvelope<T>.Attempt`, and
 applies `OnRetryExhausted` exactly once when the retry budget ends.
 
+Typed retry does not hide replay or materialization. The runtime retries the
+current in-memory envelope attempt; it does not materialize the source or
+provide hidden restart replay.
+
 Legacy retry uses `SmartPipeChannelOptions.DefaultRetryPolicy` and the legacy
 retry queue when the corresponding feature is enabled.
 
@@ -78,8 +88,9 @@ retry queue when the corresponding feature is enabled.
 Typed transformer stages can configure `CircuitBreakerPolicy`. Each configured
 stage gets an independent breaker for each run.
 
-The default evaluation mode is `ConsecutiveFailures`, preserving the existing
-`FailureThreshold` and `BreakDuration` behavior.
+The default evaluation mode is `CompatibilityThreshold`, preserving the
+existing threshold and break-duration behavior without promising a strict
+consecutive-failure counter.
 
 The opt-in `FailureRatio` mode evaluates:
 
@@ -140,3 +151,7 @@ dispatch:
   queue is full.
 
 Buffered observer failure behavior is controlled by `ObserverFailureMode`.
+`UseRegistrationPolicy` follows each observer registration's failure policy.
+Buffered dispatch is not a full inline-equivalent observer-failure propagation
+model; recursive buffered `ObserverFailedEvent` propagation is not claimed for
+1.1.0.

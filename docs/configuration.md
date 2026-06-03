@@ -62,8 +62,14 @@ Dropping policies are lossy and must be explicit.
 
 ## Drain And Cancel
 
-`DrainAsync` stops accepting new work and waits for already accepted work to
-finish. It is not an abort operation. Use `Cancel()` for immediate stop.
+Legacy `SmartPipeChannel.DrainAsync` stops accepting new work and waits for
+already accepted work to finish. It is not an abort operation. Use `Cancel()`
+for immediate stop.
+
+Typed `PipelineRun<T>.DrainAsync` in 1.1.0 is a completion-wait helper. It
+waits for run/output completion or timeout. It does not independently stop
+source enumeration unless the source cooperates through cancellation or natural
+completion.
 
 `RunInBackground` can be called once per `SmartPipeChannel` instance.
 
@@ -86,8 +92,8 @@ Typed transformer stages can receive `StageFailureOptions`:
 
 `CircuitBreakerPolicy` supports:
 
-- `EvaluationMode`: default `ConsecutiveFailures`;
-- `FailureThreshold`: default `5`, used by the default consecutive-failure mode;
+- `EvaluationMode`: default `CompatibilityThreshold`;
+- `FailureThreshold`: default `5`, used by the default compatibility threshold mode;
 - `BreakDuration`: default `30 seconds`;
 - `FailureRatio`: default `0.1`, used only by opt-in `FailureRatio` mode;
 - `SamplingDuration`: default `30 seconds`, used only by opt-in `FailureRatio` mode;
@@ -142,7 +148,9 @@ the configured id.
 | `Clock` | `SystemPipelineClock.Instance` | Used by typed runtime event timestamps and time budget decisions. |
 
 Bounded output with `Wait` can apply backpressure if consumers do not read
-outputs. It is intentionally not the default.
+outputs. If `OutputCapacity` is configured and `OutputFullMode` is `Wait`,
+callers must consume `run.Outputs`. For sink-only worker scenarios in 1.1.0,
+keep `OutputCapacity = null`. Bounded output is intentionally not the default.
 
 ## Clock / Time Provider
 
@@ -162,3 +170,7 @@ custom time sources.
 
 Buffered modes are opt-in and bounded. They do not introduce unbounded
 fire-and-forget observer queues.
+
+`BufferedReliable` requires `FlushOnCompletion = true`. Buffered observer
+failure behavior uses `ObserverFailureMode.UseRegistrationPolicy`,
+`ObserverFailureMode.Ignore`, or `ObserverFailureMode.FaultPipeline`.

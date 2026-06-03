@@ -90,13 +90,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     )
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        if (options.UseRendezvous)
-        {
-            throw new InvalidOperationException(
-                "UseRendezvous=true sets capacity to 0, which violates the global constraint "
-                    + "\"BoundedCapacity set for all channels\". Disable UseRendezvous or remove this constraint."
-            );
-        }
+        options.Validate();
         _clock = clock ?? new TimeProviderClock();
         _logger = logger;
         _runCompletion.TrySetResult(); // No pipeline run active yet

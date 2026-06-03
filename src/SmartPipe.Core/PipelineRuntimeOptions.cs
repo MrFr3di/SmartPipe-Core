@@ -79,8 +79,8 @@ public enum ObserverDispatchMode
 /// <summary>Failure behavior for buffered observer dispatch.</summary>
 public enum ObserverFailureMode
 {
-    /// <summary>Preserve the current observer registration failure behavior.</summary>
-    PreserveCurrentDefault,
+    /// <summary>Use each observer registration's failure policy.</summary>
+    UseRegistrationPolicy,
 
     /// <summary>Ignore observer failures.</summary>
     Ignore,
@@ -106,7 +106,7 @@ public sealed class ObserverDispatchOptions
 
     /// <summary>Gets the observer failure handling mode for buffered dispatch.</summary>
     public ObserverFailureMode FailureMode { get; init; } =
-        ObserverFailureMode.PreserveCurrentDefault;
+        ObserverFailureMode.UseRegistrationPolicy;
 
     /// <summary>Gets a value indicating whether buffered dispatch should flush during completion.</summary>
     public bool FlushOnCompletion { get; init; } = true;
@@ -124,6 +124,9 @@ public sealed class ObserverDispatchOptions
 
         if (!Enum.IsDefined(FailureMode))
             throw new ArgumentOutOfRangeException(nameof(FailureMode), FailureMode, "Observer failure mode is invalid.");
+
+        if (Mode == ObserverDispatchMode.BufferedReliable && !FlushOnCompletion)
+            throw new ArgumentException("BufferedReliable requires FlushOnCompletion = true.");
     }
 }
 
@@ -155,4 +158,3 @@ public sealed class PipelineRuntimeOptions
         ArgumentNullException.ThrowIfNull(Clock);
     }
 }
-
