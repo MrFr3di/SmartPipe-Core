@@ -41,6 +41,8 @@ public interface IDeadLetterSerializer<T>
 /// </remarks>
 public sealed class JsonLinesDeadLetterSerializer<T> : IDeadLetterSerializer<T>
 {
+    private static readonly byte[] NewLine = "\n"u8.ToArray();
+
     private readonly Func<DeadLetterEnvelope<T>, Stream, CancellationToken, ValueTask> _write;
     private readonly Func<Stream, CancellationToken, IAsyncEnumerable<DeadLetterEnvelope<T>>> _read;
 
@@ -93,7 +95,7 @@ public sealed class JsonLinesDeadLetterSerializer<T> : IDeadLetterSerializer<T>
         CancellationToken ct)
     {
         await JsonSerializer.SerializeAsync(stream, envelope, typeInfo, ct).ConfigureAwait(false);
-        await stream.WriteAsync("\n"u8.ToArray(), ct).ConfigureAwait(false);
+        await stream.WriteAsync(NewLine, ct).ConfigureAwait(false);
     }
 
     [RequiresUnreferencedCode("Reflection-based dead-letter JSON serialization is not trimming-safe. Use the JsonTypeInfo constructor.")]
@@ -105,7 +107,7 @@ public sealed class JsonLinesDeadLetterSerializer<T> : IDeadLetterSerializer<T>
         CancellationToken ct)
     {
         await JsonSerializer.SerializeAsync(stream, envelope, options, ct).ConfigureAwait(false);
-        await stream.WriteAsync("\n"u8.ToArray(), ct).ConfigureAwait(false);
+        await stream.WriteAsync(NewLine, ct).ConfigureAwait(false);
     }
 
     private static async IAsyncEnumerable<DeadLetterEnvelope<T>> ReadWithTypeInfoAsync(

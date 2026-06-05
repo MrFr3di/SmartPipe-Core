@@ -15,6 +15,66 @@ public class CircuitBreakerTests
         cb.State.Should().Be(CircuitState.Closed);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-0.1)]
+    [InlineData(1.1)]
+    [InlineData(double.NaN)]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenFailureRatioIsInvalid(
+        double failureRatio)
+    {
+        var act = () => new CircuitBreaker(failureRatio: failureRatio);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("failureRatio");
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidSamplingDurations))]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenSamplingDurationIsInvalid(
+        TimeSpan samplingDuration)
+    {
+        var act = () => new CircuitBreaker(samplingDuration: samplingDuration);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("samplingDuration");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenMinimumThroughputIsInvalid(
+        int minimumThroughput)
+    {
+        var act = () => new CircuitBreaker(minimumThroughput: minimumThroughput);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("minimumThroughput");
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidBreakDurations))]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenBreakDurationIsInvalid(
+        TimeSpan breakDuration)
+    {
+        var act = () => new CircuitBreaker(breakDuration: breakDuration);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("breakDuration");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenMaxHalfOpenRequestsIsInvalid(
+        int maxHalfOpenRequests)
+    {
+        var act = () => new CircuitBreaker(maxHalfOpenRequests: maxHalfOpenRequests);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("maxHalfOpenRequests");
+    }
+
     [Fact]
     public void AllowRequest_WhenClosed_ShouldReturnTrue()
     {
@@ -302,6 +362,18 @@ public class CircuitBreakerTests
 
         cleanupMethod.Should().NotBeNull();
         cleanupMethod!.Invoke(cb, null);
+    }
+
+    public static IEnumerable<object[]> InvalidSamplingDurations()
+    {
+        yield return [TimeSpan.Zero];
+        yield return [TimeSpan.FromTicks(-1)];
+    }
+
+    public static IEnumerable<object[]> InvalidBreakDurations()
+    {
+        yield return [TimeSpan.Zero];
+        yield return [TimeSpan.FromTicks(-1)];
     }
 
     private sealed class ManualClock : IClock

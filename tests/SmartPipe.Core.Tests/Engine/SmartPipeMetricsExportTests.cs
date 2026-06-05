@@ -26,6 +26,98 @@ public class SmartPipeMetricsExportTests
     }
 
     [Fact]
+    public void Export_ShouldPreserveOutputShape()
+    {
+        var metrics = new SmartPipeMetrics();
+        var export = metrics.Export();
+
+        export.Keys.Should().BeEquivalentTo(
+        [
+            "items_processed",
+            "items_failed",
+            "duplicates_filtered",
+            "retries",
+            "avg_latency_ms",
+            "smooth_latency_ms",
+            "smooth_throughput",
+            "queue_size",
+            "pool_hit_rate",
+        ]);
+    }
+
+    [Fact]
+    public void SmartPipeMetricsSnapshot_Export_ShouldMatchSampledView()
+    {
+        var metrics = new SmartPipeMetrics
+        {
+            QueueSize = 7,
+            PoolHitRate = 0.5,
+        };
+        metrics.RecordProcessed(25.0);
+        metrics.RecordRetry();
+
+        var export = metrics.CaptureSnapshot().Export();
+
+        export["items_processed"].Should().Be(1L);
+        export["retries"].Should().Be(1L);
+        export["avg_latency_ms"].Should().Be(25.0);
+        export["queue_size"].Should().Be(7);
+        export["pool_hit_rate"].Should().Be(0.5);
+    }
+
+    [Fact]
+    public async Task CaptureSnapshot_Export_ShouldNotThrowDuringConcurrentUpdates()
+    {
+        var metrics = new SmartPipeMetrics();
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var updates = Enumerable.Range(0, 4)
+            .Select(_ => Task.Run(async () =>
+            {
+                await start.Task;
+                for (int i = 0; i < 10_000; i++)
+                {
+                    metrics.RecordProcessed(1.0);
+                    metrics.RecordFailed();
+                    metrics.RecordDuplicate();
+                    metrics.RecordRetry();
+                    metrics.QueueSize++;
+                    metrics.RecordPoolHitRate(0.5);
+                }
+            }))
+            .ToArray();
+
+        var exports = Enumerable.Range(0, 4)
+            .Select(_ => Task.Run(async () =>
+            {
+                await start.Task;
+                return Enumerable.Range(0, 250)
+                    .Select(_ => metrics.CaptureSnapshot().Export())
+                    .ToArray();
+            }))
+            .ToArray();
+
+        start.SetResult();
+        await Task.WhenAll(updates.Concat<Task>(exports)).WaitAsync(TimeSpan.FromSeconds(5));
+
+        exports
+            .SelectMany(task => task.Result)
+            .Should()
+            .OnlyContain(export => HasExpectedShape(export));
+    }
+
+    private static bool HasExpectedShape(Dictionary<string, object> export) =>
+        export.Count == 9
+        && export.TryGetValue("items_processed", out var itemsProcessed) && itemsProcessed is long
+        && export.TryGetValue("items_failed", out var itemsFailed) && itemsFailed is long
+        && export.TryGetValue("duplicates_filtered", out var duplicatesFiltered) && duplicatesFiltered is long
+        && export.TryGetValue("retries", out var retries) && retries is long
+        && export.TryGetValue("avg_latency_ms", out var avgLatencyMs) && avgLatencyMs is double
+        && export.TryGetValue("smooth_latency_ms", out var smoothLatencyMs) && smoothLatencyMs is double
+        && export.TryGetValue("smooth_throughput", out var smoothThroughput) && smoothThroughput is double
+        && export.TryGetValue("queue_size", out var queueSize) && queueSize is int
+        && export.TryGetValue("pool_hit_rate", out var poolHitRate) && poolHitRate is double;
+
+    [Fact]
     public void ExportJson_ShouldReturnValidJson()
     {
         var metrics = new SmartPipeMetrics();

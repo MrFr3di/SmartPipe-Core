@@ -37,6 +37,33 @@ consume `PipelineRun<T>.Outputs`. The runtime writes to the output stream before
 an attached sink, so unread bounded outputs can apply backpressure before sink
 write. For sink-only worker scenarios in 1.1.0, keep `OutputCapacity = null`.
 
+## Channel Contracts
+
+`ChannelPool.RentBounded<T>` remains a public compatibility API and keeps its
+legacy assumptions. New runtime-internal paths use factories that match their
+actual reader and writer cardinality.
+
+Legacy `SmartPipeChannel` shared input uses a multi-reader, multi-writer bounded
+channel because `MaxDegreeOfParallelism` can create multiple workers. Legacy
+runtime output uses a single-reader, multi-writer bounded channel because
+multiple workers can publish results while one output consumer reads them.
+
+`BoundedChannelFullMode.Wait` provides backpressure and is the only bounded mode
+where accepted items are expected to be retained under pressure. Lossy bounded
+modes such as `DropWrite`, `DropOldest`, and `DropNewest` may drop items when
+capacity is exhausted.
+
+## Metrics Snapshot
+
+`SmartPipeMetrics.CaptureSnapshot()` returns an observational sample of the
+current counters and gauges. The snapshot is safe for export and reporting, and
+`Export()`, `ExportJson()`, and `ExportPrometheus()` preserve their existing
+output shape by exporting a sampled view.
+
+The snapshot is not transactional. It does not synchronize concurrent pipeline
+updates and should not be used as a coordination primitive or as a replacement
+for an external telemetry recorder.
+
 ## Observer Dispatch
 
 Inline observer dispatch preserves current event ordering and observer failure

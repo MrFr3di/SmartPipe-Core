@@ -21,6 +21,10 @@ public static class ChannelPool
         );
 
     /// <summary>Rent a bounded channel with capacity and full mode.</summary>
+    /// <remarks>
+    /// Preserves shipped legacy assumptions. New shared runtime paths should use the internal
+    /// factories that state their reader and writer cardinality explicitly.
+    /// </remarks>
     /// <typeparam name="T">Channel element type.</typeparam>
     /// <param name="capacity">Maximum capacity.</param>
     /// <param name="mode">Behavior when channel is full.</param>
@@ -33,6 +37,45 @@ public static class ChannelPool
                 SingleReader = true,
                 SingleWriter = false,
                 AllowSynchronousContinuations = true,
+            }
+        );
+
+    internal static Channel<T> CreateBoundedMultiReaderMultiWriter<T>(
+        int capacity,
+        BoundedChannelFullMode mode) =>
+        Channel.CreateBounded<T>(
+            new BoundedChannelOptions(capacity)
+            {
+                FullMode = mode,
+                SingleReader = false,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false,
+            }
+        );
+
+    internal static Channel<T> CreateBoundedSingleReaderMultiWriter<T>(
+        int capacity,
+        BoundedChannelFullMode mode) =>
+        Channel.CreateBounded<T>(
+            new BoundedChannelOptions(capacity)
+            {
+                FullMode = mode,
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false,
+            }
+        );
+
+    internal static Channel<T> CreateBoundedSingleReaderSingleWriter<T>(
+        int capacity,
+        BoundedChannelFullMode mode) =>
+        Channel.CreateBounded<T>(
+            new BoundedChannelOptions(capacity)
+            {
+                FullMode = mode,
+                SingleReader = true,
+                SingleWriter = true,
+                AllowSynchronousContinuations = false,
             }
         );
 

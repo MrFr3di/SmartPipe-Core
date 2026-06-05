@@ -422,9 +422,9 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         if (retryTask != null)
             await retryTask.ConfigureAwait(false);
 
-        _inputChannel!.Writer.Complete();
+        _inputChannel!.Writer.TryComplete();
         await Task.WhenAll(consumers).ConfigureAwait(false);
-        _outputChannel!.Writer.Complete();
+        _outputChannel!.Writer.TryComplete();
         await sink.ConfigureAwait(false);
         await monitor.ConfigureAwait(false);
         await DisposePipelineAsync(token).ConfigureAwait(false);
@@ -450,12 +450,12 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             await t.InitializeAsync(token).ConfigureAwait(false);
         foreach (var s in _sinks)
             await s.InitializeAsync(token).ConfigureAwait(false);
-        _inputChannel = ChannelPool.RentBounded<ProcessingContext<TInput>>(
-            _options.UseRendezvous ? 0 : _options.BoundedCapacity,
+        _inputChannel = ChannelPool.CreateBoundedMultiReaderMultiWriter<ProcessingContext<TInput>>(
+            _options.BoundedCapacity,
             _options.FullMode
         );
-        _outputChannel = ChannelPool.RentBounded<ProcessingResult<TOutput>>(
-            _options.UseRendezvous ? 0 : _options.BoundedCapacity,
+        _outputChannel = ChannelPool.CreateBoundedSingleReaderMultiWriter<ProcessingResult<TOutput>>(
+            _options.BoundedCapacity,
             _options.FullMode
         );
         Metrics = new SmartPipeMetrics();

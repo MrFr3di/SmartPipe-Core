@@ -68,10 +68,42 @@ public class CircuitBreaker
         IClock? clock = null
     )
     {
+        if (double.IsNaN(failureRatio) || failureRatio <= 0 || failureRatio > 1)
+            throw new ArgumentOutOfRangeException(
+                nameof(failureRatio),
+                failureRatio,
+                "Failure ratio must be greater than zero and less than or equal to one.");
+
+        var resolvedSamplingDuration = samplingDuration ?? TimeSpan.FromSeconds(30);
+        if (resolvedSamplingDuration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                nameof(samplingDuration),
+                resolvedSamplingDuration,
+                "Sampling duration must be greater than zero.");
+
+        if (minimumThroughput <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(minimumThroughput),
+                minimumThroughput,
+                "Minimum throughput must be greater than zero.");
+
+        var resolvedBreakDuration = breakDuration ?? TimeSpan.FromSeconds(30);
+        if (resolvedBreakDuration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                nameof(breakDuration),
+                resolvedBreakDuration,
+                "Break duration must be greater than zero.");
+
+        if (maxHalfOpenRequests <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(maxHalfOpenRequests),
+                maxHalfOpenRequests,
+                "Max half-open requests must be greater than zero.");
+
         _failureRatio = failureRatio;
-        _samplingDuration = samplingDuration ?? TimeSpan.FromSeconds(30);
+        _samplingDuration = resolvedSamplingDuration;
         _minimumThroughput = minimumThroughput;
-        _breakDuration = breakDuration ?? TimeSpan.FromSeconds(30);
+        _breakDuration = resolvedBreakDuration;
         _maxHalfOpenRequests = maxHalfOpenRequests;
         _clock = clock ?? new TimeProviderClock();
     }

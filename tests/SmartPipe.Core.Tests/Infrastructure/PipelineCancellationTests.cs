@@ -32,5 +32,21 @@ public class PipelineCancellationTests
         var result = await task.WithTimeoutAsync(TimeSpan.FromMilliseconds(10), 1UL);
         result.IsSuccess.Should().BeFalse();
         result.Error!.Value.Category.Should().Be("Timeout");
+        result.Error!.Value.Type.Should().Be(ErrorType.Transient);
+    }
+
+    [Fact]
+    public async Task WithTimeoutAsync_WhenExternalCancellationIsRequested_ShouldReturnCurrentTimeoutFailure()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var task = new ValueTask<ProcessingResult<int>>(
+            Task.Delay(2000).ContinueWith(_ => ProcessingResult<int>.Success(42, 1UL)));
+
+        var result = await task.WithTimeoutAsync(TimeSpan.FromSeconds(1), 1UL, cts.Token);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error!.Value.Type.Should().Be(ErrorType.Transient);
+        result.Error!.Value.Category.Should().Be("Timeout");
     }
 }

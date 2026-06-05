@@ -96,6 +96,70 @@ public class DeduplicationFilterTests
         filter.ContainsAndAdd(second).Should().BeTrue();
     }
 
+    [Fact]
+    public void ContainsAndAdd_WithTtl_ShouldReturnDuplicateBeforeTtlExpires()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 100,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromMinutes(1),
+            clock: clock);
+
+        filter.ContainsAndAdd(42UL).Should().BeFalse();
+        clock.UtcNow = clock.UtcNow.AddSeconds(30);
+
+        filter.ContainsAndAdd(42UL).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ContainsAndAdd_WithTtl_ShouldAcceptItemAfterTtlExpires()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 100,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromMinutes(1),
+            clock: clock);
+
+        filter.ContainsAndAdd(42UL).Should().BeFalse();
+        clock.UtcNow = clock.UtcNow.AddMinutes(2);
+
+        filter.ContainsAndAdd(42UL).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ContainsAndAdd_WithTtl_ShouldAcceptZeroTraceIdAfterTtlExpires()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 100,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromMinutes(1),
+            clock: clock);
+
+        filter.ContainsAndAdd(0UL).Should().BeFalse();
+        clock.UtcNow = clock.UtcNow.AddMinutes(2);
+
+        filter.ContainsAndAdd(0UL).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ContainsAndAdd_WithTtl_ShouldUseClockAdvanceWithoutSleeping()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 100,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromSeconds(10),
+            clock: clock);
+
+        filter.ContainsAndAdd(42UL).Should().BeFalse();
+        clock.UtcNow = clock.UtcNow.AddSeconds(11);
+
+        filter.ContainsAndAdd(42UL).Should().BeFalse();
+    }
+
     private static ulong FindValueSharingSomeButNotAllBits(
         ulong first,
         long expectedItems,
@@ -151,5 +215,10 @@ public class DeduplicationFilterTests
         x *= 0xC4CEB9FE1A85EC53;
         x ^= x >> 33;
         return (int)x;
+    }
+
+    private sealed class MutableClock(DateTime utcNow) : IClock
+    {
+        public DateTime UtcNow { get; set; } = utcNow;
     }
 }

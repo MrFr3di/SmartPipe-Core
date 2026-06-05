@@ -25,8 +25,9 @@ public class DeduplicationFilter
     private readonly Lock _bitsLock = new(); // Protects BitArray from concurrent access
 
     // TTL support: tracks when items were added, cleaned up on ContainsAndAdd
-    private readonly (ulong traceId, DateTime addedAt)[]? _ttlEntries;
+    private readonly TtlEntry[]? _ttlEntries;
     private readonly TimeSpan? _ttl;
+    private readonly IClock _clock;
     private long _ttlIndex; // Ring buffer index for TTL entries
 
     /// <summary>Total items seen (incremented on every ContainsAndAdd call).</summary>
@@ -42,6 +43,16 @@ public class DeduplicationFilter
         double falsePositiveRate = 0.001,
         TimeSpan? ttl = null
     )
+        : this(expectedItems, falsePositiveRate, ttl, null)
+    {
+    }
+
+    internal DeduplicationFilter(
+        long expectedItems,
+        double falsePositiveRate,
+        TimeSpan? ttl,
+        IClock? clock
+    )
     {
         if (expectedItems <= 0)
             throw new ArgumentOutOfRangeException(nameof(expectedItems), expectedItems, "Expected items must be greater than zero.");
@@ -56,12 +67,13 @@ public class DeduplicationFilter
         _hashCount = Math.Max(1, (int)(_size / (double)expectedItems * Math.Log(2)));
         _bits = new BitArray(Math.Max(1024, _size));
         _ttl = ttl;
+        _clock = clock ?? new TimeProviderClock();
 
         if (ttl.HasValue)
         {
             _ttlBitCounts = new int[_size];
             // Allocate ring buffer for TTL tracking (1 entry per expected item)
-            _ttlEntries = new (ulong, DateTime)[Math.Min(expectedItems, 10_000_000)];
+            _ttlEntries = new TtlEntry[Math.Min(expectedItems, 10_000_000)];
         }
     }
 
@@ -98,7 +110,7 @@ public class DeduplicationFilter
             if (_ttlEntries != null && !allSet)
             {
                 long idx = Interlocked.Increment(ref _ttlIndex);
-                _ttlEntries[idx % _ttlEntries.Length] = (traceId, DateTime.UtcNow);
+                _ttlEntries[idx % _ttlEntries.Length] = new TtlEntry(traceId, _clock.UtcNow, Occupied: true);
             }
 
             return allSet;
@@ -111,7 +123,7 @@ public class DeduplicationFilter
         if (!_ttl.HasValue || _ttlEntries == null)
             return;
 
-        var cutoff = DateTime.UtcNow - _ttl.Value;
+        var cutoff = _clock.UtcNow - _ttl.Value;
         long currentIndex = Interlocked.Read(ref _ttlIndex);
 
         // Scan only recently added entries (last N entries up to current index)
@@ -119,13 +131,13 @@ public class DeduplicationFilter
         for (long i = scanFrom; i <= currentIndex; i++)
         {
             var entry = _ttlEntries[i % _ttlEntries.Length];
-            if (entry.traceId == 0)
+            if (!entry.Occupied)
                 continue; // Empty slot
-            if (entry.addedAt < cutoff)
+            if (entry.AddedAt < cutoff)
             {
                 // Remove expired entry from BitArray
-                int h1 = Hash1(entry.traceId),
-                    h2 = Hash2(entry.traceId);
+                int h1 = Hash1(entry.TraceId),
+                    h2 = Hash2(entry.TraceId);
                 for (int j = 0; j < _hashCount; j++)
                 {
                     int index = (int)((h1 + (long)j * h2) % _size);
@@ -133,10 +145,12 @@ public class DeduplicationFilter
                         index += _size;
                     RemoveBit(index);
                 }
-                _ttlEntries[i % _ttlEntries.Length] = (0, default); // Clear slot
+                _ttlEntries[i % _ttlEntries.Length] = default; // Clear slot
             }
         }
     }
+
+    private readonly record struct TtlEntry(ulong TraceId, DateTime AddedAt, bool Occupied);
 
     private bool IsSet(int index)
     {

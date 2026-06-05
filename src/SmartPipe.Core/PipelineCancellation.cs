@@ -28,6 +28,9 @@ public static class PipelineCancellation
         CancellationToken ct = default
     )
     {
+        if (task.IsCompletedSuccessfully)
+            return task.Result;
+
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeout);
         try

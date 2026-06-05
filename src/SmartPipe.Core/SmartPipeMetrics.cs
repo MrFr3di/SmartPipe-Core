@@ -8,6 +8,80 @@ using System.Text.Json;
 
 namespace SmartPipe.Core;
 
+/// <summary>
+/// Observational, point-in-time sample of <see cref="SmartPipeMetrics"/> values.
+/// </summary>
+/// <remarks>
+/// The snapshot is safe for export and reporting, but it is not a transactional synchronization
+/// primitive and does not coordinate concurrent pipeline updates.
+/// </remarks>
+public sealed class SmartPipeMetricsSnapshot
+{
+    internal SmartPipeMetricsSnapshot(
+        long itemsProcessed,
+        long itemsFailed,
+        long duplicatesFiltered,
+        long retries,
+        double avgLatencyMs,
+        double smoothLatencyMs,
+        double smoothThroughput,
+        int queueSize,
+        double poolHitRate)
+    {
+        ItemsProcessed = itemsProcessed;
+        ItemsFailed = itemsFailed;
+        DuplicatesFiltered = duplicatesFiltered;
+        Retries = retries;
+        AvgLatencyMs = avgLatencyMs;
+        SmoothLatencyMs = smoothLatencyMs;
+        SmoothThroughput = smoothThroughput;
+        QueueSize = queueSize;
+        PoolHitRate = poolHitRate;
+    }
+
+    /// <summary>Total items successfully processed in the sampled view.</summary>
+    public long ItemsProcessed { get; }
+
+    /// <summary>Total items that failed processing in the sampled view.</summary>
+    public long ItemsFailed { get; }
+
+    /// <summary>Total duplicate items filtered out in the sampled view.</summary>
+    public long DuplicatesFiltered { get; }
+
+    /// <summary>Total retry attempts made in the sampled view.</summary>
+    public long Retries { get; }
+
+    /// <summary>Running average latency in milliseconds in the sampled view.</summary>
+    public double AvgLatencyMs { get; }
+
+    /// <summary>EMA-smoothed latency in milliseconds in the sampled view.</summary>
+    public double SmoothLatencyMs { get; }
+
+    /// <summary>EMA-smoothed throughput in items per second in the sampled view.</summary>
+    public double SmoothThroughput { get; }
+
+    /// <summary>Current queue size in the sampled view.</summary>
+    public int QueueSize { get; }
+
+    /// <summary>ObjectPool hit rate in the sampled view.</summary>
+    public double PoolHitRate { get; }
+
+    /// <summary>Export the sampled values as a dictionary.</summary>
+    public Dictionary<string, object> Export() =>
+        new()
+        {
+            ["items_processed"] = ItemsProcessed,
+            ["items_failed"] = ItemsFailed,
+            ["duplicates_filtered"] = DuplicatesFiltered,
+            ["retries"] = Retries,
+            ["avg_latency_ms"] = AvgLatencyMs,
+            ["smooth_latency_ms"] = SmoothLatencyMs,
+            ["smooth_throughput"] = SmoothThroughput,
+            ["queue_size"] = QueueSize,
+            ["pool_hit_rate"] = PoolHitRate,
+        };
+}
+
 /// <summary>OpenTelemetry-compatible metrics with export to JSON and Prometheus.</summary>
 public class SmartPipeMetrics
 {
@@ -102,37 +176,44 @@ public class SmartPipeMetrics
         PoolHitRate = hitRate;
     }
 
+    /// <summary>
+    /// Capture an observational snapshot of the current metric values for export or reporting.
+    /// </summary>
+    /// <remarks>
+    /// Values are read independently and are not transactional across concurrent updates.
+    /// </remarks>
+    public SmartPipeMetricsSnapshot CaptureSnapshot() =>
+        new(
+            Interlocked.Read(ref ItemsProcessed),
+            Interlocked.Read(ref ItemsFailed),
+            Interlocked.Read(ref DuplicatesFiltered),
+            Interlocked.Read(ref Retries),
+            Volatile.Read(ref AvgLatencyMs),
+            Volatile.Read(ref SmoothLatencyMs),
+            Volatile.Read(ref SmoothThroughput),
+            Volatile.Read(ref QueueSize),
+            Volatile.Read(ref PoolHitRate));
+
     /// <summary>Export all metrics as a dictionary.</summary>
-    public Dictionary<string, object> Export() =>
-        new()
-        {
-            ["items_processed"] = ItemsProcessed,
-            ["items_failed"] = ItemsFailed,
-            ["duplicates_filtered"] = DuplicatesFiltered,
-            ["retries"] = Retries,
-            ["avg_latency_ms"] = AvgLatencyMs,
-            ["smooth_latency_ms"] = SmoothLatencyMs,
-            ["smooth_throughput"] = SmoothThroughput,
-            ["queue_size"] = QueueSize,
-            ["pool_hit_rate"] = PoolHitRate,
-        };
+    public Dictionary<string, object> Export() => CaptureSnapshot().Export();
 
     /// <summary>Export as JSON string.</summary>
     public string ExportJson()
     {
+        var snapshot = CaptureSnapshot();
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
-            writer.WriteNumber("items_processed", ItemsProcessed);
-            writer.WriteNumber("items_failed", ItemsFailed);
-            writer.WriteNumber("duplicates_filtered", DuplicatesFiltered);
-            writer.WriteNumber("retries", Retries);
-            writer.WriteNumber("avg_latency_ms", AvgLatencyMs);
-            writer.WriteNumber("smooth_latency_ms", SmoothLatencyMs);
-            writer.WriteNumber("smooth_throughput", SmoothThroughput);
-            writer.WriteNumber("queue_size", QueueSize);
-            writer.WriteNumber("pool_hit_rate", PoolHitRate);
+            writer.WriteNumber("items_processed", snapshot.ItemsProcessed);
+            writer.WriteNumber("items_failed", snapshot.ItemsFailed);
+            writer.WriteNumber("duplicates_filtered", snapshot.DuplicatesFiltered);
+            writer.WriteNumber("retries", snapshot.Retries);
+            writer.WriteNumber("avg_latency_ms", snapshot.AvgLatencyMs);
+            writer.WriteNumber("smooth_latency_ms", snapshot.SmoothLatencyMs);
+            writer.WriteNumber("smooth_throughput", snapshot.SmoothThroughput);
+            writer.WriteNumber("queue_size", snapshot.QueueSize);
+            writer.WriteNumber("pool_hit_rate", snapshot.PoolHitRate);
             writer.WriteEndObject();
         }
 

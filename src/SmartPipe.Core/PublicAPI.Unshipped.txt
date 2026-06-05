@@ -1,1 +1,13 @@
 #nullable enable
+SmartPipe.Core.SmartPipeMetrics.CaptureSnapshot() -> SmartPipe.Core.SmartPipeMetricsSnapshot!
+SmartPipe.Core.SmartPipeMetricsSnapshot
+SmartPipe.Core.SmartPipeMetricsSnapshot.AvgLatencyMs.get -> double
+SmartPipe.Core.SmartPipeMetricsSnapshot.DuplicatesFiltered.get -> long
+SmartPipe.Core.SmartPipeMetricsSnapshot.Export() -> System.Collections.Generic.Dictionary<string!, object!>!
+SmartPipe.Core.SmartPipeMetricsSnapshot.ItemsFailed.get -> long
+SmartPipe.Core.SmartPipeMetricsSnapshot.ItemsProcessed.get -> long
+SmartPipe.Core.SmartPipeMetricsSnapshot.PoolHitRate.get -> double
+SmartPipe.Core.SmartPipeMetricsSnapshot.QueueSize.get -> int
+SmartPipe.Core.SmartPipeMetricsSnapshot.Retries.get -> long
+SmartPipe.Core.SmartPipeMetricsSnapshot.SmoothLatencyMs.get -> double
+SmartPipe.Core.SmartPipeMetricsSnapshot.SmoothThroughput.get -> double

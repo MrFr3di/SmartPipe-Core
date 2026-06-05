@@ -44,7 +44,22 @@ feature flags.
 
 Legacy backpressure is based on bounded channels. `BoundedCapacity` controls
 queue size and `FullMode` controls what writers do when capacity is reached.
-The safe default is `BoundedChannelFullMode.Wait`.
+The safe default is `BoundedChannelFullMode.Wait`, which applies backpressure
+instead of dropping accepted work.
+
+`ChannelPool.RentBounded<T>` is kept as a public compatibility API. The legacy
+runtime does not use it for shared input/output channels; those paths use
+internal channel factories whose reader and writer assumptions match the
+runtime topology.
+
+Lossy bounded modes can drop items under pressure:
+
+- `DropWrite`: drops the item being written;
+- `DropNewest`: drops the newest buffered item;
+- `DropOldest`: drops the oldest buffered item.
+
+Use lossy modes only when dropped work is acceptable and externally visible in
+the caller's reliability model.
 
 ## Retry
 
@@ -72,6 +87,16 @@ source enumeration unless the source cooperates through cancellation or natural
 completion.
 
 `RunInBackground` can be called once per `SmartPipeChannel` instance.
+
+## Metrics
+
+`SmartPipeMetrics` keeps its public counters and export methods. Use
+`CaptureSnapshot()` when exporting or reporting metrics from code that may run
+concurrently with pipeline updates.
+
+The snapshot is observational and safe to enumerate or serialize. It is not a
+transactional synchronization primitive and does not replace a telemetry
+recorder.
 
 ## Typed Stage Failure Options
 
