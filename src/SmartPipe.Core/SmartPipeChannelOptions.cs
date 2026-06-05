@@ -56,6 +56,9 @@ public class SmartPipeChannelOptions
     public RetryQueueOverflowPolicy RetryQueueOverflowPolicy { get; set; } =
         RetryQueueOverflowPolicy.Wait;
 
+    /// <summary>Adaptive parallelism settings. Disabled by default.</summary>
+    public AdaptiveParallelismOptions AdaptiveParallelism { get; } = new();
+
     /// <summary>Feature flags for optional pipeline components.</summary>
     public Dictionary<string, bool> FeatureFlags { get; } =
         new()
@@ -134,5 +137,7 @@ public class SmartPipeChannelOptions
                 RetryQueueOverflowPolicy,
                 "RetryQueueOverflowPolicy is invalid."
             );
+
+        AdaptiveParallelism.Validate(FullMode, IsEnabled("JumpHash"));
     }
 }

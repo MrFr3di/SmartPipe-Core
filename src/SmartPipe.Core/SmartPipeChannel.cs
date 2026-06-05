@@ -31,9 +31,14 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     private readonly SmartPipeChannelOptions _options;
     private readonly CancellationTokenSource _internalCts = new();
     private Channel<ProcessingContext<TInput>>? _inputChannel;
+    private IInputBuffer<ProcessingContext<TInput>>? _inputBuffer;
+    private AdaptiveChannelSet<ProcessingContext<TInput>>? _adaptiveChannelSet;
+    private AdaptiveInFlightLimiter? _adaptiveInFlightLimiter;
+    private AdaptiveParallelismController? _adaptiveController;
     private Channel<ProcessingResult<TOutput>>? _outputChannel;
     private volatile bool _producerCompleted,
         _isPaused;
+    private volatile bool _inputBufferCompleted;
     private volatile PipelineState _state = PipelineState.NotStarted;
     private int _isDraining = 0; // 0 = not draining, 1 = draining
     private int _disposed; // 0 = not disposed, 1 = disposed
@@ -54,6 +59,10 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     private readonly int[]? _shardBuckets;
     private int _totalCount;
     private DateTime _startTime;
+    private DateTimeOffset _lastAdaptiveDecisionUtc;
+    private long _lastAdaptiveProcessed;
+    private long _lastAdaptiveFailed;
+    private long _lastAdaptiveRetried;
 
     /// <summary>Gets the pipeline configuration options.</summary>
     public SmartPipeChannelOptions Options => _options;
@@ -111,7 +120,8 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             _cuckooFilter = new CuckooFilter();
         if (options.IsEnabled("JumpHash"))
             _shardBuckets = new int[options.MaxDegreeOfParallelism];
-        _adaptiveParallelism = new AdaptiveParallelism(2, options.MaxDegreeOfParallelism);
+        if (!options.AdaptiveParallelism.Enabled)
+            _adaptiveParallelism = new AdaptiveParallelism(2, options.MaxDegreeOfParallelism);
     }
 
     /// <summary>Adds a data source to the pipeline.</summary>
@@ -271,6 +281,10 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await DrainAsync(TimeSpan.FromSeconds(5), drainCts.Token).ConfigureAwait(false);
         await DisposeComponentsAsync().ConfigureAwait(false);
+        if (_inputBuffer != null)
+            await _inputBuffer.DisposeAsync().ConfigureAwait(false);
+        if (_adaptiveInFlightLimiter != null)
+            await _adaptiveInFlightLimiter.DisposeAsync().ConfigureAwait(false);
         _internalCts?.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -371,6 +385,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         );
         var token = linkedCts.Token;
         _producerCompleted = _isPaused = false;
+        _inputBufferCompleted = false;
         using var activity = _activitySource.StartActivity("Pipeline.Run");
         activity?.SetTag("smartpipe.parallelism", _options.MaxDegreeOfParallelism);
         try
@@ -407,7 +422,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         await InitializePipelineAsync(token).ConfigureAwait(false);
         var retryTask = _retryQueue != null ? ProcessRetriesAsync(token) : null;
         var producerTask = ProduceAsync(token);
-        int p = _adaptiveParallelism?.Current ?? _options.MaxDegreeOfParallelism;
+        int p = _inputBuffer?.TotalLaneCount ?? _adaptiveParallelism?.Current ?? _options.MaxDegreeOfParallelism;
         var consumers = new Task[p];
         for (int i = 0; i < p; i++)
             consumers[i] = ConsumeAsync(token, i);
@@ -422,13 +437,14 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         if (retryTask != null)
             await retryTask.ConfigureAwait(false);
 
-        _inputChannel!.Writer.TryComplete();
+        CompleteInput();
         await Task.WhenAll(consumers).ConfigureAwait(false);
         _outputChannel!.Writer.TryComplete();
         await sink.ConfigureAwait(false);
         await monitor.ConfigureAwait(false);
         await DisposePipelineAsync(token).ConfigureAwait(false);
-        ChannelPool.CloseChannel(_inputChannel);
+        if (_inputChannel != null)
+            ChannelPool.CloseChannel(_inputChannel);
         ChannelPool.CloseChannel(_outputChannel);
         if (Volatile.Read(ref _cancelCalled) != 0 || token.IsCancellationRequested)
         {
@@ -450,15 +466,37 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             await t.InitializeAsync(token).ConfigureAwait(false);
         foreach (var s in _sinks)
             await s.InitializeAsync(token).ConfigureAwait(false);
-        _inputChannel = ChannelPool.CreateBoundedMultiReaderMultiWriter<ProcessingContext<TInput>>(
-            _options.BoundedCapacity,
-            _options.FullMode
-        );
+        if (_options.AdaptiveParallelism.Enabled)
+            InitializeAdaptiveInputBuffer();
+        else
+            _inputChannel = ChannelPool.CreateBoundedMultiReaderMultiWriter<ProcessingContext<TInput>>(
+                _options.BoundedCapacity,
+                _options.FullMode
+            );
         _outputChannel = ChannelPool.CreateBoundedSingleReaderMultiWriter<ProcessingResult<TOutput>>(
             _options.BoundedCapacity,
             _options.FullMode
         );
         Metrics = new SmartPipeMetrics();
+    }
+
+    private void InitializeAdaptiveInputBuffer()
+    {
+        var adaptive = _options.AdaptiveParallelism;
+        var totalLaneCount = Math.Min(adaptive.MaxDegreeOfParallelism, _options.BoundedCapacity);
+        var initialActiveLaneCount = Math.Min(adaptive.InitialDegreeOfParallelism, totalLaneCount);
+
+        _adaptiveChannelSet = new AdaptiveChannelSet<ProcessingContext<TInput>>(
+            _options.BoundedCapacity,
+            totalLaneCount,
+            initialActiveLaneCount,
+            _options.FullMode
+        );
+        _inputBuffer = _adaptiveChannelSet;
+        _adaptiveInFlightLimiter = new AdaptiveInFlightLimiter(adaptive.InitialInFlightItems);
+        _adaptiveController = new AdaptiveParallelismController(adaptive);
+        _lastAdaptiveDecisionUtc = DateTimeOffset.UtcNow;
+        _lastAdaptiveProcessed = _lastAdaptiveFailed = _lastAdaptiveRetried = 0;
     }
 
     private async Task DisposePipelineAsync(CancellationToken token)
@@ -529,21 +567,21 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
                 await ProcessSourceItemAsync(ctx, ct).ConfigureAwait(false);
             }
         }
-        catch (InvalidOperationException ex) when (ct.IsCancellationRequested == false)
+        catch (InvalidOperationException ex)
         {
             using var a = _activitySource.StartActivity("Source.Error");
             a?.SetStatus(ActivityStatusCode.Error, ex.Message);
             _logger?.LogError(ex, "Source error in ProduceAsync");
             Metrics.RecordFailed();
         }
-        catch (NotSupportedException ex) when (ct.IsCancellationRequested == false)
+        catch (NotSupportedException ex)
         {
             using var a = _activitySource.StartActivity("Source.Error");
             a?.SetStatus(ActivityStatusCode.Error, ex.Message);
             _logger?.LogError(ex, "Source error in ProduceAsync");
             Metrics.RecordFailed();
         }
-        catch (IOException ex) when (ct.IsCancellationRequested == false)
+        catch (IOException ex)
         {
             using var a = _activitySource.StartActivity("Source.Error");
             a?.SetStatus(ActivityStatusCode.Error, ex.Message);
@@ -576,15 +614,15 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             }
         }
 
-        Metrics.QueueSize = _inputChannel?.Reader.Count ?? 0;
+        Metrics.QueueSize = GetInputQueueSize();
 
-        if (_inputChannel != null)
+        if (_inputChannel != null || _inputBuffer != null)
         {
             _backpressure.UpdateThroughput(
                 _adaptiveMetrics.SmoothThroughputPerSec,
                 _adaptiveMetrics.PredictNextLatency()
             );
-            await _backpressure.ThrottleAsync(_inputChannel.Reader.Count, ct).ConfigureAwait(false);
+            await _backpressure.ThrottleAsync(GetInputQueueSize(), ct).ConfigureAwait(false);
         }
 
         if (_cuckooFilter?.Contains(ctx.TraceId) == true)
@@ -604,7 +642,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         }
 
         _debugSampler?.Add(ctx.Payload);
-        await _inputChannel!.Writer.WriteAsync(ctx, ct).ConfigureAwait(false);
+        await WriteInputAsync(ctx, ct).ConfigureAwait(false);
         int current = Interlocked.Increment(ref _totalCount);
         _options.OnMetrics?.Invoke(Metrics);
         _options.OnProgress?.Invoke(current, null, _clock.UtcNow - _startTime, null);
@@ -612,6 +650,12 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
 
     private async Task ConsumeAsync(CancellationToken ct, int consumerIndex)
     {
+        if (_inputBuffer != null)
+        {
+            await ConsumeAdaptiveAsync(ct, consumerIndex).ConfigureAwait(false);
+            return;
+        }
+
         try
         {
             await foreach (var ctx in _inputChannel!.Reader.ReadAllAsync(ct).ConfigureAwait(false))
@@ -882,6 +926,46 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         }
     }
 
+    private async Task ConsumeAdaptiveAsync(CancellationToken ct, int consumerIndex)
+    {
+        var reader = _inputBuffer!.CreateReader(consumerIndex);
+
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await using var lease = await _adaptiveInFlightLimiter!
+                    .AcquireAsync(ct)
+                    .ConfigureAwait(false);
+                var ctx = await reader.ReadAsync(ct).ConfigureAwait(false);
+
+                if (!ShouldProcessItem(ctx, consumerIndex))
+                    continue;
+                if (!await HandleCircuitBreakerAsync(ctx, ct).ConfigureAwait(false))
+                    continue;
+
+                Interlocked.Increment(ref _activeConsumerCount);
+                try
+                {
+                    var (result, elapsed) = await ProcessTransformAsync(ctx, ct).ConfigureAwait(false);
+                    await HandleTransformResultAsync(ctx, result, elapsed, ct).ConfigureAwait(false);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _activeConsumerCount);
+                }
+            }
+        }
+        catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
+        {
+            _logger?.LogDebug(ex, "Pipeline operation was cancelled");
+        }
+        catch (ChannelClosedException)
+        {
+            // Normal completion path after the producer and retry queue complete the input buffer.
+        }
+    }
+
     private async ValueTask HandleDeadLetterAsync(
         ProcessingContext<TInput> ctx,
         ProcessingResult<TOutput> result,
@@ -919,7 +1003,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     {
         Metrics.SmoothLatencyMs = _adaptiveMetrics.SmoothLatencyMs;
         Metrics.SmoothThroughput = _adaptiveMetrics.SmoothThroughputPerSec;
-        Metrics.QueueSize = _inputChannel!.Reader.Count;
+        Metrics.QueueSize = GetInputQueueSize();
         _options.OnMetrics?.Invoke(Metrics);
         await _outputChannel!.Writer.WriteAsync(result, ct).ConfigureAwait(false);
     }
@@ -983,7 +1067,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         // and the input channel is drained — no more retries can be generated.
         return _producerCompleted
             && Volatile.Read(ref _activeConsumerCount) == 0
-            && (_inputChannel?.Reader.Count ?? 0) == 0
+            && GetInputQueueSize() == 0
             && (_retryQueue?.HasPendingItems != true);
     }
 
@@ -1020,7 +1104,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
 
         try
         {
-            await _inputChannel!.Writer.WriteAsync(ri.Context, ct).ConfigureAwait(false);
+            await WriteInputAsync(ri.Context, ct).ConfigureAwait(false);
         }
         catch (ChannelClosedException ex)
         {
@@ -1044,6 +1128,12 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
 
     private async Task MonitorParallelismAsync(CancellationToken ct)
     {
+        if (_inputBuffer != null)
+        {
+            await MonitorAdaptiveParallelismAsync(ct).ConfigureAwait(false);
+            return;
+        }
+
         try
         {
             while (
@@ -1064,6 +1154,113 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             // Operation cancellation is expected behavior in pipeline processing
             _logger?.LogDebug(ex, "Pipeline operation was cancelled");
         }
+    }
+
+    private async Task MonitorAdaptiveParallelismAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested && !_inputBufferCompleted)
+            {
+                await Task.Delay(_options.AdaptiveParallelism.SamplingInterval, ct).ConfigureAwait(false);
+                ApplyAdaptiveParallelismDecision();
+            }
+        }
+        catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
+        {
+            _logger?.LogDebug(ex, "Pipeline operation was cancelled");
+        }
+    }
+
+    private void ApplyAdaptiveParallelismDecision()
+    {
+        if (_inputBuffer == null || _adaptiveInFlightLimiter == null || _adaptiveController == null)
+            return;
+
+        var now = DateTimeOffset.UtcNow;
+        var bufferSnapshot = _inputBuffer.CaptureSnapshot();
+        var metricsSnapshot = Metrics.CaptureSnapshot();
+        var processedDelta = metricsSnapshot.ItemsProcessed - _lastAdaptiveProcessed;
+        var failedDelta = metricsSnapshot.ItemsFailed - _lastAdaptiveFailed;
+        var retriedDelta = metricsSnapshot.Retries - _lastAdaptiveRetried;
+
+        _lastAdaptiveProcessed = metricsSnapshot.ItemsProcessed;
+        _lastAdaptiveFailed = metricsSnapshot.ItemsFailed;
+        _lastAdaptiveRetried = metricsSnapshot.Retries;
+
+        var snapshot = new AdaptiveParallelismSnapshot(
+            now,
+            bufferSnapshot.ActiveLaneCount,
+            bufferSnapshot.TotalLaneCount,
+            bufferSnapshot.ActiveBufferedItems,
+            bufferSnapshot.InactiveBufferedItems,
+            bufferSnapshot.TotalBufferedItems,
+            bufferSnapshot.ActiveQueuePressure,
+            bufferSnapshot.TotalQueuePressure,
+            _adaptiveInFlightLimiter.InUse,
+            _adaptiveInFlightLimiter.CurrentLimit,
+            processedDelta,
+            failedDelta,
+            retriedDelta,
+            TimeSpan.FromMilliseconds(_latencyHistogram.GetPercentile(0.95)),
+            now - _lastAdaptiveDecisionUtc
+        );
+
+        var decision = _adaptiveController.Decide(snapshot);
+        if (decision.TargetActiveLanes == bufferSnapshot.ActiveLaneCount
+            && decision.TargetInFlightLimit == _adaptiveInFlightLimiter.CurrentLimit)
+            return;
+
+        _inputBuffer.RequestActiveLaneCount(decision.TargetActiveLanes);
+        _adaptiveInFlightLimiter.UpdateLimit(decision.TargetInFlightLimit);
+        _lastAdaptiveDecisionUtc = now;
+        _logger?.LogDebug(
+            "Adaptive parallelism decision {Reason}: active lanes {ActiveLanes}, in-flight limit {InFlightLimit}",
+            decision.Reason,
+            decision.TargetActiveLanes,
+            decision.TargetInFlightLimit
+        );
+    }
+
+    private async ValueTask WriteInputAsync(ProcessingContext<TInput> ctx, CancellationToken ct)
+    {
+        if (_inputBuffer != null)
+        {
+            await _inputBuffer.WriteAsync(ctx, ct).ConfigureAwait(false);
+            return;
+        }
+
+        await _inputChannel!.Writer.WriteAsync(ctx, ct).ConfigureAwait(false);
+    }
+
+    private void CompleteInput()
+    {
+        if (_inputBuffer != null)
+        {
+            _inputBufferCompleted = true;
+            _inputBuffer.Complete();
+            return;
+        }
+
+        _inputChannel!.Writer.TryComplete();
+    }
+
+    private int GetInputQueueSize()
+    {
+        if (_inputBuffer != null)
+            return SaturatingToInt32(_inputBuffer.CaptureSnapshot().TotalBufferedItems);
+
+        return _inputChannel?.Reader.Count ?? 0;
+    }
+
+    private static int SaturatingToInt32(long value)
+    {
+        if (value <= 0)
+            return 0;
+        if (value >= int.MaxValue)
+            return int.MaxValue;
+
+        return (int)value;
     }
 
     private sealed class ChannelForwardingSink<T> : ISink<T>

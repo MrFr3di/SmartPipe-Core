@@ -22,6 +22,7 @@ This document lists implemented configuration APIs only.
 | `DeadLetterSink` | `ISink<object>?` | `null` | Legacy sink for exhausted retries or permanent errors. |
 | `DefaultRetryPolicy` | `RetryPolicy?` | `null` | Legacy default retry policy. Null falls back to 3 retries with 1 second delay. |
 | `RetryQueueOverflowPolicy` | `RetryQueueOverflowPolicy` | `Wait` | Legacy bounded retry queue overflow behavior. |
+| `AdaptiveParallelism` | `AdaptiveParallelismOptions` | disabled | Opt-in adaptive legacy runtime lane and in-flight budget control. |
 | `FeatureFlags` | `Dictionary<string,bool>` | see below | Optional components and diagnostics. |
 
 Default feature flags:
@@ -60,6 +61,34 @@ Lossy bounded modes can drop items under pressure:
 
 Use lossy modes only when dropped work is acceptable and externally visible in
 the caller's reliability model.
+
+## Adaptive Parallelism
+
+`AdaptiveParallelism` is disabled by default. When enabled, it controls the
+legacy runtime's active input lanes and in-flight item budget. It does not
+manage the .NET ThreadPool, durable queues, storage, sync, checkpoints, replay,
+or retry policy.
+
+Adaptive mode requires `FullMode = BoundedChannelFullMode.Wait`. Validation
+rejects lossy bounded modes (`DropWrite`, `DropOldest`, `DropNewest`) because
+the adaptive runtime is not allowed to discard accepted work while changing
+lane counts.
+
+Adaptive mode cannot be combined with `JumpHash` in 1.1. JumpHash routing is
+rejected until partition routing happens before lane writes.
+
+Key adaptive options:
+
+| Option | Default | Notes |
+|---|---|---|
+| `Enabled` | `false` | Enables adaptive lane and in-flight control. |
+| `MinDegreeOfParallelism` | `1` | Minimum active input lane count. |
+| `MaxDegreeOfParallelism` | `Environment.ProcessorCount` | Maximum adaptive lane count. |
+| `InitialDegreeOfParallelism` | `min(4, Environment.ProcessorCount)` | Initial active lane count. |
+| `InitialInFlightItems` | `min(4, Environment.ProcessorCount)` | Initial in-flight item budget. Must be at least the initial lane count. |
+| `MaxInFlightItems` | `Environment.ProcessorCount * 4` | Maximum in-flight item budget. |
+| `SamplingInterval` | `1 second` | Controller sampling cadence. |
+| `Cooldown` | `5 seconds` | Minimum interval between controller changes. |
 
 ## Retry
 

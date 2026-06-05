@@ -53,6 +53,26 @@ where accepted items are expected to be retained under pressure. Lossy bounded
 modes such as `DropWrite`, `DropOldest`, and `DropNewest` may drop items when
 capacity is exhausted.
 
+## Adaptive Parallelism Contract
+
+Legacy `SmartPipeChannel` adaptive parallelism is opt-in and disabled by
+default. Adaptive mode uses bounded input lanes plus a separate in-flight
+limiter. A permit is acquired before a worker reads an item, so the configured
+in-flight budget bounds concurrent item processing.
+
+Adaptive mode changes the number of active input lanes conservatively. Decreased
+lanes are not completed and their buffered items are not discarded; inactive
+lane backlog remains readable until drained. Writes route only to active lanes.
+
+Adaptive queue pressure is approximate. Runtime snapshots separate active
+buffered items, inactive buffered items, and total buffered items. Total
+buffered items includes inactive drain backlog. Controller decisions may lag
+behind workload changes because they honor sampling and cooldown windows.
+
+Adaptive mode requires `BoundedChannelFullMode.Wait` and rejects `JumpHash` in
+1.1. It does not change retry policy, source replay, durability, ThreadPool
+settings, storage, or synchronization behavior.
+
 ## Metrics Snapshot
 
 `SmartPipeMetrics.CaptureSnapshot()` returns an observational sample of the

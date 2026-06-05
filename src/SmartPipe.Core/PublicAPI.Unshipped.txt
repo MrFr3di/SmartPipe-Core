@@ -1,4 +1,30 @@
 #nullable enable
+SmartPipe.Core.AdaptiveParallelismOptions
+SmartPipe.Core.AdaptiveParallelismOptions.AdaptiveParallelismOptions() -> void
+SmartPipe.Core.AdaptiveParallelismOptions.Cooldown.get -> System.TimeSpan
+SmartPipe.Core.AdaptiveParallelismOptions.Cooldown.set -> void
+SmartPipe.Core.AdaptiveParallelismOptions.Enabled.get -> bool
+SmartPipe.Core.AdaptiveParallelismOptions.Enabled.set -> void
+SmartPipe.Core.AdaptiveParallelismOptions.FailureRateScaleDownThreshold.get -> double
+SmartPipe.Core.AdaptiveParallelismOptions.FailureRateScaleDownThreshold.set -> void
+SmartPipe.Core.AdaptiveParallelismOptions.InitialDegreeOfParallelism.get -> int
+SmartPipe.Core.AdaptiveParallelismOptions.InitialDegreeOfParallelism.set -> void
+SmartPipe.Core.AdaptiveParallelismOptions.InitialInFlightItems.get -> int
+SmartPipe.Core.AdaptiveParallelismOptions.InitialInFlightItems.set -> void
+SmartPipe.Core.AdaptiveParallelismOptions.MaxDegreeOfParallelism.get -> int
+SmartPipe.Core.AdaptiveParallelismOptions.MaxDegreeOfParallelism.set -> void
+SmartPipe.Core.AdaptiveParallelismOptions.MaxInFlightItems.get -> int
+SmartPipe.Core.AdaptiveParallelismOptions.MaxInFlightItems.set -> void
+SmartPipe.Core.AdaptiveParallelismOptions.MinDegreeOfParallelism.get -> int
+SmartPipe.Core.AdaptiveParallelismOptions.MinDegreeOfParallelism.set -> void
+SmartPipe.Core.AdaptiveParallelismOptions.SamplingInterval.get -> System.TimeSpan
+SmartPipe.Core.AdaptiveParallelismOptions.SamplingInterval.set -> void
+SmartPipe.Core.AdaptiveParallelismOptions.ScaleDownQueuePressure.get -> double
+SmartPipe.Core.AdaptiveParallelismOptions.ScaleDownQueuePressure.set -> void
+SmartPipe.Core.AdaptiveParallelismOptions.ScaleUpQueuePressure.get -> double
+SmartPipe.Core.AdaptiveParallelismOptions.ScaleUpQueuePressure.set -> void
+SmartPipe.Core.AdaptiveParallelismOptions.Validate(System.Threading.Channels.BoundedChannelFullMode fullMode, bool jumpHashEnabled) -> void
+SmartPipe.Core.SmartPipeChannelOptions.AdaptiveParallelism.get -> SmartPipe.Core.AdaptiveParallelismOptions!
 SmartPipe.Core.SmartPipeMetrics.CaptureSnapshot() -> SmartPipe.Core.SmartPipeMetricsSnapshot!
 SmartPipe.Core.SmartPipeMetricsSnapshot
 SmartPipe.Core.SmartPipeMetricsSnapshot.AvgLatencyMs.get -> double
