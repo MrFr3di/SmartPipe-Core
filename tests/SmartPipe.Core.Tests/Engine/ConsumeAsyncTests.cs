@@ -237,17 +237,13 @@ public class ConsumeAsyncTests
         // Act
         await InvokeConsumeAsync(_cts.Token);
 
-        // Assert: Method completes without error (failure is handled by HandleTransformResultAsync)
-        // Failed items are NOT written to output channel in v1.0.6 — they go to retry/dead letter.
-        // So output channel should be empty.
+        // Assert: Method completes without error and non-retried failures are observable as terminal output.
         var outputChannel = GetOutputChannel();
         Assert.NotNull(outputChannel);
-
-        // Try to read with a short timeout — should timeout because no item is written
-        using var readCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
-            await outputChannel.Reader.ReadAsync(readCts.Token)
-        );
+        var output = await outputChannel.Reader.ReadAsync(_cts.Token);
+        Assert.False(output.IsSuccess);
+        Assert.Equal(ErrorType.Transient, output.Error!.Value.Type);
+        Assert.Equal(ctx.TraceId, output.TraceId);
     }
 
     /// <summary>

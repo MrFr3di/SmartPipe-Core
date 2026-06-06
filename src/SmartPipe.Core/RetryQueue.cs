@@ -102,8 +102,7 @@ public class RetryQueue<T>
             );
             if (_deadLetterSink != null)
             {
-                var result = ProcessingResult<object>.Failure(error, ctx.TraceId);
-                await _deadLetterSink.WriteAsync(result, ct).ConfigureAwait(false);
+                await WriteDeadLetterAsync(ctx, error, retryCount, ct).ConfigureAwait(false);
             }
             return false;
         }
@@ -124,7 +123,7 @@ public class RetryQueue<T>
             case RetryQueueOverflowPolicy.DeadLetter:
                 if (TryEnqueueNonLossy(item))
                     return true;
-                await WriteDeadLetterAsync(ctx, error, ct).ConfigureAwait(false);
+                await WriteDeadLetterAsync(ctx, error, retryCount, ct).ConfigureAwait(false);
                 return false;
 
             case RetryQueueOverflowPolicy.DropNewest:
@@ -250,15 +249,39 @@ public class RetryQueue<T>
     private async ValueTask WriteDeadLetterAsync(
         ProcessingContext<T> ctx,
         SmartPipeError error,
+        int retryCount,
         CancellationToken ct
     )
     {
         if (_deadLetterSink == null)
             return;
 
-        var deadResult = ProcessingResult<object>.Failure(error, ctx.TraceId);
+        var failedAtUtc = DateTime.SpecifyKind(_clock.UtcNow, DateTimeKind.Utc);
+        var deadLetter = new DeadLetterEnvelope<T>
+        {
+            SchemaVersion = 1,
+            PipelineId = GetMetadataValue(ctx, ProcessingContext<T>.LineagePipeline, "legacy"),
+            RunId = GetMetadataValue(ctx, "run_id", "legacy"),
+            TraceId = ctx.TraceId,
+            StageId = error.Category ?? "RetryQueue",
+            StageName = error.Category ?? "RetryQueue",
+            OriginalPayload = ctx.Payload,
+            Metadata = MetadataBag.From(ctx.Metadata),
+            Error = error,
+            Attempt = retryCount,
+            FailedAtUtc = new DateTimeOffset(failedAtUtc),
+        };
+        var deadResult = ProcessingResult<object>.Success(deadLetter, ctx.TraceId);
         await _deadLetterSink.WriteAsync(deadResult, ct).ConfigureAwait(false);
     }
+
+    private static string GetMetadataValue(
+        ProcessingContext<T> ctx,
+        string key,
+        string fallback
+    ) => ctx.Metadata.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
+        ? value
+        : fallback;
 
     private void IncrementPending() => Interlocked.Increment(ref _pendingCount);
 

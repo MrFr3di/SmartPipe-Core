@@ -31,6 +31,30 @@ public class SmartPipeChannelAdvancedTests
     }
 
     [Fact]
+    public async Task DrainAsync_DuringRunAsync_ShouldWaitForAcceptedWork()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var transformer = new BlockingPassthroughTransformer<int>(release);
+        var channel = new SmartPipeChannel<int, int>();
+        channel.AddSource(new SimpleSource<int>(1));
+        channel.AddTransformer(transformer);
+        channel.AddSink(new CollectionSink<int>());
+
+        var runTask = channel.RunAsync();
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var drainTask = channel.DrainAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(100);
+
+        drainTask.IsCompleted.Should().BeFalse(
+            "drain must wait for work accepted by a direct RunAsync invocation");
+
+        release.SetResult();
+        await drainTask;
+        await runTask;
+    }
+
+    [Fact]
     public async Task RunAsync_WithOnMetrics_ShouldCallDelegate()
     {
         var metricsList = new List<SmartPipeMetrics>();
@@ -81,5 +105,31 @@ public class SmartPipeChannelAdvancedTests
         var pipe = new SmartPipeChannel<int, int>();
         pipe.Cancel();
         pipe.State.Should().Be(PipelineState.Cancelled);
+    }
+
+    private sealed class BlockingPassthroughTransformer<T> : ITransformer<T, T>
+    {
+        private readonly TaskCompletionSource _release;
+
+        public BlockingPassthroughTransformer(TaskCompletionSource release)
+        {
+            _release = release;
+        }
+
+        public TaskCompletionSource Entered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+        public async ValueTask<ProcessingResult<T>> TransformAsync(
+            ProcessingContext<T> ctx,
+            CancellationToken ct = default)
+        {
+            Entered.TrySetResult();
+            await _release.Task.WaitAsync(ct).ConfigureAwait(false);
+            return ProcessingResult<T>.Success(ctx.Payload, ctx.TraceId);
+        }
+
+        public Task DisposeAsync() => Task.CompletedTask;
     }
 }

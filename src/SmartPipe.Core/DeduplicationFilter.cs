@@ -17,6 +17,8 @@ namespace SmartPipe.Core;
 /// </remarks>
 public class DeduplicationFilter
 {
+    private const long MaxTtlEntryCount = 10_000_000;
+
     private readonly BitArray _bits;
     private readonly int[]? _ttlBitCounts;
     private readonly int _hashCount,
@@ -63,9 +65,16 @@ public class DeduplicationFilter
                 falsePositiveRate,
                 "False positive rate must be greater than zero and less than one.");
 
-        _size = (int)(-expectedItems * Math.Log(falsePositiveRate) / (Math.Log(2) * Math.Log(2)));
+        double bitSize = -expectedItems * Math.Log(falsePositiveRate) / (Math.Log(2) * Math.Log(2));
+        if (!double.IsFinite(bitSize) || bitSize > int.MaxValue)
+            throw new ArgumentOutOfRangeException(
+                nameof(expectedItems),
+                expectedItems,
+                "Expected items and false positive rate require more bits than this filter supports.");
+
+        _size = Math.Max(1024, (int)Math.Ceiling(bitSize));
         _hashCount = Math.Max(1, (int)(_size / (double)expectedItems * Math.Log(2)));
-        _bits = new BitArray(Math.Max(1024, _size));
+        _bits = new BitArray(_size);
         _ttl = ttl;
         _clock = clock ?? new TimeProviderClock();
 
@@ -73,7 +82,7 @@ public class DeduplicationFilter
         {
             _ttlBitCounts = new int[_size];
             // Allocate ring buffer for TTL tracking (1 entry per expected item)
-            _ttlEntries = new TtlEntry[Math.Min(expectedItems, 10_000_000)];
+            _ttlEntries = new TtlEntry[(int)Math.Min(expectedItems, MaxTtlEntryCount)];
         }
     }
 

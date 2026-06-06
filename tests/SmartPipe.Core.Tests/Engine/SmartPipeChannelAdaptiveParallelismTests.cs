@@ -116,6 +116,36 @@ public sealed class SmartPipeChannelAdaptiveParallelismTests
     }
 
     [Fact]
+    public async Task RunAsync_WithAdaptiveMode_ShouldNotAcquireInFlightLeaseWhileWaitingForInput()
+    {
+        var options = AdaptiveOptions();
+        options.AdaptiveParallelism.MaxDegreeOfParallelism = 2;
+        options.AdaptiveParallelism.InitialDegreeOfParallelism = 2;
+        options.AdaptiveParallelism.InitialInFlightItems = 2;
+        options.AdaptiveParallelism.MaxInFlightItems = 2;
+        var source = new GatedEmptySource<int>();
+        var channel = new SmartPipeChannel<int, int>(options);
+        channel.AddSource(source);
+        channel.AddTransformer(new IdentityTransformer<int>());
+        channel.AddSink(new NoOpSink<int>());
+
+        var runTask = channel.RunAsync();
+        await source.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var limiter = await WaitForLimiterAsync(channel);
+
+        try
+        {
+            await Task.Delay(100);
+            limiter.InUse.Should().Be(0);
+        }
+        finally
+        {
+            source.Release();
+            await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_WithAdaptiveMode_ShouldCompleteWithoutHanging()
     {
         var channel = new SmartPipeChannel<int, int>(AdaptiveOptions());
@@ -154,6 +184,43 @@ public sealed class SmartPipeChannelAdaptiveParallelismTests
         return typeof(SmartPipeChannel<TInput, TOutput>)
             .GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(channel);
+    }
+
+    private static async Task<AdaptiveInFlightLimiter> WaitForLimiterAsync<TInput, TOutput>(
+        SmartPipeChannel<TInput, TOutput> channel)
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            if (GetPrivateField(channel, "_adaptiveInFlightLimiter") is AdaptiveInFlightLimiter limiter)
+                return limiter;
+
+            await Task.Delay(10);
+        }
+
+        throw new TimeoutException("Adaptive in-flight limiter was not initialized.");
+    }
+
+    private sealed class GatedEmptySource<T> : ISource<T>
+    {
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Entered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+        public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            Entered.TrySetResult();
+            await _release.Task.WaitAsync(ct).ConfigureAwait(false);
+            yield break;
+        }
+
+        public void Release() => _release.TrySetResult();
+
+        public Task DisposeAsync() => Task.CompletedTask;
     }
 
     private sealed class ConcurrentTrackingTransformer(TimeSpan delay) : ITransformer<int, int>

@@ -20,10 +20,10 @@ public class SmartPipeChannelEdgeCaseTests
     }
 
     [Fact]
-    public async Task RunAsync_WithAllFeaturesEnabled_ShouldNotThrow()
+    public async Task RunAsync_WithSupportedFeaturesEnabled_ShouldNotThrow()
     {
         var options = new SmartPipeChannelOptions();
-        foreach (var flag in new[] { "RetryQueue", "CircuitBreaker", "DebugSampling", "CuckooFilter", "JumpHash" })
+        foreach (var flag in new[] { "RetryQueue", "CircuitBreaker", "DebugSampling", "CuckooFilter" })
             options.EnableFeature(flag);
         var source = new SimpleSource<int>(1, 2, 3);
         var transformer = new PassthroughTransformer<int>();
@@ -86,16 +86,15 @@ public class SmartPipeChannelEdgeCaseTests
     }
 
     [Fact]
-    public async Task RunAsync_WithJumpHashFeature_ShouldNotThrow()
+    public void Constructor_WithJumpHashFeature_ShouldThrow()
     {
         var options = new SmartPipeChannelOptions();
         options.EnableFeature("JumpHash");
-        var source = new SimpleSource<int>(1, 2, 3);
-        var transformer = new PassthroughTransformer<int>();
-        var sink = new CollectionSink<int>();
-        var channel = new SmartPipeChannel<int, int>(options);
-        channel.AddSource(source); channel.AddTransformer(transformer); channel.AddSink(sink);
-        await channel.Invoking(c => c.RunAsync()).Should().NotThrowAsync();
+
+        var act = () => new SmartPipeChannel<int, int>(options);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*JumpHash*routing*disabled*");
     }
 
     [Fact]

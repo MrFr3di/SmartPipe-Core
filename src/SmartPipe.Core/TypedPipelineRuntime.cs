@@ -633,8 +633,14 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     public async ValueTask DrainAsync(TimeSpan timeout, CancellationToken ct = default)
     {
         RequestDrain();
-        _state = PipelineRunState.Draining;
-        await _runTask!.WaitAsync(timeout, ct).ConfigureAwait(false);
+        var runTask = _runTask ?? throw new InvalidOperationException("Pipeline run has not started.");
+        if (!runTask.IsCompleted)
+            _state = PipelineRunState.Draining;
+
+        await runTask.WaitAsync(timeout, ct).ConfigureAwait(false);
+
+        if (_state == PipelineRunState.Draining)
+            _state = PipelineRunState.Completed;
     }
 
     public ValueTask AbortAsync(CancellationToken ct = default)

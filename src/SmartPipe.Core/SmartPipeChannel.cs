@@ -875,14 +875,18 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         activity?.SetStatus(ActivityStatusCode.Error, result.Error?.Message);
         LogFailure(result.Error);
 
-        if (ShouldRetry(result.Error))
-        {
-            await HandleRetryAsync(ctx, result, ct).ConfigureAwait(false);
-        }
-        else
-        {
-            await HandleDeadLetterAsync(ctx, result, ct).ConfigureAwait(false);
-        }
+        var retryResult = ShouldRetry(result.Error)
+            ? await TryScheduleRetryAsync(ctx, result, ct).ConfigureAwait(false)
+            : RetryScheduleResult.NotScheduled;
+
+        if (!retryResult.Scheduled)
+            await WriteTerminalFailureAsync(
+                    ctx,
+                    result,
+                    retryResult.DeadLetterWritten,
+                    ct
+                )
+                .ConfigureAwait(false);
 
         if (!_options.ContinueOnError)
             _internalCts.Cancel();
@@ -898,32 +902,32 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         return error?.Type == ErrorType.Transient;
     }
 
-    private async ValueTask HandleRetryAsync(
+    private async ValueTask<RetryScheduleResult> TryScheduleRetryAsync(
         ProcessingContext<TInput> ctx,
         ProcessingResult<TOutput> result,
         CancellationToken ct
     )
     {
         if (_retryQueue == null)
-            return;
+            return RetryScheduleResult.NotScheduled;
 
         Metrics.RecordRetry();
         var policy = _options.DefaultRetryPolicy ?? new RetryPolicy(3, TimeSpan.FromSeconds(1));
-        bool enqueued = await _retryQueue
-            .EnqueueAsync(ctx, policy, GetRetryCount(ctx), result.Error!.Value, ct)
+        var retryCount = GetRetryCount(ctx);
+        var enqueued = await _retryQueue
+            .EnqueueAsync(ctx, policy, retryCount, result.Error!.Value, ct)
             .ConfigureAwait(false);
 
-        if (!enqueued)
-        {
-            var retryItem = new RetryItem<TInput>(
-                ctx,
-                policy,
-                GetRetryCount(ctx),
-                result.Error!.Value,
-                _clock.UtcNow
+        if (enqueued)
+            return RetryScheduleResult.ScheduledResult;
+
+        var deadLetterWritten =
+            _options.DeadLetterSink is not null
+            && (
+                retryCount >= policy.MaxRetries
+                || _options.RetryQueueOverflowPolicy == RetryQueueOverflowPolicy.DeadLetter
             );
-            await HandleRetryBudgetExhaustedAsync(retryItem, ct).ConfigureAwait(false);
-        }
+        return new RetryScheduleResult(Scheduled: false, DeadLetterWritten: deadLetterWritten);
     }
 
     private async Task ConsumeAdaptiveAsync(CancellationToken ct, int consumerIndex)
@@ -934,9 +938,6 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         {
             while (!ct.IsCancellationRequested)
             {
-                await using var lease = await _adaptiveInFlightLimiter!
-                    .AcquireAsync(ct)
-                    .ConfigureAwait(false);
                 var ctx = await reader.ReadAsync(ct).ConfigureAwait(false);
 
                 if (!ShouldProcessItem(ctx, consumerIndex))
@@ -944,6 +945,9 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
                 if (!await HandleCircuitBreakerAsync(ctx, ct).ConfigureAwait(false))
                     continue;
 
+                await using var lease = await _adaptiveInFlightLimiter!
+                    .AcquireAsync(ct)
+                    .ConfigureAwait(false);
                 Interlocked.Increment(ref _activeConsumerCount);
                 try
                 {
@@ -975,13 +979,26 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         if (_options.DeadLetterSink == null)
             return;
 
-        var deadLetterError = new SmartPipeError(
-            result.Error?.Message ?? "Unknown",
-            ErrorType.Permanent
-        );
+        var deadLetterError = result.Error ?? new SmartPipeError("Unknown", ErrorType.Permanent);
+        var failedAtUtc = DateTime.SpecifyKind(_clock.UtcNow, DateTimeKind.Utc);
+        var deadLetter = new DeadLetterEnvelope<TInput>
+        {
+            SchemaVersion = 1,
+            PipelineId = GetMetadataValue(ctx, ProcessingContext<TInput>.LineagePipeline, "legacy"),
+            RunId = GetMetadataValue(ctx, "run_id", "legacy"),
+            TraceId = ctx.TraceId,
+            StageId = deadLetterError.Category ?? "legacy",
+            StageName = deadLetterError.Category ?? "LegacySmartPipeChannel",
+            OriginalPayload = ctx.Payload,
+            Metadata = MetadataBag.From(ctx.Metadata),
+            Error = deadLetterError,
+            Attempt = GetRetryCount(ctx),
+            FailedAtUtc = new DateTimeOffset(failedAtUtc),
+        };
+
         await _options
             .DeadLetterSink.WriteAsync(
-                ProcessingResult<object>.Failure(deadLetterError, ctx.TraceId),
+                ProcessingResult<object>.Success(deadLetter, ctx.TraceId),
                 ct
             )
             .ConfigureAwait(false);
@@ -1078,21 +1095,35 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
 
     private async Task HandleRetryBudgetExhaustedAsync(RetryItem<TInput> ri, CancellationToken ct)
     {
-        if (!_outputChannel!.Reader.Completion.IsCompleted)
+        await WriteTerminalFailureAsync(
+                ri.Context,
+                ProcessingResult<TOutput>.Failure(ri.Error, ri.Context.TraceId),
+                deadLetterAlreadyWritten: false,
+                ct
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask WriteTerminalFailureAsync(
+        ProcessingContext<TInput> ctx,
+        ProcessingResult<TOutput> result,
+        bool deadLetterAlreadyWritten,
+        CancellationToken ct
+    )
+    {
+        if (!deadLetterAlreadyWritten)
+            await HandleDeadLetterAsync(ctx, result, ct).ConfigureAwait(false);
+
+        if (_outputChannel is null || _outputChannel.Reader.Completion.IsCompleted)
+            return;
+
+        try
         {
-            try
-            {
-                await _outputChannel
-                    .Writer.WriteAsync(
-                        ProcessingResult<TOutput>.Failure(ri.Error, ri.Context.TraceId),
-                        ct
-                    )
-                    .ConfigureAwait(false);
-            }
-            catch (ChannelClosedException ex)
-            {
-                _logger?.LogDebug(ex, "Output channel closed while writing retry failure");
-            }
+            await WriteOutputAsync(result, ct).ConfigureAwait(false);
+        }
+        catch (ChannelClosedException ex)
+        {
+            _logger?.LogDebug(ex, "Output channel closed while writing terminal failure");
         }
     }
 
@@ -1124,6 +1155,23 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             )
             ? retryCount
             : 0;
+    }
+
+    private static string GetMetadataValue(
+        ProcessingContext<TInput> ctx,
+        string key,
+        string fallback
+    ) => ctx.Metadata.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
+        ? value
+        : fallback;
+
+    private readonly record struct RetryScheduleResult(bool Scheduled, bool DeadLetterWritten)
+    {
+        public static RetryScheduleResult ScheduledResult { get; } =
+            new(Scheduled: true, DeadLetterWritten: false);
+
+        public static RetryScheduleResult NotScheduled { get; } =
+            new(Scheduled: false, DeadLetterWritten: false);
     }
 
     private async Task MonitorParallelismAsync(CancellationToken ct)

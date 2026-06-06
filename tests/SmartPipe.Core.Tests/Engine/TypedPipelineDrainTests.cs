@@ -71,6 +71,22 @@ public sealed class TypedPipelineDrainTests
     }
 
     [Fact]
+    public async Task DrainAsync_AfterCompletion_ShouldNotRegressRunState()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .Run();
+
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        run.State.Should().Be(PipelineRunState.Completed);
+
+        await run.DrainAsync(TimeSpan.FromSeconds(5));
+
+        run.State.Should().Be(PipelineRunState.Completed);
+    }
+
+    [Fact]
     public async Task DrainAsync_Timeout_ShouldThrowTimeoutException()
     {
         // Arrange: source blocks indefinitely (never completes).

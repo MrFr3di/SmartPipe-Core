@@ -667,6 +667,31 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
+    public async Task ObserverDispatch_BufferedReliable_ShouldRespectRegistrationFaultPolicy()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = ObserverDispatchMode.BufferedReliable,
+                        Capacity = 8,
+                        FailureMode = ObserverFailureMode.Ignore,
+                    },
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(new ThrowingObserver(), failurePolicy: ObserverFailurePolicy.FaultPipeline)
+            .Run();
+
+        var act = async () => await run.Completion;
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
     public void ObserverDispatch_BufferedReliable_ShouldRejectFlushOnCompletionFalse()
     {
         var act = () =>

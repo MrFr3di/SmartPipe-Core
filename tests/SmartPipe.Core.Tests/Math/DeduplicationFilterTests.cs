@@ -80,6 +80,15 @@ public class DeduplicationFilterTests
     }
 
     [Fact]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenExpectedItemsWouldOverflowBitSize()
+    {
+        var act = () => new DeduplicationFilter(expectedItems: long.MaxValue);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("expectedItems");
+    }
+
+    [Fact]
     public void TtlCleanup_ShouldNotCreateFalseNegativeForNonExpiredItemSharingBits()
     {
         var ttl = TimeSpan.FromMilliseconds(120);

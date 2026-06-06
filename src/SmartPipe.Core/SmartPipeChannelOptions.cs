@@ -139,5 +139,10 @@ public class SmartPipeChannelOptions
             );
 
         AdaptiveParallelism.Validate(FullMode, IsEnabled("JumpHash"));
+
+        if (IsEnabled("JumpHash"))
+            throw new InvalidOperationException(
+                "JumpHash routing is disabled in legacy SmartPipeChannel until routing occurs before item reads."
+            );
     }
 }

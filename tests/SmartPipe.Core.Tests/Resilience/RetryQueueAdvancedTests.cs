@@ -151,6 +151,13 @@ public class RetryQueueAdvancedTests
 
         result.Should().BeFalse();
         sink.Count.Should().Be(1, "overflowed item should be written to dead-letter sink exactly once");
+        var deadLetter = sink.Items.Should().ContainSingle().Subject;
+        deadLetter.IsSuccess.Should().BeTrue();
+        var envelope = deadLetter.Value.Should().BeOfType<DeadLetterEnvelope<string>>().Subject;
+        envelope.OriginalPayload.Should().Be("dead-item");
+        envelope.TraceId.Should().Be(ctx.TraceId);
+        envelope.Error.Message.Should().Be("overflow");
+        envelope.Attempt.Should().Be(0);
     }
 
     [Fact]
