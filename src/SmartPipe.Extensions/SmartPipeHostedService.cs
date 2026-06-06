@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using SmartPipe.Core;
 
 namespace SmartPipe.Extensions;
@@ -15,6 +16,7 @@ public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
 {
     private readonly SmartPipeChannel<TInput, TOutput> _pipeline;
     private readonly ILogger<SmartPipeHostedService<TInput, TOutput>> _logger;
+    private readonly IServiceScope? _pipelineScope;
 
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(30);
 
@@ -31,6 +33,34 @@ public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
     {
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="SmartPipeHostedService{TInput, TOutput}"/>.
+    /// </summary>
+    /// <param name="pipelineFactory">Factory used to create the hosted SmartPipe pipeline.</param>
+    /// <param name="logger">Logger for diagnostic information.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="pipelineFactory"/> or <paramref name="logger"/> is null.</exception>
+    public SmartPipeHostedService(
+        ISmartPipeChannelFactory<TInput, TOutput> pipelineFactory,
+        ILogger<SmartPipeHostedService<TInput, TOutput>> logger
+    )
+    {
+        ArgumentNullException.ThrowIfNull(pipelineFactory);
+        _pipeline = pipelineFactory.Create();
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    internal SmartPipeHostedService(
+        IServiceScope pipelineScope,
+        ILogger<SmartPipeHostedService<TInput, TOutput>> logger
+    )
+    {
+        _pipelineScope = pipelineScope ?? throw new ArgumentNullException(nameof(pipelineScope));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _pipeline = _pipelineScope.ServiceProvider
+            .GetRequiredService<ISmartPipeChannelFactory<TInput, TOutput>>()
+            .Create();
     }
 
     /// <summary>
@@ -131,6 +161,10 @@ public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
         catch (OperationCanceledException ex)
         {
             _logger.LogDebug(ex, "SmartPipe pipeline dispose observed cancellation after stop");
+        }
+        finally
+        {
+            _pipelineScope?.Dispose();
         }
     }
 }

@@ -763,7 +763,7 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
-    public async Task TypedPipeline_DrainAsync_ShouldMatchDocumentedCompletionWaitSemantics()
+    public async Task TypedPipeline_DrainAsync_ShouldTimeoutWhenSourceIsBlockedInsideMoveNextAsync()
     {
         var source = new GateControlledSource<int>(1, 2);
 
@@ -774,11 +774,8 @@ public class RuntimeOptionsPassTests
 
         await source.FirstItemYielded.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        await run.DrainAsync(TimeSpan.FromMilliseconds(50));
-
-        run.Completion.IsCompleted.Should().BeFalse(
-            "typed DrainAsync waits for completion but does not independently stop source enumeration"
-        );
+        var act = async () => await run.DrainAsync(TimeSpan.FromMilliseconds(50));
+        await act.Should().ThrowAsync<TimeoutException>();
 
         source.ReleaseRemainingItems();
         var outputs = await ReadOutputsAsync(run.Outputs);

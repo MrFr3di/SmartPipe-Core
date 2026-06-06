@@ -4,6 +4,7 @@ using SmartPipe.Core;
 namespace SmartPipe.Benchmarks;
 
 [MemoryDiagnoser]
+[BenchmarkCategory("Core")]
 public class CoreBenchmarks
 {
     private DeduplicationFilter _bloom = null!;

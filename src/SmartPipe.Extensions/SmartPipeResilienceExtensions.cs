@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Polly;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Transforms;
@@ -27,6 +29,8 @@ public static class SmartPipeResilienceExtensions
         Action<ResiliencePipelineBuilder>? configureResilience = null
     )
     {
+        ArgumentNullException.ThrowIfNull(configurePipeline);
+
         if (configureResilience != null)
         {
             var builder = new ResiliencePipelineBuilder();
@@ -34,6 +38,10 @@ public static class SmartPipeResilienceExtensions
             services.AddSingleton(builder.Build());
         }
 
+        services.AddSmartPipeFactory<TInput, TOutput>(
+            static _ => { },
+            (_, pipeline) => configurePipeline(pipeline)
+        );
         services.AddSingleton(sp =>
         {
             var pipeline = new SmartPipeChannel<TInput, TOutput>();
@@ -61,7 +69,22 @@ public static class SmartPipeResilienceExtensions
     )
     {
         services.AddSmartPipe(configurePipeline, configureResilience);
-        services.AddHostedService<SmartPipeHostedService<TInput, TOutput>>();
+        services.AddSingleton<IHostedService>(sp =>
+        {
+            var scope = sp.GetRequiredService<IServiceScopeFactory>().CreateScope();
+            try
+            {
+                return new SmartPipeHostedService<TInput, TOutput>(
+                    scope,
+                    sp.GetRequiredService<ILogger<SmartPipeHostedService<TInput, TOutput>>>()
+                );
+            }
+            catch
+            {
+                scope.Dispose();
+                throw;
+            }
+        });
         return services;
     }
 }

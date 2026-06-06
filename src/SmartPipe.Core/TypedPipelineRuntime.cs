@@ -553,10 +553,15 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly Channel<PipelineOutput<TOutput>> _outputs;
     private readonly IPipelineObserverDispatcher _observerDispatcher;
     private readonly CancellationTokenSource _cts;
+    private readonly SemaphoreSlim _sinkWriteGate = new(1, 1);
     private readonly Dictionary<string, CircuitBreaker> _breakers = [];
+    private readonly object _breakersGate = new();
     private PipelineRunState _state = PipelineRunState.NotStarted;
     private int _disposed;
     private int _componentsDisposed;
+    private Task? _runTask;
+    private int _drainRequested;
+    private int _stopAcceptingRequested;
 
     public TypedPipelineExecutor(
         PipelineRuntime runtime,
@@ -582,25 +587,34 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private static Channel<PipelineOutput<TOutput>> CreateOutputChannel(PipelineRuntimeOptions options)
     {
         options.Validate();
+        var singleWriter = options.MaxDegreeOfParallelism == 1;
         if (options.OutputCapacity is null)
-            return Channel.CreateUnbounded<PipelineOutput<TOutput>>();
+        {
+            return Channel.CreateUnbounded<PipelineOutput<TOutput>>(
+                new UnboundedChannelOptions
+                {
+                    SingleReader = false,
+                    SingleWriter = singleWriter,
+                }
+            );
+        }
 
         return Channel.CreateBounded<PipelineOutput<TOutput>>(
             new BoundedChannelOptions(options.OutputCapacity.Value)
             {
                 FullMode = options.OutputFullMode,
                 SingleReader = false,
-                SingleWriter = true,
+                SingleWriter = singleWriter,
             }
         );
     }
 
     public PipelineRun<TOutput> Start()
     {
-        var completion = Task.Run(RunAsync, CancellationToken.None);
+        _runTask = Task.Run(RunAsync, CancellationToken.None);
         return new PipelineRun<TOutput>(
             _outputs.Reader,
-            completion,
+            _runTask,
             () => _state,
             CancelAsync,
             DrainAsync,
@@ -618,18 +632,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     public async ValueTask DrainAsync(TimeSpan timeout, CancellationToken ct = default)
     {
+        RequestDrain();
         _state = PipelineRunState.Draining;
-        using var timeoutCts = new CancellationTokenSource(timeout);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
-        try
-        {
-            while (!_outputs.Reader.Completion.IsCompleted)
-                await Task.Delay(10, linked.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
-        {
-            _state = PipelineRunState.Cancelled;
-        }
+        await _runTask!.WaitAsync(timeout, ct).ConfigureAwait(false);
     }
 
     public ValueTask AbortAsync(CancellationToken ct = default)
@@ -667,14 +672,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 .ConfigureAwait(false);
             await InitializeComponentsAsync(_cts.Token).ConfigureAwait(false);
 
-            await foreach (
-                var envelope in _spec.Source.ReadEnvelopesAsync(_cts.Token).ConfigureAwait(false)
-            )
-            {
-                var action = await ProcessEnvelopeAsync(envelope, _cts.Token).ConfigureAwait(false);
-                if (action == FailureAction.StopPipeline)
-                    break;
-            }
+            if (_options.MaxDegreeOfParallelism == 1)
+                await RunSequentialProcessingAsync(_cts.Token).ConfigureAwait(false);
+            else
+                await RunParallelProcessingAsync(_cts.Token).ConfigureAwait(false);
 
             _state = PipelineRunState.Completed;
             await EmitAsync(
@@ -738,6 +739,132 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         catch
         {
             // Run failure/cancellation should remain the primary completion cause.
+        }
+    }
+
+    internal void RequestDrain() => Volatile.Write(ref _drainRequested, 1);
+
+    private void RequestStopAccepting() => Volatile.Write(ref _stopAcceptingRequested, 1);
+
+    private bool ShouldStopAccepting()
+    {
+        return Volatile.Read(ref _drainRequested) != 0
+            || Volatile.Read(ref _stopAcceptingRequested) != 0;
+    }
+
+    private async ValueTask RunSequentialProcessingAsync(CancellationToken ct)
+    {
+        var enumerator = _spec.Source
+            .ReadEnvelopesAsync(ct)
+            .GetAsyncEnumerator(ct);
+        try
+        {
+            while (!ShouldStopAccepting() && await enumerator.MoveNextAsync().ConfigureAwait(false))
+            {
+                var envelope = enumerator.Current;
+                var action = await ProcessEnvelopeAsync(envelope, ct).ConfigureAwait(false);
+                if (action == FailureAction.StopPipeline)
+                {
+                    RequestStopAccepting();
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private async ValueTask RunParallelProcessingAsync(CancellationToken ct)
+    {
+        var input = Channel.CreateBounded<ProcessingEnvelope<TInput>>(
+            new BoundedChannelOptions(_options.MaxDegreeOfParallelism)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = false,
+                SingleWriter = true,
+            }
+        );
+
+        Exception? workerFailure = null;
+        object workerFailureGate = new();
+
+        void RecordWorkerFailure(Exception ex)
+        {
+            lock (workerFailureGate)
+                workerFailure ??= ex;
+        }
+
+        bool HasWorkerFailure()
+        {
+            lock (workerFailureGate)
+                return workerFailure is not null;
+        }
+
+        var workers = Enumerable
+            .Range(0, _options.MaxDegreeOfParallelism)
+            .Select(_ => Task.Run(
+                () => RunParallelWorkerAsync(input.Reader, input.Writer, RecordWorkerFailure, ct),
+                CancellationToken.None
+            ))
+            .ToArray();
+
+        try
+        {
+            await ProduceParallelInputAsync(input.Writer, ct).ConfigureAwait(false);
+        }
+        catch (ChannelClosedException) when (HasWorkerFailure())
+        {
+        }
+        finally
+        {
+            input.Writer.TryComplete();
+        }
+
+        await Task.WhenAll(workers).ConfigureAwait(false);
+    }
+
+    private async Task ProduceParallelInputAsync(
+        ChannelWriter<ProcessingEnvelope<TInput>> writer,
+        CancellationToken ct)
+    {
+        var enumerator = _spec.Source
+            .ReadEnvelopesAsync(ct)
+            .GetAsyncEnumerator(ct);
+        try
+        {
+            while (!ShouldStopAccepting() && await enumerator.MoveNextAsync().ConfigureAwait(false))
+            {
+                await writer.WriteAsync(enumerator.Current, ct).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private async Task RunParallelWorkerAsync(
+        ChannelReader<ProcessingEnvelope<TInput>> reader,
+        ChannelWriter<ProcessingEnvelope<TInput>> writer,
+        Action<Exception> recordFailure,
+        CancellationToken ct)
+    {
+        try
+        {
+            await foreach (var envelope in reader.ReadAllAsync(ct).ConfigureAwait(false))
+            {
+                var action = await ProcessEnvelopeAsync(envelope, ct).ConfigureAwait(false);
+                if (action == FailureAction.StopPipeline)
+                    RequestStopAccepting();
+            }
+        }
+        catch (Exception ex)
+        {
+            recordFailure(ex);
+            writer.TryComplete(ex);
+            throw;
         }
     }
 
@@ -984,11 +1111,25 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             outputEnvelope.Payload,
             outputEnvelope.TraceId
         );
-        await _outputs
-            .Writer.WriteAsync(new PipelineOutput<TOutput>(outputEnvelope, result), ct)
-            .ConfigureAwait(false);
+        if (ShouldEmitOutput(result))
+        {
+            await _outputs
+                .Writer.WriteAsync(new PipelineOutput<TOutput>(outputEnvelope, result), ct)
+                .ConfigureAwait(false);
+        }
 
         if (_sink is not null)
+            await WriteSinkAsync(outputEnvelope, ct).ConfigureAwait(false);
+
+        return null;
+    }
+
+    private async ValueTask WriteSinkAsync(
+        ProcessingEnvelope<TOutput> outputEnvelope,
+        CancellationToken ct)
+    {
+        await _sinkWriteGate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
             await EmitAsync(
                     new SinkWriteStartedEvent(
@@ -1004,7 +1145,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
             try
             {
-                await _sink.WriteAsync(outputEnvelope, ct).ConfigureAwait(false);
+                await _sink!.WriteAsync(outputEnvelope, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -1023,8 +1164,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 throw;
             }
         }
-
-        return null;
+        finally
+        {
+            _sinkWriteGate.Release();
+        }
     }
 
     private async ValueTask EmitRetryScheduledAsync(
@@ -1268,9 +1411,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 outcome.Kind.ToString()
             );
         var result = ProcessingResult<TOutput>.Failure(error, outcome.TraceId);
-        await _outputs
-            .Writer.WriteAsync(new PipelineOutput<TOutput>(null, result), ct)
-            .ConfigureAwait(false);
+        if (ShouldEmitOutput(result))
+        {
+            await _outputs
+                .Writer.WriteAsync(new PipelineOutput<TOutput>(null, result), ct)
+                .ConfigureAwait(false);
+        }
     }
 
     private async ValueTask WriteDeadLetterAsync(
@@ -1296,6 +1442,19 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 ct
             )
             .ConfigureAwait(false);
+    }
+
+    private bool ShouldEmitOutput(ProcessingResult<TOutput> result)
+    {
+        return _options.OutputMode switch
+        {
+            PipelineOutputMode.EmitAll => true,
+            PipelineOutputMode.FailuresOnlyWhenSinkAttached => _sink is null || !result.IsSuccess,
+            PipelineOutputMode.SuppressWhenSinkAttached => _sink is null,
+            PipelineOutputMode.SuppressAll => false,
+            _ => throw new InvalidOperationException(
+                $"Unsupported output mode '{_options.OutputMode}'."),
+        };
     }
 
     private async ValueTask DisposeComponentsAsync(CancellationToken ct)
@@ -1341,13 +1500,17 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     private CircuitBreaker? GetOrCreateBreaker(ITypedPipelineStage stage)
     {
-        if (!_breakers.TryGetValue(stage.StageId, out var breaker))
+        lock (_breakersGate)
         {
-            breaker = CreateBreaker(stage);
-            if (breaker is not null)
-                _breakers[stage.StageId] = breaker;
+            if (!_breakers.TryGetValue(stage.StageId, out var breaker))
+            {
+                breaker = CreateBreaker(stage);
+                if (breaker is not null)
+                    _breakers[stage.StageId] = breaker;
+            }
+
+            return breaker;
         }
-        return breaker;
     }
 
     private CircuitBreaker? CreateBreaker(ITypedPipelineStage stage)

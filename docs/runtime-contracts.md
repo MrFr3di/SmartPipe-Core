@@ -7,6 +7,8 @@ legacy compatibility path. These contracts describe current 1.1.0 behavior.
 
 - Output remains default-compatible and unbounded unless `OutputCapacity` is
   configured.
+- Typed output mode defaults to `EmitAll`.
+- Typed runtime concurrency defaults to `MaxDegreeOfParallelism = 1`.
 - Observer dispatch is inline by default.
 - `CircuitBreakerEvaluationMode.CompatibilityThreshold` is the default circuit
   breaker mode.
@@ -35,7 +37,23 @@ when a pipeline definition must create more than one runtime.
 If `OutputCapacity` is configured and `OutputFullMode` is `Wait`, callers must
 consume `PipelineRun<T>.Outputs`. The runtime writes to the output stream before
 an attached sink, so unread bounded outputs can apply backpressure before sink
-write. For sink-only worker scenarios in 1.1.0, keep `OutputCapacity = null`.
+write unless output emission is suppressed by `PipelineOutputMode`.
+
+`PipelineOutputMode` applies only at the typed output channel write boundary.
+Sink writes, observer events, retry, and failure routing are independent of
+output mode.
+
+## Typed Runtime Concurrency
+
+Typed `PipelineRuntimeOptions.MaxDegreeOfParallelism` defaults to `1`, which
+keeps the sequential runtime path. Values greater than `1` process multiple
+accepted envelopes concurrently through a bounded internal buffer.
+
+The stage chain inside a single envelope remains sequential. Sink writes are
+serialized by default because attached sinks are not assumed to be thread-safe.
+`FailureAction.StopPipeline` stops new source acceptance and completes already
+accepted work; it does not blindly cancel in-flight envelopes. Cross-envelope
+output ordering is not guaranteed under typed concurrency.
 
 ## Channel Contracts
 
@@ -84,6 +102,22 @@ The snapshot is not transactional. It does not synchronize concurrent pipeline
 updates and should not be used as a coordination primitive or as a replacement
 for an external telemetry recorder.
 
+## Diagnostics Contracts
+
+Runtime activities use the `SmartPipe.Core` `ActivitySource`. The legacy
+channel emits `Pipeline.Run` for a run and item processing activities such as
+`Transform`; activities may carry correlation tags such as
+`smartpipe.trace_id` and low-cardinality runtime tags such as
+`smartpipe.parallelism`.
+
+Runtime instruments use the `SmartPipe.Core` `Meter`. Current instrument names
+are `smartpipe.items.processed` (`items`), `smartpipe.items.failed` (`items`),
+`smartpipe.duplicates.filtered` (`items`), `smartpipe.retries` (`retries`), and
+`smartpipe.latency` (`ms`). Meter measurements must not include high-cardinality
+dimensions such as trace id, run id, item id, payload values, exception
+messages, or user data. The runtime does not claim an external OpenTelemetry
+exporter integration in 1.1.
+
 ## Observer Dispatch
 
 Inline observer dispatch preserves current event ordering and observer failure
@@ -111,10 +145,15 @@ Circuit breaker policy does not manage retry. Retry remains a separate
 Legacy `SmartPipeChannel.DrainAsync` is a graceful compatibility-runtime
 operation that stops accepting new work and waits for accepted work.
 
-Typed `PipelineRun<T>.DrainAsync` in 1.1.0 is a completion-wait helper. It waits
-for run/output completion or timeout. It does not independently stop source
-enumeration unless the source cooperates through cancellation or natural
-completion.
+Typed `PipelineRun<T>.DrainAsync` requests source-boundary drain. It stops
+requesting new source items, completes already accepted work, and waits for the
+run task until completion, timeout, or external cancellation.
+
+Accepted work means a source item has been yielded to the runtime and handed
+into the typed processing path. Drain is graceful, not an abort operation. If a
+source is already blocked inside `MoveNextAsync`, drain cannot interrupt that
+await by itself and may wait until the source cooperates. Use cancel or abort
+for immediate interruption.
 
 ## Replay And Durability
 

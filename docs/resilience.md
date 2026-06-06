@@ -19,10 +19,10 @@ Legacy `SmartPipeChannel.DrainAsync` is a graceful compatibility-runtime
 operation. It stops accepting new work and waits for accepted work to complete
 through transformers and sinks.
 
-Typed `PipelineRun<T>.DrainAsync` in 1.1.0 is a completion-wait helper. It
-waits for run/output completion or timeout. It does not independently stop
-source enumeration unless the source cooperates through cancellation or natural
-completion.
+Typed `PipelineRun<T>.DrainAsync` requests source-boundary drain. It stops
+requesting new source items, completes already accepted work, and waits for run
+completion or timeout. If a source is already blocked inside `MoveNextAsync`,
+drain waits until the source cooperates or the timeout/cancellation token fires.
 
 `Cancel()` is the immediate stop operation.
 

@@ -130,6 +130,28 @@ public sealed class ObserverDispatchOptions
     }
 }
 
+/// <summary>Controls which processing results are emitted to the typed pipeline output channel.</summary>
+/// <remarks>
+/// Output mode filtering applies only at the output channel write boundary.
+/// Sink writes, observer events, retry, and failure routing are independent of output mode.
+/// </remarks>
+public enum PipelineOutputMode
+{
+    /// <summary>Emit all processing results — successful and failed — to the output channel.</summary>
+    EmitAll = 0,
+
+    /// <summary>When a sink is attached, emit only failure results to the output channel.
+    /// When no sink is attached, emit all results.</summary>
+    FailuresOnlyWhenSinkAttached = 1,
+
+    /// <summary>When a sink is attached, suppress all results from the output channel.
+    /// When no sink is attached, emit all results.</summary>
+    SuppressWhenSinkAttached = 2,
+
+    /// <summary>Suppress all results from the output channel. Sink writes are unaffected.</summary>
+    SuppressAll = 3,
+}
+
 /// <summary>Options for the envelope-aware pipeline runtime.</summary>
 public sealed class PipelineRuntimeOptions
 {
@@ -138,6 +160,12 @@ public sealed class PipelineRuntimeOptions
 
     /// <summary>Gets the bounded output channel full mode when <see cref="OutputCapacity"/> is configured.</summary>
     public BoundedChannelFullMode OutputFullMode { get; init; } = BoundedChannelFullMode.Wait;
+
+    /// <summary>Gets the output filtering mode. <see cref="PipelineOutputMode.EmitAll"/> is the default.</summary>
+    public PipelineOutputMode OutputMode { get; init; } = PipelineOutputMode.EmitAll;
+
+    /// <summary>Gets the maximum number of typed envelopes processed concurrently.</summary>
+    public int MaxDegreeOfParallelism { get; init; } = 1;
 
     /// <summary>Gets observer dispatch options. Inline dispatch is the default.</summary>
     public ObserverDispatchOptions ObserverDispatch { get; init; } = ObserverDispatchOptions.Inline;
@@ -152,6 +180,15 @@ public sealed class PipelineRuntimeOptions
 
         if (!Enum.IsDefined(OutputFullMode))
             throw new ArgumentOutOfRangeException(nameof(OutputFullMode), OutputFullMode, "Output full mode is invalid.");
+
+        if (!Enum.IsDefined(OutputMode))
+            throw new ArgumentOutOfRangeException(nameof(OutputMode), OutputMode, "Output mode is invalid.");
+
+        if (MaxDegreeOfParallelism <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxDegreeOfParallelism),
+                MaxDegreeOfParallelism,
+                "Max degree of parallelism must be greater than zero.");
 
         ArgumentNullException.ThrowIfNull(ObserverDispatch);
         ObserverDispatch.Validate();

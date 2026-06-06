@@ -137,9 +137,11 @@ Typed stages support retry, attempt timeout, stage timeout, per-stage circuit
 breaker policy, and replay-safe dead-letter records. Sink retry/timeout and
 typed `PipelineTimeout` are not claimed for 1.1.0.
 
-Typed `PipelineRun<T>.DrainAsync` in 1.1.0 waits for completion or timeout. It
-does not independently stop source enumeration unless the source cooperates
-through cancellation or natural completion.
+Typed `PipelineRun<T>.DrainAsync` requests source-boundary drain, stops
+requesting new source items, and completes already accepted work. Typed
+`MaxDegreeOfParallelism` defaults to `1`; higher values process multiple
+envelopes concurrently while keeping each envelope's stage chain sequential and
+sink writes serialized.
 
 ## Diagnostics And Adaptive Components
 

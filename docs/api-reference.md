@@ -225,9 +225,9 @@ PipelineExecutionPlan.Compile(PipelineDefinition definition);
 
 Single-use runtime owner with `ExecutionPlan` and `RunId`.
 
-Typed `PipelineRun<T>.DrainAsync` is a completion-wait helper in 1.1.0. It does
-not independently stop source enumeration unless the source cooperates through
-cancellation or natural completion.
+Typed `PipelineRun<T>.DrainAsync` requests source-boundary drain, completes
+already accepted work, and waits for the run task until completion, timeout, or
+external cancellation.
 
 ## Failure And Resilience Types
 

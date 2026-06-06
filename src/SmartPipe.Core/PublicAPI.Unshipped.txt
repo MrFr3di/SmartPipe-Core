@@ -37,3 +37,12 @@ SmartPipe.Core.SmartPipeMetricsSnapshot.QueueSize.get -> int
 SmartPipe.Core.SmartPipeMetricsSnapshot.Retries.get -> long
 SmartPipe.Core.SmartPipeMetricsSnapshot.SmoothLatencyMs.get -> double
 SmartPipe.Core.SmartPipeMetricsSnapshot.SmoothThroughput.get -> double
+SmartPipe.Core.PipelineOutputMode
+SmartPipe.Core.PipelineOutputMode.EmitAll = 0 -> SmartPipe.Core.PipelineOutputMode
+SmartPipe.Core.PipelineOutputMode.FailuresOnlyWhenSinkAttached = 1 -> SmartPipe.Core.PipelineOutputMode
+SmartPipe.Core.PipelineOutputMode.SuppressWhenSinkAttached = 2 -> SmartPipe.Core.PipelineOutputMode
+SmartPipe.Core.PipelineOutputMode.SuppressAll = 3 -> SmartPipe.Core.PipelineOutputMode
+SmartPipe.Core.PipelineRuntimeOptions.MaxDegreeOfParallelism.get -> int
+SmartPipe.Core.PipelineRuntimeOptions.MaxDegreeOfParallelism.init -> void
+SmartPipe.Core.PipelineRuntimeOptions.OutputMode.get -> SmartPipe.Core.PipelineOutputMode
+SmartPipe.Core.PipelineRuntimeOptions.OutputMode.init -> void

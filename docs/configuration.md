@@ -41,6 +41,24 @@ Default feature flags:
 Use `EnableFeature(name)`, `DisableFeature(name)`, and `IsEnabled(name)` for
 feature flags.
 
+## Dependency Injection
+
+`SmartPipe.Extensions` keeps the existing `AddSmartPipe` and
+`AddSmartPipeHostedService` compatibility APIs. P3 adds
+`AddSmartPipeFactory<TInput,TOutput>()`, which registers
+`ISmartPipeChannelFactory<TInput,TOutput>` as scoped.
+
+Factory registrations create a fresh `SmartPipeChannel<TInput,TOutput>` for
+each `Create()` call. Options supplied during registration are cloned so later
+mutation of the original `SmartPipeChannelOptions` instance does not change
+future factory-created pipelines. Pipeline configuration delegates run for each
+created pipeline and receive the caller scope's `IServiceProvider`, so scoped
+dependencies are resolved from the active scope rather than the root provider.
+
+Use the factory path when a hosted service or scoped workflow needs a fresh
+pipeline instance. The shipped constructor that accepts an existing
+`SmartPipeChannel<TInput,TOutput>` remains supported.
+
 ## Backpressure
 
 Legacy backpressure is based on bounded channels. `BoundedCapacity` controls
@@ -110,10 +128,13 @@ Legacy `SmartPipeChannel.DrainAsync` stops accepting new work and waits for
 already accepted work to finish. It is not an abort operation. Use `Cancel()`
 for immediate stop.
 
-Typed `PipelineRun<T>.DrainAsync` in 1.1.0 is a completion-wait helper. It
-waits for run/output completion or timeout. It does not independently stop
-source enumeration unless the source cooperates through cancellation or natural
-completion.
+Typed `PipelineRun<T>.DrainAsync` requests graceful source-boundary drain. It
+stops requesting new source items, waits for already accepted work, and waits
+for run completion or timeout. Accepted work is any source item already yielded
+to the runtime and handed into the typed processing path. If a source is already
+blocked inside `MoveNextAsync`, drain waits until the source cooperates or the
+drain timeout/cancellation token fires; use cancel or abort for immediate
+interruption.
 
 `RunInBackground` can be called once per `SmartPipeChannel` instance.
 
@@ -198,13 +219,30 @@ the configured id.
 |---|---|---|
 | `OutputCapacity` | `null` | Null preserves current unbounded output behavior. A value creates a bounded output channel. |
 | `OutputFullMode` | `Wait` | Used only when `OutputCapacity` is set. |
+| `OutputMode` | `EmitAll` | Controls which typed results are emitted to `PipelineRun<T>.Outputs`; sink writes, observers, retry, and failure routing are independent. |
+| `MaxDegreeOfParallelism` | `1` | Maximum typed envelopes processed concurrently. `1` keeps the sequential path. |
 | `ObserverDispatch` | `ObserverDispatchOptions.Inline` | Inline dispatch preserves current event ordering and failure behavior. |
 | `Clock` | `SystemPipelineClock.Instance` | Used by typed runtime event timestamps and time budget decisions. |
 
+`PipelineOutputMode` values:
+
+- `EmitAll`: emit successful and failed typed outputs;
+- `FailuresOnlyWhenSinkAttached`: when a sink is attached, emit only failures;
+  without a sink, emit all outputs;
+- `SuppressWhenSinkAttached`: when a sink is attached, suppress output channel
+  emission; without a sink, emit all outputs;
+- `SuppressAll`: suppress output channel emission even without a sink.
+
+Typed `MaxDegreeOfParallelism` keeps stage order sequential inside each
+envelope. With values greater than `1`, multiple envelopes may be processed at
+the same time, sink writes are serialized by default, and same-trace stage event
+order remains stage-local while cross-envelope output order is not guaranteed.
+
 Bounded output with `Wait` can apply backpressure if consumers do not read
 outputs. If `OutputCapacity` is configured and `OutputFullMode` is `Wait`,
-callers must consume `run.Outputs`. For sink-only worker scenarios in 1.1.0,
-keep `OutputCapacity = null`. Bounded output is intentionally not the default.
+callers must consume `run.Outputs` unless `OutputMode` suppresses output
+emission enough for the workload. Bounded output is intentionally not the
+default.
 
 ## Clock / Time Provider
 

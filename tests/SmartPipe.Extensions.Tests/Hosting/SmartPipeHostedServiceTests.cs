@@ -1,5 +1,6 @@
 #nullable enable
 using System.Runtime.CompilerServices;
+using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -73,13 +74,59 @@ public class SmartPipeHostedServiceTests
         public Task DisposeAsync() => Task.CompletedTask;
     }
 
+    private sealed class DisposableSource : ISource<TestItem>
+    {
+        public bool Disposed { get; private set; }
+
+        public async IAsyncEnumerable<ProcessingContext<TestItem>> ReadAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task DisposeAsync()
+        {
+            Disposed = true;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TestPipelineFactory : ISmartPipeChannelFactory<TestItem, TestItem>
+    {
+        private readonly Func<SmartPipeChannel<TestItem, TestItem>> _create;
+
+        public TestPipelineFactory(Func<SmartPipeChannel<TestItem, TestItem>> create)
+        {
+            _create = create;
+        }
+
+        public int CreateCalls { get; private set; }
+
+        public SmartPipeChannel<TestItem, TestItem> Create()
+        {
+            CreateCalls++;
+            return _create();
+        }
+    }
+
     private sealed record LogEntry(LogLevel Level, string Message, Exception? Exception);
 
     private sealed class RecordingLogger<T> : ILogger<T>
     {
         private readonly List<LogEntry> _entries = [];
+        private readonly Lock _gate = new();
 
-        public IReadOnlyList<LogEntry> Entries => _entries;
+        public IReadOnlyList<LogEntry> Entries
+        {
+            get
+            {
+                lock (_gate)
+                    return _entries.ToArray();
+            }
+        }
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => NullScope.Instance;
@@ -94,7 +141,8 @@ public class SmartPipeHostedServiceTests
             Func<TState, Exception?, string> formatter
         )
         {
-            _entries.Add(new LogEntry(logLevel, formatter(state, exception), exception));
+            lock (_gate)
+                _entries.Add(new LogEntry(logLevel, formatter(state, exception), exception));
         }
 
         private sealed class NullScope : IDisposable
@@ -109,7 +157,14 @@ public class SmartPipeHostedServiceTests
     public void Constructor_ThrowsArgumentNullException_WhenPipelineIsNull()
     {
         var logger = Mock.Of<ILogger<SmartPipeHostedService<string, string>>>();
-        Assert.Throws<ArgumentNullException>(() => new SmartPipeHostedService<string, string>(null!, logger));
+        Assert.Throws<ArgumentNullException>(() => new SmartPipeHostedService<string, string>((SmartPipeChannel<string, string>)null!, logger));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsArgumentNullException_WhenPipelineFactoryIsNull()
+    {
+        var logger = Mock.Of<ILogger<SmartPipeHostedService<string, string>>>();
+        Assert.Throws<ArgumentNullException>(() => new SmartPipeHostedService<string, string>((ISmartPipeChannelFactory<string, string>)null!, logger));
     }
 
     [Fact]
@@ -117,6 +172,48 @@ public class SmartPipeHostedServiceTests
     {
         var pipeline = new SmartPipeChannel<string, string>();
         Assert.Throws<ArgumentNullException>(() => new SmartPipeHostedService<string, string>(pipeline, null!));
+    }
+
+    [Fact]
+    public void FactoryConstructor_ShouldCreatePipelineFromFactory()
+    {
+        var factory = new TestPipelineFactory(CreateConfiguredPipeline);
+        var logger = NullLogger<SmartPipeHostedService<TestItem, TestItem>>.Instance;
+
+        _ = new SmartPipeHostedService<TestItem, TestItem>(factory, logger);
+
+        factory.CreateCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task StopAsync_WithFactoryPipeline_ShouldDisposeCreatedPipeline()
+    {
+        var source = new DisposableSource();
+        var factory = new TestPipelineFactory(() =>
+        {
+            var pipeline = new SmartPipeChannel<TestItem, TestItem>();
+            pipeline.AddSource(source);
+            pipeline.AddTransformer(new TestTransformer());
+            pipeline.AddSink(new TestSink());
+            return pipeline;
+        });
+        var logger = NullLogger<SmartPipeHostedService<TestItem, TestItem>>.Instance;
+        var hostedService = new SmartPipeHostedService<TestItem, TestItem>(factory, logger);
+
+        await hostedService.StopAsync(CancellationToken.None);
+
+        source.Disposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ExistingPipelineConstructor_ShouldRemainSupported()
+    {
+        var pipeline = CreateConfiguredPipeline();
+        var logger = NullLogger<SmartPipeHostedService<TestItem, TestItem>>.Instance;
+
+        var hostedService = new SmartPipeHostedService<TestItem, TestItem>(pipeline, logger);
+
+        hostedService.Should().NotBeNull();
     }
 
     [Fact]
@@ -189,5 +286,14 @@ public class SmartPipeHostedServiceTests
                 entry.Level == LogLevel.Warning
                 && entry.Message.Contains("host cancellation", StringComparison.OrdinalIgnoreCase)
         );
+    }
+
+    private static SmartPipeChannel<TestItem, TestItem> CreateConfiguredPipeline()
+    {
+        var pipeline = new SmartPipeChannel<TestItem, TestItem>();
+        pipeline.AddSource(new TestSource());
+        pipeline.AddTransformer(new TestTransformer());
+        pipeline.AddSink(new TestSink());
+        return pipeline;
     }
 }
