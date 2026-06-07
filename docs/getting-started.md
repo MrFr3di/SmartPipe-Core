@@ -114,7 +114,11 @@ sealed class NumbersSource(IEnumerable<int> values) : ISource<int>
 ```
 
 Each `SmartPipeChannel` instance supports one background run. Create a new
-pipeline instance for another run.
+pipeline instance for another run. `RunInBackground` creates a dedicated
+external reader, so this mode can run without a user sink. If user sinks are
+registered, the external reader receives each output before the sinks are
+invoked. Leaving the returned reader unread can backpressure the run until
+`Cancel` or `DisposeAsync` completes the background reader.
 
 ## Extensions Quick Start
 

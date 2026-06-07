@@ -58,7 +58,8 @@ Legacy runtime boundaries:
 - `DrainAsync` waits for accepted work to finish and must not be used as an
   abort operation.
 - `Cancel()` is the immediate stop operation.
-- `RunInBackground` can be called once per pipeline instance.
+- `RunInBackground` can be called once per pipeline instance and uses a
+  dedicated external output reader; `RunAsync` continues to require a user sink.
 - `ThrowOnMutationAfterStart` can reject `AddSource`, `AddTransformer`, and
   `AddSink` after start.
 - Legacy circuit breaker behavior is separate from typed stage-level circuit

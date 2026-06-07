@@ -46,6 +46,12 @@ transformers, and sinks before execution, `RunAsync`, `RunInBackground`,
 `ProcessSingleAsync`, `DrainAsync`, `Cancel`, dashboard creation, and
 `IAsyncDisposable`.
 
+`RunAsync` requires at least one user sink. `RunInBackground` creates a
+dedicated external output reader and can run without a user sink; if sinks are
+also registered, the background reader receives outputs before those sinks are
+invoked. `AsChannelReader` returns only the background reader created by
+`RunInBackground`.
+
 ## Typed Runtime Contracts
 
 ### IPipelineSource<T>

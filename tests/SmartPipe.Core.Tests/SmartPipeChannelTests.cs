@@ -490,7 +490,7 @@ public class SmartPipeChannelTests
     }
 
     [Fact]
-    public void SmartPipeChannel_RunInBackground_ShouldNotRegisterDuplicateForwardingSinks_WhenCalledTwice()
+    public void SmartPipeChannel_RunInBackground_ShouldThrowWithoutAddingExtraExternalChannels_WhenCalledTwice()
     {
         var options = new SmartPipeChannelOptions();
         var channel = new SmartPipeChannel<int, int>(options);
@@ -638,14 +638,20 @@ public class SmartPipeChannelTests
     {
         var source = new DisposableCountingSource<int>([1, 2, 3]);
         var transformer = new DisposableCountingTransformer<int, int>();
-        var sink = new DisposableCountingSink<int>();
+        var sink = new BlockingDisposeSink<int>();
         var channel = new SmartPipeChannel<int, int>(new SmartPipeChannelOptions());
         channel.AddSource(source);
         channel.AddTransformer(transformer);
         channel.AddSink(sink);
-        channel.RunInBackground();
 
-        await Task.WhenAll(channel.DisposeAsync().AsTask(), channel.DisposeAsync().AsTask());
+        var first = channel.DisposeAsync().AsTask();
+        await sink.DisposeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var second = channel.DisposeAsync().AsTask();
+        second.IsCompleted.Should().BeFalse("concurrent callers must await the shared disposal operation");
+
+        sink.AllowDispose.SetResult();
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
 
         source.DisposeCallCount.Should().Be(1);
         transformer.DisposeCallCount.Should().Be(1);
@@ -894,6 +900,31 @@ public class SmartPipeChannelTests
         {
             Interlocked.Increment(ref _disposeCallCount);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class BlockingDisposeSink<T> : ISink<T>
+    {
+        private int _disposeCallCount;
+
+        public int DisposeCallCount => Volatile.Read(ref _disposeCallCount);
+
+        public TaskCompletionSource DisposeStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource AllowDispose { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public async Task DisposeAsync()
+        {
+            Interlocked.Increment(ref _disposeCallCount);
+            DisposeStarted.TrySetResult();
+            await AllowDispose.Task.ConfigureAwait(false);
         }
     }
 }

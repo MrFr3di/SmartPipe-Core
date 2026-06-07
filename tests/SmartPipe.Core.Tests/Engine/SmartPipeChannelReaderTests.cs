@@ -7,7 +7,7 @@ namespace SmartPipe.Core.Tests.Engine;
 public class SmartPipeChannelReaderTests
 {
     [Fact]
-    public async Task AsChannelReader_AfterRun_ShouldReturnNull()
+    public async Task AsChannelReader_AfterRunAsync_ShouldReturnNull()
     {
         var channel = new SmartPipeChannel<int, int>();
         channel.AddSource(new SimpleSource<int>(1, 2, 3));
@@ -19,8 +19,7 @@ public class SmartPipeChannelReaderTests
 
         await channel.RunAsync();
 
-        // After RunAsync — reader is completed (channel disposed)
-        var reader = channel.AsChannelReader();
-        reader.Should().NotBeNull();
+        // After RunAsync — internal output reader remains owned by the pipeline.
+        channel.AsChannelReader().Should().BeNull();
     }
 }

@@ -36,18 +36,24 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     private AdaptiveInFlightLimiter? _adaptiveInFlightLimiter;
     private AdaptiveParallelismController? _adaptiveController;
     private Channel<ProcessingResult<TOutput>>? _outputChannel;
+    private Channel<ProcessingResult<TOutput>>? _backgroundOutputChannel;
     private volatile bool _producerCompleted,
         _isPaused;
+    private volatile bool _backgroundRunMode;
     private volatile bool _inputBufferCompleted;
     private volatile PipelineState _state = PipelineState.NotStarted;
     private int _isDraining = 0; // 0 = not draining, 1 = draining
     private int _disposed; // 0 = not disposed, 1 = disposed
+    private int _disposeStarted; // 0 = not started, 1 = started
     private int _componentsDisposed;
     private int _cancelCalled;
+    private int _backgroundOutputCompleted;
     private volatile bool _drainRequested;
     private int _activeConsumerCount;
     private TaskCompletionSource _runCompletion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly object _disposeGate = new();
+    private Task? _disposeTask;
     private readonly AdaptiveParallelism? _adaptiveParallelism;
     private readonly AdaptiveMetrics _adaptiveMetrics = new();
     private readonly ExponentialHistogram _latencyHistogram = new();
@@ -174,10 +180,15 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     /// <summary>Cancels the pipeline execution.</summary>
     public void Cancel()
     {
+        var cancellation = new OperationCanceledException("Pipeline execution was cancelled.");
         if (Interlocked.CompareExchange(ref _cancelCalled, 1, 0) != 0)
+        {
+            CompleteExternalOutput(cancellation);
             return;
+        }
         _inputChannel?.Writer.TryComplete();
         _outputChannel?.Writer.TryComplete();
+        CompleteExternalOutput(cancellation);
         _internalCts.Cancel();
         TransitionState(PipelineState.Cancelled);
     }
@@ -256,6 +267,91 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         }
     }
 
+    private async Task WaitForRunCompletionToSettleAsync()
+    {
+        try
+        {
+            await WaitWithTimeoutAsync(
+                    _runCompletion.Task,
+                    TimeSpan.FromSeconds(1),
+                    CancellationToken.None,
+                    "Pipeline run did not settle during disposal."
+                )
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
+        {
+        }
+        catch (Exception)
+        {
+            // Run faults are observed by DrainAsync when they are part of the disposal decision.
+            // The bounded settle wait only prevents lifecycle cleanup from hanging.
+        }
+    }
+
+    private void CompleteExternalOutput(Exception? error = null)
+    {
+        var channel = _backgroundOutputChannel;
+        if (channel == null)
+            return;
+
+        if (Interlocked.Exchange(ref _backgroundOutputCompleted, 1) != 0)
+            return;
+
+        var drainBufferedOutput = ShouldDrainExternalOutputOnCompletion(error);
+        if (drainBufferedOutput)
+            DrainExternalOutputBuffer(channel);
+
+        channel.Writer.TryComplete(error);
+
+        if (drainBufferedOutput)
+            DrainExternalOutputBuffer(channel);
+    }
+
+    private bool ShouldDrainExternalOutputOnCompletion(Exception? error)
+    {
+        return error is OperationCanceledException
+            || error is TimeoutException
+            || Volatile.Read(ref _cancelCalled) != 0
+            || Volatile.Read(ref _disposeStarted) != 0
+            || _internalCts.IsCancellationRequested;
+    }
+
+    private static void DrainExternalOutputBuffer(Channel<ProcessingResult<TOutput>> channel)
+    {
+        while (channel.Reader.TryRead(out _))
+        {
+        }
+    }
+
+    private void CompleteExternalOutputFromRunCompletion()
+    {
+        var completion = _runCompletion.Task;
+        if (!completion.IsCompleted)
+            return;
+
+        if (completion.IsCompletedSuccessfully)
+        {
+            CompleteExternalOutput();
+            return;
+        }
+
+        if (completion.IsCanceled)
+        {
+            CompleteExternalOutput(new OperationCanceledException("Pipeline execution was cancelled."));
+            return;
+        }
+
+        CompleteExternalOutput(completion.Exception?.InnerException ?? completion.Exception);
+    }
+
+    private bool IsLifecycleStopping(CancellationToken ct) =>
+        ct.IsCancellationRequested
+        || Volatile.Read(ref _cancelCalled) != 0
+        || Volatile.Read(ref _disposeStarted) != 0
+        || _internalCts.IsCancellationRequested
+        || _runCompletion.Task.IsCompleted;
+
     private async Task DisposeComponentsAsync()
     {
         if (Interlocked.CompareExchange(ref _componentsDisposed, 1, 0) != 0)
@@ -270,13 +366,22 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
 
     /// <summary>
     /// Disposes the pipeline by draining pending items and releasing all resources.
-    /// Thread-safe: subsequent calls after the first are no-ops.
+    /// Thread-safe: concurrent calls wait for the same disposal operation.
     /// </summary>
     /// <returns>A ValueTask representing the asynchronous disposal operation.</returns>
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
-            return; // Already disposed
+        lock (_disposeGate)
+        {
+            _disposeTask ??= DisposeCoreAsync();
+            return new ValueTask(_disposeTask);
+        }
+    }
+
+    private async Task DisposeCoreAsync()
+    {
+        Interlocked.Exchange(ref _disposeStarted, 1);
+        Interlocked.Exchange(ref _disposed, 1);
 
         List<Exception>? failures = null;
 
@@ -301,6 +406,9 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             {
                 AddFailure(ex);
             }
+
+            CompleteExternalOutputFromRunCompletion();
+            await WaitForRunCompletionToSettleAsync().ConfigureAwait(false);
         }
 
         await CaptureFailureAsync(DisposeComponentsAsync).ConfigureAwait(false);
@@ -346,20 +454,27 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         }
     }
 
-    /// <summary>Gets a channel reader for consuming output results.</summary>
-    /// <returns>Channel reader or null if not running.</returns>
-    public ChannelReader<ProcessingResult<TOutput>>? AsChannelReader() => _outputChannel?.Reader;
+    /// <summary>Gets the dedicated background output reader created by <see cref="RunInBackground"/>.</summary>
+    /// <returns>The background output reader, or null when the pipeline was not started with <see cref="RunInBackground"/>.</returns>
+    /// <remarks>This method never exposes the internal pipeline output reader owned by the runtime.</remarks>
+    public ChannelReader<ProcessingResult<TOutput>>? AsChannelReader() =>
+        _backgroundOutputChannel?.Reader;
 
-    /// <summary>Runs the pipeline in background and returns output channel reader.</summary>
+    /// <summary>Runs the pipeline in background and returns a dedicated output channel reader.</summary>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>Channel reader for pipeline output.</returns>
-    /// <remarks>Creates bounded channel with <see cref="SmartPipeChannelOptions.BoundedCapacity"/>.</remarks>
+    /// <returns>Dedicated channel reader for pipeline output.</returns>
+    /// <remarks>
+    /// Creates a bounded external output channel with <see cref="SmartPipeChannelOptions.BoundedCapacity"/>.
+    /// This is the only legacy sinkless run mode. When user sinks are also registered,
+    /// the returned reader receives each output before user sinks are invoked.
+    /// An unread returned reader can backpressure the run until cancellation or disposal completes it.
+    /// </remarks>
     public ChannelReader<ProcessingResult<TOutput>> RunInBackground(CancellationToken ct = default)
     {
         if (_state != PipelineState.NotStarted)
             throw new InvalidOperationException("Pipeline already started.");
 
-        var channel = Channel.CreateBounded<ProcessingResult<TOutput>>(
+        _backgroundOutputChannel = Channel.CreateBounded<ProcessingResult<TOutput>>(
             new BoundedChannelOptions(
                 _options.BoundedCapacity > 0 ? _options.BoundedCapacity : 1000
             )
@@ -367,7 +482,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
                 FullMode = BoundedChannelFullMode.Wait,
             }
         );
-        AddSink(new ChannelForwardingSink<TOutput>(channel.Writer));
+        _backgroundRunMode = true;
         TransitionState(PipelineState.Running);
 
         // Create a fresh completion source synchronously so DrainAsync can observe it
@@ -379,25 +494,22 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             try
             {
                 await RunAsync(ct).ConfigureAwait(false);
-                channel.Writer.TryComplete();
                 runTcs.TrySetResult();
             }
-            catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                channel.Writer.TryComplete(ex);
                 runTcs.TrySetCanceled(ct);
             }
             catch (Exception ex)
             {
-                channel.Writer.TryComplete(ex);
                 runTcs.TrySetException(ex);
             }
             finally
             {
-                channel.Writer.TryComplete();
+                CompleteExternalOutputFromRunCompletion();
             }
         }, CancellationToken.None);
-        return channel.Reader;
+        return _backgroundOutputChannel.Reader;
     }
 
     /// <summary>Creates a real-time dashboard snapshot of pipeline state.</summary>
@@ -419,7 +531,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             throw new InvalidOperationException("At least one source required.");
         if (_transformers.Count == 0)
             throw new InvalidOperationException("At least one transformer required.");
-        if (_sinks.Count == 0)
+        if (_sinks.Count == 0 && !_backgroundRunMode)
             throw new InvalidOperationException("At least one sink required.");
     }
 
@@ -447,12 +559,11 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         activity?.SetTag("smartpipe.parallelism", _options.MaxDegreeOfParallelism);
         try
         {
-            await RunPipelineAsync(token, activity).ConfigureAwait(false);
+            await RunPipelineAsync(token, totalTimeoutCts.Token, activity).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (totalTimeoutCts.IsCancellationRequested)
         {
-            HandleRunAsyncErrors(activity, "TotalRequestTimeout");
-            _runCompletion.TrySetException(new TimeoutException("Pipeline total request timeout expired."));
+            CompleteRunAsTimedOut(activity);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -474,7 +585,17 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         TransitionState(PipelineState.Faulted);
     }
 
-    private async Task RunPipelineAsync(CancellationToken token, Activity? activity)
+    private void CompleteRunAsTimedOut(Activity? activity)
+    {
+        HandleRunAsyncErrors(activity, "TotalRequestTimeout");
+        _runCompletion.TrySetException(new TimeoutException("Pipeline total request timeout expired."));
+    }
+
+    private async Task RunPipelineAsync(
+        CancellationToken token,
+        CancellationToken totalTimeoutToken,
+        Activity? activity
+    )
     {
         await InitializePipelineAsync(token).ConfigureAwait(false);
         var retryTask = _retryQueue != null ? ProcessRetriesAsync(token) : null;
@@ -505,6 +626,12 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         ChannelPool.CloseChannel(_outputChannel);
         if (Volatile.Read(ref _cancelCalled) != 0 || token.IsCancellationRequested)
         {
+            if (totalTimeoutToken.IsCancellationRequested)
+            {
+                CompleteRunAsTimedOut(activity);
+                return;
+            }
+
             TransitionState(PipelineState.Cancelled);
             _runCompletion.TrySetCanceled(token);
             return;
@@ -1089,13 +1216,37 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             await foreach (
                 var result in _outputChannel!.Reader.ReadAllAsync(ct).ConfigureAwait(false)
             )
-            foreach (var sink in _sinks)
-                await sink.WriteAsync(result, ct).ConfigureAwait(false);
+            {
+                await WriteExternalOutputAsync(result, ct).ConfigureAwait(false);
+                foreach (var sink in _sinks)
+                    await sink.WriteAsync(result, ct).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
         {
             // Operation cancellation is expected behavior in pipeline processing
             _logger?.LogDebug(ex, "Pipeline operation was cancelled");
+        }
+    }
+
+    private async ValueTask WriteExternalOutputAsync(
+        ProcessingResult<TOutput> result,
+        CancellationToken ct
+    )
+    {
+        var channel = _backgroundOutputChannel;
+        if (channel == null)
+            return;
+
+        try
+        {
+            await channel.Writer.WriteAsync(result, ct).ConfigureAwait(false);
+        }
+        catch (ChannelClosedException) when (IsLifecycleStopping(ct))
+        {
+        }
+        catch (OperationCanceledException) when (IsLifecycleStopping(ct))
+        {
         }
     }
 
@@ -1368,24 +1519,6 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         return (int)value;
     }
 
-    private sealed class ChannelForwardingSink<T> : ISink<T>
-    {
-        private readonly ChannelWriter<ProcessingResult<T>> _writer;
-
-        public ChannelForwardingSink(ChannelWriter<ProcessingResult<T>> writer)
-        {
-            _writer = writer;
-        }
-
-        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-
-        public async Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
-        {
-            await _writer.WriteAsync(result, ct).ConfigureAwait(false);
-        }
-
-        public Task DisposeAsync() => Task.CompletedTask;
-    }
 }
 
 /// <summary>Represents the state of a pipeline during its lifecycle.</summary>

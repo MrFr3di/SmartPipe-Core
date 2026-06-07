@@ -136,7 +136,9 @@ blocked inside `MoveNextAsync`, drain waits until the source cooperates or the
 drain timeout/cancellation token fires; use cancel or abort for immediate
 interruption.
 
-`RunInBackground` can be called once per `SmartPipeChannel` instance.
+`RunInBackground` can be called once per `SmartPipeChannel` instance. It creates
+a dedicated external output reader and is the only legacy mode that can run
+without a user sink. Direct `RunAsync` still requires at least one sink.
 
 ## Metrics
 
