@@ -96,6 +96,34 @@ public class DeadLetterSourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_ShouldReadNdjsonDeadLetterRecords()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(
+                path,
+                """
+                {"Value":"item1","IsSuccess":false,"Error":{"Message":"first failed","Type":"Transient"},"TraceId":101}
+                {"Value":"item2","IsSuccess":false,"Error":{"Message":"second failed","Type":"Permanent"},"TraceId":102}
+                """);
+
+            var source = new DeadLetterSource<string>(path);
+            var result = new List<ProcessingContext<string>>();
+
+            await foreach (var item in source.ReadAsync())
+                result.Add(item);
+
+            Assert.Equal(["item1", "item2"], result.Select(x => x.Payload));
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task ReadAsync_WithSourceGeneratedTypeInfo_ReturnsLegacyDeadLetterValue()
     {
         var path = Path.GetTempFileName();

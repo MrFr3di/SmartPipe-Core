@@ -404,6 +404,31 @@ public class JsonFileSourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_ShouldTreatLeadingWhitespaceBeforeArray_AsJsonArray()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, " \r\n\t[\"first\",\"second\"]");
+
+            var source = new JsonFileSource<string>(path);
+            var items = new List<ProcessingContext<string>>();
+
+            await foreach (var item in source.ReadAsync())
+                items.Add(item);
+
+            Assert.Equal(2, items.Count);
+            Assert.Equal("first", items[0].Payload);
+            Assert.Equal("second", items[1].Payload);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task ReadAsync_WithSourceGeneratedTypeInfo_ReadsJsonArray()
     {
         var path = Path.GetTempFileName();

@@ -56,11 +56,34 @@ public class DeadLetterSource<T> : ISource<T>
     {
         var json = await File.ReadAllTextAsync(_path, ct);
 
-        // Try to deserialize as JsonElement first for flexible handling
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
+        JsonDocument? doc = null;
+        JsonException? rootParseFailure = null;
+        try
+        {
+            doc = JsonDocument.Parse(json);
+        }
+        catch (JsonException ex)
+        {
+            rootParseFailure = ex;
+        }
 
-        // Handle both JSON arrays and single objects
+        if (doc != null)
+        {
+            using (doc)
+            {
+                foreach (var context in ProcessRoot(doc.RootElement))
+                    yield return context;
+            }
+
+            yield break;
+        }
+
+        foreach (var context in ProcessNdjson(json, rootParseFailure, ct))
+            yield return context;
+    }
+
+    private IEnumerable<ProcessingContext<T>> ProcessRoot(JsonElement root)
+    {
         if (root.ValueKind == JsonValueKind.Array)
         {
             foreach (var element in root.EnumerateArray())
@@ -72,7 +95,6 @@ public class DeadLetterSource<T> : ISource<T>
         }
         else if (root.ValueKind == JsonValueKind.Object)
         {
-            // Single object - process it directly
             var context = ProcessElement(root);
             if (context != null)
                 yield return context;
@@ -81,6 +103,39 @@ public class DeadLetterSource<T> : ISource<T>
         {
             throw new JsonException($"Unexpected JSON root element type: {root.ValueKind}");
         }
+    }
+
+    private List<ProcessingContext<T>> ProcessNdjson(
+        string json,
+        JsonException? rootParseFailure,
+        CancellationToken ct)
+    {
+        var contexts = new List<ProcessingContext<T>>();
+        using var reader = new StringReader(json);
+        var parsedAnyLine = false;
+
+        while (reader.ReadLine() is { } line)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            parsedAnyLine = true;
+            try
+            {
+                using var lineDoc = JsonDocument.Parse(line);
+                contexts.AddRange(ProcessRoot(lineDoc.RootElement));
+            }
+            catch (JsonException) when (rootParseFailure != null)
+            {
+                throw rootParseFailure;
+            }
+        }
+
+        if (!parsedAnyLine && rootParseFailure != null)
+            throw rootParseFailure;
+
+        return contexts;
     }
 
     private ProcessingContext<T>? ProcessElement(JsonElement element)

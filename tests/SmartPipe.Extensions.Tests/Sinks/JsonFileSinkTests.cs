@@ -15,6 +15,24 @@ public class JsonFileSinkTests
         Assert.Throws<ArgumentNullException>(() => new JsonFileSink<object>(null!));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Constructor_ThrowsArgumentException_WhenPathIsEmptyOrWhitespace(string path)
+    {
+        Assert.Throws<ArgumentException>(() => new JsonFileSink<object>(path));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_ThrowsArgumentOutOfRangeException_WhenFlushIntervalIsInvalid(
+        int flushInterval)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new JsonFileSink<object>("items.json", flushInterval));
+    }
+
     [Fact]
     public async Task WriteAsync_CreatesFileWithCorrectContent_SingleItem()
     {

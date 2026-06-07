@@ -7,6 +7,27 @@ namespace SmartPipe.Extensions.Tests;
 
 public class CsvFileSourceSinkTests
 {
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void CsvFileSource_Constructor_ShouldRejectInvalidPath(string? path)
+    {
+        var act = () => new CsvFileSource<TestRecord>(path!);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void CsvFileSource_Constructor_ShouldRejectInvalidDelimiter(string? delimiter)
+    {
+        var act = () => new CsvFileSource<TestRecord>("records.csv", delimiter!);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
     [Fact]
     public async Task CsvFileSource_ShouldReadRecords()
     {
@@ -21,6 +42,40 @@ public class CsvFileSourceSinkTests
         results.Should().HaveCount(2);
         results[0].Payload.Name.Should().Be("Alice");
         File.Delete(path);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void CsvFileSink_Constructor_ShouldRejectInvalidPath(string? path)
+    {
+        var act = () => new CsvFileSink<TestRecord>(path!);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void CsvFileSink_Constructor_ShouldRejectInvalidDelimiter(string? delimiter)
+    {
+        var act = () => new CsvFileSink<TestRecord>("records.csv", delimiter!);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task CsvFileSink_WriteAsync_ShouldThrow_WhenNotInitialized()
+    {
+        var sink = new CsvFileSink<TestRecord>(
+            Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.csv"));
+
+        var act = async () => await sink.WriteAsync(
+            ProcessingResult<TestRecord>.Success(new TestRecord { Name = "Alice", Age = 30 }, 1));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*InitializeAsync*");
     }
 
     [Fact]

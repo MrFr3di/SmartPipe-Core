@@ -64,11 +64,9 @@ public class JsonFileSource<T> : ISource<T>
         [EnumeratorCancellation] CancellationToken ct = default
     )
     {
-        char firstChar;
-        using (var peekReader = new StreamReader(_path))
-        {
-            firstChar = (char)peekReader.Read();
-        }
+        var firstChar = await ReadFirstNonWhitespaceAsync(_path, ct).ConfigureAwait(false);
+        if (firstChar == null)
+            yield break;
 
         if (firstChar == '[')
         {
@@ -98,4 +96,18 @@ public class JsonFileSource<T> : ISource<T>
 
     /// <inheritdoc />
     public Task DisposeAsync() => Task.CompletedTask;
+
+    private static async ValueTask<char?> ReadFirstNonWhitespaceAsync(string path, CancellationToken ct)
+    {
+        using var reader = new StreamReader(path);
+        var buffer = new char[1];
+
+        while (await reader.ReadAsync(buffer.AsMemory(0, 1), ct).ConfigureAwait(false) == 1)
+        {
+            if (!char.IsWhiteSpace(buffer[0]))
+                return buffer[0];
+        }
+
+        return null;
+    }
 }

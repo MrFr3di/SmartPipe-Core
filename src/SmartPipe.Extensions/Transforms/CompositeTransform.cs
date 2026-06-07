@@ -39,9 +39,13 @@ public class CompositeTransform<T> : ITransformer<T, T>
             var result = await t.TransformAsync(current, ct);
             if (!result.IsSuccess)
                 return result;
-            current = new ProcessingContext<T>(result.Value!) { Metadata = current.Metadata };
+            current = new ProcessingContext<T>(result.Value!)
+            {
+                Metadata = current.Metadata,
+                TraceId = result.TraceId,
+            };
         }
-        return ProcessingResult<T>.Success(current.Payload, ctx.TraceId);
+        return ProcessingResult<T>.Success(current.Payload, current.TraceId);
     }
 
     /// <inheritdoc/>

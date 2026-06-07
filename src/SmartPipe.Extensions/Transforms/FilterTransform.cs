@@ -31,20 +31,46 @@ public class FilterTransform<T> : ITransformer<T, T>
     /// <summary>
     /// Combines two filters with logical AND operator.
     /// </summary>
-    public static FilterTransform<T> operator &(FilterTransform<T> a, FilterTransform<T> b) =>
-        new(x => a._predicate!(x) && b._predicate!(x));
+    public static FilterTransform<T> operator &(FilterTransform<T> a, FilterTransform<T> b)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(b);
+
+        return new(async x =>
+        {
+            if (!await a.EvaluateAsync(x).ConfigureAwait(false))
+                return false;
+
+            return await b.EvaluateAsync(x).ConfigureAwait(false);
+        });
+    }
 
     /// <summary>
     /// Combines two filters with logical OR operator.
     /// </summary>
-    public static FilterTransform<T> operator |(FilterTransform<T> a, FilterTransform<T> b) =>
-        new(x => a._predicate!(x) || b._predicate!(x));
+    public static FilterTransform<T> operator |(FilterTransform<T> a, FilterTransform<T> b)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(b);
+
+        return new(async x =>
+        {
+            if (await a.EvaluateAsync(x).ConfigureAwait(false))
+                return true;
+
+            return await b.EvaluateAsync(x).ConfigureAwait(false);
+        });
+    }
 
     /// <summary>
     /// Negates the filter condition.
     /// </summary>
-    public static FilterTransform<T> operator !(FilterTransform<T> a) =>
-        new(x => !a._predicate!(x));
+    public static FilterTransform<T> operator !(FilterTransform<T> a)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+
+        return new(async x => !await a.EvaluateAsync(x).ConfigureAwait(false));
+    }
 
     /// <summary>
     /// Combines this filter with another using logical AND.
@@ -75,10 +101,7 @@ public class FilterTransform<T> : ITransformer<T, T>
         CancellationToken ct = default
     )
     {
-        bool isMatch =
-            _asyncPredicate != null
-                ? await _asyncPredicate(ctx.Payload).ConfigureAwait(false)
-                : _predicate!(ctx.Payload);
+        bool isMatch = await EvaluateAsync(ctx.Payload).ConfigureAwait(false);
 
         if (isMatch)
             return ProcessingResult<T>.Success(ctx.Payload, ctx.TraceId);
@@ -91,4 +114,9 @@ public class FilterTransform<T> : ITransformer<T, T>
 
     /// <inheritdoc/>
     public Task DisposeAsync() => Task.CompletedTask;
+
+    private async Task<bool> EvaluateAsync(T item) =>
+        _asyncPredicate != null
+            ? await _asyncPredicate(item).ConfigureAwait(false)
+            : _predicate!(item);
 }

@@ -37,9 +37,43 @@ public class FilterTransformTests
     }
 
     [Fact]
+    public async Task And_ShouldCombineAsyncPredicates()
+    {
+        var f1 = new FilterTransform<int>(x => Task.FromResult(x > 5));
+        var f2 = new FilterTransform<int>(x => Task.FromResult(x < 20));
+        var combined = f1.And(f2);
+
+        (await combined.TransformAsync(new ProcessingContext<int>(10))).IsSuccess.Should().BeTrue();
+        (await combined.TransformAsync(new ProcessingContext<int>(3))).IsSuccess.Should().BeFalse();
+        (await combined.TransformAsync(new ProcessingContext<int>(25))).IsSuccess.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Or_ShouldCombineAsyncPredicates()
+    {
+        var f1 = new FilterTransform<int>(x => Task.FromResult(x < 5));
+        var f2 = new FilterTransform<int>(x => Task.FromResult(x > 20));
+        var combined = f1.Or(f2);
+
+        (await combined.TransformAsync(new ProcessingContext<int>(3))).IsSuccess.Should().BeTrue();
+        (await combined.TransformAsync(new ProcessingContext<int>(25))).IsSuccess.Should().BeTrue();
+        (await combined.TransformAsync(new ProcessingContext<int>(10))).IsSuccess.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Not_ShouldInvertPredicate()
     {
         var filter = new FilterTransform<int>(x => x > 5);
+        var inverted = filter.Not();
+
+        (await inverted.TransformAsync(new ProcessingContext<int>(3))).IsSuccess.Should().BeTrue();
+        (await inverted.TransformAsync(new ProcessingContext<int>(10))).IsSuccess.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Not_ShouldInvertAsyncPredicate()
+    {
+        var filter = new FilterTransform<int>(x => Task.FromResult(x > 5));
         var inverted = filter.Not();
 
         (await inverted.TransformAsync(new ProcessingContext<int>(3))).IsSuccess.Should().BeTrue();

@@ -19,10 +19,10 @@ public class CsvFileSource<T> : ISource<T>
     /// <param name="culture">Culture for parsing (default: InvariantCulture).</param>
     public CsvFileSource(string path, string delimiter = ",", CultureInfo? culture = null)
     {
-        _path = path;
+        _path = ValidatePath(path);
         _config = new CsvConfiguration(culture ?? CultureInfo.InvariantCulture)
         {
-            Delimiter = delimiter,
+            Delimiter = ValidateDelimiter(delimiter),
             HasHeaderRecord = true,
             MissingFieldFound = null,
             BadDataFound = null,
@@ -45,4 +45,22 @@ public class CsvFileSource<T> : ISource<T>
 
     /// <inheritdoc />
     public Task DisposeAsync() => Task.CompletedTask;
+
+    private static string ValidatePath(string? path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("Path cannot be empty or whitespace.", nameof(path));
+
+        return path;
+    }
+
+    private static string ValidateDelimiter(string? delimiter)
+    {
+        ArgumentNullException.ThrowIfNull(delimiter);
+        if (delimiter.Length == 0)
+            throw new ArgumentException("Delimiter cannot be empty.", nameof(delimiter));
+
+        return delimiter;
+    }
 }

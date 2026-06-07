@@ -20,6 +20,7 @@ public class JsonFileSink<T> : ISink<T>
     /// <summary>Create JSON file sink for given path.</summary>
     /// <param name="path">Output file path.</param>
     /// <exception cref="ArgumentNullException">Thrown when path is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when path is empty or whitespace.</exception>
     [RequiresUnreferencedCode("JsonSerializerOptions-based JSON file writing may require reflection metadata. Use the JsonTypeInfo constructor for trimming and NativeAOT.")]
     [RequiresDynamicCode("JsonSerializerOptions-based JSON file writing may require runtime code generation. Use the JsonTypeInfo constructor for NativeAOT.")]
     public JsonFileSink(string path)
@@ -31,13 +32,15 @@ public class JsonFileSink<T> : ISink<T>
     /// <param name="path">Output file path.</param>
     /// <param name="flushInterval">Number of items to buffer before flushing to disk (default: 1000).</param>
     /// <exception cref="ArgumentNullException">Thrown when path is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when path is empty or whitespace.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when flush interval is less than one.</exception>
     [RequiresUnreferencedCode("JsonSerializerOptions-based JSON file writing may require reflection metadata. Use the JsonTypeInfo constructor for trimming and NativeAOT.")]
     [RequiresDynamicCode("JsonSerializerOptions-based JSON file writing may require runtime code generation. Use the JsonTypeInfo constructor for NativeAOT.")]
 #pragma warning disable RS0027 // Existing 1.x optional constructor preserved for source compatibility.
     public JsonFileSink(string path, int flushInterval = 1000)
     {
-        _path = path ?? throw new ArgumentNullException(nameof(path));
-        _flushInterval = flushInterval;
+        _path = ValidatePath(path);
+        _flushInterval = ValidateFlushInterval(flushInterval);
         var options = new JsonSerializerOptions { WriteIndented = false };
         _serializeBatch = batch => JsonSerializer.Serialize(batch, options);
     }
@@ -47,6 +50,7 @@ public class JsonFileSink<T> : ISink<T>
     /// <param name="path">Output file path.</param>
     /// <param name="batchTypeInfo">Source-generated type information for buffered batches.</param>
     /// <exception cref="ArgumentNullException">Thrown when path or type information is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when path is empty or whitespace.</exception>
     public JsonFileSink(string path, JsonTypeInfo<List<T>> batchTypeInfo)
         : this(path, batchTypeInfo, flushInterval: 1000)
     {
@@ -57,11 +61,13 @@ public class JsonFileSink<T> : ISink<T>
     /// <param name="batchTypeInfo">Source-generated type information for buffered batches.</param>
     /// <param name="flushInterval">Number of items to buffer before flushing to disk.</param>
     /// <exception cref="ArgumentNullException">Thrown when path or type information is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when path is empty or whitespace.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when flush interval is less than one.</exception>
     public JsonFileSink(string path, JsonTypeInfo<List<T>> batchTypeInfo, int flushInterval)
     {
-        _path = path ?? throw new ArgumentNullException(nameof(path));
+        _path = ValidatePath(path);
         ArgumentNullException.ThrowIfNull(batchTypeInfo);
-        _flushInterval = flushInterval;
+        _flushInterval = ValidateFlushInterval(flushInterval);
         _serializeBatch = batch => JsonSerializer.Serialize(batch, batchTypeInfo);
     }
 
@@ -106,5 +112,25 @@ public class JsonFileSink<T> : ISink<T>
     {
         var json = _serializeBatch(batch);
         await File.AppendAllTextAsync(_path, json + Environment.NewLine, ct).ConfigureAwait(false);
+    }
+
+    private static string ValidatePath(string? path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("Path cannot be empty or whitespace.", nameof(path));
+
+        return path;
+    }
+
+    private static int ValidateFlushInterval(int flushInterval)
+    {
+        if (flushInterval <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(flushInterval),
+                flushInterval,
+                "Flush interval must be greater than zero.");
+
+        return flushInterval;
     }
 }

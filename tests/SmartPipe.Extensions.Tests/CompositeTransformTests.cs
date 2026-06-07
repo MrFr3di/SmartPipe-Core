@@ -32,6 +32,22 @@ public class CompositeTransformTests
         result.IsSuccess.Should().BeFalse(); // t2 fails
     }
 
+    [Fact]
+    public async Task Composite_ShouldPreserveTraceIdAcrossTransforms()
+    {
+        var observedTraceIds = new List<ulong>();
+        var t1 = new ObservingTransform(x => x * 2, observedTraceIds);
+        var t2 = new ObservingTransform(x => x + 1, observedTraceIds);
+        var composite = new CompositeTransform<int>(t1, t2);
+        var context = new ProcessingContext<int>(5);
+
+        var result = await composite.TransformAsync(context);
+
+        result.IsSuccess.Should().BeTrue();
+        result.TraceId.Should().Be(context.TraceId);
+        observedTraceIds.Should().Equal(context.TraceId, context.TraceId);
+    }
+
     private class TestTransform : ITransformer<int, int>
     {
         private readonly Func<int, int> _f;
@@ -47,6 +63,30 @@ public class CompositeTransformTests
         public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
         public ValueTask<ProcessingResult<T>> TransformAsync(ProcessingContext<T> ctx, CancellationToken ct = default)
             => ValueTask.FromResult(ProcessingResult<T>.Failure(new SmartPipeError("Fail", ErrorType.Permanent), ctx.TraceId));
+        public Task DisposeAsync() => Task.CompletedTask;
+    }
+
+    private sealed class ObservingTransform : ITransformer<int, int>
+    {
+        private readonly Func<int, int> _f;
+        private readonly List<ulong> _traceIds;
+
+        public ObservingTransform(Func<int, int> f, List<ulong> traceIds)
+        {
+            _f = f;
+            _traceIds = traceIds;
+        }
+
+        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+        public ValueTask<ProcessingResult<int>> TransformAsync(
+            ProcessingContext<int> ctx,
+            CancellationToken ct = default)
+        {
+            _traceIds.Add(ctx.TraceId);
+            return ValueTask.FromResult(ProcessingResult<int>.Success(_f(ctx.Payload), ctx.TraceId));
+        }
+
         public Task DisposeAsync() => Task.CompletedTask;
     }
 }
