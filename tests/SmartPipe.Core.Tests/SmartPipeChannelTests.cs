@@ -560,8 +560,11 @@ public class SmartPipeChannelTests
         channel.AddTransformer(transformer);
         channel.AddSink(sink);
 
+        var sw = Stopwatch.StartNew();
         await channel.DisposeAsync();
+        sw.Stop();
 
+        sw.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(200));
         source.DisposeCallCount.Should().Be(1);
         transformer.DisposeCallCount.Should().Be(1);
         sink.DisposeCallCount.Should().Be(1);

@@ -8,12 +8,14 @@ namespace SmartPipe.Core;
 
 /// <summary>
 /// Bloom-style filter for deduplication. False positives are possible; false negatives are not expected
-/// for items that are still inside the retention window.
+/// for items that are still tracked by the filter.
 /// </summary>
 /// <remarks>
 /// Non-TTL mode behaves like a standard non-deleting Bloom filter. TTL mode uses per-bit counters so
-/// expiry of one item does not clear bits still held by another non-expired item. Public methods
-/// synchronize access to the internal bitset and TTL counters.
+/// expiry of one item does not clear bits still held by another tracked item. TTL mode uses a bounded
+/// ring sized from expected items; if unique IDs exceed that capacity inside the TTL window, older
+/// entries may be evicted before TTL expiry. Public methods synchronize access to the internal bitset
+/// and TTL counters.
 /// </remarks>
 public class DeduplicationFilter
 {

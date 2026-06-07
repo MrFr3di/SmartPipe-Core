@@ -678,7 +678,7 @@ public class RuntimeOptionsPassTests
                     {
                         Mode = ObserverDispatchMode.BufferedReliable,
                         Capacity = 8,
-                        FailureMode = ObserverFailureMode.Ignore,
+                        FailureMode = ObserverFailureMode.UseRegistrationPolicy,
                     },
                 }
             )
@@ -739,6 +739,8 @@ public class RuntimeOptionsPassTests
             { ObserverDispatchMode.BufferedReliable, ObserverFailureMode.UseRegistrationPolicy, ObserverReliability.Critical, ObserverFailurePolicy.Ignore, true },
             { ObserverDispatchMode.BufferedReliable, ObserverFailureMode.UseRegistrationPolicy, ObserverReliability.Reliable, ObserverFailurePolicy.FaultPipeline, true },
             { ObserverDispatchMode.BufferedReliable, ObserverFailureMode.UseRegistrationPolicy, ObserverReliability.Reliable, ObserverFailurePolicy.Ignore, false },
+            { ObserverDispatchMode.BufferedReliable, ObserverFailureMode.Ignore, ObserverReliability.Critical, ObserverFailurePolicy.Ignore, false },
+            { ObserverDispatchMode.BufferedReliable, ObserverFailureMode.Ignore, ObserverReliability.Reliable, ObserverFailurePolicy.FaultPipeline, false },
             { ObserverDispatchMode.BufferedBestEffort, ObserverFailureMode.UseRegistrationPolicy, ObserverReliability.BestEffort, ObserverFailurePolicy.Log, false },
             { ObserverDispatchMode.BufferedBestEffort, ObserverFailureMode.FaultPipeline, ObserverReliability.BestEffort, ObserverFailurePolicy.Ignore, true },
         };
@@ -833,6 +835,31 @@ public class RuntimeOptionsPassTests
             .From(new EnvelopeSource<int>(1))
             .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
             .WithObserver(new CountingThrowingObserver(), reliability, failurePolicy)
+            .Run();
+
+        var act = async () => await run.Completion;
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task RemoveObserver_DoesNotOverrideGlobalFaultPipeline()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = ObserverDispatchMode.BufferedReliable,
+                        Capacity = 8,
+                        FailureMode = ObserverFailureMode.FaultPipeline,
+                    },
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(new CountingThrowingObserver(), failurePolicy: ObserverFailurePolicy.RemoveObserver)
             .Run();
 
         var act = async () => await run.Completion;

@@ -280,24 +280,27 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
 
         List<Exception>? failures = null;
 
-        try
-        {
-            using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await DrainAsync(TimeSpan.FromSeconds(5), drainCts.Token).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
+        if (_state != PipelineState.NotStarted)
         {
             try
             {
-                Cancel();
+                using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await DrainAsync(TimeSpan.FromSeconds(5), drainCts.Token).ConfigureAwait(false);
             }
-            catch (ObjectDisposedException)
+            catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
             {
+                try
+                {
+                    Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            AddFailure(ex);
+            catch (Exception ex)
+            {
+                AddFailure(ex);
+            }
         }
 
         await CaptureFailureAsync(DisposeComponentsAsync).ConfigureAwait(false);

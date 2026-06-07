@@ -255,8 +255,14 @@ internal static class ObserverRegistrationState
         ObserverFailureMode failureMode,
         PipelineObserverRegistration registration)
     {
-        return failureMode == ObserverFailureMode.FaultPipeline
-            || registration.FailurePolicy == ObserverFailurePolicy.FaultPipeline
-            || registration.Reliability == ObserverReliability.Critical;
+        return failureMode switch
+        {
+            ObserverFailureMode.FaultPipeline => true,
+            ObserverFailureMode.Ignore => false,
+            ObserverFailureMode.UseRegistrationPolicy =>
+                registration.FailurePolicy == ObserverFailurePolicy.FaultPipeline
+                || registration.Reliability == ObserverReliability.Critical,
+            _ => throw new ArgumentOutOfRangeException(nameof(failureMode), failureMode, null),
+        };
     }
 }

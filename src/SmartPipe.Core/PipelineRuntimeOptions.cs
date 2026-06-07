@@ -82,7 +82,7 @@ public enum ObserverFailureMode
     /// <summary>Use each observer registration's failure policy.</summary>
     UseRegistrationPolicy,
 
-    /// <summary>Ignore observer failures.</summary>
+    /// <summary>Ignore observer failures, including critical and registration-level fault policies.</summary>
     Ignore,
 
     /// <summary>Fault the pipeline when an observer fails.</summary>

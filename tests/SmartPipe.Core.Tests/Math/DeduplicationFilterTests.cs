@@ -280,6 +280,48 @@ public class DeduplicationFilterTests
         GetTtlCounters(filter).Sum().Should().Be(afterFirstAdd);
     }
 
+    [Fact]
+    public void Dedup_Ttl_Cleanup_IsBoundedPerCall()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 1_000,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromMinutes(1),
+            clock: clock);
+
+        for (ulong i = 1; i <= 600; i++)
+            filter.ContainsAndAdd(i).Should().BeFalse();
+
+        clock.UtcNow = clock.UtcNow.AddMinutes(2);
+
+        filter.ContainsAndAdd(10_000UL).Should().BeFalse();
+
+        GetPrivateField<long>(filter, "_ttlCleanupSequence").Should().Be(513);
+    }
+
+    [Fact]
+    public void Dedup_Ttl_RingCapacityExceeded_ShouldEvictOldestEntry_BeforeTtl()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 1,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromHours(1),
+            clock: clock);
+
+        filter.ContainsAndAdd(1UL).Should().BeFalse();
+        var firstOnlyIndexes = GetFilterIndexes(filter, 1UL)
+            .Except(GetFilterIndexes(filter, 2UL))
+            .ToArray();
+        firstOnlyIndexes.Should().NotBeEmpty();
+
+        filter.ContainsAndAdd(2UL).Should().BeFalse();
+
+        var counters = GetTtlCounters(filter);
+        firstOnlyIndexes.Should().OnlyContain(index => counters[index] == 0);
+    }
+
     private static ulong FindValueSharingSomeButNotAllBits(
         ulong first,
         long expectedItems,

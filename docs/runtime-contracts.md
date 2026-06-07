@@ -127,12 +127,14 @@ to the remaining observers.
 Buffered observer modes are opt-in and bounded. `BufferedReliable` requires
 `FlushOnCompletion = true`. Buffered observer failures are controlled by
 `ObserverFailureMode.UseRegistrationPolicy`, `Ignore`, or `FaultPipeline`.
-Global `FaultPipeline`, registration-level `FaultPipeline`, and `Critical`
-observer reliability fault the run. `RemoveObserver` removes only non-critical
-observers after a failure when the global mode does not require faulting; it
-does not cancel an observer callback already in progress. Buffered dispatch
-does not claim full inline-equivalent recursive `ObserverFailedEvent`
-propagation.
+Global `FaultPipeline` faults the run for any observer failure. Global `Ignore`
+ignores observer failures, including critical and registration-level
+`FaultPipeline` failures. `UseRegistrationPolicy` follows each observer
+registration: registration-level `FaultPipeline` and `Critical` reliability
+fault the run, while `RemoveObserver` removes only non-critical observers after
+a failure. Removal does not cancel an observer callback already in progress.
+Buffered dispatch does not emit or recursively propagate inline-equivalent
+`ObserverFailedEvent` diagnostics for observer callback failures.
 
 `ObserverQueueOverflowPolicy` is a shipped domain-level enum reserved for a
 future observer overflow API. In 1.1.0 buffered observer overflow is configured
