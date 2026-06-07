@@ -94,9 +94,10 @@ settings, storage, or synchronization behavior.
 ## Metrics Snapshot
 
 `SmartPipeMetrics.CaptureSnapshot()` returns an observational sample of the
-current counters and gauges. The snapshot is safe for export and reporting, and
-`Export()`, `ExportJson()`, and `ExportPrometheus()` preserve their existing
-output shape by exporting a sampled view.
+current counters and current-state values such as queue size and pool hit rate.
+The snapshot is safe for export and reporting, and `Export()`, `ExportJson()`,
+and `ExportPrometheus()` preserve their existing output shape by exporting a
+sampled view.
 
 The snapshot is not transactional. It does not synchronize concurrent pipeline
 updates and should not be used as a coordination primitive or as a replacement
@@ -113,10 +114,11 @@ channel emits `Pipeline.Run` for a run and item processing activities such as
 Runtime instruments use the `SmartPipe.Core` `Meter`. Current instrument names
 are `smartpipe.items.processed` (`items`), `smartpipe.items.failed` (`items`),
 `smartpipe.duplicates.filtered` (`items`), `smartpipe.retries` (`retries`), and
-`smartpipe.latency` (`ms`). Meter measurements must not include high-cardinality
-dimensions such as trace id, run id, item id, payload values, exception
-messages, or user data. The runtime does not claim an external OpenTelemetry
-exporter integration in 1.1.
+`smartpipe.latency` (`ms`). The `Meter` surface currently publishes counters
+and a latency histogram; it does not publish observable gauges in 1.1. Meter
+measurements must not include high-cardinality dimensions such as trace id, run
+id, item id, payload values, exception messages, or user data. The runtime does
+not claim an external OpenTelemetry exporter integration in 1.1.
 
 ## Observer Dispatch
 

@@ -1,9 +1,7 @@
+
 # SmartPipe.Extensions
 
-**One package. Common integrations.**
-**Ready-to-use components for SmartPipe.Core — build ETL pipelines with selectors, transforms, sinks, hosting, and health checks.**
-
-Extensions for SmartPipe.Core providing ready-to-use selectors, transforms, sinks, and health checks.
+Ready-to-use integrations for SmartPipe.Core: file, HTTP, database, mapping, validation, resilience, hosting, and health check components.
 
 ## Selectors (Data Sources)
 
@@ -83,12 +81,6 @@ dotnet add package SmartPipe.Extensions
   - `SmartPipeHostedService` / `SmartPipeHealthCheck` → Microsoft.Extensions.Hosting / HealthChecks
   - Other components use platform APIs or dependencies already carried by this package.
 
-## What's New in v1.0.5
-
-- **AddSmartPipe<TIn,TOut>()** — register SmartPipeChannel in ASP.NET Core DI
-- **DeadLetterSink retry** — automatic IOException recovery with exponential backoff (100ms/200ms/400ms)
-- **FilterValidationExtensions** — convert ValidationTransform to FilterTransform with `.ToFilter()`
-- **SmartPipeServiceCollectionExtensions** — fluent DI registration for all pipeline configurations
 
 ## License
 

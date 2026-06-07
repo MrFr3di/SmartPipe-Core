@@ -82,7 +82,7 @@ public sealed class SmartPipeMetricsSnapshot
         };
 }
 
-/// <summary>OpenTelemetry-compatible metrics with export to JSON and Prometheus.</summary>
+/// <summary>Metrics counters, latency histogram, and sampled export helpers.</summary>
 public class SmartPipeMetrics
 {
     private static readonly Meter Meter = new(

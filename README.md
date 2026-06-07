@@ -2,15 +2,26 @@
 
 Streaming pipeline engine for .NET.
 
-SmartPipe.Core is an in-process library for source -> transform -> sink
-pipelines built on `System.Threading.Channels`. It supports the established
-1.x legacy API and the 1.1.0 envelope-aware typed API for runs that need
-metadata, observer events, and replay-safe dead-letter context.
+SmartPipe is built for cases where you need a lightweight, explicit, testable pipeline runtime inside a .NET process: `source -> transform -> sink` pipelines built on `System.Threading.Channels`  with backpressure, runtime metadata, retry-aware stage execution, observer events, and replay-safe dead-letter context — without turning your application into a distributed messaging system. It supports the established1.x legacy API and the 1.1.0 envelope-aware typed API for runs that need metadata, observer events, and replay safe dead-letter context.
 
 [![CI](https://github.com/MrFr3di/SmartPipe-Core/actions/workflows/ci.yml/badge.svg)](https://github.com/MrFr3di/SmartPipe-Core/actions)
 [![NuGet Core](https://img.shields.io/nuget/v/SmartPipe.Core.svg)](https://www.nuget.org/packages/SmartPipe.Core)
 [![NuGet Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.svg)](https://www.nuget.org/packages/SmartPipe.Extensions)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
+
+## When to use SmartPipe
+
+Use SmartPipe when you need:
+
+- a small in-process pipeline runtime;
+- async streaming over `System.Threading.Channels`;
+- explicit `source -> transform -> sink` composition;
+- bounded channels and backpressure;
+- typed processing metadata;
+- retry, timeout, circuit breaker and dead-letter behavior;
+- graceful `DrainAsync`, `CancelAsync`, and `AbortAsync` semantics;
+- observable pipeline execution;
+- compatibility with existing SmartPipe 1.x components.
 
 ## Install
 
@@ -18,6 +29,17 @@ metadata, observer events, and replay-safe dead-letter context.
 dotnet add package SmartPipe.Core
 dotnet add package SmartPipe.Extensions
 ```
+
+## Runtime models
+
+SmartPipe.Core currently exposes two runtime models.
+
+| Runtime | Recommended for |
+|---|---|
+| **Typed runtime** | New code, metadata-aware processing, observers, dead-letter records, explicit run lifecycle. |
+| **Legacy runtime** | Existing 1.x code using `ISource<T>`, `ITransformer<TInput,TOutput>`, `ISink<T>`, or `SmartPipeChannel<TInput,TOutput>`. |
+
+For new code, prefer the typed runtime.
 
 ## Minimal Legacy Pipeline
 
@@ -89,4 +111,4 @@ await run.Completion;
 
 ## License
 
-MIT [License](https://github.com/MrFr3di/SmartPipe-Core/blob/main/License.md).
+MIT [LICENSE](https://github.com/MrFr3di/SmartPipe-Core/blob/main/LICENSE.md).

@@ -144,9 +144,11 @@ interruption.
 `CaptureSnapshot()` when exporting or reporting metrics from code that may run
 concurrently with pipeline updates.
 
-The snapshot is observational and safe to enumerate or serialize. It is not a
-transactional synchronization primitive and does not replace a telemetry
-recorder.
+The snapshot is observational and safe to enumerate or serialize. It includes
+counters plus current-state values such as queue size and pool hit rate. The
+runtime `Meter` publishes counters and a latency histogram in 1.1. The snapshot
+is not a transactional synchronization primitive and does not replace a
+telemetry recorder.
 
 ## Typed Stage Failure Options
 

@@ -155,6 +155,11 @@ Do not turn those primitives into release claims such as zero allocations,
 lock-free behavior, or exact performance improvements unless benchmark and CI
 evidence exists for the current release.
 
+The 1.1 release-quality baseline includes BenchmarkDotNet smoke coverage for
+core runtime microbenchmarks and a small runtime-pipeline matrix. These runs are
+evidence artifacts only; the release does not define a hard performance
+regression threshold.
+
 SmartPipe.Core remains an in-process pipeline runtime. Durable local-first
 storage, SQLite checkpoints, outbox/inbox, sync, and conflict resolution belong
 to future packages such as `SmartPipe.LocalFirst.*`.
