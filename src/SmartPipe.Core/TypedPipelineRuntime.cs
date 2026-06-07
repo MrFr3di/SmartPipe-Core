@@ -247,6 +247,15 @@ internal interface ITypedPipelineStage
         Exception? exception
     );
 
+    TypedStageExecutionResult CreateFailureResult(
+        object envelope,
+        SmartPipeError error,
+        StageResultKind kind,
+        LineageMode lineageMode,
+        IPipelineClock clock,
+        DateTimeOffset startedAtUtc
+    );
+
     ValueTask<DeadLetterWriteResult> WriteDeadLetterAsync(
         object envelope,
         SmartPipeError error,
@@ -393,6 +402,34 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
         return TypedStageExecutionResult.Terminal(
             error,
             StageResultKind.TimedOut,
+            input.TraceId,
+            input.Attempt,
+            lineage
+        );
+    }
+
+    public TypedStageExecutionResult CreateFailureResult(
+        object envelope,
+        SmartPipeError error,
+        StageResultKind kind,
+        LineageMode lineageMode,
+        IPipelineClock clock,
+        DateTimeOffset startedAtUtc
+    )
+    {
+        var input = (ProcessingEnvelope<TInput>)envelope;
+        var completed = clock.GetUtcNow();
+        var lineage = AppendLineage(
+            input.Lineage,
+            lineageMode,
+            startedAtUtc,
+            completed,
+            ToOutcome(kind),
+            includeForError: true
+        );
+        return TypedStageExecutionResult.Terminal(
+            error,
+            kind,
             input.TraceId,
             input.Attempt,
             lineage
@@ -903,8 +940,16 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 {
                     var cbError = new SmartPipeError(
                         $"Circuit breaker is open for stage '{stage.StageId}'.",
-                        ErrorType.Permanent,
+                        ErrorType.Transient,
                         "CircuitBreaker"
+                    );
+                    var rejectedOutcome = stage.CreateFailureResult(
+                        current,
+                        cbError,
+                        StageResultKind.Failure,
+                        _spec.LineageMode,
+                        _clock,
+                        stageStartedAtUtc
                     );
                     await EmitAsync(
                             new CircuitBreakerRejectedEvent(
@@ -917,10 +962,45 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                                 cbError
                             ),
                             ct
-                        )
-                        .ConfigureAwait(false);
+                            )
+                            .ConfigureAwait(false);
 
-                    var action = stage.FailureOptions.OnPermanentFailure;
+                    var decision = GetRetryDecision(stage, cbError, correlation.Attempt, stageStartedAtUtc);
+                    if (decision.Kind == RetryDecisionKind.Retry)
+                    {
+                        await EmitRetryScheduledAsync(
+                                stage,
+                                rejectedOutcome,
+                                decision.NextAttempt,
+                                decision.Delay,
+                                cbError,
+                                ct
+                            )
+                            .ConfigureAwait(false);
+                        if (decision.Delay > TimeSpan.Zero)
+                            await Task.Delay(decision.Delay, ct).ConfigureAwait(false);
+
+                        current = stage.WithAttempt(current, decision.NextAttempt);
+                        await EmitAsync(
+                                new RetryAttemptedEvent(
+                                    _spec.PipelineId,
+                                    _runtime.RunId,
+                                    rejectedOutcome.TraceId,
+                                    stage.StageId,
+                                    decision.NextAttempt,
+                                    _clock.GetUtcNow()
+                                ),
+                                ct
+                            )
+                            .ConfigureAwait(false);
+                        continue;
+                    }
+
+                    if (decision.Kind == RetryDecisionKind.Exhausted)
+                        await EmitRetryExhaustedAsync(stage, rejectedOutcome, cbError, ct)
+                            .ConfigureAwait(false);
+
+                    var action = stage.FailureOptions.OnRetryExhausted;
                     if (action == FailureAction.DeadLetter)
                         await WriteDeadLetterAsync(stage, current, cbError, ct).ConfigureAwait(false);
 
@@ -934,18 +1014,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                             cbError
                         );
 
-                    // For EmitFailureResult, StopPipeline, and DeadLetter, write terminal output
                     if (action == FailureAction.EmitFailureResult || action == FailureAction.StopPipeline || action == FailureAction.DeadLetter)
                     {
-                        var inputEnvelope = (ProcessingEnvelope<TInput>)current;
-                        var terminalOutcome = TypedStageExecutionResult.Terminal(
-                            cbError,
-                            StageResultKind.Failure,
-                            correlation.TraceId,
-                            correlation.Attempt,
-                            inputEnvelope.Lineage
-                        );
-                        await WriteTerminalAsync(terminalOutcome, ct).ConfigureAwait(false);
+                        await WriteTerminalAsync(rejectedOutcome, ct).ConfigureAwait(false);
                     }
                     return action == FailureAction.StopPipeline ? action : null;
                 }

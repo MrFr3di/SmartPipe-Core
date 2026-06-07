@@ -18,6 +18,7 @@ namespace SmartPipe.Core;
 public class DeduplicationFilter
 {
     private const long MaxTtlEntryCount = 10_000_000;
+    private const int MaxCleanupEntriesPerAdd = 512;
 
     private readonly BitArray _bits;
     private readonly int[]? _ttlBitCounts;
@@ -31,6 +32,7 @@ public class DeduplicationFilter
     private readonly TimeSpan? _ttl;
     private readonly IClock _clock;
     private long _ttlIndex; // Ring buffer index for TTL entries
+    private long _ttlCleanupSequence = 1;
 
     /// <summary>Total items seen (incremented on every ContainsAndAdd call).</summary>
     public long ItemsSeen => Interlocked.Read(ref _itemsSeen);
@@ -119,7 +121,12 @@ public class DeduplicationFilter
             if (_ttlEntries != null && !allSet)
             {
                 long idx = Interlocked.Increment(ref _ttlIndex);
-                _ttlEntries[idx % _ttlEntries.Length] = new TtlEntry(traceId, _clock.UtcNow, Occupied: true);
+                var slot = GetTtlSlot(idx);
+                var existing = _ttlEntries[slot];
+                if (existing.Occupied)
+                    RemoveTtlEntry(slot, existing);
+
+                _ttlEntries[slot] = new TtlEntry(traceId, _clock.UtcNow, idx, Occupied: true);
             }
 
             return allSet;
@@ -135,31 +142,32 @@ public class DeduplicationFilter
         var cutoff = _clock.UtcNow - _ttl.Value;
         long currentIndex = Interlocked.Read(ref _ttlIndex);
 
-        // Scan only recently added entries (last N entries up to current index)
-        long scanFrom = Math.Max(0, currentIndex - _ttlEntries.Length);
-        for (long i = scanFrom; i <= currentIndex; i++)
+        var cleanupEnd = Math.Min(currentIndex, _ttlCleanupSequence + MaxCleanupEntriesPerAdd - 1);
+        for (long sequence = _ttlCleanupSequence; sequence <= cleanupEnd; sequence++)
         {
-            var entry = _ttlEntries[i % _ttlEntries.Length];
+            var slot = GetTtlSlot(sequence);
+            var entry = _ttlEntries[slot];
             if (!entry.Occupied)
-                continue; // Empty slot
-            if (entry.AddedAt < cutoff)
             {
-                // Remove expired entry from BitArray
-                int h1 = Hash1(entry.TraceId),
-                    h2 = Hash2(entry.TraceId);
-                for (int j = 0; j < _hashCount; j++)
-                {
-                    int index = (int)((h1 + (long)j * h2) % _size);
-                    if (index < 0)
-                        index += _size;
-                    RemoveBit(index);
-                }
-                _ttlEntries[i % _ttlEntries.Length] = default; // Clear slot
+                _ttlCleanupSequence = sequence + 1;
+                continue;
             }
+
+            if (entry.Sequence != sequence)
+            {
+                _ttlCleanupSequence = sequence + 1;
+                continue;
+            }
+
+            if (entry.AddedAt >= cutoff)
+                break;
+
+            RemoveTtlEntry(slot, entry);
+            _ttlCleanupSequence = sequence + 1;
         }
     }
 
-    private readonly record struct TtlEntry(ulong TraceId, DateTime AddedAt, bool Occupied);
+    private readonly record struct TtlEntry(ulong TraceId, DateTime AddedAt, long Sequence, bool Occupied);
 
     private bool IsSet(int index)
     {
@@ -199,6 +207,26 @@ public class DeduplicationFilter
 
         if (_ttlBitCounts[index] == 0)
             _bits[index] = false;
+    }
+
+    private int GetTtlSlot(long sequence) => (int)(sequence % _ttlEntries!.Length);
+
+    private void RemoveTtlEntry(int slot, TtlEntry entry)
+    {
+        if (_ttlEntries is null)
+            return;
+
+        int h1 = Hash1(entry.TraceId),
+            h2 = Hash2(entry.TraceId);
+        for (int j = 0; j < _hashCount; j++)
+        {
+            int index = (int)((h1 + (long)j * h2) % _size);
+            if (index < 0)
+                index += _size;
+            RemoveBit(index);
+        }
+
+        _ttlEntries[slot] = default;
     }
 
     private static int Hash1(ulong x)

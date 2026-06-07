@@ -127,8 +127,16 @@ to the remaining observers.
 Buffered observer modes are opt-in and bounded. `BufferedReliable` requires
 `FlushOnCompletion = true`. Buffered observer failures are controlled by
 `ObserverFailureMode.UseRegistrationPolicy`, `Ignore`, or `FaultPipeline`.
-Buffered dispatch does not claim full inline-equivalent recursive
-`ObserverFailedEvent` propagation.
+Global `FaultPipeline`, registration-level `FaultPipeline`, and `Critical`
+observer reliability fault the run. `RemoveObserver` removes only non-critical
+observers after a failure when the global mode does not require faulting; it
+does not cancel an observer callback already in progress. Buffered dispatch
+does not claim full inline-equivalent recursive `ObserverFailedEvent`
+propagation.
+
+`ObserverQueueOverflowPolicy` is a shipped domain-level enum reserved for a
+future observer overflow API. In 1.1.0 buffered observer overflow is configured
+with `ObserverDispatchOptions.FullMode` / `BoundedChannelFullMode`.
 
 ## Circuit Breaker And Retry
 
@@ -137,8 +145,10 @@ behavior without promising a strict consecutive-failure counter. `FailureRatio`
 uses `FailureRatio`, `SamplingDuration`, `MinimumThroughput`, `BreakDuration`,
 and `MaxHalfOpenRequests`.
 
-Circuit breaker policy does not manage retry. Retry remains a separate
-`RetryPolicy` on `StageFailureOptions`.
+Circuit breaker rejection is a transient stage failure with category
+`CircuitBreaker`. Retry remains a separate `RetryPolicy` on
+`StageFailureOptions`; configure retry delays with the breaker recovery duration
+in mind.
 
 ## DrainAsync
 

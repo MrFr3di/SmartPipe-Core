@@ -193,7 +193,10 @@ builder.WithObserver(observer, reliability, failurePolicy);
 
 Implemented reliability values are `BestEffort`, `Reliable`, and `Critical`.
 Implemented failure policies are `Ignore`, `Log`, `FaultPipeline`, and
-`RemoveObserver`.
+`RemoveObserver`. Global `FaultPipeline`, registration-level `FaultPipeline`,
+and `Critical` reliability take priority over `RemoveObserver`; removal applies
+only to non-critical observers and affects events processed after the observer
+is marked inactive.
 
 ## Pipeline Identity
 
@@ -266,3 +269,6 @@ fire-and-forget observer queues.
 `BufferedReliable` requires `FlushOnCompletion = true`. Buffered observer
 failure behavior uses `ObserverFailureMode.UseRegistrationPolicy`,
 `ObserverFailureMode.Ignore`, or `ObserverFailureMode.FaultPipeline`.
+Buffered overflow is configured with `ObserverDispatchOptions.FullMode` /
+`BoundedChannelFullMode`. `ObserverQueueOverflowPolicy` is a shipped
+domain-level enum reserved for a future observer overflow API.

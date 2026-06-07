@@ -1413,7 +1413,7 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
-    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldApplyPermanentFailurePolicy_WhenOpen()
+    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldApplyRetryExhaustedPolicy_WhenOpen()
     {
         var observer = new RecordingObserver();
         var failingTransformer = new FlakyStageTransformer<int, string>(
@@ -1433,6 +1433,7 @@ public class ModernPipelineRuntimeTests
                         BreakDuration = TimeSpan.FromMinutes(5),
                     },
                     OnPermanentFailure = FailureAction.Skip,
+                    OnRetryExhausted = FailureAction.Skip,
                 }
             )
             .WithObserver(observer)
@@ -1475,6 +1476,238 @@ public class ModernPipelineRuntimeTests
         await run.Completion;
 
         observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCount(1); // Only 4th item rejected
+    }
+
+    [Fact]
+    public async Task TypedCircuitBreaker_RejectionErrorType_ShouldBeTransient()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2))
+            .Transform(
+                new FailingStageTransformer<int, string>(),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 1,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                    OnRetryExhausted = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.Events.OfType<CircuitBreakerRejectedEvent>()
+            .Single()
+            .Error.Type.Should()
+            .Be(ErrorType.Transient);
+    }
+
+    [Fact]
+    public async Task TypedCircuitBreaker_Rejection_ShouldNotInvokeOnPermanentFailure()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(
+                new FlakyStageTransformer<int, string>(
+                    failuresBeforeSuccess: 999,
+                    x => x.ToString(CultureInfo.InvariantCulture)),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 1,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    Retry = new RetryPolicy(1, TimeSpan.Zero),
+                    OnPermanentFailure = FailureAction.FaultPipeline,
+                    OnRetryExhausted = FailureAction.EmitFailureResult,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().ContainSingle();
+        outputs.Should().ContainSingle();
+        outputs.Should().OnlyContain(o => !o.Result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task TypedCircuitBreaker_Rejection_ShouldPreserveTraceAndCorrelationFields()
+    {
+        var observer = new RecordingObserver();
+        var rejectedEnvelope = new ProcessingEnvelope<int>
+        {
+            PipelineId = "source-pipeline",
+            RunId = "source-run",
+            TraceId = 99,
+            Payload = 2,
+            Metadata = MetadataBag.Empty,
+            Lineage = [],
+            Attempt = 0,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+        };
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(
+                new ProcessingEnvelope<int>
+                {
+                    PipelineId = "source-pipeline",
+                    RunId = "source-run",
+                    TraceId = 42,
+                    Payload = 1,
+                    Metadata = MetadataBag.Empty,
+                    Lineage = [],
+                    Attempt = 0,
+                    CreatedAtUtc = DateTimeOffset.UtcNow,
+                },
+                rejectedEnvelope))
+            .Transform(
+                new FailingStageTransformer<int, string>(),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 1,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                    OnRetryExhausted = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        var rejected = observer.Events.OfType<CircuitBreakerRejectedEvent>().Single();
+        rejected.TraceId.Should().Be(99);
+        rejected.Attempt.Should().Be(0);
+        rejected.PipelineId.Should().NotBeNullOrWhiteSpace();
+        rejected.RunId.Should().NotBeNullOrWhiteSpace();
+        rejected.StageId.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task TypedCircuitBreaker_Rejection_WithTransientDeadLetterPolicy_ShouldDeadLetter()
+    {
+        await using var stream = new MemoryStream();
+        var serializer = new JsonLinesDeadLetterSerializer<int>();
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2))
+            .Transform(
+                new FailingStageTransformer<int, string>(),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 1,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                    OnRetryExhausted = FailureAction.DeadLetter,
+                },
+                new StageDeadLetterOptions<int>(stream, serializer)
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Should().ContainSingle(o => !o.Result.IsSuccess);
+        observer.Events.OfType<DeadLetterWrittenEvent>().Should().ContainSingle();
+
+        stream.Position = 0;
+        var deadLetters = new List<DeadLetterEnvelope<int>>();
+        await foreach (var envelope in serializer.ReadAsync(stream))
+            deadLetters.Add(envelope);
+
+        deadLetters.Should().ContainSingle();
+        deadLetters.Single().OriginalPayload.Should().Be(2);
+        deadLetters.Single().Error.Type.Should().Be(ErrorType.Transient);
+        deadLetters.Single().Error.Category.Should().Be("CircuitBreaker");
+    }
+
+    [Fact]
+    public async Task TypedCircuitBreaker_Rejection_WithTransientEmitFailurePolicy_ShouldEmitFailure()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2))
+            .Transform(
+                new FailingStageTransformer<int, string>(),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 1,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                    OnRetryExhausted = FailureAction.EmitFailureResult,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().ContainSingle();
+        outputs.Should().ContainSingle(o =>
+            !o.Result.IsSuccess
+            && o.Result.Error!.Value.Type == ErrorType.Transient
+            && o.Result.Error.Value.Category == "CircuitBreaker");
+    }
+
+    [Fact]
+    public async Task TypedCircuitBreaker_Rejection_WithRetryPolicy_ShouldNotExceedMaxAttempts()
+    {
+        var observer = new RecordingObserver();
+        var transformer = new FailingStageTransformer<int, string>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 1,
+                        BreakDuration = TimeSpan.FromMinutes(5),
+                    },
+                    Retry = new RetryPolicy(2, TimeSpan.Zero),
+                    OnPermanentFailure = FailureAction.Skip,
+                    OnRetryExhausted = FailureAction.Skip,
+                }
+            )
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCount(3);
+        observer.Events.OfType<RetryScheduledEvent>().Should().HaveCount(2);
+        observer.Events.OfType<RetryExhaustedEvent>().Should().ContainSingle();
     }
 
     [Fact]
@@ -1583,11 +1816,11 @@ public class ModernPipelineRuntimeTests
         // The fact it opens proves per-attempt (including retry) failures are recorded.
         outputs.Should().BeEmpty();
         observer.Events.OfType<CircuitBreakerOpenedEvent>().Should().ContainSingle();
-        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().ContainSingle(); // Item 2
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCount(3); // Item 2 initial + 2 retries
     }
 
     [Fact]
-    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldNotRetryRejectedOpenBreaker()
+    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldRetryRejectedOpenBreakerWithinBudget()
     {
         var observer = new RecordingObserver();
         var failingTransformer = new FlakyStageTransformer<int, string>(
@@ -1616,11 +1849,10 @@ public class ModernPipelineRuntimeTests
         _ = await ReadOutputsAsync(run.Outputs);
         await run.Completion;
 
-        // Item 1 fails (1 failure), retry fails (2 failures → breaker opens on 2nd failure)
-        // Item 1 exhausted and skipped. Items 2-4 rejected without retry.
-        // RetryScheduledEvent should only appear for item 1 (1 retry), not for rejected items 2-4
-        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCount(3); // Items 2, 3, 4
-        observer.Events.OfType<RetryScheduledEvent>().Should().HaveCount(1); // Only item 1 had a retry
+        // Item 1 fails (1 failure), retry fails (2 failures → breaker opens on 2nd failure).
+        // Items 2-4 are rejected as transient and retried once, then exhausted.
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCount(6);
+        observer.Events.OfType<RetryScheduledEvent>().Should().HaveCount(4);
     }
 
     [Fact]
@@ -1701,6 +1933,7 @@ public class ModernPipelineRuntimeTests
                         BreakDuration = TimeSpan.FromMinutes(5),
                     },
                     OnPermanentFailure = FailureAction.DeadLetter,
+                    OnRetryExhausted = FailureAction.DeadLetter,
                 },
                 new StageDeadLetterOptions<int>(stream, serializer)
             )
@@ -1761,6 +1994,7 @@ public class ModernPipelineRuntimeTests
                         BreakDuration = TimeSpan.FromMinutes(5),
                     },
                     OnPermanentFailure = FailureAction.DeadLetter,
+                    OnRetryExhausted = FailureAction.DeadLetter,
                 },
                 new StageDeadLetterOptions<int>(streamB, serializerB)
             )

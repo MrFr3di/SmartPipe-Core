@@ -550,6 +550,106 @@ public class SmartPipeChannelTests
     }
 
     [Fact]
+    public async Task DisposeAsync_NeverStarted_ShouldDisposeComponents()
+    {
+        var source = new DisposableCountingSource<int>([1]);
+        var transformer = new DisposableCountingTransformer<int, int>();
+        var sink = new DisposableCountingSink<int>();
+        var channel = new SmartPipeChannel<int, int>(new SmartPipeChannelOptions());
+        channel.AddSource(source);
+        channel.AddTransformer(transformer);
+        channel.AddSink(sink);
+
+        await channel.DisposeAsync();
+
+        source.DisposeCallCount.Should().Be(1);
+        transformer.DisposeCallCount.Should().Be(1);
+        sink.DisposeCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_AfterCompleted_ShouldDisposeComponents()
+    {
+        var source = new DisposableCountingSource<int>([1]);
+        var transformer = new DisposableCountingTransformer<int, int>();
+        var sink = new DisposableCountingSink<int>();
+        var channel = new SmartPipeChannel<int, int>(new SmartPipeChannelOptions());
+        channel.AddSource(source);
+        channel.AddTransformer(transformer);
+        channel.AddSink(sink);
+
+        await channel.RunAsync();
+        await channel.DisposeAsync();
+
+        source.DisposeCallCount.Should().Be(1);
+        transformer.DisposeCallCount.Should().Be(1);
+        sink.DisposeCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_RunningInfiniteSource_ShouldCancelAndDisposeAfterDrainTimeout()
+    {
+        var source = new DisposableInfiniteSource();
+        var transformer = new DisposableCountingTransformer<int, int>();
+        var sink = new DisposableCountingSink<int>();
+        var channel = new SmartPipeChannel<int, int>(
+            new SmartPipeChannelOptions { MaxDegreeOfParallelism = 1 });
+        channel.AddSource(source);
+        channel.AddTransformer(transformer);
+        channel.AddSink(sink);
+        channel.RunInBackground();
+        await source.FirstItemProduced.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var act = async () => await channel.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(7));
+
+        await act.Should().NotThrowAsync();
+        source.DisposeCallCount.Should().Be(1);
+        transformer.DisposeCallCount.Should().Be(1);
+        sink.DisposeCallCount.Should().Be(1);
+        channel.State.Should().BeOneOf(PipelineState.Cancelled, PipelineState.Completed, PipelineState.Faulted);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_DrainCancellation_ShouldStillDisposeComponents()
+    {
+        var source = new DisposableInfiniteSource();
+        var transformer = new DisposableCountingTransformer<int, int>();
+        var sink = new DisposableCountingSink<int>();
+        var channel = new SmartPipeChannel<int, int>(
+            new SmartPipeChannelOptions { MaxDegreeOfParallelism = 1 });
+        channel.AddSource(source);
+        channel.AddTransformer(transformer);
+        channel.AddSink(sink);
+        channel.RunInBackground();
+        await source.FirstItemProduced.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await channel.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(7));
+
+        source.DisposeCallCount.Should().Be(1);
+        transformer.DisposeCallCount.Should().Be(1);
+        sink.DisposeCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_CalledTwiceConcurrently_ShouldDisposeOnce()
+    {
+        var source = new DisposableCountingSource<int>([1, 2, 3]);
+        var transformer = new DisposableCountingTransformer<int, int>();
+        var sink = new DisposableCountingSink<int>();
+        var channel = new SmartPipeChannel<int, int>(new SmartPipeChannelOptions());
+        channel.AddSource(source);
+        channel.AddTransformer(transformer);
+        channel.AddSink(sink);
+        channel.RunInBackground();
+
+        await Task.WhenAll(channel.DisposeAsync().AsTask(), channel.DisposeAsync().AsTask());
+
+        source.DisposeCallCount.Should().Be(1);
+        transformer.DisposeCallCount.Should().Be(1);
+        sink.DisposeCallCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task SmartPipeChannel_Cancel_ShouldStopBackgroundRunWithoutUnobservedTaskException()
     {
         var options = new SmartPipeChannelOptions();
@@ -760,5 +860,37 @@ public class SmartPipeChannelTests
         transformer.CallCount.Should().Be(2);
         sink.Items.Should().ContainSingle().Which.Should().Be("retry-me");
         channel.State.Should().Be(PipelineState.Completed);
+    }
+
+    private sealed class DisposableInfiniteSource : ISource<int>
+    {
+        private int _disposeCallCount;
+        private int _count;
+
+        public int DisposeCallCount => Volatile.Read(ref _disposeCallCount);
+
+        public TaskCompletionSource FirstItemProduced { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+        public async IAsyncEnumerable<ProcessingContext<int>> ReadAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                await Task.Delay(10, ct).ConfigureAwait(false);
+                var value = Interlocked.Increment(ref _count);
+                FirstItemProduced.TrySetResult();
+                yield return new ProcessingContext<int>(value);
+            }
+        }
+
+        public Task DisposeAsync()
+        {
+            Interlocked.Increment(ref _disposeCallCount);
+            return Task.CompletedTask;
+        }
     }
 }

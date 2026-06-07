@@ -31,7 +31,10 @@ public enum ObserverFailurePolicy
     RemoveObserver,
 }
 
-/// <summary>Policy for a full observer event queue.</summary>
+/// <summary>
+/// Domain-level policy for a full observer event queue. In 1.1.0 buffered observer queues are
+/// configured through <see cref="ObserverDispatchOptions.FullMode"/>.
+/// </summary>
 public enum ObserverQueueOverflowPolicy
 {
     /// <summary>Wait until queue capacity is available.</summary>

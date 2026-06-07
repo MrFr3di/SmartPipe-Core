@@ -22,22 +22,25 @@ internal static class PipelineObserverDispatcher
         options.Validate();
         ArgumentNullException.ThrowIfNull(clock);
         return options.Mode == ObserverDispatchMode.Inline
-            ? new InlinePipelineObserverDispatcher(observers, clock)
+            ? new InlinePipelineObserverDispatcher(observers, options, clock)
             : new BufferedPipelineObserverDispatcher(observers, options);
     }
 }
 
 internal sealed class InlinePipelineObserverDispatcher : IPipelineObserverDispatcher
 {
-    private readonly IReadOnlyList<PipelineObserverRegistration> _observers;
+    private readonly ActiveObserverRegistration[] _observers;
+    private readonly ObserverDispatchOptions _options;
     private readonly IPipelineClock _clock;
 
     public InlinePipelineObserverDispatcher(
         IReadOnlyList<PipelineObserverRegistration> observers,
+        ObserverDispatchOptions options,
         IPipelineClock clock
     )
     {
-        _observers = observers;
+        _observers = ObserverRegistrationState.CreateActiveObservers(observers);
+        _options = options;
         _clock = clock;
     }
 
@@ -45,14 +48,21 @@ internal sealed class InlinePipelineObserverDispatcher : IPipelineObserverDispat
     {
         foreach (var registration in _observers)
         {
+            if (registration.IsRemoved)
+                continue;
+
             try
             {
-                await registration.Observer.OnEventAsync(pipelineEvent, ct).ConfigureAwait(false);
+                await registration.Registration.Observer.OnEventAsync(pipelineEvent, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
-                when (registration.FailurePolicy != ObserverFailurePolicy.FaultPipeline
-                    && registration.Reliability != ObserverReliability.Critical)
             {
+                if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
+                    throw;
+
+                if (registration.Registration.FailurePolicy == ObserverFailurePolicy.RemoveObserver)
+                    registration.Remove();
+
                 await EmitObserverFailureAsync(pipelineEvent, registration, ex, ct).ConfigureAwait(false);
             }
         }
@@ -64,7 +74,7 @@ internal sealed class InlinePipelineObserverDispatcher : IPipelineObserverDispat
 
     private async ValueTask EmitObserverFailureAsync(
         PipelineEvent sourceEvent,
-        PipelineObserverRegistration failedRegistration,
+        ActiveObserverRegistration failedRegistration,
         Exception exception,
         CancellationToken ct
     )
@@ -72,24 +82,28 @@ internal sealed class InlinePipelineObserverDispatcher : IPipelineObserverDispat
         var failureEvent = new ObserverFailedEvent(
             sourceEvent.PipelineId,
             sourceEvent.RunId,
-            failedRegistration.Observer.GetType().Name,
+            failedRegistration.Registration.Observer.GetType().Name,
             _clock.GetUtcNow(),
             exception
         );
 
         foreach (var registration in _observers)
         {
-            if (ReferenceEquals(registration.Observer, failedRegistration.Observer))
+            if (registration.IsRemoved)
+                continue;
+
+            if (ReferenceEquals(registration.Registration.Observer, failedRegistration.Registration.Observer))
                 continue;
 
             try
             {
-                await registration.Observer.OnEventAsync(failureEvent, ct).ConfigureAwait(false);
+                await registration.Registration.Observer.OnEventAsync(failureEvent, ct).ConfigureAwait(false);
             }
             catch (Exception)
-                when (registration.FailurePolicy != ObserverFailurePolicy.FaultPipeline
-                    && registration.Reliability != ObserverReliability.Critical)
             {
+                if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
+                    throw;
+
                 // Best-effort observer failure notifications must not recurse indefinitely.
             }
         }
@@ -98,12 +112,13 @@ internal sealed class InlinePipelineObserverDispatcher : IPipelineObserverDispat
 
 internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDispatcher
 {
-    private readonly IReadOnlyList<PipelineObserverRegistration> _observers;
+    private readonly ActiveObserverRegistration[] _observers;
     private readonly ObserverDispatchOptions _options;
     private readonly Channel<PipelineEvent> _events;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _worker;
     private Exception? _failure;
+    private Exception? _pipelineFault;
     private int _completed;
     private int _disposed;
 
@@ -112,7 +127,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         ObserverDispatchOptions options
     )
     {
-        _observers = observers;
+        _observers = ObserverRegistrationState.CreateActiveObservers(observers);
         _options = options;
         _events = Channel.CreateBounded<PipelineEvent>(
             new BoundedChannelOptions(options.Capacity)
@@ -160,8 +175,8 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         if (_options.FlushOnCompletion)
             await _worker.WaitAsync(ct).ConfigureAwait(false);
 
-        if (_failure is not null && _options.FailureMode == ObserverFailureMode.FaultPipeline)
-            throw _failure;
+        if (_pipelineFault is not null)
+            throw _pipelineFault;
     }
 
     public async ValueTask DisposeAsync()
@@ -188,25 +203,60 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         {
             foreach (var registration in _observers)
             {
+                if (registration.IsRemoved)
+                    continue;
+
                 try
                 {
-                    await registration.Observer.OnEventAsync(pipelineEvent, _cts.Token)
+                    await registration.Registration.Observer.OnEventAsync(pipelineEvent, _cts.Token)
                         .ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
                     _failure ??= ex;
-                    if (
-                        _options.FailureMode == ObserverFailureMode.FaultPipeline
-                        || registration.FailurePolicy == ObserverFailurePolicy.FaultPipeline
-                        || registration.Reliability == ObserverReliability.Critical
-                    )
+                    if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
                     {
+                        _pipelineFault ??= ex;
                         _events.Writer.TryComplete(ex);
                         return;
                     }
+
+                    if (registration.Registration.FailurePolicy == ObserverFailurePolicy.RemoveObserver)
+                        registration.Remove();
                 }
             }
         }
+    }
+}
+
+internal sealed class ActiveObserverRegistration(PipelineObserverRegistration registration)
+{
+    private int _isRemoved;
+
+    public PipelineObserverRegistration Registration { get; } = registration;
+
+    public bool IsRemoved => Volatile.Read(ref _isRemoved) != 0;
+
+    public void Remove() => Interlocked.Exchange(ref _isRemoved, 1);
+}
+
+internal static class ObserverRegistrationState
+{
+    public static ActiveObserverRegistration[] CreateActiveObservers(
+        IReadOnlyList<PipelineObserverRegistration> observers)
+    {
+        var active = new ActiveObserverRegistration[observers.Count];
+        for (var i = 0; i < observers.Count; i++)
+            active[i] = new ActiveObserverRegistration(observers[i]);
+        return active;
+    }
+
+    public static bool ShouldFaultPipeline(
+        ObserverFailureMode failureMode,
+        PipelineObserverRegistration registration)
+    {
+        return failureMode == ObserverFailureMode.FaultPipeline
+            || registration.FailurePolicy == ObserverFailurePolicy.FaultPipeline
+            || registration.Reliability == ObserverReliability.Critical;
     }
 }

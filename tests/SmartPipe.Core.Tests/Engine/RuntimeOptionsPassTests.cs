@@ -691,6 +691,185 @@ public class RuntimeOptionsPassTests
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    [Theory]
+    [MemberData(nameof(ObserverFailureMatrixCases))]
+    public async Task ObserverDispatch_FailureMatrix_ShouldUseFullPipelineCompletion(
+        ObserverDispatchMode mode,
+        ObserverFailureMode failureMode,
+        ObserverReliability reliability,
+        ObserverFailurePolicy failurePolicy,
+        bool shouldFault)
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = mode,
+                        Capacity = 8,
+                        FailureMode = failureMode,
+                    },
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(new ThrowingObserver(), reliability, failurePolicy)
+            .Run();
+
+        var act = async () => await run.Completion;
+
+        if (shouldFault)
+            await act.Should().ThrowAsync<InvalidOperationException>();
+        else
+        {
+            _ = await ReadOutputsAsync(run.Outputs);
+            await act.Should().NotThrowAsync();
+        }
+    }
+
+    public static TheoryData<ObserverDispatchMode, ObserverFailureMode, ObserverReliability, ObserverFailurePolicy, bool>
+        ObserverFailureMatrixCases()
+    {
+        return new TheoryData<ObserverDispatchMode, ObserverFailureMode, ObserverReliability, ObserverFailurePolicy, bool>
+        {
+            { ObserverDispatchMode.Inline, ObserverFailureMode.UseRegistrationPolicy, ObserverReliability.Critical, ObserverFailurePolicy.Ignore, true },
+            { ObserverDispatchMode.Inline, ObserverFailureMode.UseRegistrationPolicy, ObserverReliability.Reliable, ObserverFailurePolicy.FaultPipeline, true },
+            { ObserverDispatchMode.Inline, ObserverFailureMode.UseRegistrationPolicy, ObserverReliability.Reliable, ObserverFailurePolicy.Ignore, false },
+            { ObserverDispatchMode.BufferedReliable, ObserverFailureMode.UseRegistrationPolicy, ObserverReliability.Critical, ObserverFailurePolicy.Ignore, true },
+            { ObserverDispatchMode.BufferedReliable, ObserverFailureMode.UseRegistrationPolicy, ObserverReliability.Reliable, ObserverFailurePolicy.FaultPipeline, true },
+            { ObserverDispatchMode.BufferedReliable, ObserverFailureMode.UseRegistrationPolicy, ObserverReliability.Reliable, ObserverFailurePolicy.Ignore, false },
+            { ObserverDispatchMode.BufferedBestEffort, ObserverFailureMode.UseRegistrationPolicy, ObserverReliability.BestEffort, ObserverFailurePolicy.Log, false },
+            { ObserverDispatchMode.BufferedBestEffort, ObserverFailureMode.FaultPipeline, ObserverReliability.BestEffort, ObserverFailurePolicy.Ignore, true },
+        };
+    }
+
+    [Fact]
+    public async Task RemoveObserver_Inline_RemovesFailingObserver_AndKeepsHealthyObserver()
+    {
+        var failing = new CountingThrowingObserver();
+        var healthy = new RecordingObserver();
+        var source = new GateControlledSource<int>(1, 2);
+
+        var run = PipelineBuilder
+            .From(source)
+            .WithRuntimeOptions(new PipelineRuntimeOptions { ObserverDispatch = ObserverDispatchOptions.Inline })
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(failing, failurePolicy: ObserverFailurePolicy.RemoveObserver)
+            .WithObserver(healthy)
+            .Run();
+
+        await failing.FirstFailure.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        source.ReleaseRemainingItems();
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        failing.CallCount.Should().Be(1);
+        healthy.Events.OfType<StageStartedEvent>().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task RemoveObserver_Buffered_RemovesFailingObserver_AndKeepsHealthyObserver()
+    {
+        var failing = new CountingThrowingObserver();
+        var healthy = new RecordingObserver();
+        var source = new GateControlledSource<int>(1, 2);
+
+        var run = PipelineBuilder
+            .From(source)
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = ObserverDispatchMode.BufferedReliable,
+                        Capacity = 8,
+                    },
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(failing, failurePolicy: ObserverFailurePolicy.RemoveObserver)
+            .WithObserver(healthy)
+            .Run();
+
+        await failing.FirstFailure.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        source.ReleaseRemainingItems();
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        failing.CallCount.Should().Be(1);
+        healthy.Events.OfType<StageStartedEvent>().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task RemoveObserver_DoesNotRemoveObserver_WhenPolicyIsIgnore()
+    {
+        var failing = new CountingThrowingObserver();
+        var source = new GateControlledSource<int>(1, 2);
+
+        var run = PipelineBuilder
+            .From(source)
+            .WithRuntimeOptions(new PipelineRuntimeOptions { ObserverDispatch = ObserverDispatchOptions.Inline })
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(failing, failurePolicy: ObserverFailurePolicy.Ignore)
+            .Run();
+
+        await failing.FirstFailure.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        source.ReleaseRemainingItems();
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        failing.CallCount.Should().BeGreaterThan(1);
+    }
+
+    [Theory]
+    [InlineData(ObserverReliability.Critical, ObserverFailurePolicy.RemoveObserver)]
+    [InlineData(ObserverReliability.BestEffort, ObserverFailurePolicy.FaultPipeline)]
+    public async Task RemoveObserver_DoesNotOverrideFaultPriority(
+        ObserverReliability reliability,
+        ObserverFailurePolicy failurePolicy)
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(new CountingThrowingObserver(), reliability, failurePolicy)
+            .Run();
+
+        var act = async () => await run.Completion;
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task RemoveObserver_IsIdempotent_WhenObserverFailsMultipleTimes()
+    {
+        var failing = new CountingThrowingObserver();
+        var source = new GateControlledSource<int>(1, 2, 3);
+
+        var run = PipelineBuilder
+            .From(source)
+            .WithRuntimeOptions(
+                new PipelineRuntimeOptions
+                {
+                    ObserverDispatch = new ObserverDispatchOptions
+                    {
+                        Mode = ObserverDispatchMode.BufferedReliable,
+                        Capacity = 8,
+                    },
+                }
+            )
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithObserver(failing, failurePolicy: ObserverFailurePolicy.RemoveObserver)
+            .Run();
+
+        await failing.FirstFailure.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        source.ReleaseRemainingItems();
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        failing.CallCount.Should().Be(1);
+    }
+
     [Fact]
     public void ObserverDispatch_BufferedReliable_ShouldRejectFlushOnCompletionFalse()
     {
@@ -1061,6 +1240,7 @@ public class RuntimeOptionsPassTests
                         BreakDuration = TimeSpan.FromMinutes(5),
                     },
                     OnPermanentFailure = FailureAction.DeadLetter,
+                    OnRetryExhausted = FailureAction.DeadLetter,
                 },
                 new StageDeadLetterOptions<int>(stream, serializer)
             )
@@ -1329,6 +1509,23 @@ public class RuntimeOptionsPassTests
     {
         public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
         {
+            throw new InvalidOperationException("observer boom");
+        }
+    }
+
+    private sealed class CountingThrowingObserver : IPipelineObserver
+    {
+        private int _callCount;
+
+        public int CallCount => Volatile.Read(ref _callCount);
+
+        public TaskCompletionSource FirstFailure { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _callCount);
+            FirstFailure.TrySetResult();
             throw new InvalidOperationException("observer boom");
         }
     }

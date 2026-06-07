@@ -278,15 +278,69 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
             return; // Already disposed
 
-        using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await DrainAsync(TimeSpan.FromSeconds(5), drainCts.Token).ConfigureAwait(false);
-        await DisposeComponentsAsync().ConfigureAwait(false);
+        List<Exception>? failures = null;
+
+        try
+        {
+            using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await DrainAsync(TimeSpan.FromSeconds(5), drainCts.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
+        {
+            try
+            {
+                Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+        catch (Exception ex)
+        {
+            AddFailure(ex);
+        }
+
+        await CaptureFailureAsync(DisposeComponentsAsync).ConfigureAwait(false);
         if (_inputBuffer != null)
-            await _inputBuffer.DisposeAsync().ConfigureAwait(false);
+            await CaptureFailureAsync(() => _inputBuffer.DisposeAsync().AsTask()).ConfigureAwait(false);
         if (_adaptiveInFlightLimiter != null)
-            await _adaptiveInFlightLimiter.DisposeAsync().ConfigureAwait(false);
-        _internalCts?.Dispose();
+            await CaptureFailureAsync(() => _adaptiveInFlightLimiter.DisposeAsync().AsTask()).ConfigureAwait(false);
+
+        try
+        {
+            _internalCts?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            AddFailure(ex);
+        }
+
         GC.SuppressFinalize(this);
+
+        if (failures is { Count: 1 })
+            throw failures[0];
+        if (failures is { Count: > 1 })
+            throw new AggregateException(failures);
+
+        return;
+
+        async Task CaptureFailureAsync(Func<Task> action)
+        {
+            try
+            {
+                await action().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                AddFailure(ex);
+            }
+        }
+
+        void AddFailure(Exception exception)
+        {
+            failures ??= [];
+            failures.Add(exception);
+        }
     }
 
     /// <summary>Gets a channel reader for consuming output results.</summary>
