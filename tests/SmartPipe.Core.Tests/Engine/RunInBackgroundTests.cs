@@ -59,7 +59,8 @@ public class RunInBackgroundTests
     public async Task RunInBackground_WithUserSink_ReturnedReaderAndSinkReceiveSameSuccessOutputs()
     {
         var sink = new ResultCollectingSink<int>();
-        var pipe = new SmartPipeChannel<int, int>();
+        var pipe = new SmartPipeChannel<int, int>(
+            new SmartPipeChannelOptions { MaxDegreeOfParallelism = 1 });
         pipe.AddSource(new SimpleSource<int>(1, 2, 3));
         pipe.AddTransformer(new PassthroughTransformer<int>());
         pipe.AddSink(sink);
@@ -130,7 +131,7 @@ public class RunInBackgroundTests
     public async Task RunInBackground_Cancel_ShouldCompleteReturnedReaderAsCanceled()
     {
         var pipe = new SmartPipeChannel<int, int>();
-        pipe.AddSource(new InfiniteSource<int>());
+        pipe.AddSource(new NeverYieldingSource());
         pipe.AddTransformer(new PassthroughTransformer<int>());
 
         var reader = pipe.RunInBackground();
@@ -153,12 +154,14 @@ public class RunInBackgroundTests
 
         var reader = pipe.RunInBackground();
         await source.FirstItemProduced.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        (await reader.WaitToReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
 
         pipe.Cancel();
 
-        await reader.Completion.Invoking(static t => t.WaitAsync(TimeSpan.FromSeconds(5)))
-            .Should()
-            .ThrowAsync<OperationCanceledException>();
+        var (_, completion) = await ReadResultsCapturingCompletionAsync(reader)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+
+        completion.Should().BeOfType<OperationCanceledException>();
     }
 
     [Fact]
@@ -175,14 +178,34 @@ public class RunInBackgroundTests
 
         await pipe.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(7));
 
-        try
-        {
-            await reader.Completion.WaitAsync(TimeSpan.FromSeconds(5));
-        }
-        catch (OperationCanceledException)
-        {
-            // Dispose may cancel a still-running background run, but a graceful drain can complete successfully.
-        }
+        var (_, completion) = await ReadResultsCapturingCompletionAsync(reader)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        if (completion is not null)
+            completion.Should().BeOfType<OperationCanceledException>(
+                "Dispose may cancel a still-running background run or complete after graceful drain");
+    }
+
+    [Fact]
+    public async Task RunInBackground_Cancel_ShouldPreserveAlreadyBufferedExternalResultsBeforeCompletion()
+    {
+        var pipe = new SmartPipeChannel<int, int>(
+            new SmartPipeChannelOptions { BoundedCapacity = 4, MaxDegreeOfParallelism = 1 });
+        var source = new SignaledInfiniteSource();
+        pipe.AddSource(source);
+        pipe.AddTransformer(new PassthroughTransformer<int>());
+
+        var reader = pipe.RunInBackground();
+        await source.FirstItemProduced.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        (await reader.WaitToReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+
+        pipe.Cancel();
+
+        var (results, completion) = await ReadResultsCapturingCompletionAsync(reader)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+
+        results.Should().NotBeEmpty();
+        results.Should().OnlyContain(static result => result.IsSuccess);
+        completion.Should().BeOfType<OperationCanceledException>();
     }
 
     [Fact]
@@ -194,7 +217,7 @@ public class RunInBackgroundTests
                 TotalRequestTimeout = TimeSpan.FromMilliseconds(100),
                 MaxDegreeOfParallelism = 1,
             });
-        pipe.AddSource(new InfiniteSource<int>());
+        pipe.AddSource(new NeverYieldingSource());
         pipe.AddTransformer(new PassthroughTransformer<int>());
 
         var reader = pipe.RunInBackground();
@@ -203,6 +226,50 @@ public class RunInBackgroundTests
             .Should()
             .ThrowAsync<TimeoutException>()
             .WithMessage("*total request timeout*");
+    }
+
+    [Fact]
+    public async Task RunInBackground_AfterDispose_ShouldThrowObjectDisposedException()
+    {
+        var pipe = new SmartPipeChannel<int, int>();
+        await pipe.DisposeAsync();
+
+        var act = () => pipe.RunInBackground();
+
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task RunAsync_AfterDispose_ShouldThrowObjectDisposedException()
+    {
+        var pipe = new SmartPipeChannel<int, int>();
+        await pipe.DisposeAsync();
+
+        await pipe.Invoking(static p => p.RunAsync())
+            .Should()
+            .ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void RunInBackground_WithoutSource_ShouldThrowSynchronously()
+    {
+        var pipe = new SmartPipeChannel<int, int>();
+        pipe.AddTransformer(new PassthroughTransformer<int>());
+
+        var act = () => pipe.RunInBackground();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*source*");
+    }
+
+    [Fact]
+    public void RunInBackground_WithoutTransformer_ShouldThrowSynchronously()
+    {
+        var pipe = new SmartPipeChannel<int, int>();
+        pipe.AddSource(new SimpleSource<int>(1));
+
+        var act = () => pipe.RunInBackground();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*transformer*");
     }
 
     [Fact]
@@ -281,6 +348,24 @@ public class RunInBackgroundTests
         return results;
     }
 
+    private static async Task<(
+        List<ProcessingResult<T>> Results,
+        Exception? Completion
+    )> ReadResultsCapturingCompletionAsync<T>(ChannelReader<ProcessingResult<T>> reader)
+    {
+        var results = new List<ProcessingResult<T>>();
+        try
+        {
+            await foreach (var result in reader.ReadAllAsync())
+                results.Add(result);
+            return (results, null);
+        }
+        catch (Exception ex)
+        {
+            return (results, ex);
+        }
+    }
+
     private sealed class ResultCollectingSink<T> : ISink<T>
     {
         private readonly List<ProcessingResult<T>> _results = [];
@@ -344,6 +429,20 @@ public class RunInBackgroundTests
                 FirstItemProduced.TrySetResult();
                 yield return new ProcessingContext<int>(value);
             }
+        }
+
+        public Task DisposeAsync() => Task.CompletedTask;
+    }
+
+    private sealed class NeverYieldingSource : ISource<int>
+    {
+        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+        public async IAsyncEnumerable<ProcessingContext<int>> ReadAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct).ConfigureAwait(false);
+            yield break;
         }
 
         public Task DisposeAsync() => Task.CompletedTask;

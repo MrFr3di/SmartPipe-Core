@@ -163,6 +163,27 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             throw new InvalidOperationException("Pipeline cannot be mutated after start.");
     }
 
+    private void ThrowIfDisposed()
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+            throw new ObjectDisposedException(GetType().FullName);
+    }
+
+    private void PrepareRunForStart(bool background)
+    {
+        ThrowIfDisposed();
+        if (_state != PipelineState.NotStarted && _state != PipelineState.Paused)
+            throw new InvalidOperationException("Pipeline already started.");
+
+        _runCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Interlocked.Exchange(ref _cancelCalled, 0);
+        Interlocked.Exchange(ref _isDraining, 0);
+        Interlocked.Exchange(ref _backgroundOutputCompleted, 0);
+        _drainRequested = false;
+        _backgroundRunMode = background;
+        TransitionState(PipelineState.Running);
+    }
+
     /// <summary>Pauses the pipeline processing.</summary>
     public void Pause()
     {
@@ -186,10 +207,10 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             CompleteExternalOutput(cancellation);
             return;
         }
+        _internalCts.Cancel();
         _inputChannel?.Writer.TryComplete();
         _outputChannel?.Writer.TryComplete();
         CompleteExternalOutput(cancellation);
-        _internalCts.Cancel();
         TransitionState(PipelineState.Cancelled);
     }
 
@@ -298,30 +319,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
         if (Interlocked.Exchange(ref _backgroundOutputCompleted, 1) != 0)
             return;
 
-        var drainBufferedOutput = ShouldDrainExternalOutputOnCompletion(error);
-        if (drainBufferedOutput)
-            DrainExternalOutputBuffer(channel);
-
         channel.Writer.TryComplete(error);
-
-        if (drainBufferedOutput)
-            DrainExternalOutputBuffer(channel);
-    }
-
-    private bool ShouldDrainExternalOutputOnCompletion(Exception? error)
-    {
-        return error is OperationCanceledException
-            || error is TimeoutException
-            || Volatile.Read(ref _cancelCalled) != 0
-            || Volatile.Read(ref _disposeStarted) != 0
-            || _internalCts.IsCancellationRequested;
-    }
-
-    private static void DrainExternalOutputBuffer(Channel<ProcessingResult<TOutput>> channel)
-    {
-        while (channel.Reader.TryRead(out _))
-        {
-        }
     }
 
     private void CompleteExternalOutputFromRunCompletion()
@@ -471,10 +469,11 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     /// </remarks>
     public ChannelReader<ProcessingResult<TOutput>> RunInBackground(CancellationToken ct = default)
     {
-        if (_state != PipelineState.NotStarted)
+        ThrowIfDisposed();
+        if (_state != PipelineState.NotStarted && _state != PipelineState.Paused)
             throw new InvalidOperationException("Pipeline already started.");
 
-        _backgroundOutputChannel = Channel.CreateBounded<ProcessingResult<TOutput>>(
+        var backgroundOutputChannel = Channel.CreateBounded<ProcessingResult<TOutput>>(
             new BoundedChannelOptions(
                 _options.BoundedCapacity > 0 ? _options.BoundedCapacity : 1000
             )
@@ -482,34 +481,38 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
                 FullMode = BoundedChannelFullMode.Wait,
             }
         );
+        _backgroundOutputChannel = backgroundOutputChannel;
         _backgroundRunMode = true;
-        TransitionState(PipelineState.Running);
 
-        // Create a fresh completion source synchronously so DrainAsync can observe it
-        // without racing against the background task startup.
-        var runTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _runCompletion = runTcs;
+        try
+        {
+            Validate();
+            PrepareRunForStart(background: true);
+        }
+        catch
+        {
+            _backgroundRunMode = false;
+            _backgroundOutputChannel = null;
+            throw;
+        }
+
         _ = Task.Run(async () =>
         {
             try
             {
-                await RunAsync(ct).ConfigureAwait(false);
-                runTcs.TrySetResult();
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                runTcs.TrySetCanceled(ct);
+                await RunCoreAsync(ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                runTcs.TrySetException(ex);
+                if (!_runCompletion.Task.IsCompleted)
+                    _runCompletion.TrySetException(ex);
             }
             finally
             {
                 CompleteExternalOutputFromRunCompletion();
             }
         }, CancellationToken.None);
-        return _backgroundOutputChannel.Reader;
+        return backgroundOutputChannel.Reader;
     }
 
     /// <summary>Creates a real-time dashboard snapshot of pipeline state.</summary>
@@ -543,8 +546,26 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
     /// </remarks>
     public async Task RunAsync(CancellationToken ct = default)
     {
-        Validate();
-        TransitionState(PipelineState.Running);
+        PrepareRunForStart(background: false);
+        try
+        {
+            Validate();
+            await RunCoreAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            if (!_runCompletion.Task.IsCompleted)
+            {
+                TransitionState(PipelineState.Faulted);
+                _runCompletion.TrySetException(ex);
+            }
+
+            throw;
+        }
+    }
+
+    private async Task RunCoreAsync(CancellationToken ct = default)
+    {
         _startTime = _clock.UtcNow;
         using var totalTimeoutCts = new CancellationTokenSource(_options.TotalRequestTimeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -553,7 +574,7 @@ public class SmartPipeChannel<TInput, TOutput> : IAsyncDisposable
             totalTimeoutCts.Token
         );
         var token = linkedCts.Token;
-        _producerCompleted = _isPaused = false;
+        _producerCompleted = false;
         _inputBufferCompleted = false;
         using var activity = _activitySource.StartActivity("Pipeline.Run");
         activity?.SetTag("smartpipe.parallelism", _options.MaxDegreeOfParallelism);

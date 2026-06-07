@@ -60,6 +60,28 @@ public class DeadLetterRoutingTests
     }
 
     [Fact]
+    public async Task RunAsync_TransientFailureRetryDisabled_ShouldCompleteQuickly()
+    {
+        var deadLetter = new CapturingDeadLetterSink();
+        var sink = new ResultCollectingSink<int>();
+        var options = new SmartPipeChannelOptions
+        {
+            ContinueOnError = true,
+            DeadLetterSink = deadLetter,
+        };
+        var pipe = new SmartPipeChannel<int, int>(options);
+        pipe.AddSource(new SimpleSource<int>(42));
+        pipe.AddTransformer(new AlwaysTransientFailingTransformer<int, int>());
+        pipe.AddSink(sink);
+
+        await pipe.RunAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        sink.Results.Should().ContainSingle();
+        deadLetter.Results.Should().ContainSingle();
+        pipe.State.Should().Be(PipelineState.Completed);
+    }
+
+    [Fact]
     public async Task TransientFailure_WhenRetryBudgetExhausted_ShouldDeadLetterOnce()
     {
         var deadLetter = new CapturingDeadLetterSink();
