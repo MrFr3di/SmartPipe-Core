@@ -73,26 +73,16 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
-    public void ProcessingEnvelope_FromContext_WithClock_ShouldUseClockTimestamp()
+    public void ProcessingEnvelope_Create_WithExplicitTimestamp_ShouldUseTimestamp()
     {
         var now = new DateTimeOffset(2026, 6, 3, 8, 15, 0, TimeSpan.Zero);
-        var clock = new ManualPipelineClock(now);
-        var context = new ProcessingContext<int>(42, new Dictionary<string, string>())
-        {
-            TraceId = 123,
-        };
 
-        var envelope = ProcessingEnvelope<int>.FromContext(
-            context,
-            clock,
-            "legacy-pipeline",
-            "legacy-run"
-        );
+        var envelope = ProcessingEnvelope<int>.Create(42, "typed-pipeline", "typed-run", 123, createdAtUtc: now);
 
         envelope.Payload.Should().Be(42);
         envelope.TraceId.Should().Be(123);
-        envelope.PipelineId.Should().Be("legacy-pipeline");
-        envelope.RunId.Should().Be("legacy-run");
+        envelope.PipelineId.Should().Be("typed-pipeline");
+        envelope.RunId.Should().Be("typed-run");
         envelope.CreatedAtUtc.Should().Be(now);
     }
 
@@ -228,18 +218,147 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
-    public async Task RuntimeOptions_Default_WithSinkAndUnreadOutputs_ShouldStillComplete()
+    public void PipelineRuntimeOptions_Defaults_AreTypedOnlySafe()
     {
-        var sink = new EnvelopeCollectingSink<string>();
+        var options = new PipelineRuntimeOptions();
+
+        options.MaxConcurrency.Should().Be(1);
+        options.InputCapacity.Should().Be(1024);
+        options.InputFullMode.Should().Be(BoundedChannelFullMode.Wait);
+        options.OutputPolicy.Should().Be(PipelineOutputPolicy.EmitAll);
+        options.OrderingMode.Should().Be(PipelineOrderingMode.Unordered);
+        options.ObserverDispatch.Should().BeSameAs(ObserverDispatchOptions.Inline);
+        options.Clock.Should().BeSameAs(SystemPipelineClock.Instance);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void PipelineRuntimeOptions_InvalidMaxConcurrency_Throws(int maxConcurrency)
+    {
+        var options = new PipelineRuntimeOptions { MaxConcurrency = maxConcurrency };
+
+        var act = () => options.Validate();
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .Which.ParamName.Should().Be("MaxConcurrency");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void PipelineRuntimeOptions_InvalidInputCapacity_Throws(int inputCapacity)
+    {
+        var options = new PipelineRuntimeOptions { InputCapacity = inputCapacity };
+
+        var act = () => options.Validate();
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .Which.ParamName.Should().Be("InputCapacity");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void PipelineRuntimeOptions_InvalidOutputCapacity_Throws(int outputCapacity)
+    {
+        var options = new PipelineRuntimeOptions { OutputCapacity = outputCapacity };
+
+        var act = () => options.Validate();
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .Which.ParamName.Should().Be("OutputCapacity");
+    }
+
+    [Fact]
+    public void PipelineRuntimeOptions_PreserveOrderWithParallelism_ThrowsUntilImplemented()
+    {
+        var options = new PipelineRuntimeOptions
+        {
+            MaxConcurrency = 2,
+            OrderingMode = PipelineOrderingMode.PreserveInputOrder,
+        };
+
+        var act = () => options.Validate();
+
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage("*PreserveInputOrder*MaxConcurrency > 1*");
+    }
+
+    [Fact]
+    public void PipelineRuntimeOptions_MaxConcurrency_ShouldBeEffectiveTypedConcurrencyName()
+    {
+        var options = new PipelineRuntimeOptions { MaxConcurrency = 3 };
+
+        options.Validate();
+
+        options.EffectiveMaxConcurrency.Should().Be(3);
+    }
+
+    [Fact]
+    public void PipelineRuntimeOptions_ConflictingConcurrencyNames_ShouldThrow()
+    {
+        var options = new PipelineRuntimeOptions
+        {
+            MaxConcurrency = 2,
+            MaxDegreeOfParallelism = 3,
+        };
+
+        var act = () => options.Validate();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*MaxConcurrency*MaxDegreeOfParallelism*");
+    }
+
+    [Fact]
+    public async Task RuntimeOptions_DefaultWithSinkAndEmitAll_ShouldRequireOutputConsumer()
+    {
+        const int defaultCapacity = 1024;
+        var sink = new CountingEnvelopeSink<string>();
 
         var run = PipelineBuilder
-            .From(new EnvelopeSource<int>(1, 2))
+            .From(new EnvelopeSource<int>(Enumerable.Range(1, defaultCapacity + 1).ToArray()))
             .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
             .To(sink);
 
+        await sink.WaitForCountAsync(defaultCapacity, TimeSpan.FromSeconds(5));
+        Func<Task> extraWrite = async () =>
+            await sink.WaitForCountAsync(defaultCapacity + 1, TimeSpan.FromMilliseconds(150));
+
+        await extraWrite.Should().ThrowAsync<TimeoutException>(
+            "default typed output must be bounded even when a sink is attached");
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
         await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
 
-        sink.Payloads.Should().Equal("1", "2");
+        outputs.Select(o => o.Result.Value)
+            .Should()
+            .Equal(Enumerable.Range(1, defaultCapacity + 1).Select(x => x.ToString(CultureInfo.InvariantCulture)));
+        sink.Payloads.Should()
+            .Equal(Enumerable.Range(1, defaultCapacity + 1).Select(x => x.ToString(CultureInfo.InvariantCulture)));
+    }
+
+    [Fact]
+    public async Task RuntimeOptions_DefaultWithSinkAndSuppressSuccess_ShouldCompleteWithoutOutputConsumer()
+    {
+        const int defaultCapacity = 1024;
+        var sink = new EnvelopeCollectingSink<string>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(Enumerable.Range(1, defaultCapacity + 1).ToArray()))
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputPolicy = PipelineOutputPolicy.SuppressSuccessWhenSinkAttached,
+            })
+            .To(sink);
+
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        var outputs = await ReadOutputsAsync(run.Outputs);
+
+        outputs.Should().BeEmpty();
+        sink.Payloads.Should()
+            .Equal(Enumerable.Range(1, defaultCapacity + 1).Select(x => x.ToString(CultureInfo.InvariantCulture)));
     }
 
     [Fact]
@@ -266,7 +385,7 @@ public class RuntimeOptionsPassTests
     [Fact]
     public async Task RuntimeOptions_BoundedOutput_WithSinkAndUnreadOutputs_ShouldRequireOutputConsumer()
     {
-        var sink = new EnvelopeCollectingSink<string>();
+        var sink = new CountingEnvelopeSink<string>();
 
         var run = PipelineBuilder
             .From(new EnvelopeSource<int>(1, 2))
@@ -280,7 +399,7 @@ public class RuntimeOptionsPassTests
             .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
             .To(sink);
 
-        await Task.Delay(100);
+        await sink.WaitForCountAsync(1, TimeSpan.FromSeconds(5));
 
         run.Completion.IsCompleted.Should().BeFalse(
             "bounded output with Wait backpressures the run when outputs are not consumed"
@@ -1500,6 +1619,56 @@ public class RuntimeOptionsPassTests
         {
             _payloads.Add(envelope.Payload);
             return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CountingEnvelopeSink<T> : IPipelineSink<T>
+    {
+        private readonly List<T> _payloads = [];
+        private readonly object _gate = new();
+        private TaskCompletionSource _countChanged =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IReadOnlyList<T> Payloads
+        {
+            get
+            {
+                lock (_gate)
+                    return _payloads.ToArray();
+            }
+        }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
+        {
+            lock (_gate)
+            {
+                _payloads.Add(envelope.Payload);
+                _countChanged.TrySetResult();
+                _countChanged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            return ValueTask.CompletedTask;
+        }
+
+        public async Task WaitForCountAsync(int expectedCount, TimeSpan timeout)
+        {
+            while (true)
+            {
+                Task waitTask;
+                lock (_gate)
+                {
+                    if (_payloads.Count >= expectedCount)
+                        return;
+
+                    waitTask = _countChanged.Task;
+                }
+
+                await waitTask.WaitAsync(timeout).ConfigureAwait(false);
+            }
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

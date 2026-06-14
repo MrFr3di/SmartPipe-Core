@@ -129,14 +129,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
     {
         _observers = ObserverRegistrationState.CreateActiveObservers(observers);
         _options = options;
-        _events = Channel.CreateBounded<PipelineEvent>(
-            new BoundedChannelOptions(options.Capacity)
-            {
-                FullMode = options.FullMode,
-                SingleReader = true,
-                SingleWriter = false,
-            }
-        );
+        _events = PipelineChannelFactory.CreateObserverBuffer(options.Capacity, options.FullMode);
         _worker = Task.Run(ProcessAsync, CancellationToken.None);
     }
 
@@ -144,6 +137,9 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
     {
         if (Volatile.Read(ref _completed) != 0)
             return;
+
+        if (_pipelineFault is not null)
+            throw _pipelineFault;
 
         if (_options.Mode == ObserverDispatchMode.BufferedBestEffort)
         {
@@ -163,7 +159,14 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
             return;
         }
 
-        await _events.Writer.WriteAsync(pipelineEvent, ct).ConfigureAwait(false);
+        try
+        {
+            await _events.Writer.WriteAsync(pipelineEvent, ct).ConfigureAwait(false);
+        }
+        catch (ChannelClosedException) when (_pipelineFault is not null)
+        {
+            throw _pipelineFault;
+        }
     }
 
     public async ValueTask CompleteAsync(CancellationToken ct)

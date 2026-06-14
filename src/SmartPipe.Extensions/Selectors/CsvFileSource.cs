@@ -8,7 +8,7 @@ namespace SmartPipe.Extensions.Selectors;
 
 /// <summary>Streams CSV files as pipeline source using CsvHelper.</summary>
 /// <typeparam name="T">Record type to map.</typeparam>
-public class CsvFileSource<T> : ISource<T>
+public class CsvFileSource<T> : IPipelineSource<T>
 {
     private readonly string _path;
     private readonly CsvConfiguration _config;
@@ -30,21 +30,21 @@ public class CsvFileSource<T> : ISource<T>
     }
 
     /// <inheritdoc />
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+    public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
         [EnumeratorCancellation] CancellationToken ct = default
     )
     {
         using var reader = new StreamReader(_path);
         using var csv = new CsvReader(reader, _config);
         await foreach (var record in csv.GetRecordsAsync<T>(ct).ConfigureAwait(false))
-            yield return new ProcessingContext<T>(record);
+            yield return ProcessingEnvelope<T>.Create(record);
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     private static string ValidatePath(string? path)
     {

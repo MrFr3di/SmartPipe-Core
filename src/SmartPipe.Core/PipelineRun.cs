@@ -9,7 +9,7 @@ namespace SmartPipe.Core;
 /// <typeparam name="TOutput">Output payload type.</typeparam>
 /// <remarks>
 /// A pipeline run is single-use. It owns the runtime completion signal and exposes one primary
-/// output stream. Result-only consumption is provided as a compatibility projection through
+/// output stream. Result-only consumption is provided as a projection through
 /// <see cref="ReadResultsAsync"/>.
 /// </remarks>
 public sealed class PipelineRun<TOutput> : IAsyncDisposable
@@ -18,6 +18,7 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
     private readonly Func<TimeSpan, CancellationToken, ValueTask>? _drain;
     private readonly Func<CancellationToken, ValueTask>? _abort;
     private readonly Func<ValueTask>? _dispose;
+    private readonly Func<SmartPipeMetricsSnapshot>? _metricsProvider;
 
     /// <summary>Creates a pipeline run handle.</summary>
     /// <param name="outputs">Primary output reader.</param>
@@ -37,6 +38,28 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
         Func<CancellationToken, ValueTask>? abort = null,
         Func<ValueTask>? dispose = null
     )
+        : this(
+            outputs,
+            completion,
+            stateProvider,
+            cancel,
+            drain,
+            abort,
+            dispose,
+            metricsProvider: null)
+    {
+    }
+
+    internal PipelineRun(
+        ChannelReader<PipelineOutput<TOutput>> outputs,
+        Task completion,
+        Func<PipelineRunState> stateProvider,
+        Func<CancellationToken, ValueTask>? cancel,
+        Func<TimeSpan, CancellationToken, ValueTask>? drain,
+        Func<CancellationToken, ValueTask>? abort,
+        Func<ValueTask>? dispose,
+        Func<SmartPipeMetricsSnapshot>? metricsProvider
+    )
     {
         Outputs = outputs ?? throw new ArgumentNullException(nameof(outputs));
         Completion = completion ?? throw new ArgumentNullException(nameof(completion));
@@ -45,6 +68,7 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
         _drain = drain;
         _abort = abort;
         _dispose = dispose;
+        _metricsProvider = metricsProvider;
     }
 
     private readonly Func<PipelineRunState> _stateProvider;
@@ -58,10 +82,13 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
     /// <summary>Gets the current run state.</summary>
     public PipelineRunState State => _stateProvider();
 
-    /// <summary>Reads legacy processing results projected from the primary output stream.</summary>
+    /// <summary>Gets an immutable point-in-time metrics snapshot for this run.</summary>
+    public SmartPipeMetricsSnapshot Metrics => _metricsProvider?.Invoke() ?? SmartPipeMetricsSnapshot.Empty;
+
+    /// <summary>Reads typed results projected from the primary output stream.</summary>
     /// <param name="ct">Cancellation token for enumeration.</param>
-    /// <returns>Async sequence of processing results.</returns>
-    public async IAsyncEnumerable<ProcessingResult<TOutput>> ReadResultsAsync(
+    /// <returns>Async sequence of pipeline results.</returns>
+    public async IAsyncEnumerable<PipelineResult<TOutput>> ReadResultsAsync(
         [EnumeratorCancellation] CancellationToken ct = default
     )
     {

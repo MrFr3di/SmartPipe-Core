@@ -11,7 +11,7 @@ namespace SmartPipe.Extensions.Tests;
 public class EfCoreSelectorTests
 {
     public class TestEntity { public int Id { get; set; } public string Name { get; set; } = ""; }
-    
+
     private class TestDbContext : DbContext
     {
         public DbSet<TestEntity> TestEntities { get; set; } = null!;
@@ -30,9 +30,9 @@ public class EfCoreSelectorTests
     {
         using var db = new TestDbContext();
         var mockLogger = new Mock<ILogger<EfCoreSelector<TestEntity>>>();
-        
+
         var selector = new EfCoreSelector<TestEntity>(db, mockLogger.Object);
-        
+
         Assert.NotNull(selector);
     }
 
@@ -46,9 +46,9 @@ public class EfCoreSelectorTests
         await db.SaveChangesAsync();
 
         var selector = new EfCoreSelector<TestEntity>(db);
-        var results = new List<ProcessingContext<TestEntity>>();
+        var results = new List<ProcessingEnvelope<TestEntity>>();
 
-        await foreach (var ctx in selector.ReadAsync())
+        await foreach (var ctx in selector.ReadEnvelopesAsync())
             results.Add(ctx);
 
         results.Should().HaveCount(2);
@@ -60,9 +60,9 @@ public class EfCoreSelectorTests
         await using var db = new TestDbContext();
         await db.Database.EnsureCreatedAsync();
         var selector = new EfCoreSelector<TestEntity>(db);
-        var results = new List<ProcessingContext<TestEntity>>();
+        var results = new List<ProcessingEnvelope<TestEntity>>();
 
-        await foreach (var ctx in selector.ReadAsync())
+        await foreach (var ctx in selector.ReadEnvelopesAsync())
             results.Add(ctx);
 
         results.Should().BeEmpty();
@@ -80,10 +80,10 @@ public class EfCoreSelectorTests
 
         var selector = new EfCoreSelector<TestEntity>(db);
         selector.WithQuery(set => set.Where(e => e.Id > 1));
-        
-        var results = new List<ProcessingContext<TestEntity>>();
 
-        await foreach (var ctx in selector.ReadAsync())
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+
+        await foreach (var ctx in selector.ReadEnvelopesAsync())
             results.Add(ctx);
 
         results.Should().HaveCount(2);
@@ -102,10 +102,10 @@ public class EfCoreSelectorTests
 
         var selector = new EfCoreSelector<TestEntity>(db);
         selector.WithQuery(set => set.OrderBy(e => e.Id));
-        
-        var results = new List<ProcessingContext<TestEntity>>();
 
-        await foreach (var ctx in selector.ReadAsync())
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+
+        await foreach (var ctx in selector.ReadEnvelopesAsync())
             results.Add(ctx);
 
         results.Should().HaveCount(3);
@@ -119,9 +119,9 @@ public class EfCoreSelectorTests
     {
         await using var db = new TestDbContext();
         var selector = new EfCoreSelector<TestEntity>(db);
-        
+
         var result = selector.WithQuery(set => set.Where(e => e.Id > 0));
-        
+
         Assert.Same(selector, result);
     }
 
@@ -130,10 +130,10 @@ public class EfCoreSelectorTests
     {
         await using var db = new TestDbContext();
         var selector = new EfCoreSelector<TestEntity>(db);
-        
+
         // Should not throw
         await selector.InitializeAsync();
-        
+
         Assert.True(true);
     }
 
@@ -146,9 +146,9 @@ public class EfCoreSelectorTests
 
         var mockLogger = new Mock<ILogger<EfCoreSelector<TestEntity>>>();
         var selector = new EfCoreSelector<TestEntity>(db, mockLogger.Object);
-        var results = new List<ProcessingContext<TestEntity>>();
+        var results = new List<ProcessingEnvelope<TestEntity>>();
 
-        await foreach (var ctx in selector.ReadAsync())
+        await foreach (var ctx in selector.ReadEnvelopesAsync())
             results.Add(ctx);
 
         mockLogger.Verify(
@@ -174,7 +174,7 @@ public class EfCoreSelectorTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
-            await foreach (var ctx in selector.ReadAsync(cts.Token))
+            await foreach (var ctx in selector.ReadEnvelopesAsync(cts.Token))
             {
             }
         });
@@ -185,9 +185,9 @@ public class EfCoreSelectorTests
     {
         await using var db = new TestDbContext();
         var selector = new EfCoreSelector<TestEntity>(db);
-        
+
         await selector.DisposeAsync();
-        
+
         Assert.True(true); // If we get here, test passed
     }
 
@@ -206,7 +206,7 @@ public class EfCoreSelectorTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
-            await foreach (var ctx in selector.ReadAsync(cts.Token))
+            await foreach (var ctx in selector.ReadEnvelopesAsync(cts.Token))
             {
             }
         });
@@ -220,13 +220,13 @@ public class EfCoreSelectorTests
         await db.SaveChangesAsync();
 
         var selector = new EfCoreSelector<TestEntity>(db);
-        
+
         // Dispose the DbContext before reading
         await db.DisposeAsync();
 
         await Assert.ThrowsAnyAsync<Exception>(async () =>
         {
-            await foreach (var ctx in selector.ReadAsync())
+            await foreach (var ctx in selector.ReadEnvelopesAsync())
             {
             }
         });
@@ -246,9 +246,9 @@ public class EfCoreSelectorTests
         var selector = new EfCoreSelector<TestEntity>(db);
         selector.WithQuery(set => set.Where(e => e.Name == "Alice").OrderBy(e => e.Id));
 
-        var results = new List<ProcessingContext<TestEntity>>();
+        var results = new List<ProcessingEnvelope<TestEntity>>();
 
-        await foreach (var ctx in selector.ReadAsync())
+        await foreach (var ctx in selector.ReadEnvelopesAsync())
             results.Add(ctx);
 
         results.Should().HaveCount(2);
@@ -269,9 +269,9 @@ public class EfCoreSelectorTests
         var selector = new EfCoreSelector<TestEntity>(db);
         selector.WithQuery(set => set.Where(e => e.Id > 0));
 
-        var results = new List<ProcessingContext<TestEntity>>();
+        var results = new List<ProcessingEnvelope<TestEntity>>();
 
-        await foreach (var ctx in selector.ReadAsync())
+        await foreach (var ctx in selector.ReadEnvelopesAsync())
             results.Add(ctx);
 
         results.Should().HaveCount(2);

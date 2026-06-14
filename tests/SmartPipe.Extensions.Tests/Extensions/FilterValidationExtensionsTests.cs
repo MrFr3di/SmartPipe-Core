@@ -12,9 +12,9 @@ public class FilterValidationExtensionsTests
     {
         var validator = new ValidationTransform<string>();
         validator.Require(x => x.Length > 0, "Empty");
-        
+
         var filter = validator.ToFilter();
-        
+
         Assert.NotNull(filter);
         Assert.IsType<FilterTransform<string>>(filter);
     }
@@ -24,12 +24,12 @@ public class FilterValidationExtensionsTests
     {
         var validator = new ValidationTransform<string>();
         validator.Require(x => !string.IsNullOrEmpty(x), "Empty");
-        
+
         var filter = validator.ToFilter();
-        var context = new ProcessingContext<string>("test");
-        
+        var context = ProcessingEnvelope<string>.Create("test");
+
         var result = await filter.TransformAsync(context);
-        
+
         Assert.True(result.IsSuccess);
     }
 
@@ -38,12 +38,12 @@ public class FilterValidationExtensionsTests
     {
         var validator = new ValidationTransform<string>();
         validator.Require(x => !string.IsNullOrEmpty(x), "Empty");
-        
+
         var filter = validator.ToFilter();
-        var context = new ProcessingContext<string>("test");
-        
+        var context = ProcessingEnvelope<string>.Create("test");
+
         var result = await filter.TransformAsync(context);
-        
+
         Assert.True(result.IsSuccess);
     }
 }

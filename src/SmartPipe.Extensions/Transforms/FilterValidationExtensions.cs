@@ -18,8 +18,8 @@ public static class FilterValidationExtensions
     public static FilterTransform<T> ToFilter<T>(this ValidationTransform<T> validator) =>
         new FilterTransform<T>(async item =>
         {
-            var ctx = new ProcessingContext<T>(item);
-            var result = await validator.TransformAsync(ctx).ConfigureAwait(false);
+            var envelope = ProcessingEnvelope<T>.Create(item);
+            var result = await validator.TransformAsync(envelope).ConfigureAwait(false);
             return result.IsSuccess;
         });
 }

@@ -152,20 +152,65 @@ public enum PipelineOutputMode
     SuppressAll = 3,
 }
 
+/// <summary>Controls which processing results are emitted to the typed pipeline output channel.</summary>
+public enum PipelineOutputPolicy
+{
+    /// <summary>Emit all processing results to the output channel.</summary>
+    EmitAll = 0,
+
+    /// <summary>Emit only failure results to the output channel.</summary>
+    EmitFailuresOnly = 1,
+
+    /// <summary>When a sink is attached, suppress successful results from the output channel.</summary>
+    SuppressSuccessWhenSinkAttached = 2,
+
+    /// <summary>When a sink is attached, suppress all output channel results.</summary>
+    SuppressAllWhenSinkAttached = 3,
+}
+
+/// <summary>Controls cross-envelope output ordering for the typed runtime.</summary>
+public enum PipelineOrderingMode
+{
+    /// <summary>Allow outputs to be emitted as envelopes complete.</summary>
+    Unordered = 0,
+
+    /// <summary>Preserve input order. Parallel preserving is not implemented yet.</summary>
+    PreserveInputOrder = 1,
+}
+
 /// <summary>Options for the envelope-aware pipeline runtime.</summary>
 public sealed class PipelineRuntimeOptions
 {
-    /// <summary>Gets the optional output channel capacity. Null preserves the default unbounded output behavior.</summary>
+    /// <summary>Gets the maximum number of typed envelopes processed concurrently.</summary>
+    public int MaxConcurrency { get; init; } = 1;
+
+    /// <summary>Gets the bounded typed input channel capacity.</summary>
+    public int InputCapacity { get; init; } = 1024;
+
+    /// <summary>Gets the typed input channel full mode.</summary>
+    public BoundedChannelFullMode InputFullMode { get; init; } = BoundedChannelFullMode.Wait;
+
+    /// <summary>Gets the optional output channel capacity. Null uses the bounded runtime default.</summary>
     public int? OutputCapacity { get; init; } = null;
 
-    /// <summary>Gets the bounded output channel full mode when <see cref="OutputCapacity"/> is configured.</summary>
+    /// <summary>Gets the bounded output channel full mode.</summary>
     public BoundedChannelFullMode OutputFullMode { get; init; } = BoundedChannelFullMode.Wait;
 
     /// <summary>Gets the output filtering mode. <see cref="PipelineOutputMode.EmitAll"/> is the default.</summary>
     public PipelineOutputMode OutputMode { get; init; } = PipelineOutputMode.EmitAll;
 
     /// <summary>Gets the maximum number of typed envelopes processed concurrently.</summary>
+    /// <remarks>
+    /// Compatibility name for 1.1 callers. New typed-only code should prefer
+    /// <see cref="MaxConcurrency"/>.
+    /// </remarks>
     public int MaxDegreeOfParallelism { get; init; } = 1;
+
+    /// <summary>Gets the typed output filtering policy.</summary>
+    public PipelineOutputPolicy OutputPolicy { get; init; } = PipelineOutputPolicy.EmitAll;
+
+    /// <summary>Gets the typed output ordering mode.</summary>
+    public PipelineOrderingMode OrderingMode { get; init; } = PipelineOrderingMode.Unordered;
 
     /// <summary>Gets observer dispatch options. Inline dispatch is the default.</summary>
     public ObserverDispatchOptions ObserverDispatch { get; init; } = ObserverDispatchOptions.Inline;
@@ -173,8 +218,23 @@ public sealed class PipelineRuntimeOptions
     /// <summary>Gets the runtime clock. The system clock is the default.</summary>
     public IPipelineClock Clock { get; init; } = SystemPipelineClock.Instance;
 
+    internal int EffectiveMaxConcurrency =>
+        MaxConcurrency != 1 ? MaxConcurrency : MaxDegreeOfParallelism;
+
     internal void Validate()
     {
+        if (MaxConcurrency <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxConcurrency),
+                MaxConcurrency,
+                "Max concurrency must be greater than zero.");
+
+        if (InputCapacity <= 0)
+            throw new ArgumentOutOfRangeException(nameof(InputCapacity), InputCapacity, "Input capacity must be greater than zero.");
+
+        if (!Enum.IsDefined(InputFullMode))
+            throw new ArgumentOutOfRangeException(nameof(InputFullMode), InputFullMode, "Input full mode is invalid.");
+
         if (OutputCapacity is <= 0)
             throw new ArgumentOutOfRangeException(nameof(OutputCapacity), OutputCapacity, "Output capacity must be greater than zero.");
 
@@ -189,6 +249,20 @@ public sealed class PipelineRuntimeOptions
                 nameof(MaxDegreeOfParallelism),
                 MaxDegreeOfParallelism,
                 "Max degree of parallelism must be greater than zero.");
+
+        if (MaxConcurrency != 1 && MaxDegreeOfParallelism != 1 && MaxConcurrency != MaxDegreeOfParallelism)
+            throw new InvalidOperationException(
+                "MaxConcurrency and MaxDegreeOfParallelism cannot specify different non-default values.");
+
+        if (!Enum.IsDefined(OutputPolicy))
+            throw new ArgumentOutOfRangeException(nameof(OutputPolicy), OutputPolicy, "Output policy is invalid.");
+
+        if (!Enum.IsDefined(OrderingMode))
+            throw new ArgumentOutOfRangeException(nameof(OrderingMode), OrderingMode, "Ordering mode is invalid.");
+
+        if (OrderingMode == PipelineOrderingMode.PreserveInputOrder && EffectiveMaxConcurrency > 1)
+            throw new NotSupportedException(
+                "PreserveInputOrder with MaxConcurrency > 1 is not supported in this runtime version.");
 
         ArgumentNullException.ThrowIfNull(ObserverDispatch);
         ObserverDispatch.Validate();

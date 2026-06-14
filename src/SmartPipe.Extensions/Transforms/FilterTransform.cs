@@ -3,11 +3,11 @@ using SmartPipe.Core;
 namespace SmartPipe.Extensions.Transforms;
 
 /// <summary>
-/// Filters items by predicate. Returns <see cref="ProcessingResult{T}.Failure"/> with Category="Filtered" for non-matching items.
-/// Implements <see cref="ITransformer{T, T}"/> for pipeline integration.
+/// Filters items by predicate. Returns <see cref="StageResult{T}.Filtered"/> for non-matching items.
+/// Implements <see cref="IPipelineTransformer{TInput, TOutput}"/> for pipeline integration.
 /// </summary>
 /// <typeparam name="T">The data type.</typeparam>
-public class FilterTransform<T> : ITransformer<T, T>
+public class FilterTransform<T> : IPipelineTransformer<T, T>
 {
     private readonly Func<T, bool>? _predicate;
     private readonly Func<T, Task<bool>>? _asyncPredicate;
@@ -93,27 +93,24 @@ public class FilterTransform<T> : ITransformer<T, T>
     public FilterTransform<T> Not() => !this;
 
     /// <inheritdoc/>
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc/>
-    public async ValueTask<ProcessingResult<T>> TransformAsync(
-        ProcessingContext<T> ctx,
+    public async ValueTask<StageResult<T>> TransformAsync(
+        ProcessingEnvelope<T> envelope,
         CancellationToken ct = default
     )
     {
-        bool isMatch = await EvaluateAsync(ctx.Payload).ConfigureAwait(false);
+        bool isMatch = await EvaluateAsync(envelope.Payload).ConfigureAwait(false);
 
         if (isMatch)
-            return ProcessingResult<T>.Success(ctx.Payload, ctx.TraceId);
+            return StageResult<T>.Success(envelope.Payload);
 
-        return ProcessingResult<T>.Failure(
-            new SmartPipeError("Filtered out", ErrorType.Permanent, "Filtered"),
-            ctx.TraceId
-        );
+        return StageResult<T>.Filtered();
     }
 
     /// <inheritdoc/>
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     private async Task<bool> EvaluateAsync(T item) =>
         _asyncPredicate != null

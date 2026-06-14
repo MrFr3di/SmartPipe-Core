@@ -8,7 +8,7 @@ namespace SmartPipe.Extensions.Sinks;
 /// <summary>Writes pipeline output to a JSON file with periodic flushing.
 /// Uses streaming write to avoid unbounded memory growth.</summary>
 /// <typeparam name="T">Item type.</typeparam>
-public class JsonFileSink<T> : ISink<T>
+public class JsonFileSink<T> : IPipelineSink<T>
 {
     private readonly string _path;
     private readonly int _flushInterval;
@@ -72,17 +72,17 @@ public class JsonFileSink<T> : ISink<T>
     }
 
     /// <inheritdoc />
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc />
-    public async Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
+    public async ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
     {
-        if (result.IsSuccess && result.Value != null)
+        if (envelope.Payload != null)
         {
             List<T>? batchToFlush = null;
             lock (_bufferLock)
             {
-                _buffer.Add(result.Value);
+                _buffer.Add(envelope.Payload);
                 if (++_count >= _flushInterval)
                 {
                     batchToFlush = [.. _buffer];
@@ -96,7 +96,7 @@ public class JsonFileSink<T> : ISink<T>
     }
 
     /// <inheritdoc />
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         List<T> remaining;
         lock (_bufferLock)

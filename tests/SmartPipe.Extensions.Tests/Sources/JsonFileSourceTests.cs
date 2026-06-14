@@ -39,9 +39,9 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, "[\"test\"]");
 
             var source = new JsonFileSource<string>(path);
-            var items = new List<ProcessingContext<string>>();
+            var items = new List<ProcessingEnvelope<string>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
             {
                 items.Add(item);
             }
@@ -62,7 +62,7 @@ public class JsonFileSourceTests
         var source = new JsonFileSource<string>("missing.json");
         await Assert.ThrowsAsync<FileNotFoundException>(async () =>
         {
-            await foreach (var item in source.ReadAsync()) { }
+            await foreach (var item in source.ReadEnvelopesAsync()) { }
         });
     }
 
@@ -77,7 +77,7 @@ public class JsonFileSourceTests
             var source = new JsonFileSource<string>(path);
             await Assert.ThrowsAsync<JsonException>(async () =>
             {
-                await foreach (var item in source.ReadAsync()) { }
+                await foreach (var item in source.ReadEnvelopesAsync()) { }
             });
         }
         finally
@@ -96,9 +96,9 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, "");
 
             var source = new JsonFileSource<string>(path);
-            var items = new List<ProcessingContext<string>>();
+            var items = new List<ProcessingEnvelope<string>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
             {
                 items.Add(item);
             }
@@ -123,9 +123,9 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, ndjson);
 
             var source = new JsonFileSource<string>(path);
-            var items = new List<ProcessingContext<string>>();
+            var items = new List<ProcessingEnvelope<string>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
             {
                 items.Add(item);
             }
@@ -153,9 +153,9 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, ndjson);
 
             var source = new JsonFileSource<TestItem>(path);
-            var items = new List<ProcessingContext<TestItem>>();
+            var items = new List<ProcessingEnvelope<TestItem>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
             {
                 items.Add(item);
             }
@@ -182,9 +182,9 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, ndjson);
 
             var source = new JsonFileSource<string>(path);
-            var items = new List<ProcessingContext<string>>();
+            var items = new List<ProcessingEnvelope<string>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
             {
                 items.Add(item);
             }
@@ -208,9 +208,9 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, json);
 
             var source = new JsonFileSource<TestItem>(path);
-            var items = new List<ProcessingContext<TestItem>>();
+            var items = new List<ProcessingEnvelope<TestItem>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
             {
                 items.Add(item);
             }
@@ -235,9 +235,9 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, "   \n  \n");
 
             var source = new JsonFileSource<string>(path);
-            var items = new List<ProcessingContext<string>>();
+            var items = new List<ProcessingEnvelope<string>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
             {
                 items.Add(item);
             }
@@ -263,9 +263,9 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, json);
 
             var source = new JsonFileSource<TestItem>(path);
-            var items = new List<ProcessingContext<TestItem>>();
+            var items = new List<ProcessingEnvelope<TestItem>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
             {
                 items.Add(item);
             }
@@ -291,9 +291,9 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, ndjson);
 
             var source = new JsonFileSource<string?>(path);
-            var items = new List<ProcessingContext<string?>>();
+            var items = new List<ProcessingEnvelope<string?>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
             {
                 items.Add(item);
             }
@@ -321,9 +321,9 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, json);
 
             var source = new JsonFileSource<string?>(path);
-            var items = new List<ProcessingContext<string?>>();
+            var items = new List<ProcessingEnvelope<string?>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
             {
                 items.Add(item);
             }
@@ -345,10 +345,10 @@ public class JsonFileSourceTests
     {
         var path = Path.GetTempFileName();
         await File.WriteAllTextAsync(path, "[\"test\"]");
-        
+
         var source = new JsonFileSource<string>(path);
         await source.DisposeAsync();
-        
+
         File.Delete(path);
     }
 
@@ -366,7 +366,7 @@ public class JsonFileSourceTests
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
             {
-                await foreach (var item in source.ReadAsync(cts.Token))
+                await foreach (var item in source.ReadEnvelopesAsync(cts.Token))
                 {
                 }
             });
@@ -387,9 +387,9 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, "[]");
 
             var source = new JsonFileSource<string>(path);
-            var items = new List<ProcessingContext<string>>();
+            var items = new List<ProcessingEnvelope<string>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
             {
                 items.Add(item);
             }
@@ -412,9 +412,9 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, " \r\n\t[\"first\",\"second\"]");
 
             var source = new JsonFileSource<string>(path);
-            var items = new List<ProcessingContext<string>>();
+            var items = new List<ProcessingEnvelope<string>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
                 items.Add(item);
 
             Assert.Equal(2, items.Count);
@@ -440,9 +440,9 @@ public class JsonFileSourceTests
                 path,
                 JsonFileSourceTestJsonContext.Default.ListAotJsonFileItem,
                 JsonFileSourceTestJsonContext.Default.AotJsonFileItem);
-            var items = new List<ProcessingContext<AotJsonFileItem>>();
+            var items = new List<ProcessingEnvelope<AotJsonFileItem>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
                 items.Add(item);
 
             Assert.Equal(2, items.Count);
@@ -473,9 +473,9 @@ public class JsonFileSourceTests
                 path,
                 JsonFileSourceTestJsonContext.Default.ListAotJsonFileItem,
                 JsonFileSourceTestJsonContext.Default.AotJsonFileItem);
-            var items = new List<ProcessingContext<AotJsonFileItem>>();
+            var items = new List<ProcessingEnvelope<AotJsonFileItem>>();
 
-            await foreach (var item in source.ReadAsync())
+            await foreach (var item in source.ReadEnvelopesAsync())
                 items.Add(item);
 
             Assert.Equal(2, items.Count);

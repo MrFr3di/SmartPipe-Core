@@ -10,7 +10,7 @@ namespace SmartPipe.Extensions.Selectors;
 /// Integrates with Microsoft.Extensions.Http.Resilience for retry and circuit breaker.
 /// </summary>
 /// <typeparam name="T">Response type.</typeparam>
-public class HttpSelector<T> : ISource<T>
+public class HttpSelector<T> : IPipelineSource<T>
 {
     private readonly HttpClient _httpClient;
     private readonly string _requestUri;
@@ -36,10 +36,10 @@ public class HttpSelector<T> : ISource<T>
     }
 
     /// <inheritdoc />
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+    public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
     )
     {
@@ -62,7 +62,7 @@ public class HttpSelector<T> : ISource<T>
             foreach (var item in items)
             {
                 ct.ThrowIfCancellationRequested();
-                yield return new ProcessingContext<T>(item);
+                yield return ProcessingEnvelope<T>.Create(item);
             }
         }
 
@@ -70,5 +70,5 @@ public class HttpSelector<T> : ISource<T>
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

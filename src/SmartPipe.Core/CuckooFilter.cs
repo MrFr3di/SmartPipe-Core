@@ -154,8 +154,8 @@ public class CuckooFilter
         {
             // For each fingerprint in the other filter
             for (int b = 0; b < other._numBuckets; b++)
-            for (int s = 0; s < BucketSize; s++)
-                MergeFingerprint(other._buckets[b, s]);
+                for (int s = 0; s < BucketSize; s++)
+                    MergeFingerprint(other._buckets[b, s]);
         }
     }
 

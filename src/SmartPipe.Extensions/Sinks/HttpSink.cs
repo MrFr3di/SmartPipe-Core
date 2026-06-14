@@ -6,7 +6,7 @@ namespace SmartPipe.Extensions.Sinks;
 
 /// <summary>Sends items to HTTP API endpoint. Supports Polly resilience pipeline.</summary>
 /// <typeparam name="T">Item type.</typeparam>
-public class HttpSink<T> : ISink<T>
+public class HttpSink<T> : IPipelineSink<T>
 {
     private readonly HttpClient _http;
     private readonly string _url;
@@ -24,24 +24,24 @@ public class HttpSink<T> : ISink<T>
     }
 
     /// <inheritdoc />
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc />
-    public async Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
+    public async ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
     {
-        if (!result.IsSuccess || result.Value == null)
+        if (envelope.Payload == null)
             return;
 
         if (_resilience != null)
             await _resilience.ExecuteAsync(
                 async token =>
                 {
-                    await PostAsync(result.Value, token);
+                    await PostAsync(envelope.Payload, token);
                 },
                 ct
             );
         else
-            await PostAsync(result.Value, ct);
+            await PostAsync(envelope.Payload, ct);
     }
 
     private async Task PostAsync(T value, CancellationToken ct)
@@ -51,5 +51,5 @@ public class HttpSink<T> : ISink<T>
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

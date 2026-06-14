@@ -14,6 +14,7 @@ public class SmartPipeActivityTests
     public async Task RunAsync_ShouldEmitStableActivitySourceAndProcessingActivities()
     {
         const ulong traceId = ulong.MaxValue - 42;
+        const int uniqueParallelism = 17;
         var stoppedActivities = new ConcurrentQueue<Activity>();
         using var listener = new ActivityListener
         {
@@ -23,13 +24,17 @@ public class SmartPipeActivityTests
         };
         ActivitySource.AddActivityListener(listener);
 
-        var channel = new SmartPipeChannel<int, int>(
-            new SmartPipeChannelOptions { MaxDegreeOfParallelism = 1 });
-        channel.AddSource(new ActivityTestSource(traceId, 1));
-        channel.AddTransformer(new ActivityTestTransformer());
-        channel.AddSink(new ActivityTestSink());
+        await using var pipelineRun = PipelineBuilder
+            .FromFactory<int>(_ => new ActivityTestSource(traceId, 1))
+            .TransformFactory<int>(_ => new ActivityTestTransformer())
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxDegreeOfParallelism = uniqueParallelism,
+                OutputPolicy = PipelineOutputPolicy.SuppressSuccessWhenSinkAttached,
+            })
+            .ToFactory(_ => new ActivityTestSink());
 
-        await channel.RunAsync();
+        await pipelineRun.Completion;
 
         var activities = stoppedActivities.ToArray();
         activities.Should().Contain(activity => activity.Source.Name == "SmartPipe.Core");
@@ -38,8 +43,8 @@ public class SmartPipeActivityTests
 
         var run = activities.First(activity =>
             activity.OperationName == "Pipeline.Run"
-            && Equals(activity.GetTagItem("smartpipe.parallelism"), 1));
-        run.GetTagItem("smartpipe.parallelism").Should().Be(1);
+            && Equals(activity.GetTagItem("smartpipe.parallelism"), uniqueParallelism));
+        run.GetTagItem("smartpipe.parallelism").Should().Be(uniqueParallelism);
         run.Status.Should().Be(ActivityStatusCode.Ok);
 
         var transform = activities.Single(activity =>
@@ -48,43 +53,43 @@ public class SmartPipeActivityTests
         transform.GetTagItem("smartpipe.trace_id").Should().Be(traceId);
     }
 
-    private sealed class ActivityTestSource(ulong traceId, params int[] items) : ISource<int>
+    private sealed class ActivityTestSource(ulong traceId, params int[] items) : IPipelineSource<int>
     {
-        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
-        public async IAsyncEnumerable<ProcessingContext<int>> ReadAsync(
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
             [EnumeratorCancellation] CancellationToken ct = default)
         {
             foreach (var item in items)
             {
                 ct.ThrowIfCancellationRequested();
-                yield return new ProcessingContext<int>(item) { TraceId = traceId };
+                yield return ProcessingEnvelope<int>.Create(item, "activity-test", "run", traceId);
                 await Task.Yield();
             }
         }
 
-        public Task DisposeAsync() => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    private sealed class ActivityTestTransformer : ITransformer<int, int>
+    private sealed class ActivityTestTransformer : IPipelineTransformer<int, int>
     {
-        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
-        public ValueTask<ProcessingResult<int>> TransformAsync(
-            ProcessingContext<int> ctx,
+        public ValueTask<StageResult<int>> TransformAsync(
+            ProcessingEnvelope<int> envelope,
             CancellationToken ct = default) =>
-            ValueTask.FromResult(ProcessingResult<int>.Success(ctx.Payload, ctx.TraceId));
+            ValueTask.FromResult(StageResult<int>.Success(envelope.Payload));
 
-        public Task DisposeAsync() => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    private sealed class ActivityTestSink : ISink<int>
+    private sealed class ActivityTestSink : IPipelineSink<int>
     {
-        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
-        public Task WriteAsync(ProcessingResult<int> result, CancellationToken ct = default) =>
-            Task.CompletedTask;
+        public ValueTask WriteAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default) =>
+            ValueTask.CompletedTask;
 
-        public Task DisposeAsync() => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

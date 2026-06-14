@@ -7,7 +7,7 @@ namespace SmartPipe.Extensions.Sinks;
 
 /// <summary>Writes pipeline output to a CSV file.</summary>
 /// <typeparam name="T">Record type.</typeparam>
-public class CsvFileSink<T> : ISink<T>
+public class CsvFileSink<T> : IPipelineSink<T>
 {
     private readonly string _path;
     private readonly CsvConfiguration _config;
@@ -31,7 +31,7 @@ public class CsvFileSink<T> : ISink<T>
     }
 
     /// <inheritdoc />
-    public async Task InitializeAsync(CancellationToken ct = default)
+    public async ValueTask InitializeAsync(CancellationToken ct = default)
     {
         await _writeGate.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -49,9 +49,9 @@ public class CsvFileSink<T> : ISink<T>
     }
 
     /// <inheritdoc />
-    public async Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
+    public async ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
     {
-        if (!result.IsSuccess || result.Value == null)
+        if (envelope.Payload == null)
             return;
 
         await _writeGate.WaitAsync(ct).ConfigureAwait(false);
@@ -62,7 +62,7 @@ public class CsvFileSink<T> : ISink<T>
             if (_csv == null)
                 throw new InvalidOperationException("Sink is not initialized. Call InitializeAsync before writing.");
 
-            _csv.WriteRecord(result.Value);
+            _csv.WriteRecord(envelope.Payload);
             await _csv.NextRecordAsync().ConfigureAwait(false);
         }
         finally
@@ -72,7 +72,7 @@ public class CsvFileSink<T> : ISink<T>
     }
 
     /// <inheritdoc />
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         await _writeGate.WaitAsync().ConfigureAwait(false);
         try

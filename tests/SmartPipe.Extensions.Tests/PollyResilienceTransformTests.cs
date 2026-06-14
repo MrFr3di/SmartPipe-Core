@@ -17,7 +17,7 @@ public class PollyResilienceTransformTests
             .Build();
 
         var transform = new PollyResilienceTransform<string>(pipeline);
-        var ctx = new ProcessingContext<string>("test");
+        var ctx = ProcessingEnvelope<string>.Create("test");
 
         var result = await transform.TransformAsync(ctx);
 
@@ -33,7 +33,7 @@ public class PollyResilienceTransformTests
             .Build();
 
         var transform = new PollyResilienceTransform<string>(pipeline);
-        var ctx = new ProcessingContext<string>("test");
+        var ctx = ProcessingEnvelope<string>.Create("test");
 
         var result = await transform.TransformAsync(ctx);
 

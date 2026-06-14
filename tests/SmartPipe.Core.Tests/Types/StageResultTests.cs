@@ -25,15 +25,14 @@ public class StageResultTests
     }
 
     [Fact]
-    public void Failure_ShouldConvertToProcessingResult()
+    public void Failure_ShouldCreateValidFailure()
     {
         var error = new SmartPipeError("failed", ErrorType.Permanent, "Test");
         var result = StageResult<string>.Failure(error);
 
-        var legacy = result.ToProcessingResult(42);
-
-        legacy.IsSuccess.Should().BeFalse();
-        legacy.TraceId.Should().Be(42);
-        legacy.Error.Should().Be(error);
+        result.IsValid.Should().BeTrue();
+        result.IsSuccess.Should().BeFalse();
+        result.Kind.Should().Be(StageResultKind.Failure);
+        result.Error.Should().Be(error);
     }
 }

@@ -12,9 +12,9 @@ public class CompositeTransformTests
         var t1 = new TestTransform(x => x * 2);
         var t2 = new TestTransform(x => x + 1);
         var composite = new CompositeTransform<int>(t1, t2);
-        
-        var result = await composite.TransformAsync(new ProcessingContext<int>(5));
-        
+
+        var result = await composite.TransformAsync(ProcessingEnvelope<int>.Create(5));
+
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be(11); // (5*2)+1
     }
@@ -26,9 +26,9 @@ public class CompositeTransformTests
         var t2 = new FailTransform<int>();
         var t3 = new TestTransform(x => x + 1);
         var composite = new CompositeTransform<int>(t1, t2, t3);
-        
-        var result = await composite.TransformAsync(new ProcessingContext<int>(5));
-        
+
+        var result = await composite.TransformAsync(ProcessingEnvelope<int>.Create(5));
+
         result.IsSuccess.Should().BeFalse(); // t2 fails
     }
 
@@ -39,34 +39,33 @@ public class CompositeTransformTests
         var t1 = new ObservingTransform(x => x * 2, observedTraceIds);
         var t2 = new ObservingTransform(x => x + 1, observedTraceIds);
         var composite = new CompositeTransform<int>(t1, t2);
-        var context = new ProcessingContext<int>(5);
+        var envelope = ProcessingEnvelope<int>.Create(5);
 
-        var result = await composite.TransformAsync(context);
+        var result = await composite.TransformAsync(envelope);
 
         result.IsSuccess.Should().BeTrue();
-        result.TraceId.Should().Be(context.TraceId);
-        observedTraceIds.Should().Equal(context.TraceId, context.TraceId);
+        observedTraceIds.Should().Equal(envelope.TraceId, envelope.TraceId);
     }
 
-    private class TestTransform : ITransformer<int, int>
+    private class TestTransform : IPipelineTransformer<int, int>
     {
         private readonly Func<int, int> _f;
         public TestTransform(Func<int, int> f) => _f = f;
-        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public ValueTask<ProcessingResult<int>> TransformAsync(ProcessingContext<int> ctx, CancellationToken ct = default)
-            => ValueTask.FromResult(ProcessingResult<int>.Success(_f(ctx.Payload), ctx.TraceId));
-        public Task DisposeAsync() => Task.CompletedTask;
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask<StageResult<int>> TransformAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default)
+            => ValueTask.FromResult(StageResult<int>.Success(_f(envelope.Payload)));
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    private class FailTransform<T> : ITransformer<T, T>
+    private class FailTransform<T> : IPipelineTransformer<T, T>
     {
-        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public ValueTask<ProcessingResult<T>> TransformAsync(ProcessingContext<T> ctx, CancellationToken ct = default)
-            => ValueTask.FromResult(ProcessingResult<T>.Failure(new SmartPipeError("Fail", ErrorType.Permanent), ctx.TraceId));
-        public Task DisposeAsync() => Task.CompletedTask;
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask<StageResult<T>> TransformAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
+            => ValueTask.FromResult(StageResult<T>.Failure(new SmartPipeError("Fail", ErrorType.Permanent)));
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    private sealed class ObservingTransform : ITransformer<int, int>
+    private sealed class ObservingTransform : IPipelineTransformer<int, int>
     {
         private readonly Func<int, int> _f;
         private readonly List<ulong> _traceIds;
@@ -77,16 +76,16 @@ public class CompositeTransformTests
             _traceIds = traceIds;
         }
 
-        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
-        public ValueTask<ProcessingResult<int>> TransformAsync(
-            ProcessingContext<int> ctx,
+        public ValueTask<StageResult<int>> TransformAsync(
+            ProcessingEnvelope<int> envelope,
             CancellationToken ct = default)
         {
-            _traceIds.Add(ctx.TraceId);
-            return ValueTask.FromResult(ProcessingResult<int>.Success(_f(ctx.Payload), ctx.TraceId));
+            _traceIds.Add(envelope.TraceId);
+            return ValueTask.FromResult(StageResult<int>.Success(_f(envelope.Payload)));
         }
 
-        public Task DisposeAsync() => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

@@ -48,14 +48,14 @@ public class PipelineSimulator
     /// <typeparam name="T">Item type.</typeparam>
     /// <param name="factory">Factory function taking index and returning item.</param>
     /// <param name="count">Number of items to generate.</param>
-    /// <returns>Async enumerable of processing contexts.</returns>
-    public async IAsyncEnumerable<ProcessingContext<T>> GenerateAsync<T>(
+    /// <returns>Async enumerable of processing envelopes.</returns>
+    public async IAsyncEnumerable<ProcessingEnvelope<T>> GenerateAsync<T>(
         Func<int, T> factory, int count)
     {
         for (int i = 0; i < count; i++)
         {
             Interlocked.Increment(ref _step);
-            yield return new ProcessingContext<T>(factory(i));
+            yield return ProcessingEnvelope<T>.Create(factory(i));
             await Task.Yield();
         }
     }

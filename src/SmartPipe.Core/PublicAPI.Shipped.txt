@@ -1,23 +1,5 @@
 #nullable enable
-const SmartPipe.Core.ProcessingContext<T>.LineageEnteredAt = "lineage_entered_at" -> string!
-const SmartPipe.Core.ProcessingContext<T>.LineagePipeline = "lineage_pipeline" -> string!
-const SmartPipe.Core.ProcessingContext<T>.LineageSource = "lineage_source" -> string!
-const SmartPipe.Core.ProcessingContext<T>.LineageTransform = "lineage_transform" -> string!
 override SmartPipe.Core.SmartPipeError.ToString() -> string!
-SmartPipe.Core.AdaptiveMetrics
-SmartPipe.Core.AdaptiveMetrics.AdaptiveMetrics() -> void
-SmartPipe.Core.AdaptiveMetrics.LatencyVelocity.get -> double
-SmartPipe.Core.AdaptiveMetrics.PredictNextLatency() -> double
-SmartPipe.Core.AdaptiveMetrics.SmoothLatencyMs.get -> double
-SmartPipe.Core.AdaptiveMetrics.SmoothThroughputPerSec.get -> double
-SmartPipe.Core.AdaptiveMetrics.Update(double latencyMs) -> void
-SmartPipe.Core.AdaptiveParallelism
-SmartPipe.Core.AdaptiveParallelism.AdaptiveParallelism(int min = 2, int max = 32) -> void
-SmartPipe.Core.AdaptiveParallelism.Current.get -> int
-SmartPipe.Core.AdaptiveParallelism.GetDecisionReason() -> string!
-SmartPipe.Core.AdaptiveParallelism.Max.get -> int
-SmartPipe.Core.AdaptiveParallelism.Min.get -> int
-SmartPipe.Core.AdaptiveParallelism.Update(double currentLatencyMs, int queueSize) -> void
 SmartPipe.Core.BackoffStrategy
 SmartPipe.Core.BackoffStrategy.Exponential = 2 -> SmartPipe.Core.BackoffStrategy
 SmartPipe.Core.BackoffStrategy.Fixed = 0 -> SmartPipe.Core.BackoffStrategy
@@ -26,7 +8,6 @@ SmartPipe.Core.BackpressureStrategy
 SmartPipe.Core.BackpressureStrategy.BackpressureStrategy(int capacity) -> void
 SmartPipe.Core.BackpressureStrategy.GetFillRatio(int currentSize) -> double
 SmartPipe.Core.BackpressureStrategy.UpdateThroughput(double throughputPerSec, double predictedLatencyMs = 0) -> void
-SmartPipe.Core.ChannelPool
 SmartPipe.Core.CircuitBreaker
 SmartPipe.Core.CircuitBreaker.AllowRequest() -> bool
 SmartPipe.Core.CircuitBreaker.CircuitBreaker(double failureRatio = 0.5, System.TimeSpan? samplingDuration = null, int minimumThroughput = 10, System.TimeSpan? breakDuration = null, int maxHalfOpenRequests = 3, SmartPipe.Core.IClock? clock = null) -> void
@@ -137,39 +118,12 @@ SmartPipe.Core.IPipelineSource<T>.ReadEnvelopesAsync(System.Threading.Cancellati
 SmartPipe.Core.IPipelineTransformer<TInput, TOutput>
 SmartPipe.Core.IPipelineTransformer<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
 SmartPipe.Core.IPipelineTransformer<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<TInput>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<TOutput>>
-SmartPipe.Core.ISink<T>
-SmartPipe.Core.ISink<T>.DisposeAsync() -> System.Threading.Tasks.Task!
-SmartPipe.Core.ISink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SmartPipe.Core.ISink<T>.WriteAsync(SmartPipe.Core.ProcessingResult<T> result, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SmartPipe.Core.ISource<T>
-SmartPipe.Core.ISource<T>.DisposeAsync() -> System.Threading.Tasks.Task!
-SmartPipe.Core.ISource<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SmartPipe.Core.ISource<T>.ReadAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingContext<T>!>!
-SmartPipe.Core.ITransformer<TInput, TOutput>
-SmartPipe.Core.ITransformer<TInput, TOutput>.DisposeAsync() -> System.Threading.Tasks.Task!
-SmartPipe.Core.ITransformer<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SmartPipe.Core.ITransformer<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingContext<TInput>! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<TOutput>>
 SmartPipe.Core.JsonLinesDeadLetterSerializer<T>
 SmartPipe.Core.JsonLinesDeadLetterSerializer<T>.JsonLinesDeadLetterSerializer(System.Text.Json.JsonSerializerOptions? options = null) -> void
 SmartPipe.Core.JsonLinesDeadLetterSerializer<T>.JsonLinesDeadLetterSerializer(System.Text.Json.Serialization.Metadata.JsonTypeInfo<SmartPipe.Core.DeadLetterEnvelope<T>!>! typeInfo) -> void
 SmartPipe.Core.JsonLinesDeadLetterSerializer<T>.ReadAsync(System.IO.Stream! stream, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.DeadLetterEnvelope<T>!>!
 SmartPipe.Core.JsonLinesDeadLetterSerializer<T>.WriteAsync(SmartPipe.Core.DeadLetterEnvelope<T>! envelope, System.IO.Stream! stream, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
 SmartPipe.Core.JumpHash
-SmartPipe.Core.LegacySinkAdapter<T>
-SmartPipe.Core.LegacySinkAdapter<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Core.LegacySinkAdapter<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Core.LegacySinkAdapter<T>.LegacySinkAdapter(SmartPipe.Core.ISink<T>! inner) -> void
-SmartPipe.Core.LegacySinkAdapter<T>.WriteAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Core.LegacySourceAdapter<T>
-SmartPipe.Core.LegacySourceAdapter<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Core.LegacySourceAdapter<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Core.LegacySourceAdapter<T>.LegacySourceAdapter(SmartPipe.Core.ISource<T>! inner, string! pipelineId = "legacy", string! runId = "legacy") -> void
-SmartPipe.Core.LegacySourceAdapter<T>.ReadEnvelopesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingEnvelope<T>!>!
-SmartPipe.Core.LegacyTransformerAdapter<TInput, TOutput>
-SmartPipe.Core.LegacyTransformerAdapter<TInput, TOutput>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Core.LegacyTransformerAdapter<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Core.LegacyTransformerAdapter<TInput, TOutput>.LegacyTransformerAdapter(SmartPipe.Core.ITransformer<TInput, TOutput>! inner) -> void
-SmartPipe.Core.LegacyTransformerAdapter<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<TInput>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<TOutput>>
 SmartPipe.Core.LineageEntry
 SmartPipe.Core.LineageEntry.CompletedAtUtc.get -> System.DateTimeOffset?
 SmartPipe.Core.LineageEntry.CompletedAtUtc.init -> void
@@ -200,11 +154,6 @@ SmartPipe.Core.MetadataBag.MetadataBag() -> void
 SmartPipe.Core.MetadataBag.MetadataBag(System.Collections.Generic.IReadOnlyDictionary<string!, string!>? items) -> void
 SmartPipe.Core.MetadataBag.Set(string! key, string! value) -> SmartPipe.Core.MetadataBag!
 SmartPipe.Core.MetadataBag.ToDictionary() -> System.Collections.Generic.Dictionary<string!, string!>!
-SmartPipe.Core.MiddlewareTransformer<T>
-SmartPipe.Core.MiddlewareTransformer<T>.DisposeAsync() -> System.Threading.Tasks.Task!
-SmartPipe.Core.MiddlewareTransformer<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SmartPipe.Core.MiddlewareTransformer<T>.MiddlewareTransformer(System.Func<T, T>! func) -> void
-SmartPipe.Core.MiddlewareTransformer<T>.TransformAsync(SmartPipe.Core.ProcessingContext<T>! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<T>>
 SmartPipe.Core.NoOpDeadLetterRedactor<T>
 SmartPipe.Core.NoOpDeadLetterRedactor<T>.NoOpDeadLetterRedactor() -> void
 SmartPipe.Core.NoOpDeadLetterRedactor<T>.Redact(SmartPipe.Core.DeadLetterEnvelope<T>! envelope) -> SmartPipe.Core.DeadLetterEnvelope<T>!
@@ -238,21 +187,16 @@ SmartPipe.Core.ObserverReliability.Critical = 2 -> SmartPipe.Core.ObserverReliab
 SmartPipe.Core.ObserverReliability.Reliable = 1 -> SmartPipe.Core.ObserverReliability
 SmartPipe.Core.PipelineBuilder
 SmartPipe.Core.PipelineBuilder<TInput, TOutput>
-SmartPipe.Core.PipelineBuilder<TInput, TOutput>.Pipe(SmartPipe.Core.ITransformer<TInput, TOutput>! transformer) -> SmartPipe.Core.PipelineBuilder<TInput, TOutput>!
 SmartPipe.Core.PipelineBuilder<TInput, TOutput>.Run(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> SmartPipe.Core.PipelineRun<TOutput>!
 SmartPipe.Core.PipelineBuilder<TInput, TOutput>.To(SmartPipe.Core.IPipelineSink<TOutput>! sink, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> SmartPipe.Core.PipelineRun<TOutput>!
-SmartPipe.Core.PipelineBuilder<TInput, TOutput>.To(SmartPipe.Core.ISink<TOutput>! sink, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SmartPipe.Core.PipelineBuilder<TInput, TOutput>.ToFactory(System.Func<System.IServiceProvider?, SmartPipe.Core.IPipelineSink<TOutput>!>! sinkFactory, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> SmartPipe.Core.PipelineRun<TOutput>!
 SmartPipe.Core.PipelineBuilder<TInput, TOutput>.Transform<TNext>(SmartPipe.Core.IPipelineTransformer<TOutput, TNext>! transformer, SmartPipe.Core.StageFailureOptions? failureOptions = null, SmartPipe.Core.StageDeadLetterOptions<TOutput>? deadLetterOptions = null) -> SmartPipe.Core.PipelineBuilder<TInput, TNext>!
 SmartPipe.Core.PipelineBuilder<TInput, TOutput>.TransformFactory<TNext>(System.Func<System.IServiceProvider?, SmartPipe.Core.IPipelineTransformer<TOutput, TNext>!>! transformerFactory) -> SmartPipe.Core.PipelineBuilder<TInput, TNext>!
 SmartPipe.Core.PipelineBuilder<TInput, TOutput>.WithObserver(SmartPipe.Core.IPipelineObserver! observer, SmartPipe.Core.ObserverReliability reliability = SmartPipe.Core.ObserverReliability.BestEffort, SmartPipe.Core.ObserverFailurePolicy failurePolicy = SmartPipe.Core.ObserverFailurePolicy.Log) -> SmartPipe.Core.PipelineBuilder<TInput, TOutput>!
-SmartPipe.Core.PipelineBuilder<TInput, TOutput>.WithOptions(System.Action<SmartPipe.Core.SmartPipeChannelOptions!>! configure) -> SmartPipe.Core.PipelineBuilder<TInput, TOutput>!
 SmartPipe.Core.PipelineBuilder<TInput>
 SmartPipe.Core.PipelineBuilder<TInput>.Transform(System.Func<TInput, TInput>! middleware) -> SmartPipe.Core.PipelineBuilder<TInput, TInput>!
 SmartPipe.Core.PipelineBuilder<TInput>.Transform<TOutput>(SmartPipe.Core.IPipelineTransformer<TInput, TOutput>! transformer, SmartPipe.Core.StageFailureOptions? failureOptions = null, SmartPipe.Core.StageDeadLetterOptions<TInput>? deadLetterOptions = null) -> SmartPipe.Core.PipelineBuilder<TInput, TOutput>!
-SmartPipe.Core.PipelineBuilder<TInput>.Transform<TOutput>(SmartPipe.Core.ITransformer<TInput, TOutput>! transformer) -> SmartPipe.Core.PipelineBuilder<TInput, TOutput>!
 SmartPipe.Core.PipelineBuilder<TInput>.TransformFactory<TOutput>(System.Func<System.IServiceProvider?, SmartPipe.Core.IPipelineTransformer<TInput, TOutput>!>! transformerFactory) -> SmartPipe.Core.PipelineBuilder<TInput, TOutput>!
-SmartPipe.Core.PipelineCancellation
 SmartPipe.Core.PipelineCancelledEvent
 SmartPipe.Core.PipelineCancelledEvent.PipelineCancelledEvent(string! PipelineId, string! RunId, System.DateTimeOffset TimestampUtc) -> void
 SmartPipe.Core.PipelineCompletedEvent
@@ -271,23 +215,6 @@ SmartPipe.Core.PipelineComponentRegistration.Lifetime.init -> void
 SmartPipe.Core.PipelineComponentRegistration.OwnsResources.get -> bool
 SmartPipe.Core.PipelineComponentRegistration.OwnsResources.init -> void
 SmartPipe.Core.PipelineComponentRegistration.PipelineComponentRegistration(System.Type! ComponentType, SmartPipe.Core.PipelineComponentLifetime Lifetime, bool OwnsResources, bool IsFactoryBased) -> void
-SmartPipe.Core.PipelineDashboard
-SmartPipe.Core.PipelineDashboard.CbState.get -> string!
-SmartPipe.Core.PipelineDashboard.CbState.init -> void
-SmartPipe.Core.PipelineDashboard.Current.get -> int
-SmartPipe.Core.PipelineDashboard.Current.init -> void
-SmartPipe.Core.PipelineDashboard.Elapsed.get -> System.TimeSpan
-SmartPipe.Core.PipelineDashboard.Elapsed.init -> void
-SmartPipe.Core.PipelineDashboard.Metrics.get -> System.Collections.Generic.Dictionary<string!, object!>!
-SmartPipe.Core.PipelineDashboard.Metrics.init -> void
-SmartPipe.Core.PipelineDashboard.P99LatencyMs.get -> double
-SmartPipe.Core.PipelineDashboard.P99LatencyMs.init -> void
-SmartPipe.Core.PipelineDashboard.PipelineDashboard() -> void
-SmartPipe.Core.PipelineDashboard.PipelineDashboard(SmartPipe.Core.PipelineState State, int Current, int? Total, System.TimeSpan Elapsed, double P99LatencyMs, string! CbState, System.Collections.Generic.Dictionary<string!, object!>! Metrics) -> void
-SmartPipe.Core.PipelineDashboard.State.get -> SmartPipe.Core.PipelineState
-SmartPipe.Core.PipelineDashboard.State.init -> void
-SmartPipe.Core.PipelineDashboard.Total.get -> int?
-SmartPipe.Core.PipelineDashboard.Total.init -> void
 SmartPipe.Core.PipelineDefinition
 SmartPipe.Core.PipelineDefinition.Components.get -> System.Collections.Generic.IReadOnlyList<SmartPipe.Core.PipelineComponentRegistration!>!
 SmartPipe.Core.PipelineDefinition.IsReusable.get -> bool
@@ -333,8 +260,6 @@ SmartPipe.Core.PipelineObserverRegistration.Reliability.init -> void
 SmartPipe.Core.PipelineOutput<T>
 SmartPipe.Core.PipelineOutput<T>.Envelope.get -> SmartPipe.Core.ProcessingEnvelope<T>?
 SmartPipe.Core.PipelineOutput<T>.Envelope.init -> void
-SmartPipe.Core.PipelineOutput<T>.PipelineOutput(SmartPipe.Core.ProcessingEnvelope<T>? Envelope, SmartPipe.Core.ProcessingResult<T> Result) -> void
-SmartPipe.Core.PipelineOutput<T>.Result.get -> SmartPipe.Core.ProcessingResult<T>
 SmartPipe.Core.PipelineOutput<T>.Result.init -> void
 SmartPipe.Core.PipelineRun<TOutput>
 SmartPipe.Core.PipelineRun<TOutput>.AbortAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
@@ -344,7 +269,6 @@ SmartPipe.Core.PipelineRun<TOutput>.DisposeAsync() -> System.Threading.Tasks.Val
 SmartPipe.Core.PipelineRun<TOutput>.DrainAsync(System.TimeSpan timeout, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
 SmartPipe.Core.PipelineRun<TOutput>.Outputs.get -> System.Threading.Channels.ChannelReader<SmartPipe.Core.PipelineOutput<TOutput>!>!
 SmartPipe.Core.PipelineRun<TOutput>.PipelineRun(System.Threading.Channels.ChannelReader<SmartPipe.Core.PipelineOutput<TOutput>!>! outputs, System.Threading.Tasks.Task! completion, System.Func<SmartPipe.Core.PipelineRunState>! stateProvider, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>? cancel = null, System.Func<System.TimeSpan, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>? drain = null, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>? abort = null, System.Func<System.Threading.Tasks.ValueTask>? dispose = null) -> void
-SmartPipe.Core.PipelineRun<TOutput>.ReadResultsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingResult<TOutput>>!
 SmartPipe.Core.PipelineRun<TOutput>.State.get -> SmartPipe.Core.PipelineRunState
 SmartPipe.Core.PipelineRunState
 SmartPipe.Core.PipelineRunState.Aborted = 5 -> SmartPipe.Core.PipelineRunState
@@ -372,24 +296,6 @@ SmartPipe.Core.PipelineStageDefinition.StageName.get -> string!
 SmartPipe.Core.PipelineStageDefinition.StageName.init -> void
 SmartPipe.Core.PipelineStartedEvent
 SmartPipe.Core.PipelineStartedEvent.PipelineStartedEvent(string! PipelineId, string! RunId, System.DateTimeOffset TimestampUtc) -> void
-SmartPipe.Core.PipelineState
-SmartPipe.Core.PipelineState.Cancelled = 5 -> SmartPipe.Core.PipelineState
-SmartPipe.Core.PipelineState.Completed = 3 -> SmartPipe.Core.PipelineState
-SmartPipe.Core.PipelineState.Faulted = 4 -> SmartPipe.Core.PipelineState
-SmartPipe.Core.PipelineState.NotStarted = 0 -> SmartPipe.Core.PipelineState
-SmartPipe.Core.PipelineState.Paused = 2 -> SmartPipe.Core.PipelineState
-SmartPipe.Core.PipelineState.Running = 1 -> SmartPipe.Core.PipelineState
-SmartPipe.Core.ProcessingContext<T>
-SmartPipe.Core.ProcessingContext<T>.Metadata.get -> System.Collections.Generic.Dictionary<string!, string!>!
-SmartPipe.Core.ProcessingContext<T>.Metadata.set -> void
-SmartPipe.Core.ProcessingContext<T>.Payload.get -> T
-SmartPipe.Core.ProcessingContext<T>.Payload.set -> void
-SmartPipe.Core.ProcessingContext<T>.ProcessingContext() -> void
-SmartPipe.Core.ProcessingContext<T>.ProcessingContext(T payload, System.Collections.Generic.Dictionary<string!, string!>? metadata) -> void
-SmartPipe.Core.ProcessingContext<T>.ProcessingContext(T payload) -> void
-SmartPipe.Core.ProcessingContext<T>.Reset() -> void
-SmartPipe.Core.ProcessingContext<T>.TraceId.get -> ulong
-SmartPipe.Core.ProcessingContext<T>.TraceId.set -> void
 SmartPipe.Core.ProcessingEnvelope<T>
 SmartPipe.Core.ProcessingEnvelope<T>.Attempt.get -> int
 SmartPipe.Core.ProcessingEnvelope<T>.Attempt.init -> void
@@ -405,15 +311,8 @@ SmartPipe.Core.ProcessingEnvelope<T>.PipelineId.get -> string!
 SmartPipe.Core.ProcessingEnvelope<T>.PipelineId.init -> void
 SmartPipe.Core.ProcessingEnvelope<T>.RunId.get -> string!
 SmartPipe.Core.ProcessingEnvelope<T>.RunId.init -> void
-SmartPipe.Core.ProcessingEnvelope<T>.ToContext() -> SmartPipe.Core.ProcessingContext<T>!
 SmartPipe.Core.ProcessingEnvelope<T>.TraceId.get -> ulong
 SmartPipe.Core.ProcessingEnvelope<T>.TraceId.init -> void
-SmartPipe.Core.ProcessingResult<T>
-SmartPipe.Core.ProcessingResult<T>.Error.get -> SmartPipe.Core.SmartPipeError?
-SmartPipe.Core.ProcessingResult<T>.IsSuccess.get -> bool
-SmartPipe.Core.ProcessingResult<T>.ProcessingResult() -> void
-SmartPipe.Core.ProcessingResult<T>.TraceId.get -> ulong
-SmartPipe.Core.ProcessingResult<T>.Value.get -> T?
 SmartPipe.Core.ReservoirSampler<T>
 SmartPipe.Core.ReservoirSampler<T>.Add(T item) -> void
 SmartPipe.Core.ReservoirSampler<T>.Capacity.get -> int
@@ -427,45 +326,14 @@ SmartPipe.Core.RetryExhaustedEvent
 SmartPipe.Core.RetryExhaustedEvent.Error.get -> SmartPipe.Core.SmartPipeError
 SmartPipe.Core.RetryExhaustedEvent.Error.init -> void
 SmartPipe.Core.RetryExhaustedEvent.RetryExhaustedEvent(string! PipelineId, string! RunId, ulong TraceId, string! StageId, int Attempt, System.DateTimeOffset TimestampUtc, SmartPipe.Core.SmartPipeError Error) -> void
-SmartPipe.Core.RetryItem<T>
-SmartPipe.Core.RetryItem<T>.Context.get -> SmartPipe.Core.ProcessingContext<T>!
-SmartPipe.Core.RetryItem<T>.Context.init -> void
-SmartPipe.Core.RetryItem<T>.EffectiveRetryBudget.get -> int
-SmartPipe.Core.RetryItem<T>.Error.get -> SmartPipe.Core.SmartPipeError
-SmartPipe.Core.RetryItem<T>.Error.init -> void
-SmartPipe.Core.RetryItem<T>.Policy.get -> SmartPipe.Core.RetryPolicy!
-SmartPipe.Core.RetryItem<T>.Policy.init -> void
-SmartPipe.Core.RetryItem<T>.RetryAt.get -> System.DateTime
-SmartPipe.Core.RetryItem<T>.RetryAt.init -> void
-SmartPipe.Core.RetryItem<T>.RetryBudget.get -> int
-SmartPipe.Core.RetryItem<T>.RetryBudget.init -> void
-SmartPipe.Core.RetryItem<T>.RetryCount.get -> int
-SmartPipe.Core.RetryItem<T>.RetryCount.init -> void
-SmartPipe.Core.RetryItem<T>.RetryItem() -> void
-SmartPipe.Core.RetryItem<T>.RetryItem(SmartPipe.Core.ProcessingContext<T>! Context, SmartPipe.Core.RetryPolicy! Policy, int RetryCount, SmartPipe.Core.SmartPipeError Error, System.DateTime RetryAt, int RetryBudget = -1) -> void
 SmartPipe.Core.RetryPolicy
 SmartPipe.Core.RetryPolicy.Delay.get -> System.TimeSpan
 SmartPipe.Core.RetryPolicy.GetDelay(int retryCount) -> System.TimeSpan
 SmartPipe.Core.RetryPolicy.MaxDelay.get -> System.TimeSpan
 SmartPipe.Core.RetryPolicy.MaxRetries.get -> int
-SmartPipe.Core.RetryPolicy.OnRetry.get -> System.Action<SmartPipe.Core.ProcessingContext<object!>!, SmartPipe.Core.SmartPipeError, int>?
 SmartPipe.Core.RetryPolicy.RetryOn.get -> System.Predicate<SmartPipe.Core.SmartPipeError>!
-SmartPipe.Core.RetryPolicy.RetryPolicy(int maxRetries = 3, System.TimeSpan? delay = null, System.TimeSpan? maxDelay = null, SmartPipe.Core.BackoffStrategy strategy = SmartPipe.Core.BackoffStrategy.Exponential, System.Predicate<SmartPipe.Core.SmartPipeError>? retryOn = null, System.Action<SmartPipe.Core.ProcessingContext<object!>!, SmartPipe.Core.SmartPipeError, int>? onRetry = null) -> void
 SmartPipe.Core.RetryPolicy.ShouldRetry(SmartPipe.Core.SmartPipeError error) -> bool
 SmartPipe.Core.RetryPolicy.Strategy.get -> SmartPipe.Core.BackoffStrategy
-SmartPipe.Core.RetryQueue<T>
-SmartPipe.Core.RetryQueue<T>.Count.get -> int
-SmartPipe.Core.RetryQueue<T>.EnqueueAsync(SmartPipe.Core.ProcessingContext<T>! ctx, SmartPipe.Core.RetryPolicy! policy, int retryCount, SmartPipe.Core.SmartPipeError error, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken), int? retryBudget = null) -> System.Threading.Tasks.ValueTask<bool>
-SmartPipe.Core.RetryQueue<T>.HasPendingItems.get -> bool
-SmartPipe.Core.RetryQueue<T>.PendingCount.get -> int
-SmartPipe.Core.RetryQueue<T>.RetryQueue(int capacity = 10000, Microsoft.Extensions.Logging.ILogger<SmartPipe.Core.RetryQueue<T>!>? logger = null, SmartPipe.Core.ISink<object!>? deadLetterSink = null, SmartPipe.Core.IClock? clock = null, SmartPipe.Core.RetryQueueOverflowPolicy overflowPolicy = SmartPipe.Core.RetryQueueOverflowPolicy.Wait, int pollTimeoutMs = 100) -> void
-SmartPipe.Core.RetryQueue<T>.TryGetNextAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.RetryItem<T>?>
-SmartPipe.Core.RetryQueueOverflowPolicy
-SmartPipe.Core.RetryQueueOverflowPolicy.DeadLetter = 2 -> SmartPipe.Core.RetryQueueOverflowPolicy
-SmartPipe.Core.RetryQueueOverflowPolicy.DropNewest = 3 -> SmartPipe.Core.RetryQueueOverflowPolicy
-SmartPipe.Core.RetryQueueOverflowPolicy.DropOldest = 4 -> SmartPipe.Core.RetryQueueOverflowPolicy
-SmartPipe.Core.RetryQueueOverflowPolicy.FailFast = 1 -> SmartPipe.Core.RetryQueueOverflowPolicy
-SmartPipe.Core.RetryQueueOverflowPolicy.Wait = 0 -> SmartPipe.Core.RetryQueueOverflowPolicy
 SmartPipe.Core.RetryScheduledEvent
 SmartPipe.Core.RetryScheduledEvent.Delay.get -> System.TimeSpan
 SmartPipe.Core.RetryScheduledEvent.Delay.init -> void
@@ -479,62 +347,6 @@ SmartPipe.Core.SinkWriteFailedEvent.Exception.init -> void
 SmartPipe.Core.SinkWriteFailedEvent.SinkWriteFailedEvent(string! PipelineId, string! RunId, ulong TraceId, int Attempt, System.DateTimeOffset TimestampUtc, System.Exception! Exception) -> void
 SmartPipe.Core.SinkWriteStartedEvent
 SmartPipe.Core.SinkWriteStartedEvent.SinkWriteStartedEvent(string! PipelineId, string! RunId, ulong TraceId, int Attempt, System.DateTimeOffset TimestampUtc) -> void
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.AddSink(SmartPipe.Core.ISink<TOutput>! sink) -> void
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.AddSource(SmartPipe.Core.ISource<TInput>! source) -> void
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.AddTransformer(SmartPipe.Core.ITransformer<TInput, TOutput>! t) -> void
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.AsChannelReader() -> System.Threading.Channels.ChannelReader<SmartPipe.Core.ProcessingResult<TOutput>>?
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.Cancel() -> void
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.CreateDashboard() -> SmartPipe.Core.PipelineDashboard
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.DrainAsync(System.TimeSpan timeout, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.IsPaused.get -> bool
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.LatencyHistogram.get -> SmartPipe.Core.ExponentialHistogram!
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.Metrics.get -> SmartPipe.Core.SmartPipeMetrics!
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.OnStateChanged -> System.Action<SmartPipe.Core.PipelineState, SmartPipe.Core.PipelineState>?
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.Options.get -> SmartPipe.Core.SmartPipeChannelOptions!
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.Pause() -> void
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.ProcessSingleAsync(SmartPipe.Core.ProcessingContext<TInput>! ctx, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<TOutput>>
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.Resume() -> void
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.RunAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.RunInBackground(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Channels.ChannelReader<SmartPipe.Core.ProcessingResult<TOutput>>!
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.SmartPipeChannel() -> void
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.SmartPipeChannel(SmartPipe.Core.SmartPipeChannelOptions! options, SmartPipe.Core.IClock? clock = null, Microsoft.Extensions.Logging.ILogger<SmartPipe.Core.SmartPipeChannel<TInput, TOutput>!>? logger = null) -> void
-SmartPipe.Core.SmartPipeChannel<TInput, TOutput>.State.get -> SmartPipe.Core.PipelineState
-SmartPipe.Core.SmartPipeChannelOptions
-SmartPipe.Core.SmartPipeChannelOptions.AttemptTimeout.get -> System.TimeSpan
-SmartPipe.Core.SmartPipeChannelOptions.AttemptTimeout.set -> void
-SmartPipe.Core.SmartPipeChannelOptions.BoundedCapacity.get -> int
-SmartPipe.Core.SmartPipeChannelOptions.BoundedCapacity.set -> void
-SmartPipe.Core.SmartPipeChannelOptions.ContinueOnError.get -> bool
-SmartPipe.Core.SmartPipeChannelOptions.ContinueOnError.set -> void
-SmartPipe.Core.SmartPipeChannelOptions.DeadLetterSink.get -> SmartPipe.Core.ISink<object!>?
-SmartPipe.Core.SmartPipeChannelOptions.DeadLetterSink.set -> void
-SmartPipe.Core.SmartPipeChannelOptions.DeduplicationFilter.get -> SmartPipe.Core.DeduplicationFilter?
-SmartPipe.Core.SmartPipeChannelOptions.DeduplicationFilter.set -> void
-SmartPipe.Core.SmartPipeChannelOptions.DefaultRetryPolicy.get -> SmartPipe.Core.RetryPolicy?
-SmartPipe.Core.SmartPipeChannelOptions.DefaultRetryPolicy.set -> void
-SmartPipe.Core.SmartPipeChannelOptions.DisableFeature(string! f) -> void
-SmartPipe.Core.SmartPipeChannelOptions.EnableFeature(string! f) -> void
-SmartPipe.Core.SmartPipeChannelOptions.FeatureFlags.get -> System.Collections.Generic.Dictionary<string!, bool>!
-SmartPipe.Core.SmartPipeChannelOptions.FullMode.get -> System.Threading.Channels.BoundedChannelFullMode
-SmartPipe.Core.SmartPipeChannelOptions.FullMode.set -> void
-SmartPipe.Core.SmartPipeChannelOptions.IsEnabled(string! f) -> bool
-SmartPipe.Core.SmartPipeChannelOptions.MaxDegreeOfParallelism.get -> int
-SmartPipe.Core.SmartPipeChannelOptions.MaxDegreeOfParallelism.set -> void
-SmartPipe.Core.SmartPipeChannelOptions.OnMetrics.get -> System.Action<SmartPipe.Core.SmartPipeMetrics!>?
-SmartPipe.Core.SmartPipeChannelOptions.OnMetrics.set -> void
-SmartPipe.Core.SmartPipeChannelOptions.OnProgress.get -> System.Action<int, int?, System.TimeSpan, System.TimeSpan?>?
-SmartPipe.Core.SmartPipeChannelOptions.OnProgress.set -> void
-SmartPipe.Core.SmartPipeChannelOptions.RetryQueueOverflowPolicy.get -> SmartPipe.Core.RetryQueueOverflowPolicy
-SmartPipe.Core.SmartPipeChannelOptions.RetryQueueOverflowPolicy.set -> void
-SmartPipe.Core.SmartPipeChannelOptions.SmartPipeChannelOptions() -> void
-SmartPipe.Core.SmartPipeChannelOptions.ThrowOnMutationAfterStart.get -> bool
-SmartPipe.Core.SmartPipeChannelOptions.ThrowOnMutationAfterStart.set -> void
-SmartPipe.Core.SmartPipeChannelOptions.TotalRequestTimeout.get -> System.TimeSpan
-SmartPipe.Core.SmartPipeChannelOptions.TotalRequestTimeout.set -> void
-SmartPipe.Core.SmartPipeChannelOptions.UseRendezvous.get -> bool
-SmartPipe.Core.SmartPipeChannelOptions.UseRendezvous.set -> void
 SmartPipe.Core.SmartPipeError
 SmartPipe.Core.SmartPipeError.Category.get -> string?
 SmartPipe.Core.SmartPipeError.Category.init -> void
@@ -554,24 +366,15 @@ SmartPipe.Core.SmartPipeEventSource.CountersInitialized.get -> bool
 SmartPipe.Core.SmartPipeEventSource.RecordBackpressureActivation() -> void
 SmartPipe.Core.SmartPipeEventSource.RecordItemProcessed() -> void
 SmartPipe.Core.SmartPipeMetrics
-SmartPipe.Core.SmartPipeMetrics.AvgLatencyMs -> double
-SmartPipe.Core.SmartPipeMetrics.DuplicatesFiltered -> long
 SmartPipe.Core.SmartPipeMetrics.Export() -> System.Collections.Generic.Dictionary<string!, object!>!
 SmartPipe.Core.SmartPipeMetrics.ExportJson() -> string!
 SmartPipe.Core.SmartPipeMetrics.ExportPrometheus() -> string!
-SmartPipe.Core.SmartPipeMetrics.ItemsFailed -> long
-SmartPipe.Core.SmartPipeMetrics.ItemsProcessed -> long
-SmartPipe.Core.SmartPipeMetrics.PoolHitRate -> double
-SmartPipe.Core.SmartPipeMetrics.QueueSize -> int
 SmartPipe.Core.SmartPipeMetrics.RecordDuplicate() -> void
 SmartPipe.Core.SmartPipeMetrics.RecordFailed() -> void
 SmartPipe.Core.SmartPipeMetrics.RecordPoolHitRate(double hitRate) -> void
 SmartPipe.Core.SmartPipeMetrics.RecordProcessed(double latencyMs) -> void
 SmartPipe.Core.SmartPipeMetrics.RecordRetry() -> void
-SmartPipe.Core.SmartPipeMetrics.Retries -> long
 SmartPipe.Core.SmartPipeMetrics.SmartPipeMetrics() -> void
-SmartPipe.Core.SmartPipeMetrics.SmoothLatencyMs -> double
-SmartPipe.Core.SmartPipeMetrics.SmoothThroughput -> double
 SmartPipe.Core.StageDeadLetterOptions<T>
 SmartPipe.Core.StageDeadLetterOptions<T>.Redactor.get -> SmartPipe.Core.IDeadLetterRedactor<T>!
 SmartPipe.Core.StageDeadLetterOptions<T>.Serializer.get -> SmartPipe.Core.IDeadLetterSerializer<T>!
@@ -606,7 +409,6 @@ SmartPipe.Core.StageResult<T>.IsSuccess.get -> bool
 SmartPipe.Core.StageResult<T>.IsValid.get -> bool
 SmartPipe.Core.StageResult<T>.Kind.get -> SmartPipe.Core.StageResultKind
 SmartPipe.Core.StageResult<T>.StageResult() -> void
-SmartPipe.Core.StageResult<T>.ToProcessingResult(ulong traceId) -> SmartPipe.Core.ProcessingResult<T>
 SmartPipe.Core.StageResult<T>.Value.get -> T?
 SmartPipe.Core.StageResultKind
 SmartPipe.Core.StageResultKind.Cancelled = 4 -> SmartPipe.Core.StageResultKind
@@ -633,32 +435,20 @@ SmartPipe.Core.TimeProviderClock
 SmartPipe.Core.TimeProviderClock.TimeProviderClock(System.TimeProvider? timeProvider = null) -> void
 SmartPipe.Core.TimeProviderClock.UtcNow.get -> System.DateTime
 static readonly SmartPipe.Core.SmartPipeEventSource.Log -> SmartPipe.Core.SmartPipeEventSource!
-static SmartPipe.Core.ChannelPool.CloseChannel<T>(System.Threading.Channels.Channel<T>! channel) -> void
-static SmartPipe.Core.ChannelPool.RentBounded<T>(int capacity, System.Threading.Channels.BoundedChannelFullMode mode) -> System.Threading.Channels.Channel<T>!
-static SmartPipe.Core.ChannelPool.RentUnbounded<T>() -> System.Threading.Channels.Channel<T>!
 static SmartPipe.Core.ComponentOwnershipOptions.Default.get -> SmartPipe.Core.ComponentOwnershipOptions!
 static SmartPipe.Core.HyperLogLogEstimator.Merge(params SmartPipe.Core.HyperLogLogEstimator![]! es) -> SmartPipe.Core.HyperLogLogEstimator!
 static SmartPipe.Core.JumpHash.Hash(ulong key, int numBuckets) -> int
 static SmartPipe.Core.MetadataBag.Empty.get -> SmartPipe.Core.MetadataBag!
 static SmartPipe.Core.MetadataBag.From(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! metadata) -> SmartPipe.Core.MetadataBag!
 static SmartPipe.Core.PipelineBuilder.From<T>(SmartPipe.Core.IPipelineSource<T>! source) -> SmartPipe.Core.PipelineBuilder<T>!
-static SmartPipe.Core.PipelineBuilder.From<T>(SmartPipe.Core.ISource<T>! source) -> SmartPipe.Core.PipelineBuilder<T>!
 static SmartPipe.Core.PipelineBuilder.FromFactory<T>(System.Func<System.IServiceProvider?, SmartPipe.Core.IPipelineSource<T>!>! sourceFactory, System.IServiceProvider? serviceProvider = null) -> SmartPipe.Core.PipelineBuilder<T>!
-static SmartPipe.Core.PipelineCancellation.CreateTimeout(System.TimeSpan timeout) -> System.Threading.CancellationTokenSource!
-static SmartPipe.Core.PipelineCancellation.WithTimeoutAsync<T>(this System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<T>> task, System.TimeSpan timeout, ulong traceId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.ProcessingResult<T>>
-static SmartPipe.Core.PipelineDashboard.Empty.get -> SmartPipe.Core.PipelineDashboard
 static SmartPipe.Core.PipelineExecutionPlan.Compile(SmartPipe.Core.PipelineDefinition! definition) -> SmartPipe.Core.PipelineExecutionPlan!
-static SmartPipe.Core.ProcessingEnvelope<T>.FromContext(SmartPipe.Core.ProcessingContext<T>! context, string! pipelineId = "legacy", string! runId = "legacy") -> SmartPipe.Core.ProcessingEnvelope<T>!
-static SmartPipe.Core.ProcessingResult<T>.Failure(SmartPipe.Core.SmartPipeError error, ulong traceId) -> SmartPipe.Core.ProcessingResult<T>
-static SmartPipe.Core.ProcessingResult<T>.implicit operator bool(SmartPipe.Core.ProcessingResult<T> r) -> bool
-static SmartPipe.Core.ProcessingResult<T>.Success(T value, ulong traceId) -> SmartPipe.Core.ProcessingResult<T>
 static SmartPipe.Core.SecretScanner.HasSecrets(string! content) -> bool
 static SmartPipe.Core.SecretScanner.Redact(string! content) -> string!
 static SmartPipe.Core.StageFailureOptions.Default.get -> SmartPipe.Core.StageFailureOptions!
 static SmartPipe.Core.StageResult<T>.Cancelled() -> SmartPipe.Core.StageResult<T>
 static SmartPipe.Core.StageResult<T>.Failure(SmartPipe.Core.SmartPipeError error) -> SmartPipe.Core.StageResult<T>
 static SmartPipe.Core.StageResult<T>.Filtered() -> SmartPipe.Core.StageResult<T>
-static SmartPipe.Core.StageResult<T>.FromProcessingResult(SmartPipe.Core.ProcessingResult<T> result) -> SmartPipe.Core.StageResult<T>
 static SmartPipe.Core.StageResult<T>.Success(T value) -> SmartPipe.Core.StageResult<T>
 static SmartPipe.Core.StageResult<T>.TimedOut(SmartPipe.Core.SmartPipeError error) -> SmartPipe.Core.StageResult<T>
 virtual SmartPipe.Core.BackpressureStrategy.ThrottleAsync(int currentSize, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
@@ -717,9 +507,6 @@ SmartPipe.Core.PipelineRuntimeOptions.OutputFullMode.init -> void
 SmartPipe.Core.PipelineRuntimeOptions.PipelineRuntimeOptions() -> void
 static SmartPipe.Core.ProcessingEnvelope<T>.Create(T payload) -> SmartPipe.Core.ProcessingEnvelope<T>!
 static SmartPipe.Core.ProcessingEnvelope<T>.Create(T payload, string! pipelineId, string! runId, ulong traceId, SmartPipe.Core.MetadataBag? metadata = null, System.DateTimeOffset? createdAtUtc = null) -> SmartPipe.Core.ProcessingEnvelope<T>!
-static SmartPipe.Core.ProcessingEnvelope<T>.FromContext(SmartPipe.Core.ProcessingContext<T>! context) -> SmartPipe.Core.ProcessingEnvelope<T>!
-static SmartPipe.Core.ProcessingEnvelope<T>.FromContext(SmartPipe.Core.ProcessingContext<T>! context, string! pipelineId) -> SmartPipe.Core.ProcessingEnvelope<T>!
-static SmartPipe.Core.ProcessingEnvelope<T>.FromContext(SmartPipe.Core.ProcessingContext<T>! context, SmartPipe.Core.IPipelineClock! clock, string! pipelineId, string! runId) -> SmartPipe.Core.ProcessingEnvelope<T>!
 SmartPipe.Core.SystemPipelineClock
 SmartPipe.Core.SystemPipelineClock.GetElapsedTime(long startingTimestamp, long endingTimestamp) -> System.TimeSpan
 SmartPipe.Core.SystemPipelineClock.GetTimestamp() -> long

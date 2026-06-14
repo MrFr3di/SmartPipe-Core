@@ -8,10 +8,10 @@ namespace SmartPipe.Extensions.Transforms;
 /// <summary>
 /// Transformer wrapper that applies <see cref="ResiliencePipeline"/> to transform operations.
 /// Supports Retry, Circuit Breaker, Timeout, and other resilience strategies via Polly.
-/// Implements <see cref="ITransformer{T, T}"/> for pipeline integration.
+/// Implements <see cref="IPipelineTransformer{TInput, TOutput}"/> for pipeline integration.
 /// </summary>
 /// <typeparam name="T">The data type.</typeparam>
-public class PollyResilienceTransform<T> : ITransformer<T, T>
+public class PollyResilienceTransform<T> : IPipelineTransformer<T, T>
 {
     private readonly ResiliencePipeline _pipeline;
     private readonly ILogger<PollyResilienceTransform<T>>? _logger;
@@ -32,24 +32,24 @@ public class PollyResilienceTransform<T> : ITransformer<T, T>
     }
 
     /// <inheritdoc/>
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc/>
-    public async ValueTask<ProcessingResult<T>> TransformAsync(
-        ProcessingContext<T> ctx,
+    public async ValueTask<StageResult<T>> TransformAsync(
+        ProcessingEnvelope<T> envelope,
         CancellationToken ct = default
     )
     {
         try
         {
             var result = await _pipeline.ExecuteAsync(
-                static (ctx, ct) =>
-                    ValueTask.FromResult(ProcessingResult<T>.Success(ctx.Payload, ctx.TraceId)),
-                ctx,
+                static (envelope, ct) =>
+                    ValueTask.FromResult(StageResult<T>.Success(envelope.Payload)),
+                envelope,
                 ct
             );
 
-            _logger?.LogDebug("Polly transform succeeded for TraceId: {TraceId}", ctx.TraceId);
+            _logger?.LogDebug("Polly transform succeeded for TraceId: {TraceId}", envelope.TraceId);
             return result;
         }
         catch (Polly.Timeout.TimeoutRejectedException ex)
@@ -57,16 +57,15 @@ public class PollyResilienceTransform<T> : ITransformer<T, T>
             _logger?.LogWarning(
                 ex,
                 "Polly transform timed out for TraceId: {TraceId}",
-                ctx.TraceId
+                envelope.TraceId
             );
-            return ProcessingResult<T>.Failure(
+            return StageResult<T>.Failure(
                 new SmartPipeError(
                     $"Polly timeout: {ex.Message}",
                     ErrorType.Transient,
                     "Resilience",
                     ex
-                ),
-                ctx.TraceId
+                )
             );
         }
         catch (BrokenCircuitException ex)
@@ -74,33 +73,31 @@ public class PollyResilienceTransform<T> : ITransformer<T, T>
             _logger?.LogWarning(
                 ex,
                 "Polly circuit breaker opened for TraceId: {TraceId}",
-                ctx.TraceId
+                envelope.TraceId
             );
-            return ProcessingResult<T>.Failure(
+            return StageResult<T>.Failure(
                 new SmartPipeError(
                     $"Polly circuit breaker: {ex.Message}",
                     ErrorType.Transient,
                     "Resilience",
                     ex
-                ),
-                ctx.TraceId
+                )
             );
         }
         catch (InvalidOperationException ex)
         {
-            _logger?.LogError(ex, "Polly transform failed for TraceId: {TraceId}", ctx.TraceId);
-            return ProcessingResult<T>.Failure(
+            _logger?.LogError(ex, "Polly transform failed for TraceId: {TraceId}", envelope.TraceId);
+            return StageResult<T>.Failure(
                 new SmartPipeError(
                     $"Polly pipeline error: {ex.Message}",
                     ErrorType.Permanent,
                     "Resilience",
                     ex
-                ),
-                ctx.TraceId
+                )
             );
         }
     }
 
     /// <inheritdoc/>
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

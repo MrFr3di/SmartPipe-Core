@@ -14,7 +14,7 @@ public class JsonTransformTests
     public async Task Transform_ValidObject_ShouldSerializeAndDeserialize()
     {
         var transform = new JsonTransform<TestInput, TestOutput>();
-        var ctx = new ProcessingContext<TestInput>(new TestInput { Name = "John", Age = 30 });
+        var ctx = ProcessingEnvelope<TestInput>.Create(new TestInput { Name = "John", Age = 30 });
 
         var result = await transform.TransformAsync(ctx);
 
@@ -29,7 +29,7 @@ public class JsonTransformTests
         var transform = new JsonTransform<AotJsonInput, AotJsonOutput>(
             JsonTransformTestJsonContext.Default.AotJsonInput,
             JsonTransformTestJsonContext.Default.AotJsonOutput);
-        var ctx = new ProcessingContext<AotJsonInput>(new AotJsonInput("Jane", 31));
+        var ctx = ProcessingEnvelope<AotJsonInput>.Create(new AotJsonInput("Jane", 31));
 
         var result = await transform.TransformAsync(ctx);
 

@@ -29,8 +29,9 @@ public sealed class TypedPipelineDrainTests
 
         // Act: drain while first item is still stuck in the barrier.
         var drainTask = run.DrainAsync(TimeSpan.FromSeconds(5)).AsTask();
-        await Task.Delay(100);
-        drainTask.IsCompleted.Should().BeFalse(
+        Func<Task> waitForDrainBeforeRelease = async () =>
+            await drainTask.WaitAsync(TimeSpan.FromMilliseconds(150));
+        await waitForDrainBeforeRelease.Should().ThrowAsync<TimeoutException>(
             "graceful drain must wait for already accepted work to complete");
 
         // Assert: DrainAsync has requested drain — first accepted item must still complete.
@@ -134,11 +135,10 @@ public sealed class TypedPipelineDrainTests
         // Start drain — but source is blocked on MoveNextAsync for item 2.
         var drainTask = run.DrainAsync(TimeSpan.FromSeconds(10)).AsTask();
 
-        // Give it a moment to reach the drain state.
-        await Task.Delay(100);
-
         // Source still hasn't completed MoveNextAsync, so drain should still be running.
-        drainTask.IsCompleted.Should().BeFalse(
+        Func<Task> waitForDrainBeforeSourceRelease = async () =>
+            await drainTask.WaitAsync(TimeSpan.FromMilliseconds(150));
+        await waitForDrainBeforeSourceRelease.Should().ThrowAsync<TimeoutException>(
             "drain cannot complete while source is blocked inside MoveNextAsync");
 
         // Release the source so it can continue.
@@ -184,11 +184,48 @@ public sealed class TypedPipelineDrainTests
     }
 
     [Fact]
+    public async Task DrainAsync_WithBufferedInput_ShouldCompleteAcceptedBufferedItems()
+    {
+        var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new ThresholdDrainSource<int>(
+            Enumerable.Range(1, 10),
+            emittedThreshold: 6);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new BarrierTransformer<int, int>(barrier))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxConcurrency = 2,
+                InputCapacity = 3,
+            })
+            .Run();
+
+        await source.ThresholdReached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var drainTask = run.DrainAsync(TimeSpan.FromSeconds(5)).AsTask();
+        Func<Task> waitForDrainBeforeRelease = async () =>
+            await drainTask.WaitAsync(TimeSpan.FromMilliseconds(150));
+        await waitForDrainBeforeRelease.Should().ThrowAsync<TimeoutException>(
+            "drain must finish accepted buffered work before completing");
+
+        barrier.TrySetResult();
+
+        await drainTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        outputs.Select(output => output.Result.Value).Should().BeEquivalentTo(Enumerable.Range(1, 6));
+        source.EmittedCount.Should().Be(6,
+            "source-boundary drain must stop before requesting additional source items");
+    }
+
+    [Fact]
     public async Task DrainAsync_WithCancellation_ShouldRespectCancellationToken()
     {
-        var neverComplete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         int moveNextAttempts = 0;
-        var source = new NeverCompletingSource<int>(neverComplete, () => Interlocked.Increment(ref moveNextAttempts));
+        var source = new GateAfterFirstSource<int>(gate, () => Interlocked.Increment(ref moveNextAttempts), 1, 2);
 
         var run = PipelineBuilder
             .From(source)
@@ -196,13 +233,14 @@ public sealed class TypedPipelineDrainTests
             .Run();
 
         await source.FirstItemYielded.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await source.SecondMoveNextEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
         var act = async () => await run.DrainAsync(TimeSpan.FromSeconds(30), cts.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
 
-        neverComplete.TrySetResult();
+        gate.TrySetResult();
     }
 
     [Fact]
@@ -367,6 +405,50 @@ internal sealed class CompletionSignalingSource<T> : IPipelineSource<T>
         }
 
         Completed.TrySetResult();
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+internal sealed class ThresholdDrainSource<T> : IPipelineSource<T>
+{
+    private readonly ProcessingEnvelope<T>[] _items;
+    private readonly int _emittedThreshold;
+    private int _emittedCount;
+
+    public ThresholdDrainSource(IEnumerable<T> payloads, int emittedThreshold)
+    {
+        _emittedThreshold = emittedThreshold;
+        _items = payloads
+            .Select((payload, index) =>
+                ProcessingEnvelope<T>.Create(
+                    payload,
+                    "source-pipeline",
+                    "source-run",
+                    (ulong)(index + 1)))
+            .ToArray();
+    }
+
+    public TaskCompletionSource ThresholdReached { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public int EmittedCount => Volatile.Read(ref _emittedCount);
+
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+    public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        foreach (var item in _items)
+        {
+            ct.ThrowIfCancellationRequested();
+            var emitted = Interlocked.Increment(ref _emittedCount);
+            if (emitted >= _emittedThreshold)
+                ThresholdReached.TrySetResult();
+
+            yield return item;
+            await Task.Yield();
+        }
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

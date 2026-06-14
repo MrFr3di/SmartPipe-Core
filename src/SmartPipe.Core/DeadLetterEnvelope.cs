@@ -6,8 +6,8 @@ namespace SmartPipe.Core;
 /// <summary>Replay-safe dead-letter record that preserves original payload and runtime context.</summary>
 /// <typeparam name="T">Original payload type.</typeparam>
 /// <remarks>
-/// <see cref="ProcessingResult{T}"/> is not sufficient for replay because failed results do not
-/// carry the original payload. Dead-letter sinks should persist this envelope format for new data.
+/// Pipeline failure results are not sufficient for replay because they do not carry the original
+/// payload. Dead-letter sinks should persist this envelope format.
 /// </remarks>
 public sealed record DeadLetterEnvelope<T>
 {

@@ -90,38 +90,4 @@ public readonly record struct StageResult<T>
     public static StageResult<T> TimedOut(SmartPipeError error) =>
         new(StageResultKind.TimedOut, default, error);
 
-    /// <summary>Converts a legacy processing result to a stage result.</summary>
-    /// <param name="result">Legacy result.</param>
-    /// <returns>A stage result with equivalent success or failure information.</returns>
-    public static StageResult<T> FromProcessingResult(ProcessingResult<T> result)
-    {
-        if (result.IsSuccess)
-            return Success(result.Value!);
-
-        if (result.Error?.Category == "Filtered")
-            return Filtered();
-
-        return Failure(
-            result.Error ?? new SmartPipeError("Unknown stage failure", ErrorType.Permanent)
-        );
-    }
-
-    /// <summary>Converts this stage result to a legacy processing result.</summary>
-    /// <param name="traceId">Trace identifier for the legacy result.</param>
-    /// <returns>A legacy processing result.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when the stage result is invalid.</exception>
-    public ProcessingResult<T> ToProcessingResult(ulong traceId)
-    {
-        if (!IsValid)
-            throw new InvalidOperationException(
-                "default(StageResult<T>) is invalid. Use StageResult factory methods."
-            );
-
-        return IsSuccess
-            ? ProcessingResult<T>.Success(Value!, traceId)
-            : ProcessingResult<T>.Failure(
-                Error ?? new SmartPipeError(Kind.ToString(), ErrorType.Permanent, Kind.ToString()),
-                traceId
-            );
-    }
 }

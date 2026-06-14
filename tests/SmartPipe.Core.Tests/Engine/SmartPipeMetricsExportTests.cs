@@ -37,22 +37,26 @@ public class SmartPipeMetricsExportTests
             "items_failed",
             "duplicates_filtered",
             "retries",
+            "items_dead_lettered",
             "avg_latency_ms",
+            "last_stage_latency_ms",
             "smooth_latency_ms",
             "smooth_throughput",
             "queue_size",
+            "input_queue_depth",
+            "output_queue_depth",
             "pool_hit_rate",
+            "last_processed_at_utc",
         ]);
     }
 
     [Fact]
     public void SmartPipeMetricsSnapshot_Export_ShouldMatchSampledView()
     {
-        var metrics = new SmartPipeMetrics
-        {
-            QueueSize = 7,
-            PoolHitRate = 0.5,
-        };
+        var metrics = new SmartPipeMetrics();
+        metrics.UpdateQueueSize(7);
+        metrics.RecordPoolHitRate(0.5);
+
         metrics.RecordProcessed(25.0);
         metrics.RecordRetry();
 
@@ -80,7 +84,7 @@ public class SmartPipeMetricsExportTests
                     metrics.RecordFailed();
                     metrics.RecordDuplicate();
                     metrics.RecordRetry();
-                    metrics.QueueSize++;
+                    metrics.UpdateQueueSize(i);
                     metrics.RecordPoolHitRate(0.5);
                 }
             }))
@@ -106,16 +110,21 @@ public class SmartPipeMetricsExportTests
     }
 
     private static bool HasExpectedShape(Dictionary<string, object> export) =>
-        export.Count == 9
+        export.Count == 14
         && export.TryGetValue("items_processed", out var itemsProcessed) && itemsProcessed is long
         && export.TryGetValue("items_failed", out var itemsFailed) && itemsFailed is long
         && export.TryGetValue("duplicates_filtered", out var duplicatesFiltered) && duplicatesFiltered is long
         && export.TryGetValue("retries", out var retries) && retries is long
+        && export.TryGetValue("items_dead_lettered", out var itemsDeadLettered) && itemsDeadLettered is long
         && export.TryGetValue("avg_latency_ms", out var avgLatencyMs) && avgLatencyMs is double
+        && export.TryGetValue("last_stage_latency_ms", out var lastStageLatencyMs) && lastStageLatencyMs is double
         && export.TryGetValue("smooth_latency_ms", out var smoothLatencyMs) && smoothLatencyMs is double
         && export.TryGetValue("smooth_throughput", out var smoothThroughput) && smoothThroughput is double
         && export.TryGetValue("queue_size", out var queueSize) && queueSize is int
-        && export.TryGetValue("pool_hit_rate", out var poolHitRate) && poolHitRate is double;
+        && export.TryGetValue("input_queue_depth", out var inputQueueDepth) && inputQueueDepth is int
+        && export.TryGetValue("output_queue_depth", out var outputQueueDepth) && outputQueueDepth is int
+        && export.TryGetValue("pool_hit_rate", out var poolHitRate) && poolHitRate is double
+        && export.TryGetValue("last_processed_at_utc", out var lastProcessedAtUtc) && lastProcessedAtUtc is string;
 
     [Fact]
     public void ExportJson_ShouldReturnValidJson()

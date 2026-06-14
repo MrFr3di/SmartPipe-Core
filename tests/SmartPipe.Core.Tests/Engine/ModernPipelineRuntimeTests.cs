@@ -32,6 +32,30 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
+    public async Task TypedRuntime_ComponentSplit_BasicSourceTransformSinkStillWorks()
+    {
+        var source = new EnvelopeSource<int>(1, 2, 3);
+        var sink = new EnvelopeCollectingSink<string>();
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new EnvelopeTransformer<int, double>(x => x + 0.5))
+            .Transform(
+                new EnvelopeTransformer<double, string>(x =>
+                    x.ToString(CultureInfo.InvariantCulture)
+                )
+            )
+            .To(sink);
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Select(x => x.Result.Value).Should().Equal("1.5", "2.5", "3.5");
+        outputs.Should().OnlyContain(x => x.Envelope != null);
+        sink.Payloads.Should().Equal("1.5", "2.5", "3.5");
+    }
+
+    [Fact]
     public async Task PipelineBuilder_ModernApi_ShouldPreserveTraceAndMetadata()
     {
         var source = new EnvelopeSource<int>(
@@ -148,7 +172,7 @@ public class ModernPipelineRuntimeTests
     {
         var observer = new RecordingObserver();
         var run = PipelineBuilder
-            .From(new EnvelopeSource<int>(1))
+            .From(new EnvelopeSource<int>(1, 2))
             .Transform(
                 new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture))
             )
@@ -1516,7 +1540,7 @@ public class ModernPipelineRuntimeTests
         var observer = new RecordingObserver();
 
         var run = PipelineBuilder
-            .From(new EnvelopeSource<int>(1))
+            .From(new EnvelopeSource<int>(1, 2))
             .Transform(
                 new FlakyStageTransformer<int, string>(
                     failuresBeforeSuccess: 999,
@@ -1540,7 +1564,7 @@ public class ModernPipelineRuntimeTests
         await run.Completion;
 
         observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().ContainSingle();
-        outputs.Should().ContainSingle();
+        outputs.Should().HaveCount(2);
         outputs.Should().OnlyContain(o => !o.Result.IsSuccess);
     }
 
@@ -1619,6 +1643,7 @@ public class ModernPipelineRuntimeTests
                         FailureThreshold = 1,
                         BreakDuration = TimeSpan.FromMinutes(5),
                     },
+                    Retry = new RetryPolicy(1, TimeSpan.Zero),
                     OnPermanentFailure = FailureAction.Skip,
                     OnRetryExhausted = FailureAction.DeadLetter,
                 },
@@ -1630,18 +1655,25 @@ public class ModernPipelineRuntimeTests
         var outputs = await ReadOutputsAsync(run.Outputs);
         await run.Completion;
 
-        outputs.Should().ContainSingle(o => !o.Result.IsSuccess);
-        observer.Events.OfType<DeadLetterWrittenEvent>().Should().ContainSingle();
+        outputs.Should().HaveCount(2);
+        outputs.Should().OnlyContain(o => !o.Result.IsSuccess);
+        observer.Events.OfType<DeadLetterWrittenEvent>().Should().HaveCount(2);
 
         stream.Position = 0;
         var deadLetters = new List<DeadLetterEnvelope<int>>();
         await foreach (var envelope in serializer.ReadAsync(stream))
             deadLetters.Add(envelope);
 
-        deadLetters.Should().ContainSingle();
-        deadLetters.Single().OriginalPayload.Should().Be(2);
-        deadLetters.Single().Error.Type.Should().Be(ErrorType.Transient);
-        deadLetters.Single().Error.Category.Should().Be("CircuitBreaker");
+        deadLetters.Should().HaveCount(2);
+        deadLetters.Select(x => x.OriginalPayload).Should().Equal(1, 2);
+        deadLetters.Should().Contain(x =>
+            x.OriginalPayload == 1
+            && x.Error.Type == ErrorType.Permanent
+            && x.Error.Category == "TestFailure");
+        deadLetters.Should().Contain(x =>
+            x.OriginalPayload == 2
+            && x.Error.Type == ErrorType.Transient
+            && x.Error.Category == "CircuitBreaker");
     }
 
     [Fact]
@@ -1660,6 +1692,7 @@ public class ModernPipelineRuntimeTests
                         FailureThreshold = 1,
                         BreakDuration = TimeSpan.FromMinutes(5),
                     },
+                    Retry = new RetryPolicy(1, TimeSpan.Zero),
                     OnPermanentFailure = FailureAction.Skip,
                     OnRetryExhausted = FailureAction.EmitFailureResult,
                 }
@@ -1671,7 +1704,8 @@ public class ModernPipelineRuntimeTests
         await run.Completion;
 
         observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().ContainSingle();
-        outputs.Should().ContainSingle(o =>
+        outputs.Should().HaveCount(2);
+        outputs.Should().Contain(o =>
             !o.Result.IsSuccess
             && o.Result.Error!.Value.Type == ErrorType.Transient
             && o.Result.Error.Value.Category == "CircuitBreaker");
@@ -1705,9 +1739,9 @@ public class ModernPipelineRuntimeTests
         _ = await ReadOutputsAsync(run.Outputs);
         await run.Completion;
 
-        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCount(3);
-        observer.Events.OfType<RetryScheduledEvent>().Should().HaveCount(2);
-        observer.Events.OfType<RetryExhaustedEvent>().Should().ContainSingle();
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().ContainSingle();
+        observer.Events.OfType<RetryScheduledEvent>().Should().BeEmpty();
+        observer.Events.OfType<RetryExhaustedEvent>().Should().HaveCount(2);
     }
 
     [Fact]
@@ -1810,17 +1844,17 @@ public class ModernPipelineRuntimeTests
         await run.Completion;
 
         // Item 1: 3 attempts (initial + 2 retries), all fail with Transient errors.
-        // Breaker opens on 3rd failure. Item 1 exhausted and skipped.
-        // Item 2: rejected by open breaker.
-        // If only terminal results were counted, breaker would not open (only 1 exhaustion from item 1).
-        // The fact it opens proves per-attempt (including retry) failures are recorded.
+        // Breaker opens on 3rd failure. Item 1 is terminal and skipped.
+        // Item 2: rejected once by open breaker. Open-breaker rejection is terminal
+        // and does not schedule additional retry attempts.
         outputs.Should().BeEmpty();
         observer.Events.OfType<CircuitBreakerOpenedEvent>().Should().ContainSingle();
-        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCount(3); // Item 2 initial + 2 retries
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().ContainSingle();
+        observer.Events.OfType<RetryScheduledEvent>().Should().HaveCount(2);
     }
 
     [Fact]
-    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldRetryRejectedOpenBreakerWithinBudget()
+    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldNotRetryRejectedOpenBreakerWithinBudget()
     {
         var observer = new RecordingObserver();
         var failingTransformer = new FlakyStageTransformer<int, string>(
@@ -1849,10 +1883,10 @@ public class ModernPipelineRuntimeTests
         _ = await ReadOutputsAsync(run.Outputs);
         await run.Completion;
 
-        // Item 1 fails (1 failure), retry fails (2 failures → breaker opens on 2nd failure).
-        // Items 2-4 are rejected as transient and retried once, then exhausted.
-        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCount(6);
-        observer.Events.OfType<RetryScheduledEvent>().Should().HaveCount(4);
+        // Item 1 fails (1 failure), retry fails (2 failures -> breaker opens on 2nd failure).
+        // Items 2-4 are rejected as transient terminal failures and are not retried.
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().HaveCount(3);
+        observer.Events.OfType<RetryScheduledEvent>().Should().ContainSingle();
     }
 
     [Fact]

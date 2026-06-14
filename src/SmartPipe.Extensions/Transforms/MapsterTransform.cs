@@ -6,11 +6,11 @@ namespace SmartPipe.Extensions.Transforms;
 /// <summary>
 /// Object-to-object mapping transformer using Mapster.
 /// Maps <typeparamref name="TInput"/> to <typeparamref name="TOutput"/> with high-performance code generation.
-/// Implements <see cref="ITransformer{TInput, TOutput}"/> for pipeline integration.
+/// Implements <see cref="IPipelineTransformer{TInput, TOutput}"/> for pipeline integration.
 /// </summary>
 /// <typeparam name="TInput">The source type to map from.</typeparam>
 /// <typeparam name="TOutput">The destination type to map to.</typeparam>
-public class MapsterTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
+public class MapsterTransform<TInput, TOutput> : IPipelineTransformer<TInput, TOutput>
 {
     private readonly TypeAdapterConfig? _config;
 
@@ -24,11 +24,11 @@ public class MapsterTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
     }
 
     /// <inheritdoc/>
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc/>
-    public ValueTask<ProcessingResult<TOutput>> TransformAsync(
-        ProcessingContext<TInput> ctx,
+    public ValueTask<StageResult<TOutput>> TransformAsync(
+        ProcessingEnvelope<TInput> envelope,
         CancellationToken ct = default
     )
     {
@@ -36,27 +36,26 @@ public class MapsterTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
         {
             var result =
                 _config != null
-                    ? ctx.Payload.Adapt<TOutput>(_config)
-                    : ctx.Payload.Adapt<TOutput>();
+                    ? envelope.Payload.Adapt<TOutput>(_config)
+                    : envelope.Payload.Adapt<TOutput>();
 
-            return ValueTask.FromResult(ProcessingResult<TOutput>.Success(result, ctx.TraceId));
+            return ValueTask.FromResult(StageResult<TOutput>.Success(result));
         }
         catch (InvalidOperationException ex)
         {
             return ValueTask.FromResult(
-                ProcessingResult<TOutput>.Failure(
+                StageResult<TOutput>.Failure(
                     new SmartPipeError(
                         $"Mapster mapping error: {ex.Message}",
                         ErrorType.Permanent,
                         "Mapping",
                         ex
-                    ),
-                    ctx.TraceId
+                    )
                 )
             );
         }
     }
 
     /// <inheritdoc/>
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

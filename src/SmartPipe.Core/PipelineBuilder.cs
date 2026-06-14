@@ -1,18 +1,10 @@
 #nullable enable
 
-using System.Threading.Channels;
-
 namespace SmartPipe.Core;
 
 /// <summary>Fluent API for declarative pipeline construction.</summary>
 public static class PipelineBuilder
 {
-    /// <summary>Start building from a legacy source.</summary>
-    /// <typeparam name="T">Payload type emitted by the source.</typeparam>
-    /// <param name="source">Legacy source instance.</param>
-    /// <returns>A pipeline builder.</returns>
-    public static PipelineBuilder<T> From<T>(ISource<T> source) => new(source);
-
     /// <summary>Start building from an envelope-aware source.</summary>
     /// <typeparam name="T">Payload type emitted by the source.</typeparam>
     /// <param name="source">Envelope-aware source instance.</param>
@@ -35,14 +27,11 @@ public static class PipelineBuilder
 /// <typeparam name="TInput">Initial source payload type.</typeparam>
 public class PipelineBuilder<TInput>
 {
-    private readonly ISource<TInput>? _source;
     private readonly IPipelineSource<TInput>? _modernSource;
     private readonly Func<IServiceProvider?, IPipelineSource<TInput>>? _modernSourceFactory;
     private readonly IServiceProvider? _serviceProvider;
     private string? _pipelineId;
     private PipelineRuntimeOptions? _runtimeOptions;
-
-    internal PipelineBuilder(ISource<TInput> source) => _source = source;
 
     internal PipelineBuilder(IPipelineSource<TInput> source) => _modernSource = source;
 
@@ -79,25 +68,6 @@ public class PipelineBuilder<TInput>
         return this;
     }
 
-    /// <summary>Add a transformer (ITransformer).</summary>
-    /// <typeparam name="TOutput">Transformer output type.</typeparam>
-    /// <param name="transformer">Legacy transformer instance.</param>
-    /// <returns>A pipeline builder with configured input and output types.</returns>
-    public PipelineBuilder<TInput, TOutput> Transform<TOutput>(
-        ITransformer<TInput, TOutput> transformer
-    )
-    {
-        var channel = new SmartPipeChannel<TInput, TOutput>();
-        channel.AddSource(
-            _source
-                ?? throw new InvalidOperationException(
-                    "Legacy transformers require a legacy source. Use IPipelineTransformer for envelope-aware sources."
-                )
-        );
-        channel.AddTransformer(transformer);
-        return new PipelineBuilder<TInput, TOutput>(channel);
-    }
-
     /// <summary>Adds an envelope-aware transformer as the first typed stage.</summary>
     /// <typeparam name="TOutput">Transformer output payload type.</typeparam>
     /// <param name="transformer">Envelope-aware transformer.</param>
@@ -112,11 +82,8 @@ public class PipelineBuilder<TInput>
     {
         var source =
             _modernSource
-            ?? new LegacySourceAdapter<TInput>(
-                _source
-                    ?? throw new InvalidOperationException(
-                        "A source is required before adding a transformer."
-                    )
+            ?? throw new InvalidOperationException(
+                "A typed source is required before adding a transformer."
             );
         var spec = new TypedPipelineSpec<TInput, TInput>(
             _pipelineId ?? $"pipeline-{Guid.NewGuid():N}",
@@ -174,7 +141,9 @@ public class PipelineBuilder<TInput>
     /// <returns>A pipeline builder with the same input and output type.</returns>
     public PipelineBuilder<TInput, TInput> Transform(Func<TInput, TInput> middleware)
     {
-        return Transform(new MiddlewareTransformer<TInput>(middleware));
+        ArgumentNullException.ThrowIfNull(middleware);
+        return Transform(PipelineTransformer.FromFunc<TInput, TInput>(
+            (value, ct) => ValueTask.FromResult(middleware(value))));
     }
 }
 
@@ -183,12 +152,9 @@ public class PipelineBuilder<TInput>
 /// <typeparam name="TOutput">Current output payload type.</typeparam>
 public class PipelineBuilder<TInput, TOutput>
 {
-    private readonly SmartPipeChannel<TInput, TOutput>? _channel;
     private readonly TypedPipelineSpec<TInput, TOutput>? _typedSpec;
     private readonly Func<TypedPipelineSpec<TInput, TOutput>>? _typedSpecFactory;
     private readonly IServiceProvider? _serviceProvider;
-
-    internal PipelineBuilder(SmartPipeChannel<TInput, TOutput> channel) => _channel = channel;
 
     internal PipelineBuilder(TypedPipelineSpec<TInput, TOutput> typedSpec) =>
         _typedSpec = typedSpec;
@@ -201,20 +167,6 @@ public class PipelineBuilder<TInput, TOutput>
         _typedSpecFactory =
             typedSpecFactory ?? throw new ArgumentNullException(nameof(typedSpecFactory));
         _serviceProvider = serviceProvider;
-    }
-
-    /// <summary>Add another transformer (same types).</summary>
-    /// <param name="transformer">Legacy transformer instance.</param>
-    /// <returns>The current builder.</returns>
-    public PipelineBuilder<TInput, TOutput> Pipe(ITransformer<TInput, TOutput> transformer)
-    {
-        if (_channel is null)
-            throw new InvalidOperationException(
-                "Legacy Pipe is available only for legacy channel pipelines. Use Transform<TNext>(IPipelineTransformer<TOutput,TNext>) for typed stages."
-            );
-
-        _channel.AddTransformer(transformer);
-        return this;
     }
 
     /// <summary>Adds another envelope-aware typed stage.</summary>
@@ -353,42 +305,13 @@ public class PipelineBuilder<TInput, TOutput>
         return new PipelineBuilder<TInput, TOutput>(_typedSpec.WithRuntimeOptions(options));
     }
 
-    /// <summary>Configure channel options.</summary>
-    /// <param name="configure">Configuration delegate.</param>
-    /// <returns>The current builder.</returns>
-    public PipelineBuilder<TInput, TOutput> WithOptions(Action<SmartPipeChannelOptions> configure)
-    {
-        if (_channel is null)
-            throw new InvalidOperationException(
-                "SmartPipeChannelOptions are available only for legacy channel pipelines in 1.1.0."
-            );
-
-        configure(_channel.Options);
-        return this;
-    }
-
-    /// <summary>Add a sink and run the pipeline.</summary>
-    /// <param name="sink">Legacy sink instance.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>A task that completes when the pipeline stops.</returns>
-    public async Task To(ISink<TOutput> sink, CancellationToken ct = default)
-    {
-        if (_channel is null)
-            throw new InvalidOperationException(
-                "Legacy sinks require a legacy channel pipeline. Use To(IPipelineSink<TOutput>) for envelope-aware pipelines."
-            );
-
-        _channel.AddSink(sink);
-        await _channel.RunAsync(ct).ConfigureAwait(false);
-    }
-
     /// <summary>Starts the envelope-aware pipeline without an attached sink.</summary>
     /// <param name="ct">Cancellation token linked to the run.</param>
     /// <returns>A single-use pipeline run handle.</returns>
     public PipelineRun<TOutput> Run(CancellationToken ct = default)
     {
         if (_typedSpec is null && _typedSpecFactory is null)
-            return RunLegacyAsPipelineRun(ct);
+            throw new InvalidOperationException("No typed pipeline has been configured.");
 
         return StartTypedRun(null, sinkIsFactoryBased: false, ct);
     }
@@ -447,44 +370,4 @@ public class PipelineBuilder<TInput, TOutput>
         return executor.Start();
     }
 
-    private PipelineRun<TOutput> RunLegacyAsPipelineRun(CancellationToken ct)
-    {
-        if (_channel is null)
-            throw new InvalidOperationException("No pipeline has been configured.");
-
-        var legacyReader = _channel.RunInBackground(ct);
-        var outputChannel = Channel.CreateUnbounded<PipelineOutput<TOutput>>();
-        var completion = Task.Run(
-            async () =>
-            {
-                try
-                {
-                    await foreach (
-                        var result in legacyReader.ReadAllAsync(ct).ConfigureAwait(false)
-                    )
-                    {
-                        var output = new PipelineOutput<TOutput>(null, result);
-                        await outputChannel.Writer.WriteAsync(output, ct).ConfigureAwait(false);
-                    }
-
-                    outputChannel.Writer.TryComplete();
-                }
-                catch (Exception ex)
-                {
-                    outputChannel.Writer.TryComplete(ex);
-                    throw;
-                }
-            },
-            CancellationToken.None
-        );
-
-        return new PipelineRun<TOutput>(
-            outputChannel.Reader,
-            completion,
-            () =>
-                completion.IsCompletedSuccessfully
-                    ? PipelineRunState.Completed
-                    : PipelineRunState.Running
-        );
-    }
 }

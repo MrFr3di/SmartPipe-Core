@@ -1,27 +1,85 @@
 #nullable enable
 
 using System.Buffers;
-using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Text;
 using System.Text.Json;
 
 namespace SmartPipe.Core;
 
-/// <summary>
-/// Observational, point-in-time sample of <see cref="SmartPipeMetrics"/> values.
-/// </summary>
-/// <remarks>
-/// The snapshot is safe for export and reporting, but it is not a transactional synchronization
-/// primitive and does not coordinate concurrent pipeline updates.
-/// </remarks>
-public sealed class SmartPipeMetricsSnapshot
+/// <summary>Meter instruments published by SmartPipe runtime metrics.</summary>
+public static class SmartPipeMeter
 {
-    internal SmartPipeMetricsSnapshot(
+    /// <summary>Canonical meter name for SmartPipe.Core.</summary>
+    public const string Name = "SmartPipe.Core";
+
+    internal static readonly Meter Meter = new(
+        Name,
+        typeof(SmartPipeMeter).Assembly.GetName().Version?.ToString() ?? "1.0.0"
+    );
+
+    internal static readonly Counter<long> ItemsProcessedCounter = Meter.CreateCounter<long>(
+        "smartpipe.items.processed",
+        "items"
+    );
+
+    internal static readonly Counter<long> ItemsFailedCounter = Meter.CreateCounter<long>(
+        "smartpipe.items.failed",
+        "items"
+    );
+
+    internal static readonly Counter<long> ItemsRetriedCounter = Meter.CreateCounter<long>(
+        "smartpipe.retries",
+        "retries"
+    );
+
+    internal static readonly Counter<long> ItemsDeadLetteredCounter = Meter.CreateCounter<long>(
+        "smartpipe.items.dead_lettered",
+        "items"
+    );
+
+    internal static readonly Counter<long> DuplicatesFilteredCounter = Meter.CreateCounter<long>(
+        "smartpipe.duplicates.filtered",
+        "items"
+    );
+
+    internal static readonly Histogram<double> StageLatencyHistogram = Meter.CreateHistogram<double>(
+        "smartpipe.latency",
+        "ms"
+    );
+}
+
+/// <summary>Immutable point-in-time sample of SmartPipe metric values.</summary>
+public sealed record SmartPipeMetricsSnapshot
+{
+    /// <summary>Gets an empty immutable metrics snapshot.</summary>
+    public static SmartPipeMetricsSnapshot Empty { get; } = new(
+        itemsProcessed: 0,
+        itemsFailed: 0,
+        itemsRetried: 0,
+        itemsDeadLettered: 0,
+        inputQueueDepth: 0,
+        outputQueueDepth: 0,
+        lastStageLatencyMs: 0,
+        lastProcessedAtUtc: null,
+        duplicatesFiltered: 0,
+        avgLatencyMs: 0,
+        smoothLatencyMs: 0,
+        smoothThroughput: 0,
+        queueSize: 0,
+        poolHitRate: 0);
+
+    /// <summary>Create an immutable point-in-time sample of SmartPipe metric values.</summary>
+    public SmartPipeMetricsSnapshot(
         long itemsProcessed,
         long itemsFailed,
+        long itemsRetried,
+        long itemsDeadLettered,
+        int inputQueueDepth,
+        int outputQueueDepth,
+        double lastStageLatencyMs,
+        DateTimeOffset? lastProcessedAtUtc,
         long duplicatesFiltered,
-        long retries,
         double avgLatencyMs,
         double smoothLatencyMs,
         double smoothThroughput,
@@ -30,8 +88,13 @@ public sealed class SmartPipeMetricsSnapshot
     {
         ItemsProcessed = itemsProcessed;
         ItemsFailed = itemsFailed;
+        ItemsRetried = itemsRetried;
+        ItemsDeadLettered = itemsDeadLettered;
+        InputQueueDepth = inputQueueDepth;
+        OutputQueueDepth = outputQueueDepth;
+        LastStageLatencyMs = lastStageLatencyMs;
+        LastProcessedAtUtc = lastProcessedAtUtc;
         DuplicatesFiltered = duplicatesFiltered;
-        Retries = retries;
         AvgLatencyMs = avgLatencyMs;
         SmoothLatencyMs = smoothLatencyMs;
         SmoothThroughput = smoothThroughput;
@@ -45,11 +108,26 @@ public sealed class SmartPipeMetricsSnapshot
     /// <summary>Total items that failed processing in the sampled view.</summary>
     public long ItemsFailed { get; }
 
+    /// <summary>Total retry attempts made in the sampled view.</summary>
+    public long ItemsRetried { get; }
+
+    /// <summary>Total items written to dead-letter handling in the sampled view.</summary>
+    public long ItemsDeadLettered { get; }
+
+    /// <summary>Current input queue depth in the sampled view.</summary>
+    public int InputQueueDepth { get; }
+
+    /// <summary>Current output queue depth in the sampled view.</summary>
+    public int OutputQueueDepth { get; }
+
+    /// <summary>Most recent stage latency in milliseconds in the sampled view.</summary>
+    public double LastStageLatencyMs { get; }
+
+    /// <summary>Last successful processed timestamp in the sampled view.</summary>
+    public DateTimeOffset? LastProcessedAtUtc { get; }
+
     /// <summary>Total duplicate items filtered out in the sampled view.</summary>
     public long DuplicatesFiltered { get; }
-
-    /// <summary>Total retry attempts made in the sampled view.</summary>
-    public long Retries { get; }
 
     /// <summary>Running average latency in milliseconds in the sampled view.</summary>
     public double AvgLatencyMs { get; }
@@ -66,6 +144,9 @@ public sealed class SmartPipeMetricsSnapshot
     /// <summary>ObjectPool hit rate in the sampled view.</summary>
     public double PoolHitRate { get; }
 
+    /// <summary>Compatibility name for total retry attempts in the sampled view.</summary>
+    public long Retries => ItemsRetried;
+
     /// <summary>Export the sampled values as a dictionary.</summary>
     public Dictionary<string, object> Export() =>
         new()
@@ -74,125 +155,260 @@ public sealed class SmartPipeMetricsSnapshot
             ["items_failed"] = ItemsFailed,
             ["duplicates_filtered"] = DuplicatesFiltered,
             ["retries"] = Retries,
+            ["items_dead_lettered"] = ItemsDeadLettered,
             ["avg_latency_ms"] = AvgLatencyMs,
+            ["last_stage_latency_ms"] = LastStageLatencyMs,
             ["smooth_latency_ms"] = SmoothLatencyMs,
             ["smooth_throughput"] = SmoothThroughput,
             ["queue_size"] = QueueSize,
+            ["input_queue_depth"] = InputQueueDepth,
+            ["output_queue_depth"] = OutputQueueDepth,
             ["pool_hit_rate"] = PoolHitRate,
+            ["last_processed_at_utc"] = LastProcessedAtUtc?.ToString("O") ?? string.Empty,
         };
 }
 
-/// <summary>Metrics counters, latency histogram, and sampled export helpers.</summary>
-public class SmartPipeMetrics
+/// <summary>Thread-safe mutable recorder that owns SmartPipe metric state.</summary>
+public sealed class SmartPipeMetricsRecorder
 {
-    private static readonly Meter Meter = new(
-        "SmartPipe.Core",
-        typeof(SmartPipeMetrics).Assembly.GetName().Version?.ToString() ?? "1.0.0"
-    );
-    private static readonly Counter<long> ItemsProcessedCounter = Meter.CreateCounter<long>(
-        "smartpipe.items.processed",
-        "items"
-    );
-    private static readonly Counter<long> ItemsFailedCounter = Meter.CreateCounter<long>(
-        "smartpipe.items.failed",
-        "items"
-    );
-    private static readonly Counter<long> DuplicatesFilteredCounter = Meter.CreateCounter<long>(
-        "smartpipe.duplicates.filtered",
-        "items"
-    );
-    private static readonly Counter<long> RetriesCounter = Meter.CreateCounter<long>(
-        "smartpipe.retries",
-        "retries"
-    );
-    private static readonly Histogram<double> LatencyHistogram = Meter.CreateHistogram<double>(
-        "smartpipe.latency",
-        "ms"
-    );
+    private long _itemsProcessed;
+    private long _itemsFailed;
+    private long _itemsRetried;
+    private long _itemsDeadLettered;
+    private long _duplicatesFiltered;
+    private int _inputQueueDepth;
+    private int _outputQueueDepth;
+    private long _lastProcessedAtUtcTicks;
+    private double _totalLatencyMs;
+    private double _lastStageLatencyMs;
+    private double _smoothLatencyMs;
+    private double _smoothThroughput;
+    private double _poolHitRate;
 
     /// <summary>Total items successfully processed.</summary>
-    public long ItemsProcessed;
+    public long ItemsProcessed => Interlocked.Read(ref _itemsProcessed);
 
     /// <summary>Total items that failed processing.</summary>
-    public long ItemsFailed;
-
-    /// <summary>Total duplicate items filtered out.</summary>
-    public long DuplicatesFiltered;
+    public long ItemsFailed => Interlocked.Read(ref _itemsFailed);
 
     /// <summary>Total retry attempts made.</summary>
-    public long Retries;
+    public long ItemsRetried => Interlocked.Read(ref _itemsRetried);
 
-    /// <summary>Running average latency in milliseconds.</summary>
-    public double AvgLatencyMs;
+    /// <summary>Total items written to dead-letter handling.</summary>
+    public long ItemsDeadLettered => Interlocked.Read(ref _itemsDeadLettered);
+
+    /// <summary>Total duplicate items filtered out.</summary>
+    public long DuplicatesFiltered => Interlocked.Read(ref _duplicatesFiltered);
+
+    /// <summary>Current input queue depth.</summary>
+    public int InputQueueDepth => Volatile.Read(ref _inputQueueDepth);
+
+    /// <summary>Current output queue depth.</summary>
+    public int OutputQueueDepth => Volatile.Read(ref _outputQueueDepth);
+
+    /// <summary>Most recent stage latency in milliseconds.</summary>
+    public double LastStageLatencyMs => Volatile.Read(ref _lastStageLatencyMs);
+
+    /// <summary>Running average stage latency in milliseconds.</summary>
+    public double AvgLatencyMs
+    {
+        get
+        {
+            var processed = ItemsProcessed;
+            if (processed == 0)
+                return 0;
+
+            return Volatile.Read(ref _totalLatencyMs) / processed;
+        }
+    }
 
     /// <summary>EMA-smoothed latency in milliseconds.</summary>
-    public double SmoothLatencyMs;
+    public double SmoothLatencyMs => Volatile.Read(ref _smoothLatencyMs);
 
-    /// <summary>EMA-smoothed throughput (items/sec).</summary>
-    public double SmoothThroughput;
+    /// <summary>EMA-smoothed throughput in items per second.</summary>
+    public double SmoothThroughput => Volatile.Read(ref _smoothThroughput);
 
-    /// <summary>Current queue size.</summary>
-    public int QueueSize;
+    /// <summary>Current queue size compatibility value.</summary>
+    public int QueueSize => InputQueueDepth;
 
-    /// <summary>ObjectPool hit rate (0.0-1.0). Updated externally by the pipeline when context pool is used.</summary>
-    public double PoolHitRate;
+    /// <summary>ObjectPool hit rate in the range 0.0-1.0.</summary>
+    public double PoolHitRate => Volatile.Read(ref _poolHitRate);
 
-    /// <summary>Record a processed item and its latency.</summary>
-    /// <param name="latencyMs">Measured latency in milliseconds.</param>
+    /// <summary>Last successful processed timestamp.</summary>
+    public DateTimeOffset? LastProcessedAtUtc
+    {
+        get
+        {
+            var ticks = Interlocked.Read(ref _lastProcessedAtUtcTicks);
+            return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+        }
+    }
+
+    /// <summary>Record a processed item and its stage latency.</summary>
     public void RecordProcessed(double latencyMs)
     {
-        Interlocked.Increment(ref ItemsProcessed);
-        ItemsProcessedCounter.Add(1);
-        LatencyHistogram.Record(latencyMs);
-        double total = ItemsProcessed + ItemsFailed;
-        AvgLatencyMs = ((AvgLatencyMs * Math.Max(0, total - 1)) + latencyMs) / Math.Max(1, total);
+        Interlocked.Increment(ref _itemsProcessed);
+        AddDouble(ref _totalLatencyMs, latencyMs);
+        Volatile.Write(ref _lastStageLatencyMs, latencyMs);
+        Interlocked.Exchange(ref _lastProcessedAtUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
+        SmartPipeMeter.ItemsProcessedCounter.Add(1);
+        SmartPipeMeter.StageLatencyHistogram.Record(latencyMs);
     }
 
     /// <summary>Record a failed item.</summary>
     public void RecordFailed()
     {
-        Interlocked.Increment(ref ItemsFailed);
-        ItemsFailedCounter.Add(1);
+        Interlocked.Increment(ref _itemsFailed);
+        SmartPipeMeter.ItemsFailedCounter.Add(1);
     }
 
     /// <summary>Record a filtered duplicate.</summary>
     public void RecordDuplicate()
     {
-        Interlocked.Increment(ref DuplicatesFiltered);
-        DuplicatesFilteredCounter.Add(1);
+        Interlocked.Increment(ref _duplicatesFiltered);
+        SmartPipeMeter.DuplicatesFilteredCounter.Add(1);
     }
 
     /// <summary>Record a retry attempt.</summary>
     public void RecordRetry()
     {
-        Interlocked.Increment(ref Retries);
-        RetriesCounter.Add(1);
+        Interlocked.Increment(ref _itemsRetried);
+        SmartPipeMeter.ItemsRetriedCounter.Add(1);
+    }
+
+    /// <summary>Record a dead-lettered item.</summary>
+    public void RecordDeadLetter()
+    {
+        Interlocked.Increment(ref _itemsDeadLettered);
+        SmartPipeMeter.ItemsDeadLetteredCounter.Add(1);
+    }
+
+    /// <summary>Update current input and output queue depths.</summary>
+    public void UpdateQueueDepths(int inputQueueDepth, int outputQueueDepth)
+    {
+        Volatile.Write(ref _inputQueueDepth, inputQueueDepth);
+        Volatile.Write(ref _outputQueueDepth, outputQueueDepth);
+    }
+
+    /// <summary>Update the compatibility queue size value.</summary>
+    public void UpdateQueueSize(int queueSize) => UpdateQueueDepths(queueSize, OutputQueueDepth);
+
+    /// <summary>Update smoothed latency and throughput values.</summary>
+    public void UpdateSmoothing(double smoothLatencyMs, double smoothThroughput)
+    {
+        Volatile.Write(ref _smoothLatencyMs, smoothLatencyMs);
+        Volatile.Write(ref _smoothThroughput, smoothThroughput);
     }
 
     /// <summary>Update the ObjectPool hit rate metric.</summary>
-    /// <param name="hitRate">Pool hit rate between 0.0 and 1.0.</param>
     public void RecordPoolHitRate(double hitRate)
     {
-        PoolHitRate = hitRate;
+        Volatile.Write(ref _poolHitRate, hitRate);
     }
 
-    /// <summary>
-    /// Capture an observational snapshot of the current metric values for export or reporting.
-    /// </summary>
-    /// <remarks>
-    /// Values are read independently and are not transactional across concurrent updates.
-    /// </remarks>
-    public SmartPipeMetricsSnapshot CaptureSnapshot() =>
-        new(
-            Interlocked.Read(ref ItemsProcessed),
-            Interlocked.Read(ref ItemsFailed),
-            Interlocked.Read(ref DuplicatesFiltered),
-            Interlocked.Read(ref Retries),
-            Volatile.Read(ref AvgLatencyMs),
-            Volatile.Read(ref SmoothLatencyMs),
-            Volatile.Read(ref SmoothThroughput),
-            Volatile.Read(ref QueueSize),
-            Volatile.Read(ref PoolHitRate));
+    /// <summary>Capture an immutable observational snapshot.</summary>
+    public SmartPipeMetricsSnapshot CaptureSnapshot()
+    {
+        var itemsProcessed = ItemsProcessed;
+        var avgLatency = itemsProcessed == 0
+            ? 0
+            : Volatile.Read(ref _totalLatencyMs) / itemsProcessed;
+
+        return new SmartPipeMetricsSnapshot(
+            itemsProcessed,
+            ItemsFailed,
+            ItemsRetried,
+            ItemsDeadLettered,
+            InputQueueDepth,
+            OutputQueueDepth,
+            LastStageLatencyMs,
+            LastProcessedAtUtc,
+            DuplicatesFiltered,
+            avgLatency,
+            SmoothLatencyMs,
+            SmoothThroughput,
+            QueueSize,
+            PoolHitRate);
+    }
+
+    private static void AddDouble(ref double location, double value)
+    {
+        double current;
+        double next;
+        do
+        {
+            current = Volatile.Read(ref location);
+            next = current + value;
+        } while (Interlocked.CompareExchange(ref location, next, current) != current);
+    }
+}
+
+/// <summary>Compatibility metrics facade backed by <see cref="SmartPipeMetricsRecorder"/>.</summary>
+public class SmartPipeMetrics
+{
+    private readonly SmartPipeMetricsRecorder _recorder = new();
+
+    /// <summary>Total items successfully processed.</summary>
+    public long ItemsProcessed => _recorder.ItemsProcessed;
+
+    /// <summary>Total items that failed processing.</summary>
+    public long ItemsFailed => _recorder.ItemsFailed;
+
+    /// <summary>Total duplicate items filtered out.</summary>
+    public long DuplicatesFiltered => _recorder.DuplicatesFiltered;
+
+    /// <summary>Total retry attempts made.</summary>
+    public long Retries => _recorder.ItemsRetried;
+
+    /// <summary>Running average latency in milliseconds.</summary>
+    public double AvgLatencyMs => _recorder.AvgLatencyMs;
+
+    /// <summary>Most recent stage latency in milliseconds.</summary>
+    public double LastStageLatencyMs => _recorder.LastStageLatencyMs;
+
+    /// <summary>EMA-smoothed latency in milliseconds.</summary>
+    public double SmoothLatencyMs => _recorder.SmoothLatencyMs;
+
+    /// <summary>EMA-smoothed throughput in items per second.</summary>
+    public double SmoothThroughput => _recorder.SmoothThroughput;
+
+    /// <summary>Current queue size.</summary>
+    public int QueueSize => _recorder.QueueSize;
+
+    /// <summary>ObjectPool hit rate in the range 0.0-1.0.</summary>
+    public double PoolHitRate => _recorder.PoolHitRate;
+
+    /// <summary>Record a processed item and its latency.</summary>
+    public void RecordProcessed(double latencyMs) => _recorder.RecordProcessed(latencyMs);
+
+    /// <summary>Record a failed item.</summary>
+    public void RecordFailed() => _recorder.RecordFailed();
+
+    /// <summary>Record a filtered duplicate.</summary>
+    public void RecordDuplicate() => _recorder.RecordDuplicate();
+
+    /// <summary>Record a retry attempt.</summary>
+    public void RecordRetry() => _recorder.RecordRetry();
+
+    /// <summary>Record a dead-lettered item.</summary>
+    public void RecordDeadLetter() => _recorder.RecordDeadLetter();
+
+    /// <summary>Update input queue size.</summary>
+    public void UpdateQueueSize(int queueSize) => _recorder.UpdateQueueSize(queueSize);
+
+    /// <summary>Update input and output queue depths.</summary>
+    public void UpdateQueueDepths(int inputQueueDepth, int outputQueueDepth) =>
+        _recorder.UpdateQueueDepths(inputQueueDepth, outputQueueDepth);
+
+    /// <summary>Update smoothed latency and throughput.</summary>
+    public void UpdateSmoothing(double smoothLatencyMs, double smoothThroughput) =>
+        _recorder.UpdateSmoothing(smoothLatencyMs, smoothThroughput);
+
+    /// <summary>Update the ObjectPool hit rate metric.</summary>
+    public void RecordPoolHitRate(double hitRate) => _recorder.RecordPoolHitRate(hitRate);
+
+    /// <summary>Capture an immutable observational snapshot.</summary>
+    public SmartPipeMetricsSnapshot CaptureSnapshot() => _recorder.CaptureSnapshot();
 
     /// <summary>Export all metrics as a dictionary.</summary>
     public Dictionary<string, object> Export() => CaptureSnapshot().Export();
@@ -205,15 +421,28 @@ public class SmartPipeMetrics
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
-            writer.WriteNumber("items_processed", snapshot.ItemsProcessed);
-            writer.WriteNumber("items_failed", snapshot.ItemsFailed);
-            writer.WriteNumber("duplicates_filtered", snapshot.DuplicatesFiltered);
-            writer.WriteNumber("retries", snapshot.Retries);
-            writer.WriteNumber("avg_latency_ms", snapshot.AvgLatencyMs);
-            writer.WriteNumber("smooth_latency_ms", snapshot.SmoothLatencyMs);
-            writer.WriteNumber("smooth_throughput", snapshot.SmoothThroughput);
-            writer.WriteNumber("queue_size", snapshot.QueueSize);
-            writer.WriteNumber("pool_hit_rate", snapshot.PoolHitRate);
+            foreach (var (key, value) in snapshot.Export())
+            {
+                switch (value)
+                {
+                    case long longValue:
+                        writer.WriteNumber(key, longValue);
+                        break;
+                    case int intValue:
+                        writer.WriteNumber(key, intValue);
+                        break;
+                    case double doubleValue:
+                        writer.WriteNumber(key, doubleValue);
+                        break;
+                    case string stringValue:
+                        writer.WriteString(key, stringValue);
+                        break;
+                    default:
+                        writer.WriteString(key, value.ToString());
+                        break;
+                }
+            }
+
             writer.WriteEndObject();
         }
 
@@ -223,7 +452,7 @@ public class SmartPipeMetrics
     /// <summary>Export in Prometheus text format.</summary>
     public string ExportPrometheus()
     {
-        var sb = new System.Text.StringBuilder();
+        var sb = new StringBuilder();
         foreach (var (key, value) in Export())
             sb.AppendLine($"smartpipe_{key} {value}");
         return sb.ToString();

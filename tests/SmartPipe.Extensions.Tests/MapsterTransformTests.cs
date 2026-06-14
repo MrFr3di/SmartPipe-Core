@@ -13,7 +13,7 @@ public class MapsterTransformTests
     public async Task Transform_ShouldMapAllProperties()
     {
         var transform = new MapsterTransform<Source, Destination>();
-        var ctx = new ProcessingContext<Source>(new Source { Name = "Alice", Age = 25 });
+        var ctx = ProcessingEnvelope<Source>.Create(new Source { Name = "Alice", Age = 25 });
 
         var result = await transform.TransformAsync(ctx);
 

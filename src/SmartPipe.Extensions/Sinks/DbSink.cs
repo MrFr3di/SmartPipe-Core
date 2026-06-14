@@ -8,7 +8,7 @@ namespace SmartPipe.Extensions.Sinks;
 /// <summary>Writes items to database using Dapper. Supports auto-generated SQL from [Table]/[Column] attributes.
 /// Uses async I/O for non-blocking database writes.</summary>
 /// <typeparam name="T">Entity type.</typeparam>
-public class DbSink<T> : ISink<T>
+public class DbSink<T> : IPipelineSink<T>
 {
     private readonly IDbConnection _connection;
     private readonly string _sql;
@@ -23,24 +23,24 @@ public class DbSink<T> : ISink<T>
     }
 
     /// <inheritdoc />
-    public Task InitializeAsync(CancellationToken ct = default)
+    public ValueTask InitializeAsync(CancellationToken ct = default)
     {
         _connection.Open();
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc />
-    public async Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
+    public async ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
     {
-        if (result.IsSuccess && result.Value != null)
-            await _connection.ExecuteAsync(_sql, result.Value);
+        if (envelope.Payload != null)
+            await _connection.ExecuteAsync(_sql, envelope.Payload);
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _connection.Close();
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     private static string GenerateInsertSql()

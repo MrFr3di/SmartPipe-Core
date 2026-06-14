@@ -59,9 +59,10 @@ jobs:
         dotnet add artifacts/consumer-smoke/SmartPipe.ConsumerSmoke.csproj package SmartPipe.Core --version 1.1.0 --source "$PWD/artifacts/packages" --source "https://api.nuget.org/v3/index.json"
         dotnet add artifacts/consumer-smoke/SmartPipe.ConsumerSmoke.csproj package SmartPipe.Extensions --version 1.1.0 --source "$PWD/artifacts/packages" --source "https://api.nuget.org/v3/index.json"
         cat > artifacts/consumer-smoke/Program.cs <<'CS'
-        using System.Globalization;
         using System.Runtime.CompilerServices;
+        using Microsoft.Extensions.DependencyInjection;
         using SmartPipe.Core;
+        using SmartPipe.Extensions;
         using SmartPipe.Extensions.Transforms;
 
         await ConsumerSmoke.RunAsync();
@@ -70,59 +71,90 @@ jobs:
         {
             public static async Task RunAsync()
             {
-                await VerifyLegacyPipelineAsync();
-                await VerifyRunInBackgroundAsync();
-                await VerifyModernTypedPipelineAsync();
+                await VerifyTypedSourceTransformSinkAsync();
+                await VerifyOutputConsumerAsync();
+                await VerifyDrainAsync();
+                await VerifyDiFactoryAsync();
                 await VerifyExtensionsReferenceAsync();
                 Console.WriteLine("SmartPipe consumer smoke passed.");
             }
 
-            private static async Task VerifyLegacyPipelineAsync()
+            private static async Task VerifyTypedSourceTransformSinkAsync()
             {
                 var sink = new CollectingSink<string>();
-                var channel = new SmartPipeChannel<int, string>();
-                channel.AddSource(new LegacySource<int>(1, 2, 3));
-                channel.AddTransformer(new LegacyTransformer<int, string>(value => $"legacy:{value}"));
-                channel.AddSink(sink);
-                await channel.RunAsync();
-                RequireSequence(sink.Values, ["legacy:1", "legacy:2", "legacy:3"], "legacy pipeline");
-            }
-
-            private static async Task VerifyRunInBackgroundAsync()
-            {
-                var channel = new SmartPipeChannel<int, int>();
-                channel.AddSource(new LegacySource<int>(7));
-                channel.AddTransformer(new LegacyTransformer<int, int>(value => value * 2));
-                var reader = channel.RunInBackground();
-                var results = new List<ProcessingResult<int>>();
-                await foreach (var result in reader.ReadAllAsync())
-                    results.Add(result);
-                if (results.Count != 1 || !results[0].IsSuccess || results[0].Value != 14)
-                    throw new InvalidOperationException("RunInBackground did not return expected output.");
-            }
-
-            private static async Task VerifyModernTypedPipelineAsync()
-            {
-                var sink = new EnvelopeCollectingSink<string>();
                 var run = PipelineBuilder
-                    .From(new EnvelopeSource<int>(4, 5))
-                    .Transform(new EnvelopeTransformer<int, double>(value => value + 0.5))
-                    .Transform(new EnvelopeTransformer<double, string>(value => value.ToString("0.0", CultureInfo.InvariantCulture)))
+                    .From(new ArraySource<int>(1, 2, 3))
+                    .WithPipelineId("consumer-smoke")
+                    .Transform(PipelineTransformer.FromFunc<int, string>(
+                        static (value, ct) => ValueTask.FromResult($"typed:{value}")))
                     .To(sink);
-                var outputs = new List<PipelineOutput<string>>();
-                await foreach (var output in run.Outputs.ReadAllAsync())
-                    outputs.Add(output);
                 await run.Completion;
-                RequireSequence(outputs.Select(output => output.Result.Value!).ToArray(), ["4.5", "5.5"], "modern typed pipeline outputs");
-                RequireSequence(sink.Values, ["4.5", "5.5"], "modern typed pipeline sink");
+                RequireSequence(sink.Values, ["typed:1", "typed:2", "typed:3"], "typed sink");
+                if (run.Metrics.ItemsProcessed != 3)
+                    throw new InvalidOperationException("Metrics did not count typed pipeline items.");
+            }
+
+            private static async Task VerifyOutputConsumerAsync()
+            {
+                var run = PipelineBuilder
+                    .From(new ArraySource<int>(4, 5))
+                    .Transform(PipelineTransformer.FromFunc<int, int>(
+                        static (value, ct) => ValueTask.FromResult(value * 2)))
+                    .Run();
+                var values = new List<int>();
+                await foreach (var result in run.ReadResultsAsync())
+                {
+                    if (!result.IsSuccess || result.Value is null)
+                        throw new InvalidOperationException("Output consumer observed a failed result.");
+                    values.Add(result.Value.Value);
+                }
+                await run.Completion;
+                RequireSequence(values, [8, 10], "typed output consumer");
+            }
+
+            private static async Task VerifyDrainAsync()
+            {
+                var run = PipelineBuilder
+                    .From(new ArraySource<int>(7))
+                    .Transform(PipelineTransformer.FromFunc<int, int>(
+                        static (value, ct) => ValueTask.FromResult(value)))
+                    .Run();
+                await run.DrainAsync(TimeSpan.FromSeconds(5));
+                await run.Completion;
+                if (run.State != PipelineRunState.Completed)
+                    throw new InvalidOperationException($"DrainAsync left run in state {run.State}.");
+            }
+
+            private static async Task VerifyDiFactoryAsync()
+            {
+                var services = new ServiceCollection();
+                services.AddSingleton<DiRecorder>();
+                services.AddScoped<DiSource>();
+                services.AddScoped<DiStage>();
+                services.AddScoped<DiSink>();
+                services.AddSmartPipe<int, string>(
+                    "consumer-di",
+                    builder => builder
+                        .UseSource<DiSource>()
+                        .UseStage<DiStage>()
+                        .UseSink<DiSink>());
+                using var provider = services.BuildServiceProvider(
+                    new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+                var factory = provider.GetRequiredService<ISmartPipeFactory<int, string>>();
+                await factory.Start().Completion;
+                var recorder = provider.GetRequiredService<DiRecorder>();
+                RequireSequence(recorder.Values, ["di:9"], "typed DI factory");
+                var monitor = provider.GetRequiredService<ISmartPipeRunHealthMonitor<int, string>>();
+                if (monitor.CaptureSnapshot().State != PipelineRunState.Completed)
+                    throw new InvalidOperationException("Typed health monitor did not observe DI run completion.");
             }
 
             private static async Task VerifyExtensionsReferenceAsync()
             {
                 var filter = new FilterTransform<int>(value => value > 3);
                 await filter.InitializeAsync();
-                var accepted = await filter.TransformAsync(new ProcessingContext<int>(5));
-                var rejected = await filter.TransformAsync(new ProcessingContext<int>(2));
+                var accepted = await filter.TransformAsync(ProcessingEnvelope<int>.Create(5));
+                var rejected = await filter.TransformAsync(ProcessingEnvelope<int>.Create(2));
                 await filter.DisposeAsync();
                 if (!accepted.IsSuccess || accepted.Value != 5)
                     throw new InvalidOperationException("FilterTransform did not accept the expected payload.");
@@ -142,43 +174,7 @@ jobs:
             }
         }
 
-        internal sealed class LegacySource<T>(params T[] values) : ISource<T>
-        {
-            public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-            public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([EnumeratorCancellation] CancellationToken ct = default)
-            {
-                foreach (var value in values)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    yield return new ProcessingContext<T>(value);
-                    await Task.Yield();
-                }
-            }
-            public Task DisposeAsync() => Task.CompletedTask;
-        }
-
-        internal sealed class LegacyTransformer<TInput, TOutput>(Func<TInput, TOutput> transform) : ITransformer<TInput, TOutput>
-        {
-            public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-            public ValueTask<ProcessingResult<TOutput>> TransformAsync(ProcessingContext<TInput> ctx, CancellationToken ct = default)
-                => ValueTask.FromResult(ProcessingResult<TOutput>.Success(transform(ctx.Payload), ctx.TraceId));
-            public Task DisposeAsync() => Task.CompletedTask;
-        }
-
-        internal sealed class CollectingSink<T> : ISink<T>
-        {
-            public List<T> Values { get; } = [];
-            public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-            public ValueTask WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
-            {
-                if (result.IsSuccess)
-                    Values.Add(result.Value!);
-                return ValueTask.CompletedTask;
-            }
-            public Task DisposeAsync() => Task.CompletedTask;
-        }
-
-        internal sealed class EnvelopeSource<T>(params T[] values) : IPipelineSource<T>
+        internal sealed class ArraySource<T>(params T[] values) : IPipelineSource<T>
         {
             public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
             public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync([EnumeratorCancellation] CancellationToken ct = default)
@@ -193,19 +189,48 @@ jobs:
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
 
-        internal sealed class EnvelopeTransformer<TInput, TOutput>(Func<TInput, TOutput> transform) : IPipelineTransformer<TInput, TOutput>
-        {
-            public ValueTask<StageResult<TOutput>> TransformAsync(ProcessingEnvelope<TInput> envelope, CancellationToken ct = default)
-                => ValueTask.FromResult(StageResult<TOutput>.Success(transform(envelope.Payload)));
-            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-        }
-
-        internal sealed class EnvelopeCollectingSink<T> : IPipelineSink<T>
+        internal sealed class CollectingSink<T> : IPipelineSink<T>
         {
             public List<T> Values { get; } = [];
+            public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
             public ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
             {
                 Values.Add(envelope.Payload);
+                return ValueTask.CompletedTask;
+            }
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+
+        internal sealed class DiRecorder
+        {
+            public List<string> Values { get; } = [];
+        }
+
+        internal sealed class DiSource : IPipelineSource<int>
+        {
+            public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+            public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync([EnumeratorCancellation] CancellationToken ct = default)
+            {
+                await Task.Yield();
+                yield return ProcessingEnvelope<int>.Create(9);
+            }
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+
+        internal sealed class DiStage : IPipelineTransformer<int, string>
+        {
+            public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+            public ValueTask<StageResult<string>> TransformAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default)
+                => ValueTask.FromResult(StageResult<string>.Success($"di:{envelope.Payload}"));
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+
+        internal sealed class DiSink(DiRecorder recorder) : IPipelineSink<string>
+        {
+            public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+            public ValueTask WriteAsync(ProcessingEnvelope<string> envelope, CancellationToken ct = default)
+            {
+                recorder.Values.Add(envelope.Payload);
                 return ValueTask.CompletedTask;
             }
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -282,8 +307,8 @@ jobs:
                     await VerifyJsonFileSinkAndArraySourceAsync(workDir);
                     await VerifyJsonFileSourceNdjsonAsync(workDir);
                     await VerifyModernDeadLetterSerializerAsync();
-                    await VerifyLegacyDeadLetterSinkAsync();
-                    await VerifyLegacyDeadLetterSourceAsync(workDir);
+                    await VerifyTypedDeadLetterSinkAsync();
+                    await VerifyTypedDeadLetterSourceAsync(workDir);
                     Console.WriteLine("SmartPipe JSON/dead-letter AOT smoke passed.");
                 }
                 finally
@@ -298,7 +323,7 @@ jobs:
                     AotSmokeJsonContext.Default.AotPayload,
                     AotSmokeJsonContext.Default.AotPayload);
                 await transform.InitializeAsync();
-                var result = await transform.TransformAsync(new ProcessingContext<AotPayload>(new AotPayload(1, "transform")));
+                var result = await transform.TransformAsync(ProcessingEnvelope<AotPayload>.Create(new AotPayload(1, "transform")));
                 await transform.DisposeAsync();
                 Require(result.IsSuccess && result.Value == new AotPayload(1, "transform"), "JsonTransform source-generated path failed.");
             }
@@ -308,13 +333,13 @@ jobs:
                 var path = Path.Combine(workDir, "payloads.json");
                 var sink = new JsonFileSink<AotPayload>(path, AotSmokeJsonContext.Default.ListAotPayload, flushInterval: 2);
                 await sink.InitializeAsync();
-                await sink.WriteAsync(ProcessingResult<AotPayload>.Success(new AotPayload(2, "sink-a"), 20));
-                await sink.WriteAsync(ProcessingResult<AotPayload>.Success(new AotPayload(3, "sink-b"), 30));
+                await sink.WriteAsync(ProcessingEnvelope<AotPayload>.Create(new AotPayload(2, "sink-a")));
+                await sink.WriteAsync(ProcessingEnvelope<AotPayload>.Create(new AotPayload(3, "sink-b")));
                 await sink.DisposeAsync();
 
                 var source = new JsonFileSource<AotPayload>(path, AotSmokeJsonContext.Default.ListAotPayload, AotSmokeJsonContext.Default.AotPayload);
                 await source.InitializeAsync();
-                var values = await ReadLegacySourceAsync(source);
+                var values = await ReadTypedSourceAsync(source);
                 await source.DisposeAsync();
                 RequireSequence(values, [new AotPayload(2, "sink-a"), new AotPayload(3, "sink-b")], "JsonFileSink/JsonFileSource array path");
             }
@@ -329,7 +354,7 @@ jobs:
                 ]);
                 var source = new JsonFileSource<AotPayload>(path, AotSmokeJsonContext.Default.ListAotPayload, AotSmokeJsonContext.Default.AotPayload);
                 await source.InitializeAsync();
-                var values = await ReadLegacySourceAsync(source);
+                var values = await ReadTypedSourceAsync(source);
                 await source.DisposeAsync();
                 RequireSequence(values, [new AotPayload(4, "ndjson-a"), new AotPayload(5, "ndjson-b")], "JsonFileSource NDJSON path");
             }
@@ -360,47 +385,65 @@ jobs:
                 Require(roundTripped.Count == 1 && roundTripped[0].OriginalPayload == envelope.OriginalPayload, "Modern dead-letter serializer failed.");
             }
 
-            private static async Task VerifyLegacyDeadLetterSinkAsync()
+            private static async Task VerifyTypedDeadLetterSinkAsync()
             {
                 await using var stream = new MemoryStream();
                 var sink = new DeadLetterSink<AotPayload>(
-                    "legacy-dead-letter.json",
-                    AotSmokeJsonContext.Default.ProcessingResultAotPayload,
+                    "typed-dead-letter.json",
+                    AotSmokeJsonContext.Default.DeadLetterEnvelopeAotPayload,
                     logger: null,
                     stream: stream);
                 await sink.InitializeAsync();
-                await sink.WriteAsync(ProcessingResult<AotPayload>.Failure(new SmartPipeError("legacy failure", ErrorType.Permanent, "AotSmoke"), 60));
+                await sink.WriteAsync(ProcessingEnvelope<DeadLetterEnvelope<AotPayload>>.Create(new DeadLetterEnvelope<AotPayload>
+                {
+                    SchemaVersion = 1,
+                    PipelineId = "pipeline-aot",
+                    RunId = "run-aot",
+                    TraceId = 60,
+                    StageId = "stage-dead-letter",
+                    StageName = "Dead letter stage",
+                    OriginalPayload = new AotPayload(6, "dead-letter-sink"),
+                    Metadata = MetadataBag.Empty,
+                    Error = new SmartPipeError("typed failure", ErrorType.Permanent, "AotSmoke"),
+                    Attempt = 1,
+                    FailedAtUtc = DateTimeOffset.UnixEpoch,
+                }));
                 await sink.DisposeAsync();
-                Require(Encoding.UTF8.GetString(stream.ToArray()).Contains("legacy failure", StringComparison.Ordinal), "Legacy DeadLetterSink source-generated path failed.");
+                Require(Encoding.UTF8.GetString(stream.ToArray()).Contains("typed failure", StringComparison.Ordinal), "Typed DeadLetterSink source-generated path failed.");
             }
 
-            private static async Task VerifyLegacyDeadLetterSourceAsync(string workDir)
+            private static async Task VerifyTypedDeadLetterSourceAsync(string workDir)
             {
-                var path = Path.Combine(workDir, "legacy-dead-letter-source.json");
-                await File.WriteAllTextAsync(path, """
-                [
-                  {
-                    "IsSuccess": false,
-                    "Value": {
-                      "Id": 7,
-                      "Name": "legacy-source"
-                    },
-                    "TraceId": 70
-                  }
-                ]
-                """);
+                var path = Path.Combine(workDir, "typed-dead-letter-source.json");
+                var deadLetter = new DeadLetterEnvelope<AotPayload>
+                {
+                    SchemaVersion = 1,
+                    PipelineId = "pipeline-aot",
+                    RunId = "run-aot",
+                    TraceId = 70,
+                    StageId = "stage-source",
+                    StageName = "Source stage",
+                    OriginalPayload = new AotPayload(7, "typed-source"),
+                    Metadata = MetadataBag.Empty,
+                    Error = new SmartPipeError("source failure", ErrorType.Permanent, "AotSmoke"),
+                    Attempt = 1,
+                    FailedAtUtc = DateTimeOffset.UnixEpoch,
+                };
+                await File.WriteAllTextAsync(
+                    path,
+                    JsonSerializer.Serialize(deadLetter, AotSmokeJsonContext.Default.DeadLetterEnvelopeAotPayload));
                 var source = new DeadLetterSource<AotPayload>(path, AotSmokeJsonContext.Default.AotPayload);
                 await source.InitializeAsync();
-                var values = await ReadLegacySourceAsync(source);
+                var values = await ReadTypedSourceAsync(source);
                 await source.DisposeAsync();
-                RequireSequence(values, [new AotPayload(7, "legacy-source")], "Legacy DeadLetterSource source-generated path");
+                RequireSequence(values, [new AotPayload(7, "typed-source")], "Typed DeadLetterSource source-generated path");
             }
 
-            private static async Task<List<T>> ReadLegacySourceAsync<T>(ISource<T> source, CancellationToken ct = default)
+            private static async Task<List<T>> ReadTypedSourceAsync<T>(IPipelineSource<T> source, CancellationToken ct = default)
             {
                 var values = new List<T>();
-                await foreach (var context in source.ReadAsync(ct).WithCancellation(ct))
-                    values.Add(context.Payload);
+                await foreach (var envelope in source.ReadEnvelopesAsync(ct).WithCancellation(ct))
+                    values.Add(envelope.Payload);
                 return values;
             }
 
@@ -425,7 +468,6 @@ jobs:
 
         [JsonSerializable(typeof(AotPayload))]
         [JsonSerializable(typeof(List<AotPayload>))]
-        [JsonSerializable(typeof(ProcessingResult<AotPayload>))]
         [JsonSerializable(typeof(DeadLetterEnvelope<AotPayload>))]
         [JsonSerializable(typeof(SmartPipeError))]
         [JsonSerializable(typeof(MetadataBag))]

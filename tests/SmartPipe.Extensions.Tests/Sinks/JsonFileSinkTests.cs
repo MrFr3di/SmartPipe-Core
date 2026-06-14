@@ -38,14 +38,14 @@ public class JsonFileSinkTests
     {
         var path = Path.GetTempFileName();
         var sink = new JsonFileSink<TestItem>(path);
-        
-        var result = ProcessingResult<TestItem>.Success(new TestItem { Value = "test" }, 1);
+
+        var result = ProcessingEnvelope<TestItem>.Create(new TestItem { Value = "test" });
         await sink.WriteAsync(result);
         await sink.DisposeAsync();
 
         var content = await File.ReadAllTextAsync(path);
         Assert.Contains("test", content);
-        
+
         File.Delete(path);
     }
 
@@ -54,15 +54,15 @@ public class JsonFileSinkTests
     {
         var path = Path.GetTempFileName();
         var sink = new JsonFileSink<TestItem>(path);
-        
-        await sink.WriteAsync(ProcessingResult<TestItem>.Success(new TestItem { Value = "first" }, 1));
-        await sink.WriteAsync(ProcessingResult<TestItem>.Success(new TestItem { Value = "second" }, 2));
+
+        await sink.WriteAsync(ProcessingEnvelope<TestItem>.Create(new TestItem { Value = "first" }));
+        await sink.WriteAsync(ProcessingEnvelope<TestItem>.Create(new TestItem { Value = "second" }));
         await sink.DisposeAsync();
 
         var content = await File.ReadAllTextAsync(path);
         Assert.Contains("first", content);
         Assert.Contains("second", content);
-        
+
         File.Delete(path);
     }
 
@@ -70,14 +70,14 @@ public class JsonFileSinkTests
     public async Task WriteAsync_ThrowsIOException_ForInvalidPath()
     {
         var sink = new JsonFileSink<object>("/nonexistent/path/file.json");
-        var result = ProcessingResult<object>.Success(new(), 1);
-        
+        var result = ProcessingEnvelope<object>.Create(new());
+
         // WriteAsync only buffers (flushInterval=1000 default), no I/O yet
         await sink.WriteAsync(result);
-        
+
         // DisposeAsync should fail when trying to flush to invalid path
-        var ex = await Record.ExceptionAsync(() => sink.DisposeAsync());
-        
+        var ex = await Record.ExceptionAsync(() => sink.DisposeAsync().AsTask());
+
         Assert.NotNull(ex);
         Assert.True(ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException,
             $"Expected IOException-derived exception, got {ex?.GetType().Name ?? "null"}");
@@ -95,7 +95,7 @@ public class JsonFileSinkTests
                 flushInterval: 1);
 
             await sink.WriteAsync(
-                ProcessingResult<AotJsonSinkItem>.Success(new AotJsonSinkItem(7, "seven"), 1));
+                ProcessingEnvelope<AotJsonSinkItem>.Create(new AotJsonSinkItem(7, "seven")));
             await sink.DisposeAsync();
 
             var content = await File.ReadAllTextAsync(path);

@@ -32,9 +32,9 @@ public class HttpSelectorTests
     {
         var client = new HttpClient();
         var mockLogger = new Mock<ILogger<HttpSelector<string>>>();
-        
+
         var selector = new HttpSelector<string>(client, "http://test.com", logger: mockLogger.Object);
-        
+
         Assert.NotNull(selector);
     }
 
@@ -43,9 +43,9 @@ public class HttpSelectorTests
     {
         var client = new HttpClient();
         var pipeline = new ResiliencePipelineBuilder().Build(); // Empty pipeline
-        
+
         var selector = new HttpSelector<string>(client, "http://test.com", pipeline: pipeline);
-        
+
         Assert.NotNull(selector);
     }
 
@@ -54,8 +54,8 @@ public class HttpSelectorTests
     {
         var mockHandler = new Mock<HttpMessageHandler>();
         mockHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync", 
-                ItExpr.IsAny<HttpRequestMessage>(), 
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
@@ -66,8 +66,8 @@ public class HttpSelectorTests
         var client = new HttpClient(mockHandler.Object);
         var selector = new HttpSelector<string>(client, "http://test.com");
 
-        var items = new List<ProcessingContext<string>>();
-        await foreach (var item in selector.ReadAsync())
+        var items = new List<ProcessingEnvelope<string>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             items.Add(item);
         }
@@ -81,8 +81,8 @@ public class HttpSelectorTests
     {
         var mockHandler = new Mock<HttpMessageHandler>();
         mockHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync", 
-                ItExpr.IsAny<HttpRequestMessage>(), 
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
@@ -94,7 +94,7 @@ public class HttpSelectorTests
 
         await Assert.ThrowsAsync<HttpRequestException>(async () =>
         {
-            await foreach (var item in selector.ReadAsync()) { }
+            await foreach (var item in selector.ReadEnvelopesAsync()) { }
         });
     }
 
@@ -103,8 +103,8 @@ public class HttpSelectorTests
     {
         var mockHandler = new Mock<HttpMessageHandler>();
         mockHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync", 
-                ItExpr.IsAny<HttpRequestMessage>(), 
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .Callback<HttpRequestMessage, CancellationToken>((req, ct) =>
             {
@@ -119,7 +119,7 @@ public class HttpSelectorTests
         var client = new HttpClient(mockHandler.Object);
         var selector = new HttpSelector<string>(client, "http://test.com");
 
-        await foreach (var item in selector.ReadAsync()) { }
+        await foreach (var item in selector.ReadEnvelopesAsync()) { }
     }
 
     [Fact]
@@ -127,8 +127,8 @@ public class HttpSelectorTests
     {
         var mockHandler = new Mock<HttpMessageHandler>();
         mockHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync", 
-                ItExpr.IsAny<HttpRequestMessage>(), 
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
@@ -139,8 +139,8 @@ public class HttpSelectorTests
         var client = new HttpClient(mockHandler.Object);
         var selector = new HttpSelector<string?>(client, "http://test.com");
 
-        var items = new List<ProcessingContext<string?>>();
-        await foreach (var item in selector.ReadAsync())
+        var items = new List<ProcessingEnvelope<string?>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             items.Add(item);
         }
@@ -153,8 +153,8 @@ public class HttpSelectorTests
     {
         var mockHandler = new Mock<HttpMessageHandler>();
         mockHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync", 
-                ItExpr.IsAny<HttpRequestMessage>(), 
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
@@ -165,8 +165,8 @@ public class HttpSelectorTests
         var client = new HttpClient(mockHandler.Object);
         var selector = new HttpSelector<string>(client, "http://test.com");
 
-        var items = new List<ProcessingContext<string>>();
-        await foreach (var item in selector.ReadAsync())
+        var items = new List<ProcessingEnvelope<string>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             items.Add(item);
         }
@@ -188,8 +188,8 @@ public class HttpSelectorTests
 
         var mockHandler = new Mock<HttpMessageHandler>();
         mockHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync", 
-                ItExpr.IsAny<HttpRequestMessage>(), 
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .Callback<HttpRequestMessage, CancellationToken>((req, ct) =>
             {
@@ -204,8 +204,8 @@ public class HttpSelectorTests
         var client = new HttpClient(mockHandler.Object);
         var selector = new HttpSelector<string>(client, "http://test.com", pipeline: pipeline);
 
-        var items = new List<ProcessingContext<string>>();
-        await foreach (var item in selector.ReadAsync())
+        var items = new List<ProcessingEnvelope<string>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             items.Add(item);
         }
@@ -220,8 +220,8 @@ public class HttpSelectorTests
     {
         var mockHandler = new Mock<HttpMessageHandler>();
         mockHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync", 
-                ItExpr.IsAny<HttpRequestMessage>(), 
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
@@ -233,7 +233,7 @@ public class HttpSelectorTests
         var mockLogger = new Mock<ILogger<HttpSelector<string>>>();
         var selector = new HttpSelector<string>(client, "http://test.com", logger: mockLogger.Object);
 
-        await foreach (var item in selector.ReadAsync()) { }
+        await foreach (var item in selector.ReadEnvelopesAsync()) { }
 
         // Verify that LogInformation was called at least once
         mockLogger.Verify(
@@ -251,8 +251,8 @@ public class HttpSelectorTests
     {
         var mockHandler = new Mock<HttpMessageHandler>();
         mockHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync", 
-                ItExpr.IsAny<HttpRequestMessage>(), 
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
@@ -267,7 +267,7 @@ public class HttpSelectorTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
-            await foreach (var item in selector.ReadAsync(cts.Token))
+            await foreach (var item in selector.ReadEnvelopesAsync(cts.Token))
             {
             }
         });
@@ -278,9 +278,9 @@ public class HttpSelectorTests
     {
         var client = new HttpClient();
         var selector = new HttpSelector<string>(client, "http://test.com");
-        
+
         await selector.DisposeAsync();
-        
+
         Assert.True(true); // If we get here, test passed
     }
 
@@ -289,8 +289,8 @@ public class HttpSelectorTests
     {
         var mockHandler = new Mock<HttpMessageHandler>();
         mockHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync", 
-                ItExpr.IsAny<HttpRequestMessage>(), 
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
@@ -301,8 +301,8 @@ public class HttpSelectorTests
         var client = new HttpClient(mockHandler.Object);
         var selector = new HttpSelector<string>(client, "http://test.com");
 
-        var items = new List<ProcessingContext<string>>();
-        await foreach (var item in selector.ReadAsync())
+        var items = new List<ProcessingEnvelope<string>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             items.Add(item);
         }
@@ -318,8 +318,8 @@ public class HttpSelectorTests
     {
         var mockHandler = new Mock<HttpMessageHandler>();
         mockHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync", 
-                ItExpr.IsAny<HttpRequestMessage>(), 
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
@@ -330,8 +330,8 @@ public class HttpSelectorTests
         var client = new HttpClient(mockHandler.Object);
         var selector = new HttpSelector<TestComplexType>(client, "http://test.com");
 
-        var items = new List<ProcessingContext<TestComplexType>>();
-        await foreach (var item in selector.ReadAsync())
+        var items = new List<ProcessingEnvelope<TestComplexType>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             items.Add(item);
         }

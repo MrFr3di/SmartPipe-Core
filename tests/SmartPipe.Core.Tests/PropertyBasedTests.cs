@@ -114,12 +114,12 @@ public class PropertyBasedTests
         return delay >= TimeSpan.Zero && delay <= policy.MaxDelay;
     }
 
-    // ProcessingContext: TraceIds are unique
+    // ProcessingEnvelope: TraceIds are unique
     [Property]
-    public bool ProcessingContext_UniqueTraceIds(NonNull<string>[] payloads)
+    public bool ProcessingEnvelope_UniqueTraceIds(NonNull<string>[] payloads)
     {
         if (payloads.Length < 2) return true;
-        var ids = payloads.Take(100).Select(p => new ProcessingContext<string>(p.Item).TraceId).ToList();
+        var ids = payloads.Take(100).Select(p => ProcessingEnvelope<string>.Create(p.Item).TraceId).ToList();
         return ids.Distinct().Count() == ids.Count;
     }
 }

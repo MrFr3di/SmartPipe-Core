@@ -40,7 +40,7 @@ public class RetryPolicy
     public Predicate<SmartPipeError> RetryOn { get; }
 
     /// <summary>Callback invoked before each retry attempt.</summary>
-    public Action<ProcessingContext<object>, SmartPipeError, int>? OnRetry { get; }
+    public Action<ProcessingEnvelope<object>, SmartPipeError, int>? OnRetry { get; }
 
     /// <summary>Creates a new retry policy.</summary>
     /// <param name="maxRetries">Maximum retry attempts (must be > 0).</param>
@@ -56,7 +56,7 @@ public class RetryPolicy
         TimeSpan? maxDelay = null,
         BackoffStrategy strategy = BackoffStrategy.Exponential,
         Predicate<SmartPipeError>? retryOn = null,
-        Action<ProcessingContext<object>, SmartPipeError, int>? onRetry = null
+        Action<ProcessingEnvelope<object>, SmartPipeError, int>? onRetry = null
     )
     {
         MaxRetries =

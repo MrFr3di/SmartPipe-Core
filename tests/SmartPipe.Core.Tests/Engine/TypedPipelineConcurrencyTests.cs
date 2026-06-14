@@ -1,163 +1,185 @@
-#nullable enable
-
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using FluentAssertions;
 using SmartPipe.Core;
 
 namespace SmartPipe.Core.Tests.Engine;
 
-public sealed class TypedPipelineConcurrencyTests
+public class TypedPipelineConcurrencyTests
 {
     [Fact]
-    public void MaxDegreeOfParallelism_ShouldDefaultToOne()
+    public async Task TypedPipeline_MaxConcurrency1_ProcessesAllItems()
     {
-        new PipelineRuntimeOptions().MaxDegreeOfParallelism.Should().Be(1);
-    }
-
-    [Fact]
-    public void MaxDegreeOfParallelism_LessThanOne_ShouldBeRejectedByValidation()
-    {
-        var options = new PipelineRuntimeOptions { MaxDegreeOfParallelism = 0 };
-
-        var act = () => options.Validate();
-
-        act.Should().Throw<ArgumentOutOfRangeException>()
-            .Which.ParamName.Should().Be("MaxDegreeOfParallelism");
-    }
-
-    [Fact]
-    public async Task MaxDegreeOfParallelism_One_ShouldProcessSequentially()
-    {
-        var tracker = new ConcurrencyTracker();
+        var source = new TestEnvelopeSource<int>(Enumerable.Range(1, 25));
 
         var run = PipelineBuilder
-            .From(new EnvelopeSource<int>(1, 2, 3, 4))
-            .Transform(new TrackingDelayTransformer<int, int>(
-                tracker,
-                static x => x,
-                TimeSpan.FromMilliseconds(20)
-            ))
-            .WithRuntimeOptions(new PipelineRuntimeOptions { MaxDegreeOfParallelism = 1 })
+            .From(source)
+            .Transform(new TestEnvelopeTransformer<int, int>(x => x * 2))
+            .WithRuntimeOptions(new PipelineRuntimeOptions { MaxConcurrency = 1 })
             .Run();
 
         var outputs = await ReadOutputsAsync(run.Outputs);
         await run.Completion;
 
-        outputs.Should().HaveCount(4);
-        tracker.MaxObserved.Should().Be(1);
+        outputs.Select(x => x.Result.Value).Should().Equal(Enumerable.Range(1, 25).Select(x => x * 2));
     }
 
     [Fact]
-    public async Task MaxDegreeOfParallelism_ShouldBoundConcurrentEnvelopeProcessing()
+    public async Task TypedPipeline_MaxConcurrency4_ProcessesAllItemsExactlyOnce()
     {
-        var tracker = new ConcurrencyTracker();
+        var source = new TestEnvelopeSource<int>(Enumerable.Range(1, 40));
+        var transformer = new BlockingTrackingTransformer<int>(expectedConcurrentCalls: 4);
 
         var run = PipelineBuilder
-            .From(new EnvelopeSource<int>(1, 2, 3, 4, 5, 6))
-            .Transform(new TrackingDelayTransformer<int, int>(
-                tracker,
-                static x => x,
-                TimeSpan.FromMilliseconds(75)
-            ))
-            .WithRuntimeOptions(new PipelineRuntimeOptions { MaxDegreeOfParallelism = 2 })
+            .From(source)
+            .Transform(transformer)
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxConcurrency = 4,
+                InputCapacity = 4,
+            })
+            .Run();
+
+        await transformer.ExpectedConcurrentCallsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        transformer.MaxObservedConcurrency.Should().Be(4);
+
+        transformer.Release();
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Select(x => x.Result.Value).Should().BeEquivalentTo(Enumerable.Range(1, 40));
+        transformer.ProcessedCounts.Should().HaveCount(40);
+        transformer.ProcessedCounts.Values.Should().OnlyContain(x => x == 1);
+    }
+
+    [Fact]
+    public async Task TypedPipeline_MaxConcurrency4_DoesNotDuplicateItems()
+    {
+        var source = new TestEnvelopeSource<int>(Enumerable.Range(1, 200));
+        var transformer = new CountingTransformer<int>();
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(transformer)
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxConcurrency = 4,
+                InputCapacity = 16,
+            })
             .Run();
 
         var outputs = await ReadOutputsAsync(run.Outputs);
         await run.Completion;
 
-        outputs.Should().HaveCount(6);
-        tracker.MaxObserved.Should().Be(2);
+        outputs.Select(x => x.Result.Value).Should().BeEquivalentTo(Enumerable.Range(1, 200));
+        outputs.Select(x => x.Result.Value).Should().OnlyHaveUniqueItems();
+        transformer.ProcessedCounts.Should().HaveCount(200);
+        transformer.ProcessedCounts.Values.Should().OnlyContain(x => x == 1);
     }
 
     [Fact]
-    public async Task ParallelPath_ShouldRunStagesSequentiallyPerEnvelope()
+    public async Task TypedPipeline_BoundedInput_AppliesBackpressure()
     {
-        var order = new ConcurrentDictionary<ulong, ConcurrentQueue<string>>();
+        var source = new TestEnvelopeSource<int>(Enumerable.Range(1, 20));
+        var transformer = new BlockingTrackingTransformer<int>(expectedConcurrentCalls: 2);
 
         var run = PipelineBuilder
-            .From(new EnvelopeSource<int>(1, 2, 3, 4))
-            .Transform(new RecordingTransformer<int, int>(order, "stage-1", static x => x + 10))
-            .Transform(new RecordingTransformer<int, string>(order, "stage-2", static x => x.ToString()))
-            .WithRuntimeOptions(new PipelineRuntimeOptions { MaxDegreeOfParallelism = 2 })
+            .From(source)
+            .Transform(transformer)
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxConcurrency = 2,
+                InputCapacity = 1,
+            })
             .Run();
 
+        await transformer.ExpectedConcurrentCallsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        source.EmittedCount.Should().BeLessThan(20);
+        source.EmittedCount.Should().BeLessThanOrEqualTo(4);
+
+        transformer.Release();
         var outputs = await ReadOutputsAsync(run.Outputs);
         await run.Completion;
 
-        outputs.Should().HaveCount(4);
-        foreach (var perTrace in order.Values)
-            perTrace.ToArray().Should().Equal("stage-1", "stage-2");
+        outputs.Select(x => x.Result.Value).Should().BeEquivalentTo(Enumerable.Range(1, 20));
     }
 
     [Fact]
-    public async Task ParallelPath_ShouldSerializeSinkWritesByDefault()
+    public async Task TypedPipeline_InputCapacity_GreaterThanMaxConcurrency_IsHonored()
     {
-        var tracker = new ConcurrencyTracker();
-        var sink = new TrackingDelaySink<int>(tracker, TimeSpan.FromMilliseconds(40));
+        var source = new ThresholdEnvelopeSource<int>(
+            Enumerable.Range(1, 20),
+            emittedThreshold: 9);
+        var transformer = new BlockingTrackingTransformer<int>(expectedConcurrentCalls: 2);
 
         var run = PipelineBuilder
-            .From(new EnvelopeSource<int>(1, 2, 3, 4, 5, 6))
-            .Transform(new TrackingDelayTransformer<int, int>(
-                new ConcurrencyTracker(),
-                static x => x,
-                TimeSpan.FromMilliseconds(20)
-            ))
-            .WithRuntimeOptions(new PipelineRuntimeOptions { MaxDegreeOfParallelism = 3 })
-            .To(sink);
-
-        _ = await ReadOutputsAsync(run.Outputs);
-        await run.Completion;
-
-        sink.Payloads.Should().HaveCount(6);
-        tracker.MaxObserved.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task StopPipeline_ShouldStopNewAcceptanceAndCompleteAcceptedWork()
-    {
-        var run = PipelineBuilder
-            .From(new EnvelopeSource<int>(Enumerable.Range(1, 50).ToArray()))
-            .Transform(
-                new StopAfterFirstTransformer(),
-                new StageFailureOptions { OnPermanentFailure = FailureAction.StopPipeline }
-            )
-            .WithRuntimeOptions(new PipelineRuntimeOptions { MaxDegreeOfParallelism = 2 })
+            .From(source)
+            .Transform(transformer)
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxConcurrency = 2,
+                InputCapacity = 8,
+                OutputMode = PipelineOutputMode.SuppressAll,
+            })
             .Run();
 
-        var outputs = await ReadOutputsAsync(run.Outputs);
-        await run.Completion;
+        await transformer.ExpectedConcurrentCallsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await source.ThresholdReached.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        run.State.Should().Be(PipelineRunState.Completed);
-        outputs.Should().NotBeEmpty();
-        outputs.Should().HaveCountLessThan(50);
+        source.EmittedCount.Should().BeGreaterThanOrEqualTo(9);
+
+        transformer.Release();
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        transformer.ProcessedCounts.Should().HaveCount(20);
+        transformer.ProcessedCounts.Values.Should().OnlyContain(x => x == 1);
     }
 
     [Fact]
-    public async Task ParallelPath_ShouldPreserveSameTraceStageObserverOrder()
+    public async Task TypedPipeline_SourceException_FaultsRun()
     {
-        var observer = new RecordingObserver();
+        var exception = new InvalidOperationException("source failed");
+        var source = new ThrowingEnvelopeSource<int>(exception);
 
         var run = PipelineBuilder
-            .From(new EnvelopeSource<int>(1, 2, 3, 4))
-            .Transform(new TrackingDelayTransformer<int, int>(
-                new ConcurrencyTracker(),
-                static x => x + 1,
-                TimeSpan.FromMilliseconds(20)
-            ))
-            .Transform(new EnvelopeTransformer<int, string>(static x => x.ToString()))
-            .WithRuntimeOptions(new PipelineRuntimeOptions { MaxDegreeOfParallelism = 2 })
-            .WithObserver(observer)
+            .From(source)
+            .Transform(new TestEnvelopeTransformer<int, int>(x => x))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxConcurrency = 4,
+                OutputMode = PipelineOutputMode.SuppressAll,
+            })
             .Run();
 
-        _ = await ReadOutputsAsync(run.Outputs);
-        await run.Completion;
+        var act = async () => await run.Completion;
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("source failed");
+        run.State.Should().Be(PipelineRunState.Faulted);
+    }
 
-        var stageEvents = observer.Events
-            .OfType<StageStartedEvent>()
-            .GroupBy(e => e.TraceId);
-        foreach (var perTrace in stageEvents)
-            perTrace.Select(e => e.StageId).Should().Equal("stage-1", "stage-2");
+    [Fact]
+    public async Task TypedPipeline_WorkerException_FaultsRun()
+    {
+        var exception = new InvalidOperationException("worker failed");
+        var source = new TestEnvelopeSource<int>(Enumerable.Range(1, 10));
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new ThrowingEnvelopeTransformer<int, int>(2, exception))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxConcurrency = 4,
+                InputCapacity = 4,
+                OutputMode = PipelineOutputMode.SuppressAll,
+            })
+            .Run();
+
+        var act = async () => await run.Completion;
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("worker failed");
+        run.State.Should().Be(PipelineRunState.Faulted);
     }
 
     private static async Task<List<PipelineOutput<T>>> ReadOutputsAsync<T>(
@@ -168,173 +190,243 @@ public sealed class TypedPipelineConcurrencyTests
             outputs.Add(output);
         return outputs;
     }
-}
 
-internal sealed class ConcurrencyTracker
-{
-    private int _current;
-    private int _maxObserved;
-
-    public int MaxObserved => Volatile.Read(ref _maxObserved);
-
-    public IDisposable Enter()
+    private sealed class TestEnvelopeSource<T> : IPipelineSource<T>
     {
-        var current = Interlocked.Increment(ref _current);
-        int observed;
-        do
+        private readonly ProcessingEnvelope<T>[] _items;
+        private int _emittedCount;
+
+        public TestEnvelopeSource(IEnumerable<T> payloads)
         {
-            observed = Volatile.Read(ref _maxObserved);
-            if (current <= observed)
-                break;
-        }
-        while (Interlocked.CompareExchange(ref _maxObserved, current, observed) != observed);
-
-        return new ExitHandle(this);
-    }
-
-    private void Exit() => Interlocked.Decrement(ref _current);
-
-    private sealed class ExitHandle : IDisposable
-    {
-        private readonly ConcurrencyTracker _owner;
-
-        public ExitHandle(ConcurrencyTracker owner)
-        {
-            _owner = owner;
+            _items = payloads
+                .Select((payload, index) =>
+                    ProcessingEnvelope<T>.Create(
+                        payload,
+                        "test-pipeline",
+                        "test-run",
+                        (ulong)(index + 1)))
+                .ToArray();
         }
 
-        public void Dispose() => _owner.Exit();
-    }
-}
+        public int EmittedCount => Volatile.Read(ref _emittedCount);
 
-internal sealed class TrackingDelayTransformer<TInput, TOutput>
-    : IPipelineTransformer<TInput, TOutput>
-{
-    private readonly ConcurrencyTracker _tracker;
-    private readonly Func<TInput, TOutput> _project;
-    private readonly TimeSpan _delay;
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
-    public TrackingDelayTransformer(
-        ConcurrencyTracker tracker,
-        Func<TInput, TOutput> project,
-        TimeSpan delay)
-    {
-        _tracker = tracker;
-        _project = project;
-        _delay = delay;
-    }
-
-    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
-
-    public async ValueTask<StageResult<TOutput>> TransformAsync(
-        ProcessingEnvelope<TInput> envelope,
-        CancellationToken ct = default)
-    {
-        using (_tracker.Enter())
+        public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
         {
-            await Task.Delay(_delay, ct).ConfigureAwait(false);
-            return StageResult<TOutput>.Success(_project(envelope.Payload));
+            foreach (var item in _items)
+            {
+                ct.ThrowIfCancellationRequested();
+                Interlocked.Increment(ref _emittedCount);
+                yield return item;
+                await Task.Yield();
+            }
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ThresholdEnvelopeSource<T> : IPipelineSource<T>
+    {
+        private readonly ProcessingEnvelope<T>[] _items;
+        private readonly int _emittedThreshold;
+        private int _emittedCount;
+
+        public ThresholdEnvelopeSource(IEnumerable<T> payloads, int emittedThreshold)
+        {
+            _emittedThreshold = emittedThreshold;
+            _items = payloads
+                .Select((payload, index) =>
+                    ProcessingEnvelope<T>.Create(
+                        payload,
+                        "test-pipeline",
+                        "test-run",
+                        (ulong)(index + 1)))
+                .ToArray();
+        }
+
+        public TaskCompletionSource ThresholdReached { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int EmittedCount => Volatile.Read(ref _emittedCount);
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            foreach (var item in _items)
+            {
+                ct.ThrowIfCancellationRequested();
+                var emitted = Interlocked.Increment(ref _emittedCount);
+                if (emitted >= _emittedThreshold)
+                    ThresholdReached.TrySetResult();
+
+                yield return item;
+                await Task.Yield();
+            }
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ThrowingEnvelopeSource<T> : IPipelineSource<T>
+    {
+        private readonly Exception _exception;
+
+        public ThrowingEnvelopeSource(Exception exception)
+        {
+            _exception = exception;
+        }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            throw _exception;
+#pragma warning disable CS0162
+            yield break;
+#pragma warning restore CS0162
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class TestEnvelopeTransformer<TInput, TOutput>
+        : IPipelineTransformer<TInput, TOutput>
+    {
+        private readonly Func<TInput, TOutput> _transform;
+
+        public TestEnvelopeTransformer(Func<TInput, TOutput> transform)
+        {
+            _transform = transform;
+        }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<TOutput>> TransformAsync(
+            ProcessingEnvelope<TInput> envelope,
+            CancellationToken ct = default)
+        {
+            return ValueTask.FromResult(StageResult<TOutput>.Success(_transform(envelope.Payload)));
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CountingTransformer<T> : IPipelineTransformer<T, T>
+        where T : notnull
+    {
+        private readonly ConcurrentDictionary<T, int> _processedCounts = [];
+
+        public IReadOnlyDictionary<T, int> ProcessedCounts => _processedCounts;
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public async ValueTask<StageResult<T>> TransformAsync(
+            ProcessingEnvelope<T> envelope,
+            CancellationToken ct = default)
+        {
+            _processedCounts.AddOrUpdate(envelope.Payload, 1, (_, count) => count + 1);
+            await Task.Yield();
+            return StageResult<T>.Success(envelope.Payload);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class BlockingTrackingTransformer<T> : IPipelineTransformer<T, T>
+        where T : notnull
+    {
+        private readonly int _expectedConcurrentCalls;
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ConcurrentDictionary<T, int> _processedCounts = [];
+        private int _activeCalls;
+        private int _maxObservedConcurrency;
+
+        public BlockingTrackingTransformer(int expectedConcurrentCalls)
+        {
+            _expectedConcurrentCalls = expectedConcurrentCalls;
+        }
+
+        public TaskCompletionSource ExpectedConcurrentCallsEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int MaxObservedConcurrency => Volatile.Read(ref _maxObservedConcurrency);
+
+        public IReadOnlyDictionary<T, int> ProcessedCounts => _processedCounts;
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public async ValueTask<StageResult<T>> TransformAsync(
+            ProcessingEnvelope<T> envelope,
+            CancellationToken ct = default)
+        {
+            _processedCounts.AddOrUpdate(envelope.Payload, 1, (_, count) => count + 1);
+            var active = Interlocked.Increment(ref _activeCalls);
+            UpdateMaxObservedConcurrency(active);
+            if (active >= _expectedConcurrentCalls)
+                ExpectedConcurrentCallsEntered.TrySetResult();
+
+            try
+            {
+                await _release.Task.WaitAsync(ct).ConfigureAwait(false);
+                return StageResult<T>.Success(envelope.Payload);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeCalls);
+            }
+        }
+
+        public void Release()
+        {
+            _release.TrySetResult();
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        private void UpdateMaxObservedConcurrency(int active)
+        {
+            while (true)
+            {
+                var current = Volatile.Read(ref _maxObservedConcurrency);
+                if (active <= current)
+                    return;
+
+                if (Interlocked.CompareExchange(ref _maxObservedConcurrency, active, current) == current)
+                    return;
+            }
         }
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-}
-
-internal sealed class RecordingTransformer<TInput, TOutput>
-    : IPipelineTransformer<TInput, TOutput>
-{
-    private readonly ConcurrentDictionary<ulong, ConcurrentQueue<string>> _order;
-    private readonly string _stageName;
-    private readonly Func<TInput, TOutput> _project;
-
-    public RecordingTransformer(
-        ConcurrentDictionary<ulong, ConcurrentQueue<string>> order,
-        string stageName,
-        Func<TInput, TOutput> project)
+    private sealed class ThrowingEnvelopeTransformer<TInput, TOutput>
+        : IPipelineTransformer<TInput, TOutput>
     {
-        _order = order;
-        _stageName = stageName;
-        _project = project;
-    }
+        private readonly TInput _throwOnPayload;
+        private readonly Exception _exception;
 
-    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
-
-    public ValueTask<StageResult<TOutput>> TransformAsync(
-        ProcessingEnvelope<TInput> envelope,
-        CancellationToken ct = default)
-    {
-        _order.GetOrAdd(envelope.TraceId, _ => new ConcurrentQueue<string>())
-            .Enqueue(_stageName);
-        return ValueTask.FromResult(StageResult<TOutput>.Success(_project(envelope.Payload)));
-    }
-
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-}
-
-internal sealed class TrackingDelaySink<T> : IPipelineSink<T>
-{
-    private readonly ConcurrencyTracker _tracker;
-    private readonly TimeSpan _delay;
-    private readonly List<T> _payloads = [];
-
-    public TrackingDelaySink(ConcurrencyTracker tracker, TimeSpan delay)
-    {
-        _tracker = tracker;
-        _delay = delay;
-    }
-
-    public IReadOnlyList<T> Payloads => _payloads;
-
-    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
-
-    public async ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
-    {
-        using (_tracker.Enter())
+        public ThrowingEnvelopeTransformer(TInput throwOnPayload, Exception exception)
         {
-            await Task.Delay(_delay, ct).ConfigureAwait(false);
-            _payloads.Add(envelope.Payload);
+            _throwOnPayload = throwOnPayload;
+            _exception = exception;
         }
-    }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-}
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
-internal sealed class StopAfterFirstTransformer : IPipelineTransformer<int, int>
-{
-    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
-
-    public async ValueTask<StageResult<int>> TransformAsync(
-        ProcessingEnvelope<int> envelope,
-        CancellationToken ct = default)
-    {
-        if (envelope.Payload == 1)
-            return StageResult<int>.Failure(new SmartPipeError("stop", ErrorType.Permanent, "StopTest"));
-
-        await Task.Delay(50, ct).ConfigureAwait(false);
-        return StageResult<int>.Success(envelope.Payload);
-    }
-
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-}
-
-internal sealed class RecordingObserver : IPipelineObserver
-{
-    private readonly List<PipelineEvent> _events = [];
-    private readonly Lock _gate = new();
-
-    public IReadOnlyList<PipelineEvent> Events
-    {
-        get
+        public ValueTask<StageResult<TOutput>> TransformAsync(
+            ProcessingEnvelope<TInput> envelope,
+            CancellationToken ct = default)
         {
-            lock (_gate)
-                return _events.ToArray();
-        }
-    }
+            if (EqualityComparer<TInput>.Default.Equals(envelope.Payload, _throwOnPayload))
+                throw _exception;
 
-    public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
-    {
-        lock (_gate)
-            _events.Add(pipelineEvent);
-        return ValueTask.CompletedTask;
+            return ValueTask.FromResult(StageResult<TOutput>.Success((TOutput)(object)envelope.Payload!));
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

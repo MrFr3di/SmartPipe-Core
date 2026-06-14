@@ -10,7 +10,7 @@ namespace SmartPipe.Extensions.Selectors;
 /// Supports parameterized queries and command timeout.
 /// </summary>
 /// <typeparam name="T">Row type.</typeparam>
-public class DapperSelector<T> : ISource<T>, IDisposable
+public class DapperSelector<T> : IPipelineSource<T>, IDisposable
 {
     private readonly IDbConnection _connection;
     private readonly string _sql;
@@ -41,14 +41,14 @@ public class DapperSelector<T> : ISource<T>, IDisposable
     }
 
     /// <inheritdoc />
-    public Task InitializeAsync(CancellationToken ct = default)
+    public ValueTask InitializeAsync(CancellationToken ct = default)
     {
         _connection.Open();
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+    public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
     )
     {
@@ -65,7 +65,7 @@ public class DapperSelector<T> : ISource<T>, IDisposable
             {
                 ct.ThrowIfCancellationRequested();
                 var row = MapRow(reader);
-                yield return new ProcessingContext<T>(row);
+                yield return ProcessingEnvelope<T>.Create(row);
             }
 
             _logger?.LogInformation("Dapper source completed. SQL: {Sql}", _sql);
@@ -97,11 +97,11 @@ public class DapperSelector<T> : ISource<T>, IDisposable
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _reader?.Dispose();
         _connection?.Dispose();
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     /// <summary>Dispose connection and reader (synchronous).</summary>

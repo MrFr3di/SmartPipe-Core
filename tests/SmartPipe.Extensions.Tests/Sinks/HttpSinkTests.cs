@@ -25,15 +25,15 @@ public class HttpSinkTests
     {
         var mockHandler = new Mock<HttpMessageHandler>();
         mockHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync", 
-                ItExpr.IsAny<HttpRequestMessage>(), 
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
 
         var client = new HttpClient(mockHandler.Object);
         var sink = new HttpSink<TestItem>(client, "http://test.com");
-        
-        var result = ProcessingResult<TestItem>.Success(new TestItem { Value = "test" }, 1);
+
+        var result = ProcessingEnvelope<TestItem>.Create(new TestItem { Value = "test" });
         await sink.WriteAsync(result);
 
         mockHandler.Protected().Verify(
@@ -57,41 +57,21 @@ public class HttpSinkTests
         var client = new HttpClient(mockHandler.Object);
         var sink = new HttpSink<TestItem>(client, "http://test.com");
 
-        var result = ProcessingResult<TestItem>.Success(new TestItem { Value = "test" }, 1);
+        var result = ProcessingEnvelope<TestItem>.Create(new TestItem { Value = "test" });
 
-        var ex = await Assert.ThrowsAsync<HttpRequestException>(() => sink.WriteAsync(result));
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() => sink.WriteAsync(result).AsTask());
 
         Assert.Equal(System.Net.HttpStatusCode.InternalServerError, ex.StatusCode);
     }
 
     [Fact]
-    public async Task WriteAsync_DoesNotPost_WhenResultIsFailure()
+    public async Task WriteAsync_DoesNotPost_WhenPayloadIsNull()
     {
         var mockHandler = new Mock<HttpMessageHandler>();
         var client = new HttpClient(mockHandler.Object);
-        var sink = new HttpSink<TestItem>(client, "http://test.com");
-        
-        // Failure result should not trigger HTTP call
-        var result = ProcessingResult<TestItem>.Failure(new SmartPipeError("test", ErrorType.Permanent), 1);
-        await sink.WriteAsync(result);
+        var sink = new HttpSink<TestItem?>(client, "http://test.com");
 
-        mockHandler.Protected().Verify(
-            "SendAsync",
-            Times.Never(),
-            ItExpr.IsAny<HttpRequestMessage>(),
-            ItExpr.IsAny<CancellationToken>()
-        );
-    }
-
-    [Fact]
-    public async Task WriteAsync_DoesNotPost_WhenValueIsNull()
-    {
-        var mockHandler = new Mock<HttpMessageHandler>();
-        var client = new HttpClient(mockHandler.Object);
-        var sink = new HttpSink<TestItem>(client, "http://test.com");
-
-        // Success result but Value is null should not trigger HTTP call
-        var result = ProcessingResult<TestItem>.Success(null!, 1);
+        var result = ProcessingEnvelope<TestItem?>.Create(null);
         await sink.WriteAsync(result);
 
         mockHandler.Protected().Verify(
@@ -124,7 +104,7 @@ public class HttpSinkTests
             .ReturnsAsync(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
 
         var client = new HttpClient(mockHandler.Object);
-        
+
         // Create a simple resilience pipeline
         var pipeline = new ResiliencePipelineBuilder()
             .AddRetry(new RetryStrategyOptions
@@ -135,7 +115,7 @@ public class HttpSinkTests
 
         var sink = new HttpSink<TestItem>(client, "http://test.com", pipeline);
 
-        var result = ProcessingResult<TestItem>.Success(new TestItem { Value = "test" }, 1);
+        var result = ProcessingEnvelope<TestItem>.Create(new TestItem { Value = "test" });
         await sink.WriteAsync(result);
 
         // Pipeline should have been called, which means HTTP call was made

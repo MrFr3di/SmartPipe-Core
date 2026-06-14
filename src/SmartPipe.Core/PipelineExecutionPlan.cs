@@ -5,8 +5,8 @@ namespace SmartPipe.Core;
 /// <summary>Validated execution plan compiled from a <see cref="PipelineDefinition"/>.</summary>
 /// <remarks>
 /// The execution plan is responsible for topology and lifetime validation before any runtime
-/// component is initialized. SmartPipe 1.1.0 introduces this as an explicit boundary so future
-/// per-stage metrics, diagnostics, and graph export do not live inside <see cref="SmartPipeChannel{TInput,TOutput}"/>.
+/// component is initialized. SmartPipe introduces this as an explicit boundary for runtime
+/// metrics, diagnostics, and graph export.
 /// </remarks>
 public sealed class PipelineExecutionPlan
 {

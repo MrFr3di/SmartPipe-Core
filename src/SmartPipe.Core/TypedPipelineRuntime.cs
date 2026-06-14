@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Diagnostics;
 using System.Threading.Channels;
 
 namespace SmartPipe.Core;
@@ -204,10 +205,10 @@ internal sealed class TypedPipelineSpec<TInput, TOutput>
     {
         return component
             is IPipelineComponentDescriptor
-            {
-                Lifetime: PipelineComponentLifetime.Reusable
+        {
+            Lifetime: PipelineComponentLifetime.Reusable
                     or PipelineComponentLifetime.SingletonExternal
-            };
+        };
     }
 }
 
@@ -320,7 +321,24 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
     {
         var input = (ProcessingEnvelope<TInput>)envelope;
         var started = clock.GetUtcNow();
-        var result = await _transformer.TransformAsync(input, ct).ConfigureAwait(false);
+        using var activity = SmartPipeActivitySource.Source.StartActivity("Transform", ActivityKind.Internal);
+        activity?.SetTag("smartpipe.pipeline_id", input.PipelineId);
+        activity?.SetTag("smartpipe.run_id", input.RunId);
+        activity?.SetTag("smartpipe.trace_id", input.TraceId);
+        activity?.SetTag("smartpipe.stage_id", StageId);
+        activity?.SetTag("smartpipe.stage_name", StageName);
+
+        StageResult<TOutput> result;
+        try
+        {
+            result = await _transformer.TransformAsync(input, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
+        }
+
         if (!result.IsValid)
             throw new InvalidOperationException(
                 "default(StageResult<T>) is invalid. Use StageResult factory methods."
@@ -329,6 +347,7 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
         var completed = clock.GetUtcNow();
         if (!result.IsSuccess)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, result.Error?.Message ?? result.Kind.ToString());
             var failedLineage = AppendLineage(
                 input.Lineage,
                 lineageMode,
@@ -370,6 +389,7 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
             CreatedAtUtc = input.CreatedAtUtc,
         };
 
+        activity?.SetStatus(ActivityStatusCode.Ok);
         return TypedStageExecutionResult.Success(next);
     }
 
@@ -581,6 +601,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     // Prevents scheduling retries when the remaining StageTimeout budget is too small
     // to execute a meaningful next attempt after retry delay.
     private static readonly TimeSpan MinimumRetryAttemptBudget = TimeSpan.FromMilliseconds(5);
+    private const int DefaultOutputCapacity = 1024;
 
     private readonly PipelineRuntime _runtime;
     private readonly TypedPipelineSpec<TInput, TOutput> _spec;
@@ -588,12 +609,17 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly PipelineRuntimeOptions _options;
     private readonly IPipelineClock _clock;
     private readonly Channel<PipelineOutput<TOutput>> _outputs;
+    private readonly PipelineOutputEmitter<TOutput> _outputEmitter;
+    private readonly PipelineProducer<TInput> _producer;
+    private readonly PipelineWorker<TInput> _worker;
+    private readonly StageExecutor _stageExecutor;
+    private readonly SinkExecutor<TOutput> _sinkExecutor;
+    private readonly SmartPipeMetricsRecorder _metrics = new();
+    private readonly PipelineLifecycleController _lifecycle = new();
     private readonly IPipelineObserverDispatcher _observerDispatcher;
     private readonly CancellationTokenSource _cts;
-    private readonly SemaphoreSlim _sinkWriteGate = new(1, 1);
     private readonly Dictionary<string, CircuitBreaker> _breakers = [];
     private readonly object _breakersGate = new();
-    private PipelineRunState _state = PipelineRunState.NotStarted;
     private int _disposed;
     private int _componentsDisposed;
     private Task? _runTask;
@@ -613,6 +639,31 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _options = _runtime.Options;
         _clock = _options.Clock;
         _outputs = CreateOutputChannel(_options);
+        _outputEmitter = new PipelineOutputEmitter<TOutput>(
+            _outputs.Writer,
+            _options,
+            _sink is not null);
+        _producer = new PipelineProducer<TInput>(_spec.Source, ShouldStopAccepting);
+        _worker = new PipelineWorker<TInput>(ProcessEnvelopeAsync, RequestStopAccepting);
+        _stageExecutor = new StageExecutor(
+            _spec.PipelineId,
+            _runtime.RunId,
+            _spec.LineageMode,
+            _clock,
+            GetOrCreateBreaker,
+            GetRetryDecision,
+            EmitRetryScheduledAsync,
+            EmitRetryExhaustedAsync,
+            WriteDeadLetterAsync,
+            WriteTerminalAsync,
+            EmitAsync,
+            ExecuteStageAttemptAsync);
+        _sinkExecutor = new SinkExecutor<TOutput>(
+            _sink,
+            _spec.PipelineId,
+            _runtime.RunId,
+            _clock,
+            EmitAsync);
         _observerDispatcher = PipelineObserverDispatcher.Create(
             _spec.Observers,
             _options.ObserverDispatch,
@@ -621,29 +672,14 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
     }
 
-    private static Channel<PipelineOutput<TOutput>> CreateOutputChannel(PipelineRuntimeOptions options)
+    private static Channel<PipelineOutput<TOutput>> CreateOutputChannel(
+        PipelineRuntimeOptions options)
     {
         options.Validate();
-        var singleWriter = options.MaxDegreeOfParallelism == 1;
-        if (options.OutputCapacity is null)
-        {
-            return Channel.CreateUnbounded<PipelineOutput<TOutput>>(
-                new UnboundedChannelOptions
-                {
-                    SingleReader = false,
-                    SingleWriter = singleWriter,
-                }
-            );
-        }
-
-        return Channel.CreateBounded<PipelineOutput<TOutput>>(
-            new BoundedChannelOptions(options.OutputCapacity.Value)
-            {
-                FullMode = options.OutputFullMode,
-                SingleReader = false,
-                SingleWriter = singleWriter,
-            }
-        );
+        var capacity = options.OutputCapacity ?? DefaultOutputCapacity;
+        return PipelineChannelFactory.CreateOutput<TOutput>(
+            capacity,
+            options.OutputFullMode);
     }
 
     public PipelineRun<TOutput> Start()
@@ -652,19 +688,25 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         return new PipelineRun<TOutput>(
             _outputs.Reader,
             _runTask,
-            () => _state,
+            () => _lifecycle.State,
             CancelAsync,
             DrainAsync,
             AbortAsync,
-            DisposeAsync
+            DisposeAsync,
+            _metrics.CaptureSnapshot
         );
     }
 
-    public ValueTask CancelAsync(CancellationToken ct = default)
+    public async ValueTask CancelAsync(CancellationToken ct = default)
     {
-        _state = PipelineRunState.Cancelled;
-        _cts.Cancel();
-        return ValueTask.CompletedTask;
+        ct.ThrowIfCancellationRequested();
+
+        _lifecycle.MarkCancelledUnlessAborted();
+        var cancellation = new OperationCanceledException("Pipeline run cancelled.");
+        var cancelTask = _cts.CancelAsync();
+        _outputs.Writer.TryComplete(cancellation);
+
+        await cancelTask.WaitAsync(ct).ConfigureAwait(false);
     }
 
     public async ValueTask DrainAsync(TimeSpan timeout, CancellationToken ct = default)
@@ -672,17 +714,16 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         RequestDrain();
         var runTask = _runTask ?? throw new InvalidOperationException("Pipeline run has not started.");
         if (!runTask.IsCompleted)
-            _state = PipelineRunState.Draining;
+            _lifecycle.MarkDrainingIfRunning();
 
         await runTask.WaitAsync(timeout, ct).ConfigureAwait(false);
 
-        if (_state == PipelineRunState.Draining)
-            _state = PipelineRunState.Completed;
+        _lifecycle.MarkCompletedIfDraining();
     }
 
     public ValueTask AbortAsync(CancellationToken ct = default)
     {
-        _state = PipelineRunState.Aborted;
+        _lifecycle.MarkAborted();
         _cts.Cancel();
         _outputs.Writer.TryComplete(new OperationCanceledException("Pipeline run aborted."));
         return ValueTask.CompletedTask;
@@ -694,16 +735,23 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             return;
 
         _cts.Cancel();
-            await DisposeComponentsAsync(CancellationToken.None).ConfigureAwait(false);
+        await DisposeComponentsAsync(CancellationToken.None).ConfigureAwait(false);
         await _observerDispatcher.DisposeAsync().ConfigureAwait(false);
         _cts.Dispose();
     }
 
     private async Task RunAsync()
     {
+        using var activity = SmartPipeActivitySource.Source.StartActivity("Pipeline.Run", ActivityKind.Internal);
+        activity?.SetTag("smartpipe.pipeline_id", _spec.PipelineId);
+        activity?.SetTag("smartpipe.run_id", _runtime.RunId);
+        activity?.SetTag("smartpipe.parallelism", _options.EffectiveMaxConcurrency);
+        activity?.SetTag("smartpipe.input_capacity", _options.InputCapacity);
+        activity?.SetTag("smartpipe.output_capacity", _options.OutputCapacity);
+
         try
         {
-            _state = PipelineRunState.Running;
+            _lifecycle.MarkRunning();
             await EmitAsync(
                     new PipelineStartedEvent(
                         _spec.PipelineId,
@@ -715,12 +763,13 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 .ConfigureAwait(false);
             await InitializeComponentsAsync(_cts.Token).ConfigureAwait(false);
 
-            if (_options.MaxDegreeOfParallelism == 1)
+            if (_options.EffectiveMaxConcurrency == 1)
                 await RunSequentialProcessingAsync(_cts.Token).ConfigureAwait(false);
             else
                 await RunParallelProcessingAsync(_cts.Token).ConfigureAwait(false);
 
-            _state = PipelineRunState.Completed;
+            _lifecycle.MarkCompleted();
+            activity?.SetStatus(ActivityStatusCode.Ok);
             await EmitAsync(
                     new PipelineCompletedEvent(
                         _spec.PipelineId,
@@ -735,8 +784,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
         catch (OperationCanceledException ex) when (_cts.IsCancellationRequested)
         {
-            if (_state != PipelineRunState.Aborted)
-                _state = PipelineRunState.Cancelled;
+            _lifecycle.MarkCancelledUnlessAborted();
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
 
             await TryEmitAsync(
                     new PipelineCancelledEvent(
@@ -750,9 +799,28 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _outputs.Writer.TryComplete(ex);
             throw;
         }
+        catch (ChannelClosedException ex) when (_cts.IsCancellationRequested)
+        {
+            _lifecycle.MarkCancelledUnlessAborted();
+            var cancellation = new OperationCanceledException("Pipeline run cancelled.", ex);
+            activity?.SetStatus(ActivityStatusCode.Error, cancellation.Message);
+
+            await TryEmitAsync(
+                    new PipelineCancelledEvent(
+                        _spec.PipelineId,
+                        _runtime.RunId,
+                        _clock.GetUtcNow()
+                    )
+                )
+                .ConfigureAwait(false);
+            await TryCompleteObserversAsync().ConfigureAwait(false);
+            _outputs.Writer.TryComplete(cancellation);
+            throw cancellation;
+        }
         catch (Exception ex)
         {
-            _state = PipelineRunState.Faulted;
+            _lifecycle.MarkFaulted();
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             await TryEmitAsync(
                     new PipelineFaultedEvent(
                         _spec.PipelineId,
@@ -770,6 +838,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         {
             await DisposeComponentsAsync(CancellationToken.None).ConfigureAwait(false);
             await _observerDispatcher.DisposeAsync().ConfigureAwait(false);
+            _sinkExecutor.Dispose();
         }
     }
 
@@ -821,14 +890,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     private async ValueTask RunParallelProcessingAsync(CancellationToken ct)
     {
-        var input = Channel.CreateBounded<ProcessingEnvelope<TInput>>(
-            new BoundedChannelOptions(_options.MaxDegreeOfParallelism)
-            {
-                FullMode = BoundedChannelFullMode.Wait,
-                SingleReader = false,
-                SingleWriter = true,
-            }
-        );
+        var input = PipelineChannelFactory.CreateInput<TInput>(
+            _options.InputCapacity,
+            _options.InputFullMode);
 
         Exception? workerFailure = null;
         object workerFailureGate = new();
@@ -846,16 +910,16 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
 
         var workers = Enumerable
-            .Range(0, _options.MaxDegreeOfParallelism)
+            .Range(0, _options.EffectiveMaxConcurrency)
             .Select(_ => Task.Run(
-                () => RunParallelWorkerAsync(input.Reader, input.Writer, RecordWorkerFailure, ct),
+                () => _worker.RunAsync(input.Reader, input.Writer, RecordWorkerFailure, ct),
                 CancellationToken.None
             ))
             .ToArray();
 
         try
         {
-            await ProduceParallelInputAsync(input.Writer, ct).ConfigureAwait(false);
+            await _producer.ProduceAsync(input.Writer, ct).ConfigureAwait(false);
         }
         catch (ChannelClosedException) when (HasWorkerFailure())
         {
@@ -866,49 +930,6 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
 
         await Task.WhenAll(workers).ConfigureAwait(false);
-    }
-
-    private async Task ProduceParallelInputAsync(
-        ChannelWriter<ProcessingEnvelope<TInput>> writer,
-        CancellationToken ct)
-    {
-        var enumerator = _spec.Source
-            .ReadEnvelopesAsync(ct)
-            .GetAsyncEnumerator(ct);
-        try
-        {
-            while (!ShouldStopAccepting() && await enumerator.MoveNextAsync().ConfigureAwait(false))
-            {
-                await writer.WriteAsync(enumerator.Current, ct).ConfigureAwait(false);
-            }
-        }
-        finally
-        {
-            await enumerator.DisposeAsync().ConfigureAwait(false);
-        }
-    }
-
-    private async Task RunParallelWorkerAsync(
-        ChannelReader<ProcessingEnvelope<TInput>> reader,
-        ChannelWriter<ProcessingEnvelope<TInput>> writer,
-        Action<Exception> recordFailure,
-        CancellationToken ct)
-    {
-        try
-        {
-            await foreach (var envelope in reader.ReadAllAsync(ct).ConfigureAwait(false))
-            {
-                var action = await ProcessEnvelopeAsync(envelope, ct).ConfigureAwait(false);
-                if (action == FailureAction.StopPipeline)
-                    RequestStopAccepting();
-            }
-        }
-        catch (Exception ex)
-        {
-            recordFailure(ex);
-            writer.TryComplete(ex);
-            throw;
-        }
     }
 
     private async ValueTask InitializeComponentsAsync(CancellationToken ct)
@@ -926,325 +947,32 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         CancellationToken ct
     )
     {
+        var startedAtUtc = _clock.GetUtcNow();
         object current = NormalizeEnvelope(sourceEnvelope);
         foreach (var stage in _spec.Stages)
         {
-            var breaker = GetOrCreateBreaker(stage);
-            var stageStartedAtUtc = _clock.GetUtcNow();
-            while (true)
-            {
-                var correlation = stage.GetCorrelation(current);
+            var stageResult = await _stageExecutor.ExecuteAsync(stage, current, ct)
+                .ConfigureAwait(false);
+            if (stageResult.StopProcessing)
+                return stageResult.FailureAction;
 
-                // Circuit breaker check — before each attempt (including retries)
-                if (breaker is not null && !breaker.AllowRequest())
-                {
-                    var cbError = new SmartPipeError(
-                        $"Circuit breaker is open for stage '{stage.StageId}'.",
-                        ErrorType.Transient,
-                        "CircuitBreaker"
-                    );
-                    var rejectedOutcome = stage.CreateFailureResult(
-                        current,
-                        cbError,
-                        StageResultKind.Failure,
-                        _spec.LineageMode,
-                        _clock,
-                        stageStartedAtUtc
-                    );
-                    await EmitAsync(
-                            new CircuitBreakerRejectedEvent(
-                                _spec.PipelineId,
-                                _runtime.RunId,
-                                correlation.TraceId,
-                                stage.StageId,
-                                correlation.Attempt,
-                                _clock.GetUtcNow(),
-                                cbError
-                            ),
-                            ct
-                            )
-                            .ConfigureAwait(false);
-
-                    var decision = GetRetryDecision(stage, cbError, correlation.Attempt, stageStartedAtUtc);
-                    if (decision.Kind == RetryDecisionKind.Retry)
-                    {
-                        await EmitRetryScheduledAsync(
-                                stage,
-                                rejectedOutcome,
-                                decision.NextAttempt,
-                                decision.Delay,
-                                cbError,
-                                ct
-                            )
-                            .ConfigureAwait(false);
-                        if (decision.Delay > TimeSpan.Zero)
-                            await Task.Delay(decision.Delay, ct).ConfigureAwait(false);
-
-                        current = stage.WithAttempt(current, decision.NextAttempt);
-                        await EmitAsync(
-                                new RetryAttemptedEvent(
-                                    _spec.PipelineId,
-                                    _runtime.RunId,
-                                    rejectedOutcome.TraceId,
-                                    stage.StageId,
-                                    decision.NextAttempt,
-                                    _clock.GetUtcNow()
-                                ),
-                                ct
-                            )
-                            .ConfigureAwait(false);
-                        continue;
-                    }
-
-                    if (decision.Kind == RetryDecisionKind.Exhausted)
-                        await EmitRetryExhaustedAsync(stage, rejectedOutcome, cbError, ct)
-                            .ConfigureAwait(false);
-
-                    var action = stage.FailureOptions.OnRetryExhausted;
-                    if (action == FailureAction.DeadLetter)
-                        await WriteDeadLetterAsync(stage, current, cbError, ct).ConfigureAwait(false);
-
-                    if (action == FailureAction.Skip)
-                        return action;
-
-                    if (action == FailureAction.FaultPipeline)
-                        throw new PipelineFailureActionException(
-                            stage.StageId,
-                            stage.StageName,
-                            cbError
-                        );
-
-                    if (action == FailureAction.EmitFailureResult || action == FailureAction.StopPipeline || action == FailureAction.DeadLetter)
-                    {
-                        await WriteTerminalAsync(rejectedOutcome, ct).ConfigureAwait(false);
-                    }
-                    return action == FailureAction.StopPipeline ? action : null;
-                }
-
-                await EmitAsync(
-                        new StageStartedEvent(
-                            _spec.PipelineId,
-                            _runtime.RunId,
-                            correlation.TraceId,
-                            stage.StageId,
-                            stage.StageName,
-                            correlation.Attempt,
-                            _clock.GetUtcNow()
-                        ),
-                        ct
-                    )
-                    .ConfigureAwait(false);
-
-                TypedStageExecutionResult outcome;
-                try
-                {
-                    outcome = await ExecuteStageAttemptAsync(stage, current, stageStartedAtUtc, ct)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    await EmitAsync(
-                            new StageFailedEvent(
-                                _spec.PipelineId,
-                                _runtime.RunId,
-                                correlation.TraceId,
-                                stage.StageId,
-                                correlation.Attempt,
-                                _clock.GetUtcNow(),
-                                new SmartPipeError(
-                                    ex.Message,
-                                    ErrorType.Permanent,
-                                    "StageException",
-                                    ex
-                                )
-                            ),
-                            ct
-                        )
-                        .ConfigureAwait(false);
-                    throw;
-                }
-
-                if (!outcome.IsSuccess)
-                {
-                    // Record circuit breaker failure (per-attempt)
-                    var wasOpen = breaker?.State == CircuitState.Open;
-                    breaker?.RecordFailure();
-                    var justOpened = breaker is not null && breaker.State == CircuitState.Open && !wasOpen;
-                    if (justOpened)
-                    {
-                        await EmitAsync(
-                                new CircuitBreakerOpenedEvent(
-                                    _spec.PipelineId,
-                                    _runtime.RunId,
-                                    stage.StageId,
-                                    _clock.GetUtcNow()
-                                ),
-                                ct
-                            )
-                            .ConfigureAwait(false);
-                    }
-
-                    var error =
-                        outcome.Error
-                        ?? new SmartPipeError(
-                            outcome.Kind.ToString(),
-                            ErrorType.Permanent,
-                            outcome.Kind.ToString()
-                        );
-                    await EmitAsync(
-                            new StageFailedEvent(
-                                _spec.PipelineId,
-                                _runtime.RunId,
-                                outcome.TraceId,
-                                stage.StageId,
-                                outcome.Attempt,
-                                _clock.GetUtcNow(),
-                                error
-                            ),
-                            ct
-                        )
-                        .ConfigureAwait(false);
-
-                    var decision = GetRetryDecision(stage, error, outcome.Attempt, stageStartedAtUtc);
-
-                    if (decision.Kind == RetryDecisionKind.Retry)
-                    {
-                        await EmitRetryScheduledAsync(
-                                stage,
-                                outcome,
-                                decision.NextAttempt,
-                                decision.Delay,
-                                error,
-                                ct
-                            )
-                            .ConfigureAwait(false);
-                        if (decision.Delay > TimeSpan.Zero)
-                            await Task.Delay(decision.Delay, ct).ConfigureAwait(false);
-
-                        current = stage.WithAttempt(current, decision.NextAttempt);
-                        await EmitAsync(
-                                new RetryAttemptedEvent(
-                                    _spec.PipelineId,
-                                    _runtime.RunId,
-                                    outcome.TraceId,
-                                    stage.StageId,
-                                    decision.NextAttempt,
-                                    _clock.GetUtcNow()
-                                ),
-                                ct
-                            )
-                            .ConfigureAwait(false);
-                        continue;
-                    }
-
-                    var retryExhausted = decision.Kind == RetryDecisionKind.Exhausted;
-                    if (retryExhausted)
-                        await EmitRetryExhaustedAsync(stage, outcome, error, ct)
-                            .ConfigureAwait(false);
-
-                    var action = retryExhausted
-                        ? stage.FailureOptions.OnRetryExhausted
-                        : stage.FailureOptions.OnPermanentFailure;
-                    if (action == FailureAction.DeadLetter)
-                        await WriteDeadLetterAsync(stage, current, error, ct).ConfigureAwait(false);
-
-                    if (action == FailureAction.Skip)
-                        return action;
-
-                    if (action == FailureAction.FaultPipeline)
-                        throw new PipelineFailureActionException(
-                            stage.StageId,
-                            stage.StageName,
-                            error
-                        );
-
-                    await WriteTerminalAsync(outcome, ct).ConfigureAwait(false);
-                    return action;
-                }
-
-                // Record circuit breaker success
-                breaker?.RecordSuccess();
-
-                await EmitAsync(
-                        new StageSucceededEvent(
-                            _spec.PipelineId,
-                            _runtime.RunId,
-                            correlation.TraceId,
-                            stage.StageId,
-                            stage.StageName,
-                            correlation.Attempt,
-                            _clock.GetUtcNow()
-                        ),
-                        ct
-                    )
-                    .ConfigureAwait(false);
-                current = outcome.Envelope!;
-                break;
-            }
+            current = stageResult.Envelope;
         }
 
         var outputEnvelope = (ProcessingEnvelope<TOutput>)current;
-        var result = ProcessingResult<TOutput>.Success(
+        var result = PipelineResult<TOutput>.Success(
             outputEnvelope.Payload,
             outputEnvelope.TraceId
         );
-        if (ShouldEmitOutput(result))
-        {
-            await _outputs
-                .Writer.WriteAsync(new PipelineOutput<TOutput>(outputEnvelope, result), ct)
-                .ConfigureAwait(false);
-        }
+        await _outputEmitter
+            .WriteAsync(new PipelineOutput<TOutput>(outputEnvelope, result), ct)
+            .ConfigureAwait(false);
 
-        if (_sink is not null)
-            await WriteSinkAsync(outputEnvelope, ct).ConfigureAwait(false);
+        await _sinkExecutor.WriteAsync(outputEnvelope, ct).ConfigureAwait(false);
+        var elapsed = _clock.GetUtcNow() - startedAtUtc;
+        _metrics.RecordProcessed(Math.Max(0, elapsed.TotalMilliseconds));
 
         return null;
-    }
-
-    private async ValueTask WriteSinkAsync(
-        ProcessingEnvelope<TOutput> outputEnvelope,
-        CancellationToken ct)
-    {
-        await _sinkWriteGate.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            await EmitAsync(
-                    new SinkWriteStartedEvent(
-                        _spec.PipelineId,
-                        _runtime.RunId,
-                        outputEnvelope.TraceId,
-                        outputEnvelope.Attempt,
-                        _clock.GetUtcNow()
-                    ),
-                    ct
-                )
-                .ConfigureAwait(false);
-
-            try
-            {
-                await _sink!.WriteAsync(outputEnvelope, ct).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                await EmitAsync(
-                        new SinkWriteFailedEvent(
-                            _spec.PipelineId,
-                            _runtime.RunId,
-                            outputEnvelope.TraceId,
-                            outputEnvelope.Attempt,
-                            _clock.GetUtcNow(),
-                            ex
-                        ),
-                        ct
-                    )
-                    .ConfigureAwait(false);
-                throw;
-            }
-        }
-        finally
-        {
-            _sinkWriteGate.Release();
-        }
     }
 
     private async ValueTask EmitRetryScheduledAsync(
@@ -1256,6 +984,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         CancellationToken ct
     )
     {
+        _metrics.RecordRetry();
         await EmitAsync(
                 new RetryScheduledEvent(
                     _spec.PipelineId,
@@ -1423,19 +1152,6 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         };
     }
 
-    private enum RetryDecisionKind
-    {
-        NotRetryable,
-        Retry,
-        Exhausted,
-    }
-
-    private readonly record struct RetryDecision(
-        RetryDecisionKind Kind,
-        int NextAttempt,
-        TimeSpan Delay
-    );
-
     private RetryDecision GetRetryDecision(
         ITypedPipelineStage stage,
         SmartPipeError error,
@@ -1480,6 +1196,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         CancellationToken ct
     )
     {
+        _metrics.RecordFailed();
         var error =
             outcome.Error
             ?? new SmartPipeError(
@@ -1487,13 +1204,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 ErrorType.Permanent,
                 outcome.Kind.ToString()
             );
-        var result = ProcessingResult<TOutput>.Failure(error, outcome.TraceId);
-        if (ShouldEmitOutput(result))
-        {
-            await _outputs
-                .Writer.WriteAsync(new PipelineOutput<TOutput>(null, result), ct)
-                .ConfigureAwait(false);
-        }
+        var result = PipelineResult<TOutput>.Failure(error, outcome.TraceId);
+        await _outputEmitter
+            .WriteAsync(new PipelineOutput<TOutput>(null, result), ct)
+            .ConfigureAwait(false);
     }
 
     private async ValueTask WriteDeadLetterAsync(
@@ -1506,6 +1220,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         var deadLetter = await stage
             .WriteDeadLetterAsync(envelope, error, _clock, ct)
             .ConfigureAwait(false);
+        _metrics.RecordDeadLetter();
         await EmitAsync(
                 new DeadLetterWrittenEvent(
                     _spec.PipelineId,
@@ -1519,19 +1234,6 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 ct
             )
             .ConfigureAwait(false);
-    }
-
-    private bool ShouldEmitOutput(ProcessingResult<TOutput> result)
-    {
-        return _options.OutputMode switch
-        {
-            PipelineOutputMode.EmitAll => true,
-            PipelineOutputMode.FailuresOnlyWhenSinkAttached => _sink is null || !result.IsSuccess,
-            PipelineOutputMode.SuppressWhenSinkAttached => _sink is null,
-            PipelineOutputMode.SuppressAll => false,
-            _ => throw new InvalidOperationException(
-                $"Unsupported output mode '{_options.OutputMode}'."),
-        };
     }
 
     private async ValueTask DisposeComponentsAsync(CancellationToken ct)

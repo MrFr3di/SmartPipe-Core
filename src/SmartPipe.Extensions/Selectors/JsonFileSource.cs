@@ -8,7 +8,7 @@ namespace SmartPipe.Extensions.Selectors;
 
 /// <summary>Streams JSON files (array or NDJSON) as pipeline source.</summary>
 /// <typeparam name="T">Item type to deserialize.</typeparam>
-public class JsonFileSource<T> : ISource<T>
+public class JsonFileSource<T> : IPipelineSource<T>
 {
     private readonly string _path;
     private readonly Func<Stream, CancellationToken, ValueTask<List<T>?>> _deserializeListAsync;
@@ -57,10 +57,10 @@ public class JsonFileSource<T> : ISource<T>
     }
 
     /// <inheritdoc />
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+    public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
         [EnumeratorCancellation] CancellationToken ct = default
     )
     {
@@ -75,7 +75,7 @@ public class JsonFileSource<T> : ISource<T>
             if (items != null)
                 foreach (var item in items)
                     if (item != null)
-                        yield return new ProcessingContext<T>(item);
+                        yield return ProcessingEnvelope<T>.Create(item);
         }
         else
         {
@@ -89,13 +89,13 @@ public class JsonFileSource<T> : ISource<T>
                     continue;
                 var item = _deserializeItem(line);
                 if (item != null)
-                    yield return new ProcessingContext<T>(item);
+                    yield return ProcessingEnvelope<T>.Create(item);
             }
         }
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     private static async ValueTask<char?> ReadFirstNonWhitespaceAsync(string path, CancellationToken ct)
     {

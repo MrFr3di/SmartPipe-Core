@@ -8,7 +8,7 @@ namespace SmartPipe.Extensions.Sinks;
 /// Works with any logging provider (Serilog, NLog, Azure Monitor).
 /// </summary>
 /// <typeparam name="T">Data type.</typeparam>
-public class LoggerSink<T> : ISink<T>
+public class LoggerSink<T> : IPipelineSink<T>
 {
     private readonly ILogger<LoggerSink<T>> _logger;
 
@@ -20,31 +20,20 @@ public class LoggerSink<T> : ISink<T>
     }
 
     /// <inheritdoc />
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc />
-    public Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
+    public ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
     {
-        if (result.IsSuccess)
-        {
-            _logger.LogInformation(
-                "Processed item [TraceId: {TraceId}] successfully. Value: {@Value}",
-                result.TraceId,
-                result.Value
-            );
-        }
-        else
-        {
-            _logger.LogError(
-                "Failed item [TraceId: {TraceId}]: {ErrorMessage}",
-                result.TraceId,
-                result.Error?.Message
-            );
-        }
+        _logger.LogInformation(
+            "Processed item [TraceId: {TraceId}] successfully. Value: {@Value}",
+            envelope.TraceId,
+            envelope.Payload
+        );
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

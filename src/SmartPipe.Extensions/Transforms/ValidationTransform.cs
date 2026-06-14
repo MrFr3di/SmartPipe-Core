@@ -5,11 +5,11 @@ namespace SmartPipe.Extensions.Transforms;
 
 /// <summary>
 /// Validates items using DataAnnotations attributes and custom validation rules.
-/// Returns <see cref="ProcessingResult{T}.Failure"/> with validation errors for invalid items.
-/// Implements <see cref="ITransformer{T, T}"/> for pipeline integration.
+/// Returns <see cref="StageResult{T}.Failure"/> with validation errors for invalid items.
+/// Implements <see cref="IPipelineTransformer{TInput, TOutput}"/> for pipeline integration.
 /// </summary>
 /// <typeparam name="T">The data type to validate.</typeparam>
-public class ValidationTransform<T> : ITransformer<T, T>
+public class ValidationTransform<T> : IPipelineTransformer<T, T>
 {
     private readonly List<Func<T, string?>> _rules = [];
 
@@ -26,11 +26,11 @@ public class ValidationTransform<T> : ITransformer<T, T>
     }
 
     /// <inheritdoc/>
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc/>
-    public ValueTask<ProcessingResult<T>> TransformAsync(
-        ProcessingContext<T> ctx,
+    public ValueTask<StageResult<T>> TransformAsync(
+        ProcessingEnvelope<T> envelope,
         CancellationToken ct = default
     )
     {
@@ -38,29 +38,28 @@ public class ValidationTransform<T> : ITransformer<T, T>
 
         // DataAnnotations
         var validationResults = new List<ValidationResult>();
-        var validationContext = new ValidationContext(ctx.Payload!);
-        if (!Validator.TryValidateObject(ctx.Payload!, validationContext, validationResults, true))
+        var validationContext = new ValidationContext(envelope.Payload!);
+        if (!Validator.TryValidateObject(envelope.Payload!, validationContext, validationResults, true))
             errors.AddRange(validationResults.Select(r => r.ErrorMessage ?? "Validation failed"));
 
         // Custom rules
         foreach (var rule in _rules)
         {
-            var error = rule(ctx.Payload);
+            var error = rule(envelope.Payload);
             if (error != null)
                 errors.Add(error);
         }
 
         if (errors.Count == 0)
-            return ValueTask.FromResult(ProcessingResult<T>.Success(ctx.Payload, ctx.TraceId));
+            return ValueTask.FromResult(StageResult<T>.Success(envelope.Payload));
 
         return ValueTask.FromResult(
-            ProcessingResult<T>.Failure(
-                new SmartPipeError(string.Join("; ", errors), ErrorType.Permanent, "Validation"),
-                ctx.TraceId
+            StageResult<T>.Failure(
+                new SmartPipeError(string.Join("; ", errors), ErrorType.Permanent, "Validation")
             )
         );
     }
 
     /// <inheritdoc/>
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

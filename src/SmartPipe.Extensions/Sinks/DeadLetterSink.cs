@@ -11,16 +11,16 @@ using SmartPipe.Core;
 namespace SmartPipe.Extensions.Sinks;
 
 /// <summary>
-/// Sink that captures failed items for later analysis.
-/// Saves only errors (IsSuccess = false) to a file in JSON format (one JSON object per line).
+/// Sink that captures dead-letter envelopes for later analysis.
+/// Saves each envelope to a file in JSON Lines format.
 /// Uses StreamWriter for immediate writes with IOException retry logic.
 /// </summary>
 /// <typeparam name="T">Item type.</typeparam>
-public class DeadLetterSink<T> : ISink<T>
+public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
 {
     private readonly string _path;
     private readonly ILogger<DeadLetterSink<T>> _logger;
-    private readonly Func<ProcessingResult<T>, string> _serialize;
+    private readonly Func<DeadLetterEnvelope<T>, string> _serialize;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly Stream? _testStream;
     private StreamWriter? _writer;
@@ -80,22 +80,22 @@ public class DeadLetterSink<T> : ISink<T>
 
     /// <summary>Create dead letter sink with source-generated JSON metadata.</summary>
     /// <param name="path">Output JSON file path.</param>
-    /// <param name="resultTypeInfo">Source-generated type information for legacy processing results.</param>
+    /// <param name="resultTypeInfo">Source-generated type information for dead-letter envelopes.</param>
     /// <exception cref="ArgumentNullException">Thrown when path or type information is null.</exception>
-    public DeadLetterSink(string path, JsonTypeInfo<ProcessingResult<T>> resultTypeInfo)
+    public DeadLetterSink(string path, JsonTypeInfo<DeadLetterEnvelope<T>> resultTypeInfo)
         : this(path, resultTypeInfo, logger: null, stream: null)
     {
     }
 
     /// <summary>Create dead letter sink with source-generated JSON metadata.</summary>
     /// <param name="path">Output JSON file path.</param>
-    /// <param name="resultTypeInfo">Source-generated type information for legacy processing results.</param>
+    /// <param name="resultTypeInfo">Source-generated type information for dead-letter envelopes.</param>
     /// <param name="logger">Logger instance via DI.</param>
     /// <param name="stream">Optional test stream. If provided, writer is created immediately.</param>
     /// <exception cref="ArgumentNullException">Thrown when path or type information is null.</exception>
     public DeadLetterSink(
         string path,
-        JsonTypeInfo<ProcessingResult<T>> resultTypeInfo,
+        JsonTypeInfo<DeadLetterEnvelope<T>> resultTypeInfo,
         ILogger<DeadLetterSink<T>>? logger,
         Stream? stream
     )
@@ -113,7 +113,7 @@ public class DeadLetterSink<T> : ISink<T>
     }
 
     /// <inheritdoc />
-    public Task InitializeAsync(CancellationToken ct = default)
+    public ValueTask InitializeAsync(CancellationToken ct = default)
     {
         if (_writer == null)
         {
@@ -126,13 +126,13 @@ public class DeadLetterSink<T> : ISink<T>
             );
             _writer = new StreamWriter(fileStream);
         }
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc />
-    public async Task WriteAsync(ProcessingResult<T> result, CancellationToken ct = default)
+    public async ValueTask WriteAsync(ProcessingEnvelope<DeadLetterEnvelope<T>> envelope, CancellationToken ct = default)
     {
-        if (result.IsSuccess)
+        if (envelope.Payload is null)
             return;
 
         await _semaphore.WaitAsync(ct);
@@ -143,7 +143,7 @@ public class DeadLetterSink<T> : ISink<T>
                     "Sink not initialized. Call InitializeAsync first."
                 );
 
-            var json = _serialize(result);
+            var json = _serialize(envelope.Payload);
             await WriteWithRetryAsync(json, ct);
         }
         finally
@@ -229,7 +229,7 @@ public class DeadLetterSink<T> : ISink<T>
     }
 
     /// <inheritdoc />
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_disposed)
             return;

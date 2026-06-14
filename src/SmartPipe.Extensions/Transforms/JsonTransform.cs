@@ -10,11 +10,11 @@ namespace SmartPipe.Extensions.Transforms;
 /// JSON serialization/deserialization transformer using System.Text.Json.
 /// Serializes <typeparamref name="TInput"/> to JSON, then deserializes to <typeparamref name="TOutput"/>.
 /// Supports <see cref="JsonSerializerOptions"/> configuration for custom serialization behavior.
-/// Implements <see cref="ITransformer{TInput, TOutput}"/> for pipeline integration.
+/// Implements <see cref="IPipelineTransformer{TInput, TOutput}"/> for pipeline integration.
 /// </summary>
 /// <typeparam name="TInput">The input type to serialize.</typeparam>
 /// <typeparam name="TOutput">The output type to deserialize.</typeparam>
-public class JsonTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
+public class JsonTransform<TInput, TOutput> : IPipelineTransformer<TInput, TOutput>
 {
     private readonly Func<TInput, string> _serialize;
     private readonly Func<string, TOutput?> _deserialize;
@@ -65,37 +65,36 @@ public class JsonTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
     }
 
     /// <inheritdoc/>
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc/>
-    public ValueTask<ProcessingResult<TOutput>> TransformAsync(
-        ProcessingContext<TInput> ctx,
+    public ValueTask<StageResult<TOutput>> TransformAsync(
+        ProcessingEnvelope<TInput> envelope,
         CancellationToken ct = default
     )
     {
         try
         {
-            var json = _serialize(ctx.Payload);
+            var json = _serialize(envelope.Payload);
             var result = _deserialize(json);
 
-            return ValueTask.FromResult(ProcessingResult<TOutput>.Success(result!, ctx.TraceId));
+            return ValueTask.FromResult(StageResult<TOutput>.Success(result!));
         }
         catch (JsonException ex)
         {
             return ValueTask.FromResult(
-                ProcessingResult<TOutput>.Failure(
+                StageResult<TOutput>.Failure(
                     new SmartPipeError(
                         $"JSON transform failed: {ex.Message}",
                         ErrorType.Permanent,
                         "Serialization",
                         ex
-                    ),
-                    ctx.TraceId
+                    )
                 )
             );
         }
     }
 
     /// <inheritdoc/>
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

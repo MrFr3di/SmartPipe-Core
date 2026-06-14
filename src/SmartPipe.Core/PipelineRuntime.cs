@@ -4,10 +4,8 @@ namespace SmartPipe.Core;
 
 /// <summary>Represents the single-use runtime boundary for a compiled pipeline plan.</summary>
 /// <remarks>
-/// This type is introduced in SmartPipe 1.1.0 as the ownership boundary for channels, workers,
-/// cancellation, retry scheduling, output, observers, and component disposal. The initial
-/// implementation is intentionally minimal while existing <see cref="SmartPipeChannel{TInput,TOutput}"/>
-/// behavior is migrated behind this boundary.
+/// This type is the ownership boundary for channels, workers, cancellation, retry scheduling,
+/// output, observers, and component disposal.
 /// </remarks>
 public sealed class PipelineRuntime
 {

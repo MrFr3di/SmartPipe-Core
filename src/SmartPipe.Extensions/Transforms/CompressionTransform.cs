@@ -7,7 +7,7 @@ namespace SmartPipe.Extensions.Transforms;
 /// <summary>
 /// Compression transformer using Brotli or GZip algorithms.
 /// Compresses <see cref="byte"/> arrays for efficient storage or transmission.
-/// Implements <see cref="ITransformer{T, T}"/> for pipeline integration (T = byte[]).
+/// Implements <see cref="IPipelineTransformer{TInput, TOutput}"/> for pipeline integration (T = byte[]).
 /// </summary>
 public enum CompressionAlgorithm
 {
@@ -24,9 +24,9 @@ public enum CompressionAlgorithm
 
 /// <summary>
 /// Transformer that compresses byte array payloads using Brotli or GZip algorithms.
-/// Implements <see cref="ITransformer{TInput, TOutput}"/> for pipeline integration with <see cref="byte"/>[] input and output.
+/// Implements <see cref="IPipelineTransformer{TInput, TOutput}"/> for pipeline integration with <see cref="byte"/>[] input and output.
 /// </summary>
-public class CompressionTransform : ITransformer<byte[], byte[]>
+public class CompressionTransform : IPipelineTransformer<byte[], byte[]>
 {
     private readonly CompressionAlgorithm _algorithm;
     private readonly CompressionLevel _level;
@@ -46,11 +46,11 @@ public class CompressionTransform : ITransformer<byte[], byte[]>
     }
 
     /// <inheritdoc/>
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc/>
-    public ValueTask<ProcessingResult<byte[]>> TransformAsync(
-        ProcessingContext<byte[]> ctx,
+    public ValueTask<StageResult<byte[]>> TransformAsync(
+        ProcessingEnvelope<byte[]> envelope,
         CancellationToken ct = default
     )
     {
@@ -58,44 +58,42 @@ public class CompressionTransform : ITransformer<byte[], byte[]>
         {
             using var output = new MemoryStream();
             using (var compressor = CreateCompressor(output))
-                compressor.Write(ctx.Payload, 0, ctx.Payload.Length);
+                compressor.Write(envelope.Payload, 0, envelope.Payload.Length);
 
             return ValueTask.FromResult(
-                ProcessingResult<byte[]>.Success(output.ToArray(), ctx.TraceId)
+                StageResult<byte[]>.Success(output.ToArray())
             );
         }
         catch (IOException ex)
         {
             return ValueTask.FromResult(
-                ProcessingResult<byte[]>.Failure(
+                StageResult<byte[]>.Failure(
                     new SmartPipeError(
                         $"Compression IO error: {ex.Message}",
                         ErrorType.Transient,
                         "Compression",
                         ex
-                    ),
-                    ctx.TraceId
+                    )
                 )
             );
         }
         catch (NotSupportedException ex)
         {
             return ValueTask.FromResult(
-                ProcessingResult<byte[]>.Failure(
+                StageResult<byte[]>.Failure(
                     new SmartPipeError(
                         $"Compression not supported: {ex.Message}",
                         ErrorType.Permanent,
                         "Compression",
                         ex
-                    ),
-                    ctx.TraceId
+                    )
                 )
             );
         }
     }
 
     /// <inheritdoc/>
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     /// <summary>
     /// Creates a compression stream for the specified algorithm.

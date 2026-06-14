@@ -51,8 +51,8 @@ Ready-to-use integrations for SmartPipe.Core: file, HTTP, database, mapping, val
 | Component | Description |
 |-----------|-------------|
 | `SmartPipeHostedService` | ASP.NET Core BackgroundService |
-| `AddSmartPipe<TIn,TOut>()` | DI registration for SmartPipeChannel |
-| `AddSmartPipeResilience()` | DI registration for Polly pipelines |
+| `AddSmartPipe<TIn,TOut>()` | Typed definition/factory DI registration |
+| `AddSmartPipeHostedService<TIn,TOut>()` | Typed hosted-service registration |
 
 ## Streaming
 

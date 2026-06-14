@@ -21,7 +21,7 @@ public class SmartPipeMetricsTests
     {
         var metrics = new SmartPipeMetrics();
         metrics.RecordProcessed(50.0);
-        
+
         metrics.ItemsProcessed.Should().Be(1);
         metrics.AvgLatencyMs.Should().Be(50.0);
     }
@@ -53,13 +53,11 @@ public class SmartPipeMetricsTests
     [Fact]
     public void CaptureSnapshot_ShouldReturnStableSampledView()
     {
-        var metrics = new SmartPipeMetrics
-        {
-            SmoothLatencyMs = 12.5,
-            SmoothThroughput = 20.25,
-            QueueSize = 3,
-            PoolHitRate = 0.75,
-        };
+        var metrics = new SmartPipeMetrics();
+        metrics.UpdateSmoothing(smoothLatencyMs: 12.5, smoothThroughput: 20.25);
+        metrics.UpdateQueueSize(3);
+        metrics.RecordPoolHitRate(0.75);
+
         metrics.RecordProcessed(10.0);
         metrics.RecordFailed();
         metrics.RecordDuplicate();

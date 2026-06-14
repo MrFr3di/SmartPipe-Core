@@ -16,7 +16,14 @@ internal sealed class SingleInputBuffer<T> : IInputBuffer<T>
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be greater than zero.");
 
         _capacity = capacity;
-        _channel = ChannelPool.CreateBoundedMultiReaderMultiWriter<T>(capacity, fullMode);
+        _channel = Channel.CreateBounded<T>(
+            new BoundedChannelOptions(capacity)
+            {
+                FullMode = fullMode,
+                SingleReader = false,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false,
+            });
     }
 
     public int ActiveLaneCount => 1;

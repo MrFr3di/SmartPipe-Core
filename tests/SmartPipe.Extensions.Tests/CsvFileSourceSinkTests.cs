@@ -35,8 +35,8 @@ public class CsvFileSourceSinkTests
         await File.WriteAllTextAsync(path, "Name,Age\nAlice,30\nBob,25\n");
 
         var source = new CsvFileSource<TestRecord>(path);
-        var results = new List<ProcessingContext<TestRecord>>();
-        await foreach (var ctx in source.ReadAsync())
+        var results = new List<ProcessingEnvelope<TestRecord>>();
+        await foreach (var ctx in source.ReadEnvelopesAsync())
             results.Add(ctx);
 
         results.Should().HaveCount(2);
@@ -72,7 +72,7 @@ public class CsvFileSourceSinkTests
             Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.csv"));
 
         var act = async () => await sink.WriteAsync(
-            ProcessingResult<TestRecord>.Success(new TestRecord { Name = "Alice", Age = 30 }, 1));
+            ProcessingEnvelope<TestRecord>.Create(new TestRecord { Name = "Alice", Age = 30 }));
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*InitializeAsync*");
@@ -84,8 +84,8 @@ public class CsvFileSourceSinkTests
         var path = "test_csv_sink.csv";
         var sink = new CsvFileSink<TestRecord>(path);
         await sink.InitializeAsync();
-        await sink.WriteAsync(ProcessingResult<TestRecord>.Success(new TestRecord { Name = "Alice", Age = 30 }, 1));
-        await sink.WriteAsync(ProcessingResult<TestRecord>.Success(new TestRecord { Name = "Bob", Age = 25 }, 2));
+        await sink.WriteAsync(ProcessingEnvelope<TestRecord>.Create(new TestRecord { Name = "Alice", Age = 30 }));
+        await sink.WriteAsync(ProcessingEnvelope<TestRecord>.Create(new TestRecord { Name = "Bob", Age = 25 }));
         await sink.DisposeAsync();
 
         var content = await File.ReadAllTextAsync(path);

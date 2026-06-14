@@ -44,7 +44,7 @@ public class DapperSelectorTests
     {
         var mockConn = new Mock<IDbConnection>();
         var parameters = new { Id = 1 };
-        
+
         var selector = new DapperSelector<TestEntity>(mockConn.Object, "SELECT * FROM Test WHERE Id = @Id", parameters);
         Assert.NotNull(selector);
     }
@@ -73,10 +73,10 @@ public class DapperSelectorTests
         var mockState = ConnectionState.Closed;
         mockConn.SetupGet(c => c.State).Returns(() => mockState);
         mockConn.Setup(c => c.Open()).Callback(() => mockState = ConnectionState.Open);
-        
+
         var selector = new DapperSelector<TestEntity>(mockConn.Object, "SELECT 1");
         await selector.InitializeAsync();
-        
+
         mockConn.Verify(c => c.Open(), Times.Once);
     }
 
@@ -85,15 +85,15 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        
+
         await connection.ExecuteAsync("CREATE TABLE Test (Id INTEGER PRIMARY KEY, Name TEXT)");
         await connection.ExecuteAsync("INSERT INTO Test (Id, Name) VALUES (1, 'TestName')");
 
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM Test");
         await selector.InitializeAsync();
-        
-        var results = new List<ProcessingContext<TestEntity>>();
-        await foreach (var item in selector.ReadAsync())
+
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             results.Add(item);
         }
@@ -101,7 +101,7 @@ public class DapperSelectorTests
         Assert.Single(results);
         Assert.Equal(1L, results[0].Payload.Id);
         Assert.Equal("TestName", results[0].Payload.Name);
-        
+
         await selector.DisposeAsync();
     }
 
@@ -110,20 +110,20 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        
+
         await connection.ExecuteAsync("CREATE TABLE Test (Id INTEGER PRIMARY KEY, Name TEXT)");
 
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM Test");
         await selector.InitializeAsync();
-        
-        var results = new List<ProcessingContext<TestEntity>>();
-        await foreach (var item in selector.ReadAsync())
+
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             results.Add(item);
         }
 
         Assert.Empty(results);
-        
+
         await selector.DisposeAsync();
     }
 
@@ -132,15 +132,15 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        
+
         await connection.ExecuteAsync("CREATE TABLE Test (Id INTEGER PRIMARY KEY, Name TEXT)");
         await connection.ExecuteAsync("INSERT INTO Test (Id, Name) VALUES (1, NULL)");
 
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM Test");
         await selector.InitializeAsync();
-        
-        var results = new List<ProcessingContext<TestEntity>>();
-        await foreach (var item in selector.ReadAsync())
+
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             results.Add(item);
         }
@@ -148,7 +148,7 @@ public class DapperSelectorTests
         Assert.Single(results);
         Assert.Equal(1L, results[0].Payload.Id);
         Assert.Null(results[0].Payload.Name);
-        
+
         await selector.DisposeAsync();
     }
 
@@ -157,15 +157,15 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        
+
         await connection.ExecuteAsync("CREATE TABLE Test (Id INTEGER PRIMARY KEY, UnknownColumn TEXT)");
         await connection.ExecuteAsync("INSERT INTO Test (Id, UnknownColumn) VALUES (1, 'some value')");
 
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM Test");
         await selector.InitializeAsync();
-        
-        var results = new List<ProcessingContext<TestEntity>>();
-        await foreach (var item in selector.ReadAsync())
+
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             results.Add(item);
         }
@@ -173,7 +173,7 @@ public class DapperSelectorTests
         Assert.Single(results);
         Assert.Equal(1L, results[0].Payload.Id);
         Assert.Null(results[0].Payload.Name);
-        
+
         await selector.DisposeAsync();
     }
 
@@ -182,16 +182,16 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        
+
         await connection.ExecuteAsync("CREATE TABLE Test (Id INTEGER PRIMARY KEY)");
         await connection.ExecuteAsync("INSERT INTO Test (Id) VALUES (1)");
 
         var mockLogger = new Mock<ILogger<DapperSelector<TestEntity>>>();
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM Test", logger: mockLogger.Object);
         await selector.InitializeAsync();
-        
-        var results = new List<ProcessingContext<TestEntity>>();
-        await foreach (var item in selector.ReadAsync())
+
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             results.Add(item);
         }
@@ -204,7 +204,7 @@ public class DapperSelectorTests
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
-        
+
         await selector.DisposeAsync();
     }
 
@@ -213,23 +213,23 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        
+
         await connection.ExecuteAsync("CREATE TABLE Test (Id INTEGER PRIMARY KEY)");
         await connection.ExecuteAsync("INSERT INTO Test (Id) VALUES (1)");
 
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM Test");
         await selector.InitializeAsync();
-        
+
         var cts = new CancellationTokenSource();
         cts.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
-            await foreach (var item in selector.ReadAsync(cts.Token))
+            await foreach (var item in selector.ReadEnvelopesAsync(cts.Token))
             {
             }
         });
-        
+
         await selector.DisposeAsync();
     }
 
@@ -238,9 +238,9 @@ public class DapperSelectorTests
     {
         var mockConn = new Mock<IDbConnection>();
         var selector = new DapperSelector<TestEntity>(mockConn.Object, "SELECT 1");
-        
+
         await selector.DisposeAsync();
-        
+
         mockConn.Verify(c => c.Dispose(), Times.Once);
     }
 
@@ -255,7 +255,7 @@ public class DapperSelectorTests
 
         await Assert.ThrowsAnyAsync<Exception>(async () =>
         {
-            await foreach (var item in selector.ReadAsync()) { }
+            await foreach (var item in selector.ReadEnvelopesAsync()) { }
         });
 
         await selector.DisposeAsync();
@@ -273,8 +273,8 @@ public class DapperSelectorTests
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM Test", parameters: null);
         await selector.InitializeAsync();
 
-        var results = new List<ProcessingContext<TestEntity>>();
-        await foreach (var item in selector.ReadAsync())
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             results.Add(item);
         }
@@ -301,7 +301,7 @@ public class DapperSelectorTests
 
         await Assert.ThrowsAnyAsync<Exception>(async () =>
         {
-            await foreach (var item in selector.ReadAsync()) { }
+            await foreach (var item in selector.ReadEnvelopesAsync()) { }
         });
 
         await selector.DisposeAsync();
@@ -312,9 +312,9 @@ public class DapperSelectorTests
     {
         var mockConn = new Mock<IDbConnection>();
         var selector = new DapperSelector<TestEntity>(mockConn.Object, "SELECT 1");
-        
+
         selector.Dispose();
-        
+
         mockConn.Verify(c => c.Dispose(), Times.Once);
     }
 
@@ -323,7 +323,7 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        
+
         var selector = new DapperSelector<TestEntity>(connection, "SELECT 1");
 
         await selector.DisposeAsync();
@@ -335,7 +335,7 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
-        
+
         var selector = new DapperSelector<TestEntity>(connection, "SELECT 1");
 
         selector.Dispose();
@@ -347,7 +347,7 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
-        
+
         var selector = new DapperSelector<TestEntity>(connection, "SELECT 1");
 
         await selector.DisposeAsync();
@@ -359,23 +359,23 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        
+
         await connection.ExecuteAsync("CREATE TABLE Test (Id INTEGER PRIMARY KEY, Name TEXT)");
         await connection.ExecuteAsync("INSERT INTO Test (Id, Name) VALUES (1, 'One')");
         await connection.ExecuteAsync("INSERT INTO Test (Id, Name) VALUES (2, 'Two')");
 
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM Test WHERE Id = @Id", new { Id = 1 });
         await selector.InitializeAsync();
-        
-        var results = new List<ProcessingContext<TestEntity>>();
-        await foreach (var item in selector.ReadAsync())
+
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             results.Add(item);
         }
 
         Assert.Single(results);
         Assert.Equal(1L, results[0].Payload.Id);
-        
+
         await selector.DisposeAsync();
     }
 
@@ -384,21 +384,21 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        
+
         await connection.ExecuteAsync("CREATE TABLE Test (Id INTEGER PRIMARY KEY)");
         await connection.ExecuteAsync("INSERT INTO Test (Id) VALUES (1)");
 
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM Test", commandTimeout: 60);
         await selector.InitializeAsync();
-        
-        var results = new List<ProcessingContext<TestEntity>>();
-        await foreach (var item in selector.ReadAsync())
+
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             results.Add(item);
         }
 
         Assert.Single(results);
-        
+
         await selector.DisposeAsync();
     }
 
@@ -407,16 +407,16 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        
+
         await connection.ExecuteAsync("CREATE TABLE Test (Id INTEGER PRIMARY KEY)");
         await connection.ExecuteAsync("INSERT INTO Test (Id) VALUES (1)");
 
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM Test");
         await selector.InitializeAsync();
-        
+
         // Execute ReadAsync to initialize _reader
-        await foreach (var item in selector.ReadAsync()) { }
-        
+        await foreach (var item in selector.ReadEnvelopesAsync()) { }
+
         await selector.DisposeAsync();
     }
 
@@ -426,7 +426,7 @@ public class DapperSelectorTests
         // Test entity with int Id property (not long)
         var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
-        
+
         connection.Execute("CREATE TABLE TestConv (Id INTEGER PRIMARY KEY, Name TEXT)");
         connection.Execute("INSERT INTO TestConv (Id, Name) VALUES (1, 'Test')");
 
@@ -434,8 +434,8 @@ public class DapperSelectorTests
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM TestConv");
         await selector.InitializeAsync();
 
-        var results = new List<ProcessingContext<TestEntity>>();
-        await foreach (var item in selector.ReadAsync())
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             results.Add(item);
         }
@@ -452,15 +452,15 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
-        
+
         connection.Execute("CREATE TABLE TestTypes (Id INTEGER PRIMARY KEY, Name TEXT, Value REAL, Active INTEGER)");
         connection.Execute("INSERT INTO TestTypes (Id, Name, Value, Active) VALUES (1, 'Test', 123.45, 1)");
 
         var selector = new DapperSelector<AllTypesEntity>(connection, "SELECT * FROM TestTypes");
         await selector.InitializeAsync();
 
-        var results = new List<ProcessingContext<AllTypesEntity>>();
-        await foreach (var item in selector.ReadAsync())
+        var results = new List<ProcessingEnvelope<AllTypesEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             results.Add(item);
         }
@@ -479,7 +479,7 @@ public class DapperSelectorTests
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
-        
+
         // Create table with only Id column
         connection.Execute("CREATE TABLE TestPartial (Id INTEGER PRIMARY KEY)");
         connection.Execute("INSERT INTO TestPartial (Id) VALUES (1)");
@@ -487,8 +487,8 @@ public class DapperSelectorTests
         var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM TestPartial");
         await selector.InitializeAsync();
 
-        var results = new List<ProcessingContext<TestEntity>>();
-        await foreach (var item in selector.ReadAsync())
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
         {
             results.Add(item);
         }

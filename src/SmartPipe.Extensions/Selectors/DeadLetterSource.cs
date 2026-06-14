@@ -9,7 +9,7 @@ namespace SmartPipe.Extensions.Selectors;
 
 /// <summary>Reads failed items from DeadLetterSink JSON for reprocessing.</summary>
 /// <typeparam name="T">Item type.</typeparam>
-public class DeadLetterSource<T> : ISource<T>
+public class DeadLetterSource<T> : IPipelineSource<T>
 {
     private readonly string _path;
     private readonly Func<JsonElement, T?> _deserializeValue;
@@ -42,7 +42,7 @@ public class DeadLetterSource<T> : ISource<T>
     }
 
     /// <inheritdoc />
-    public async Task InitializeAsync(CancellationToken ct = default)
+    public async ValueTask InitializeAsync(CancellationToken ct = default)
     {
         if (!File.Exists(_path))
             throw new FileNotFoundException($"Dead letter file not found: {_path}");
@@ -50,7 +50,7 @@ public class DeadLetterSource<T> : ISource<T>
     }
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync(
+    public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
         [EnumeratorCancellation] CancellationToken ct = default
     )
     {
@@ -82,7 +82,7 @@ public class DeadLetterSource<T> : ISource<T>
             yield return context;
     }
 
-    private IEnumerable<ProcessingContext<T>> ProcessRoot(JsonElement root)
+    private IEnumerable<ProcessingEnvelope<T>> ProcessRoot(JsonElement root)
     {
         if (root.ValueKind == JsonValueKind.Array)
         {
@@ -105,12 +105,12 @@ public class DeadLetterSource<T> : ISource<T>
         }
     }
 
-    private List<ProcessingContext<T>> ProcessNdjson(
+    private List<ProcessingEnvelope<T>> ProcessNdjson(
         string json,
         JsonException? rootParseFailure,
         CancellationToken ct)
     {
-        var contexts = new List<ProcessingContext<T>>();
+        var contexts = new List<ProcessingEnvelope<T>>();
         using var reader = new StringReader(json);
         var parsedAnyLine = false;
 
@@ -138,24 +138,78 @@ public class DeadLetterSource<T> : ISource<T>
         return contexts;
     }
 
-    private ProcessingContext<T>? ProcessElement(JsonElement element)
+    private ProcessingEnvelope<T>? ProcessElement(JsonElement element)
     {
-        if (
-            !element.TryGetProperty("IsSuccess", out var isSuccessProp)
-            || !isSuccessProp.GetBoolean()
-        )
+        if (!element.TryGetProperty("OriginalPayload", out var payloadProp))
+            return null;
+
+        var value = _deserializeValue(payloadProp);
+        if (value is null)
+            return null;
+
+        var pipelineId = ReadString(element, "PipelineId") ?? "dead-letter-replay";
+        var runId = ReadString(element, "RunId") ?? Guid.NewGuid().ToString("N");
+        var traceId = ReadTraceId(element);
+        var metadata = ReadMetadata(element);
+        var createdAtUtc = ReadDateTimeOffset(element, "FailedAtUtc");
+
+        return ProcessingEnvelope<T>.Create(
+            value,
+            pipelineId,
+            runId,
+            traceId,
+            metadata,
+            createdAtUtc);
+    }
+
+    private static string? ReadString(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property)
+            && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
+    }
+
+    private static ulong ReadTraceId(JsonElement element)
+    {
+        return element.TryGetProperty("TraceId", out var property)
+            && property.ValueKind == JsonValueKind.Number
+            && property.TryGetUInt64(out var traceId)
+            ? traceId
+            : 0UL;
+    }
+
+    private static DateTimeOffset? ReadDateTimeOffset(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property)
+            && property.ValueKind == JsonValueKind.String
+            && property.TryGetDateTimeOffset(out var value)
+            ? value
+            : null;
+    }
+
+    private static MetadataBag ReadMetadata(JsonElement element)
+    {
+        if (!element.TryGetProperty("Metadata", out var metadataElement))
+            return MetadataBag.Empty;
+
+        var itemsElement = metadataElement.TryGetProperty("Items", out var items)
+            ? items
+            : metadataElement;
+
+        if (itemsElement.ValueKind != JsonValueKind.Object)
+            return MetadataBag.Empty;
+
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var property in itemsElement.EnumerateObject())
         {
-            // Only process failed items
-            if (element.TryGetProperty("Value", out var valueProp))
-            {
-                var value = _deserializeValue(valueProp);
-                if (value != null)
-                    return new ProcessingContext<T>(value);
-            }
+            if (property.Value.ValueKind == JsonValueKind.String)
+                values[property.Name] = property.Value.GetString()!;
         }
-        return null;
+
+        return values.Count == 0 ? MetadataBag.Empty : MetadataBag.From(values);
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

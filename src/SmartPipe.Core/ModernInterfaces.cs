@@ -5,9 +5,8 @@ namespace SmartPipe.Core;
 /// <summary>Envelope-aware source API used by the SmartPipe 1.1 runtime model.</summary>
 /// <typeparam name="T">Payload type emitted by the source.</typeparam>
 /// <remarks>
-/// New code that needs lineage, dead-letter replay, retry metadata, and observer integration should
-/// implement this interface. Legacy <see cref="ISource{T}"/> implementations remain supported through
-/// <see cref="LegacySourceAdapter{T}"/>.
+/// Sources that need lineage, dead-letter replay, retry metadata, and observer integration should
+/// implement this interface.
 /// </remarks>
 public interface IPipelineSource<T> : IAsyncDisposable
 {
@@ -26,9 +25,8 @@ public interface IPipelineSource<T> : IAsyncDisposable
 /// <typeparam name="TInput">Input payload type.</typeparam>
 /// <typeparam name="TOutput">Output payload type.</typeparam>
 /// <remarks>
-/// This is the primary API for new transforms that need envelope metadata, lineage, and retry attempt
-/// information. Legacy <see cref="ITransformer{TInput,TOutput}"/> implementations remain supported
-/// through <see cref="LegacyTransformerAdapter{TInput,TOutput}"/>.
+/// This is the primary API for transforms that need envelope metadata, lineage, and retry attempt
+/// information.
 /// </remarks>
 public interface IPipelineTransformer<TInput, TOutput> : IAsyncDisposable
 {

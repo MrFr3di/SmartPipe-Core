@@ -21,25 +21,6 @@ public enum FailureAction
     FaultPipeline,
 }
 
-/// <summary>Defines how a retry queue behaves when full.</summary>
-public enum RetryQueueOverflowPolicy
-{
-    /// <summary>Wait until capacity is available.</summary>
-    Wait,
-
-    /// <summary>Fail the enqueue operation immediately.</summary>
-    FailFast,
-
-    /// <summary>Route the item to dead-letter handling.</summary>
-    DeadLetter,
-
-    /// <summary>Drop the newest retry item.</summary>
-    DropNewest,
-
-    /// <summary>Drop the oldest retry item.</summary>
-    DropOldest,
-}
-
 /// <summary>Evaluation model used by a stage circuit breaker.</summary>
 public enum CircuitBreakerEvaluationMode
 {

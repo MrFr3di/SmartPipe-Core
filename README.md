@@ -1,27 +1,17 @@
 # SmartPipe.Core
 
-Streaming pipeline engine for .NET.
+Typed in-process streaming pipelines for .NET.
 
-SmartPipe is built for cases where you need a lightweight, explicit, testable pipeline runtime inside a .NET process: `source -> transform -> sink` pipelines built on `System.Threading.Channels`  with backpressure, runtime metadata, retry-aware stage execution, observer events, and replay-safe dead-letter context — without turning your application into a distributed messaging system. It supports the established1.x legacy API and the 1.1.0 envelope-aware typed API for runs that need metadata, observer events, and replay safe dead-letter context.
+SmartPipe.Core runs explicit `source -> transform -> sink` pipelines inside your
+process with bounded channels, envelope metadata, retry/timeout/circuit-breaker
+stage handling, observer events, metrics snapshots, and replay-safe dead-letter
+records. It is not a distributed workflow engine, message broker, durable queue,
+or exactly-once delivery system.
 
 [![CI](https://github.com/MrFr3di/SmartPipe-Core/actions/workflows/ci.yml/badge.svg)](https://github.com/MrFr3di/SmartPipe-Core/actions)
 [![NuGet Core](https://img.shields.io/nuget/v/SmartPipe.Core.svg)](https://www.nuget.org/packages/SmartPipe.Core)
 [![NuGet Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.svg)](https://www.nuget.org/packages/SmartPipe.Extensions)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-
-## When to use SmartPipe
-
-Use SmartPipe when you need:
-
-- a small in-process pipeline runtime;
-- async streaming over `System.Threading.Channels`;
-- explicit `source -> transform -> sink` composition;
-- bounded channels and backpressure;
-- typed processing metadata;
-- retry, timeout, circuit breaker and dead-letter behavior;
-- graceful `DrainAsync`, `CancelAsync`, and `AbortAsync` semantics;
-- observable pipeline execution;
-- compatibility with existing SmartPipe 1.x components.
 
 ## Install
 
@@ -30,85 +20,111 @@ dotnet add package SmartPipe.Core
 dotnet add package SmartPipe.Extensions
 ```
 
-## Runtime models
-
-SmartPipe.Core currently exposes two runtime models.
-
-| Runtime | Recommended for |
-|---|---|
-| **Typed runtime** | New code, metadata-aware processing, observers, dead-letter records, explicit run lifecycle. |
-| **Legacy runtime** | Existing 1.x code using `ISource<T>`, `ITransformer<TInput,TOutput>`, `ISink<T>`, or `SmartPipeChannel<TInput,TOutput>`. |
-
-For new code, prefer the typed runtime.
-
-## Minimal Legacy Pipeline
-
-Use the legacy API when you already have `ISource<T>`,
-`ITransformer<TInput,TOutput>`, or `ISink<T>` components.
+## Quick Start
 
 ```csharp
-using SmartPipe.Core;
-using SmartPipe.Extensions.Selectors;
-using SmartPipe.Extensions.Sinks;
+var run = PipelineBuilder
+    .From(PipelineSource.FromAsyncEnumerable(items))
+    .Transform(PipelineTransformer.FromFunc<int, string>(
+        static (value, ct) => ValueTask.FromResult(value.ToString())))
+    .To(PipelineSink.FromFunc<string>(
+        static (value, ct) => ValueTask.CompletedTask));
 
-var httpClient = new HttpClient();
-
-var pipeline = PipelineBuilder
-    .From(new HttpSelector<int>(httpClient, "https://api.example.com/numbers"))
-    .Transform(new MiddlewareTransformer<int>(x => x * 2));
-
-await pipeline.To(new LoggerSink<int>(logger));
+await run.Completion;
 ```
 
-## Minimal Typed Pipeline
-
-Use the typed API for new code that needs envelope metadata, lineage, observers,
-stage failure policies, or replay-safe dead-letter records.
+For component-based pipelines:
 
 ```csharp
 IPipelineSource<Order> source = new OrderSource();
-IPipelineTransformer<Order, OrderDto> transformer = new OrderDtoStage();
+IPipelineTransformer<Order, OrderDto> stage = new OrderStage();
 IPipelineSink<OrderDto> sink = new OrderSink();
 
-var run = PipelineBuilder
+await using var run = PipelineBuilder
     .From(source)
-    .Transform(transformer)
+    .WithPipelineId("orders")
+    .Transform(stage)
+    .WithRuntimeOptions(new PipelineRuntimeOptions
+    {
+        MaxConcurrency = 4,
+        InputCapacity = 1024,
+        OutputPolicy = PipelineOutputPolicy.SuppressSuccessWhenSinkAttached,
+    })
     .To(sink);
 
 await run.Completion;
 ```
 
-`PipelineBuilder.To(IPipelineSink<T>)` returns `PipelineRun<T>`. Consume
-`run.Outputs` when the caller needs result and envelope data.
+`PipelineRun<T>.Outputs` exposes `PipelineOutput<T>` records with the final
+`ProcessingEnvelope<T>` when available and a `PipelineResult<T>` success/failure
+result.
+
+## Lifecycle
+
+- `DrainAsync` stops accepting new source items at source boundaries and waits
+  for accepted work.
+- `CancelAsync` requests cooperative cancellation.
+- `AbortAsync` is the immediate stop path.
+- `DisposeAsync` is idempotent and disposes runtime-owned components once.
+
+## DI And Hosting
+
+`SmartPipe.Extensions` registers immutable definitions and per-run factories:
+
+```csharp
+services.AddSmartPipe<Order, OrderDto>(
+    "orders",
+    builder => builder
+        .UseSource<OrderSource>()
+        .UseStage<OrderStage>()
+        .UseSink<OrderSink>());
+```
+
+Resolve `ISmartPipeFactory<Order, OrderDto>` and call `Start()`, or use
+`AddSmartPipeHostedService<TInput,TOutput>()` for background hosting.
+
+Typed health checks can be registered for DI pipelines:
+
+```csharp
+services
+    .AddHealthChecks()
+    .AddSmartPipeHealthCheck<Order, OrderDto>("orders");
+```
+
+The health check reads the typed run state and immutable metrics snapshot. It
+reports high queue utilization or stale processing as degraded and faulted runs
+as unhealthy.
+
+## AOT And Trimming
+
+Reflection-based JSON file and dead-letter helpers are annotated with
+`RequiresUnreferencedCode` / `RequiresDynamicCode`. Use constructors that accept
+source-generated `JsonTypeInfo` for NativeAOT or trimming-sensitive consumers.
 
 ## Docs
 
-- [Getting started](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/getting-started.md)
-- [Configuration](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/configuration.md)
-- [Resilience and failure semantics](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/resilience.md)
-- [Runtime architecture](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/architecture.md)
-- [API reference](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/api-reference.md)
-- [AOT and trimming compatibility](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/aot-compatibility.md)
-- [1.0 to 1.1 migration guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/1.0-to-1.1.md)
-- [Changelog](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CHANGELOG.md)
+- [Getting started](docs/getting-started.md)
+- [Configuration](docs/configuration.md)
+- [Runtime contracts](docs/runtime-contracts.md)
+- [Resilience](docs/resilience.md)
+- [Architecture](docs/architecture.md)
+- [Observability](docs/observability.md)
+- [Observers](docs/observers.md)
+- [Dependency injection](docs/dependency-injection.md)
+- [Hosting](docs/hosting.md)
+- [Health checks](docs/health-checks.md)
+- [API reference](docs/api-reference.md)
+- [Contributing](docs/contributing.md)
+- [Release validation](docs/release.md)
+- [Migration from removed legacy APIs](docs/migration/legacy-to-typed.md)
 
 ## Requirements
 
 - .NET 10.0 or later.
 - `SmartPipe.Core` depends on `Microsoft.Extensions.Logging.Abstractions`.
-- `SmartPipe.Extensions` adds integrations for HTTP, EF Core, Dapper, JSON, CSV,
-  Mapster, Polly, hosting, health checks, and file sinks/sources.
-
-## API Direction
-
-- New pipelines should prefer `PipelineBuilder` with `IPipelineSource<T>`,
-  `IPipelineTransformer<TInput,TOutput>`, and `IPipelineSink<T>`.
-- Existing 1.x consumers can keep using `SmartPipeChannel<TInput,TOutput>` and
-  the legacy `ISource<T>`, `ITransformer<TInput,TOutput>`, and `ISink<T>` APIs.
-- Legacy components can be bridged into typed pipelines with
-  `LegacySourceAdapter<T>`, `LegacyTransformerAdapter<TInput,TOutput>`, and
-  `LegacySinkAdapter<T>`.
+- `SmartPipe.Extensions` adds HTTP, EF Core, Dapper, JSON, CSV, Mapster, Polly,
+  hosting, health-check, and file integration components.
 
 ## License
 
-MIT [LICENSE](https://github.com/MrFr3di/SmartPipe-Core/blob/main/LICENSE.md).
+MIT [LICENSE](LICENSE.md).

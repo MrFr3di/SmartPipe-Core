@@ -14,7 +14,7 @@ public class CsvTransformTests
     public async Task Transform_ShouldSerializeAndDeserialize()
     {
         var transform = new CsvTransform<CsvInput, CsvOutput>(",", CultureInfo.InvariantCulture);
-        var ctx = new ProcessingContext<CsvInput>(new CsvInput { Name = "Test", Value = 42 });
+        var ctx = ProcessingEnvelope<CsvInput>.Create(new CsvInput { Name = "Test", Value = 42 });
 
         var result = await transform.TransformAsync(ctx);
 

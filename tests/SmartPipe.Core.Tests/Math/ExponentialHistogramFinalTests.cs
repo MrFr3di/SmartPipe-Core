@@ -12,7 +12,7 @@ public class ExponentialHistogramFinalTests
         hist.Record(10);
         hist.Record(100);
         hist.Record(1000);
-        
+
         hist.P50.Should().BeGreaterThan(0);
         hist.P99.Should().BeGreaterThan(0);
     }
