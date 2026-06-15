@@ -9,6 +9,7 @@ internal sealed class SinkExecutor<TOutput> : IDisposable
     private readonly string _runId;
     private readonly IPipelineClock _clock;
     private readonly Func<PipelineEvent, CancellationToken, ValueTask> _emitAsync;
+    private readonly Action<double>? _recordSinkDuration;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
 
     public SinkExecutor(
@@ -16,13 +17,15 @@ internal sealed class SinkExecutor<TOutput> : IDisposable
         string pipelineId,
         string runId,
         IPipelineClock clock,
-        Func<PipelineEvent, CancellationToken, ValueTask> emitAsync)
+        Func<PipelineEvent, CancellationToken, ValueTask> emitAsync,
+        Action<double>? recordSinkDuration = null)
     {
         _sink = sink;
         _pipelineId = pipelineId ?? throw new ArgumentNullException(nameof(pipelineId));
         _runId = runId ?? throw new ArgumentNullException(nameof(runId));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _emitAsync = emitAsync ?? throw new ArgumentNullException(nameof(emitAsync));
+        _recordSinkDuration = recordSinkDuration;
     }
 
     public bool HasSink => _sink is not null;
@@ -51,7 +54,10 @@ internal sealed class SinkExecutor<TOutput> : IDisposable
 
             try
             {
+                var started = _clock.GetTimestamp();
                 await _sink.WriteAsync(outputEnvelope, ct).ConfigureAwait(false);
+                var elapsed = _clock.GetElapsedTime(started, _clock.GetTimestamp());
+                _recordSinkDuration?.Invoke(Math.Max(0, elapsed.TotalMilliseconds));
             }
             catch (Exception ex)
             {

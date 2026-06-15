@@ -43,3 +43,11 @@ transitions for drain, cancel, abort, completion, and fault.
 `SmartPipeActivitySource` emits `Pipeline.Run` and `Transform` activities.
 `SmartPipeMetricsRecorder` records counters and immutable snapshots.
 `SmartPipeMeter` publishes runtime instruments.
+
+## AOT And Trimming
+
+SmartPipe.Core is AOT-conscious and analyzer-gated. Reflection-sensitive JSON
+and dead-letter helpers expose source-generated serializer paths where relevant.
+
+Some SmartPipe.Extensions integrations may require source-generated serializers
+or may not be AOT-friendly.

@@ -614,7 +614,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly PipelineWorker<TInput> _worker;
     private readonly StageExecutor _stageExecutor;
     private readonly SinkExecutor<TOutput> _sinkExecutor;
-    private readonly SmartPipeMetricsRecorder _metrics = new();
+    private readonly SmartPipeMetricsRecorder _metrics;
     private readonly PipelineLifecycleController _lifecycle = new();
     private readonly IPipelineObserverDispatcher _observerDispatcher;
     private readonly CancellationTokenSource _cts;
@@ -638,6 +638,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _sink = sink;
         _options = _runtime.Options;
         _clock = _options.Clock;
+        _metrics = new SmartPipeMetricsRecorder(_clock);
         _outputs = CreateOutputChannel(_options);
         _outputEmitter = new PipelineOutputEmitter<TOutput>(
             _outputs.Writer,
@@ -663,7 +664,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _spec.PipelineId,
             _runtime.RunId,
             _clock,
-            EmitAsync);
+            EmitAsync,
+            _metrics.RecordSinkDuration);
         _observerDispatcher = PipelineObserverDispatcher.Create(
             _spec.Observers,
             _options.ObserverDispatch,

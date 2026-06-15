@@ -29,22 +29,27 @@ public static class SmartPipeMeter
     );
 
     internal static readonly Counter<long> ItemsRetriedCounter = Meter.CreateCounter<long>(
-        "smartpipe.retries",
-        "retries"
+        "smartpipe.items.retried",
+        "items"
     );
 
     internal static readonly Counter<long> ItemsDeadLetteredCounter = Meter.CreateCounter<long>(
-        "smartpipe.items.dead_lettered",
+        "smartpipe.items.deadlettered",
         "items"
     );
 
     internal static readonly Counter<long> DuplicatesFilteredCounter = Meter.CreateCounter<long>(
-        "smartpipe.duplicates.filtered",
+        "smartpipe.items.duplicates_filtered",
         "items"
     );
 
     internal static readonly Histogram<double> StageLatencyHistogram = Meter.CreateHistogram<double>(
-        "smartpipe.latency",
+        "smartpipe.stage.duration",
+        "ms"
+    );
+
+    internal static readonly Histogram<double> SinkLatencyHistogram = Meter.CreateHistogram<double>(
+        "smartpipe.sink.duration",
         "ms"
     );
 }
@@ -171,6 +176,7 @@ public sealed record SmartPipeMetricsSnapshot
 /// <summary>Thread-safe mutable recorder that owns SmartPipe metric state.</summary>
 public sealed class SmartPipeMetricsRecorder
 {
+    private readonly IPipelineClock _clock;
     private long _itemsProcessed;
     private long _itemsFailed;
     private long _itemsRetried;
@@ -184,6 +190,17 @@ public sealed class SmartPipeMetricsRecorder
     private double _smoothLatencyMs;
     private double _smoothThroughput;
     private double _poolHitRate;
+
+    /// <summary>Creates a metrics recorder backed by the system runtime clock.</summary>
+    public SmartPipeMetricsRecorder()
+        : this(SystemPipelineClock.Instance)
+    {
+    }
+
+    internal SmartPipeMetricsRecorder(IPipelineClock clock)
+    {
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+    }
 
     /// <summary>Total items successfully processed.</summary>
     public long ItemsProcessed => Interlocked.Read(ref _itemsProcessed);
@@ -250,7 +267,7 @@ public sealed class SmartPipeMetricsRecorder
         Interlocked.Increment(ref _itemsProcessed);
         AddDouble(ref _totalLatencyMs, latencyMs);
         Volatile.Write(ref _lastStageLatencyMs, latencyMs);
-        Interlocked.Exchange(ref _lastProcessedAtUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
+        Interlocked.Exchange(ref _lastProcessedAtUtcTicks, _clock.GetUtcNow().UtcTicks);
         SmartPipeMeter.ItemsProcessedCounter.Add(1);
         SmartPipeMeter.StageLatencyHistogram.Record(latencyMs);
     }
@@ -281,6 +298,11 @@ public sealed class SmartPipeMetricsRecorder
     {
         Interlocked.Increment(ref _itemsDeadLettered);
         SmartPipeMeter.ItemsDeadLetteredCounter.Add(1);
+    }
+
+    internal void RecordSinkDuration(double latencyMs)
+    {
+        SmartPipeMeter.SinkLatencyHistogram.Record(latencyMs);
     }
 
     /// <summary>Update current input and output queue depths.</summary>

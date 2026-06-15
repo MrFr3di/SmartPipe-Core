@@ -45,16 +45,33 @@ health checks, not for coordinating pipeline lifecycle.
 
 ## Meter instruments
 
-The public meter name is `SmartPipe.Core`.
+Meter name:
+
+```text
+SmartPipe.Core
+```
+
+ActivitySource name:
+
+```text
+SmartPipe.Core
+```
 
 Current instruments:
 
 - `smartpipe.items.processed` counter, unit `items`
 - `smartpipe.items.failed` counter, unit `items`
-- `smartpipe.duplicates.filtered` counter, unit `items`
-- `smartpipe.retries` counter, unit `retries`
-- `smartpipe.items.dead_lettered` counter, unit `items`
-- `smartpipe.latency` histogram, unit `ms`
+- `smartpipe.items.retried` counter, unit `items`
+- `smartpipe.items.deadlettered` counter, unit `items`
+- `smartpipe.items.duplicates_filtered` counter, unit `items`
+- `smartpipe.stage.duration` histogram, unit `ms`
+- `smartpipe.sink.duration` histogram, unit `ms`
 
-Meter measurements must not include high-cardinality dimensions such as trace
-ids, run ids, item ids, payload values, exception messages, or user data.
+Allowed low-cardinality metric dimensions are `pipeline_id`, `stage_id`,
+`outcome`, and `error_type`.
+
+Meter measurements must not include high-cardinality dimensions such as
+`run_id`, `trace_id`, `exception_message`, `payload_value`, or `raw_payload`.
+
+`run_id` and `trace_id` may appear on Activity tags for debugging and tracing,
+but they must not be used as metric dimensions by default.

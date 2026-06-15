@@ -69,7 +69,7 @@ dotnet add package SmartPipe.Extensions
 ## Requirements
 
 - .NET 10.0+
-- SmartPipe.Core 1.1.0 (included as dependency)
+- SmartPipe.Core 2.0.0 (included as dependency)
 - This package intentionally includes integration dependencies for the features below.
 - Individual features pull their own dependencies:
   - `HttpSelector` / `HttpSink` → Polly (via Microsoft.Extensions.Resilience)

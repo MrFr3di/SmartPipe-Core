@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- The next release version is `2.0.0` because the typed-only refactor removes
+  legacy public runtime APIs that existed for `1.0.x` consumers.
+- Removed legacy public runtime concepts are documented in
+  `docs/migration/legacy-to-typed.md`.
+
 ### Typed-Only Runtime
 
 - SmartPipe.Core now uses the typed envelope runtime as the only runtime model.

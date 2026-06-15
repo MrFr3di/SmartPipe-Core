@@ -97,9 +97,24 @@ as unhealthy.
 
 ## AOT And Trimming
 
+SmartPipe.Core is AOT-conscious and analyzer-gated.
+
 Reflection-based JSON file and dead-letter helpers are annotated with
 `RequiresUnreferencedCode` / `RequiresDynamicCode`. Use constructors that accept
 source-generated `JsonTypeInfo` for NativeAOT or trimming-sensitive consumers.
+
+Some SmartPipe.Extensions integrations may require source-generated serializers
+or may not be AOT-friendly.
+
+## Extensions Package Surface
+
+SmartPipe.Extensions is currently a broad integration package. This release
+keeps it monolithic to avoid expanding the typed-only hardening scope. Future
+releases may split integrations into focused packages such as Hosting,
+HealthChecks, Json, Csv, EFCore, Dapper, Mapster, and Resilience.
+
+README examples are intentionally minimal. CI consumer smoke is the executable
+check for the public quick-start scenarios.
 
 ## Docs
 

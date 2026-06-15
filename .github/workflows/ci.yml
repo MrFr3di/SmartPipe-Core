@@ -56,8 +56,8 @@ jobs:
     - name: Consumer smoke
       run: |
         dotnet new console -n SmartPipe.ConsumerSmoke -o artifacts/consumer-smoke
-        dotnet add artifacts/consumer-smoke/SmartPipe.ConsumerSmoke.csproj package SmartPipe.Core --version 1.1.0 --source "$PWD/artifacts/packages" --source "https://api.nuget.org/v3/index.json"
-        dotnet add artifacts/consumer-smoke/SmartPipe.ConsumerSmoke.csproj package SmartPipe.Extensions --version 1.1.0 --source "$PWD/artifacts/packages" --source "https://api.nuget.org/v3/index.json"
+        dotnet add artifacts/consumer-smoke/SmartPipe.ConsumerSmoke.csproj package SmartPipe.Core --version 2.0.0 --source "$PWD/artifacts/packages" --source "https://api.nuget.org/v3/index.json"
+        dotnet add artifacts/consumer-smoke/SmartPipe.ConsumerSmoke.csproj package SmartPipe.Extensions --version 2.0.0 --source "$PWD/artifacts/packages" --source "https://api.nuget.org/v3/index.json"
         cat > artifacts/consumer-smoke/Program.cs <<'CS'
         using System.Runtime.CompilerServices;
         using Microsoft.Extensions.DependencyInjection;
@@ -279,8 +279,8 @@ jobs:
             <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
           </PropertyGroup>
           <ItemGroup>
-            <PackageReference Include="SmartPipe.Core" Version="1.1.0" />
-            <PackageReference Include="SmartPipe.Extensions" Version="1.1.0" />
+            <PackageReference Include="SmartPipe.Core" Version="2.0.0" />
+            <PackageReference Include="SmartPipe.Extensions" Version="2.0.0" />
           </ItemGroup>
         </Project>
         XML

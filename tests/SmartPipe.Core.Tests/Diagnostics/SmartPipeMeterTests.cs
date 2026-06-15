@@ -26,13 +26,56 @@ public class SmartPipeMeterTests
     };
 
     [Fact]
-    public void SmartPipeMetrics_ShouldPublishStableMeterInstrumentsThroughMeterListener()
+    public void Metrics_MeterName_IsStable()
+    {
+        var snapshot = CaptureMetricMeasurements(metrics => metrics.RecordProcessed(12.5));
+
+        snapshot.Should().Contain(m => m.MeterName == "SmartPipe.Core");
+    }
+
+    [Fact]
+    public void Metrics_InstrumentNames_AreStable()
+    {
+        var snapshot = CaptureMetricMeasurements(metrics =>
+        {
+            metrics.RecordProcessed(12.5);
+            metrics.RecordFailed();
+            metrics.RecordDuplicate();
+            metrics.RecordRetry();
+            metrics.RecordDeadLetter();
+        });
+
+        snapshot.Should().Contain(m => m.InstrumentName == "smartpipe.items.processed" && m.Unit == "items");
+        snapshot.Should().Contain(m => m.InstrumentName == "smartpipe.items.failed" && m.Unit == "items");
+        snapshot.Should().Contain(m => m.InstrumentName == "smartpipe.items.retried" && m.Unit == "items");
+        snapshot.Should().Contain(m => m.InstrumentName == "smartpipe.items.deadlettered" && m.Unit == "items");
+        snapshot.Should().Contain(m => m.InstrumentName == "smartpipe.items.duplicates_filtered" && m.Unit == "items");
+        snapshot.Should().Contain(m => m.InstrumentName == "smartpipe.stage.duration" && m.Unit == "ms");
+        snapshot.Should().Contain(m => m.InstrumentName == "smartpipe.sink.duration" && m.Unit == "ms");
+    }
+
+    [Fact]
+    public void Metrics_DoesNotUseHighCardinalityMetricTags()
+    {
+        var snapshot = CaptureMetricMeasurements(metrics =>
+        {
+            metrics.RecordProcessed(12.5);
+            metrics.RecordFailed();
+            metrics.RecordDuplicate();
+            metrics.RecordRetry();
+            metrics.RecordDeadLetter();
+        });
+
+        snapshot.SelectMany(m => m.Tags).Where(tag => !IsAllowedMeterTag(tag)).Should().BeEmpty();
+    }
+
+    private static MeterMeasurement[] CaptureMetricMeasurements(Action<SmartPipeMetrics> record)
     {
         var measurements = new ConcurrentQueue<MeterMeasurement>();
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, meterListener) =>
         {
-            if (instrument.Meter.Name == "SmartPipe.Core")
+            if (instrument.Meter.Name == SmartPipeMeter.Name)
                 meterListener.EnableMeasurementEvents(instrument);
         };
         listener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
@@ -42,20 +85,10 @@ public class SmartPipeMeterTests
         listener.Start();
 
         var metrics = new SmartPipeMetrics();
-        metrics.RecordProcessed(12.5);
-        metrics.RecordFailed();
-        metrics.RecordDuplicate();
-        metrics.RecordRetry();
+        record(metrics);
+        new SmartPipeMetricsRecorder().RecordSinkDuration(3.5);
 
-        var snapshot = measurements.ToArray();
-        snapshot.Should().Contain(m => m.MeterName == "SmartPipe.Core");
-        snapshot.Should().Contain(m => m.InstrumentName == "smartpipe.items.processed" && m.Unit == "items");
-        snapshot.Should().Contain(m => m.InstrumentName == "smartpipe.items.failed" && m.Unit == "items");
-        snapshot.Should().Contain(m => m.InstrumentName == "smartpipe.duplicates.filtered" && m.Unit == "items");
-        snapshot.Should().Contain(m => m.InstrumentName == "smartpipe.retries" && m.Unit == "retries");
-        snapshot.Should().Contain(m => m.InstrumentName == "smartpipe.latency" && m.Unit == "ms");
-
-        snapshot.SelectMany(m => m.Tags).Where(tag => !IsAllowedMeterTag(tag)).Should().BeEmpty();
+        return measurements.ToArray();
     }
 
     private static bool IsAllowedMeterTag(KeyValuePair<string, object?> tag)

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Threading.Channels;
 using FluentAssertions;
@@ -490,6 +491,24 @@ public class RuntimeOptionsPassTests
         await run.Completion;
 
         outputs.Single().Envelope!.CreatedAtUtc.Should().Be(now);
+    }
+
+    [Fact]
+    public async Task Metrics_RecordProcessed_UsesRuntimeClock()
+    {
+        var now = new DateTimeOffset(2026, 6, 2, 11, 30, 0, TimeSpan.Zero);
+        var clock = new ManualPipelineClock(now);
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithRuntimeOptions(new PipelineRuntimeOptions { Clock = clock })
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        run.Metrics.LastProcessedAtUtc.Should().Be(now);
     }
 
     [Fact]
@@ -1113,6 +1132,188 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
+    public async Task SinkBackedPipeline_10000Items_DefaultOutputPolicy_CompletesWithoutReadingOutputs()
+    {
+        var itemCount = 10_000;
+        var sink = new CountingEnvelopeSink<int>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(Enumerable.Range(1, itemCount).ToArray()))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputMode = PipelineOutputMode.SuppressWhenSinkAttached,
+            })
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .To(sink);
+
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        run.State.Should().Be(PipelineRunState.Completed);
+        sink.Payloads.Should().HaveCount(itemCount);
+        run.Outputs.Completion.IsCompletedSuccessfully.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SinkBackedPipeline_EmitAll_WithoutOutputReader_Backpressures()
+    {
+        var sink = new CountingEnvelopeSink<int>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputCapacity = 1,
+                OutputMode = PipelineOutputMode.EmitAll,
+            })
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .To(sink);
+
+        await sink.WaitForCountAsync(1, TimeSpan.FromSeconds(5));
+
+        run.Completion.IsCompleted.Should().BeFalse();
+
+        await run.AbortAsync();
+        var act = async () => await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        run.State.Should().Be(PipelineRunState.Aborted);
+    }
+
+    [Fact]
+    public async Task OutputConsumer_SlowReader_DoesNotLoseItems()
+    {
+        var itemCount = 250;
+        var outputs = new List<int>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(Enumerable.Range(1, itemCount).ToArray()))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputCapacity = 2,
+                OutputMode = PipelineOutputMode.EmitAll,
+            })
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .Run();
+
+        await foreach (var output in run.Outputs.ReadAllAsync())
+        {
+            outputs.Add(output.Result.Value);
+            await Task.Yield();
+        }
+
+        await run.Completion;
+
+        outputs.Should().BeEquivalentTo(Enumerable.Range(1, itemCount));
+    }
+
+    [Fact]
+    public async Task ParallelPipeline_MaxConcurrency16_ProcessesAllExactlyOnce()
+    {
+        var itemCount = 2_000;
+        var sink = new ConcurrentBag<int>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(Enumerable.Range(1, itemCount).ToArray()))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxConcurrency = 16,
+                OutputMode = PipelineOutputMode.SuppressWhenSinkAttached,
+            })
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .To(PipelineSink.FromFunc<int>((value, ct) =>
+            {
+                sink.Add(value);
+                return ValueTask.CompletedTask;
+            }));
+
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        sink.Should().HaveCount(itemCount);
+        sink.Should().BeEquivalentTo(Enumerable.Range(1, itemCount));
+        run.Metrics.ItemsProcessed.Should().Be(itemCount);
+    }
+
+    [Fact]
+    public async Task ParallelPipeline_CancelDuringOutputWrite_CompletesAsCancelled()
+    {
+        var transformer = new CountingTransformer<int>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputCapacity = 1,
+                OutputMode = PipelineOutputMode.EmitAll,
+            })
+            .Transform(transformer)
+            .Run();
+
+        await transformer.WaitForCountAsync(2, TimeSpan.FromSeconds(5));
+        await run.CancelAsync();
+
+        var act = async () => await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        run.State.Should().Be(PipelineRunState.Cancelled);
+    }
+
+    [Fact]
+    public async Task DrainDuringProducerMoveNext_StopsSourceAndCompletesAcceptedItems()
+    {
+        var source = new GateControlledSource<int>(1, 2, 3);
+        var transformer = new BlockingLifecycleTransformer<int>();
+        var sink = new CountingEnvelopeSink<int>();
+
+        var run = PipelineBuilder
+            .From(source)
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputMode = PipelineOutputMode.SuppressWhenSinkAttached,
+            })
+            .Transform(transformer)
+            .To(sink);
+
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var drainTask = run.DrainAsync(TimeSpan.FromSeconds(5)).AsTask();
+        drainTask.IsCompleted.Should().BeFalse();
+        transformer.Release();
+
+        await drainTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        run.State.Should().Be(PipelineRunState.Completed);
+        sink.Payloads.Should().Equal(1);
+    }
+
+    [Fact]
+    public async Task ObserverBufferedReliable_10000Events_FlushesOnCompletion()
+    {
+        var itemCount = 10_000;
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(Enumerable.Range(1, itemCount).ToArray()))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputMode = PipelineOutputMode.SuppressAll,
+                ObserverDispatch = new ObserverDispatchOptions
+                {
+                    Mode = ObserverDispatchMode.BufferedReliable,
+                    Capacity = 1024,
+                    FullMode = BoundedChannelFullMode.Wait,
+                    FlushOnCompletion = true,
+                },
+            })
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .WithObserver(observer)
+            .Run();
+
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(10));
+
+        observer.Events.OfType<StageSucceededEvent>().Should().HaveCount(itemCount);
+        observer.Events.OfType<PipelineCompletedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task TypedPipeline_DrainAsync_ShouldTimeoutWhenSourceIsBlockedInsideMoveNextAsync()
     {
         var source = new GateControlledSource<int>(1, 2);
@@ -1662,6 +1863,50 @@ public class RuntimeOptionsPassTests
                 lock (_gate)
                 {
                     if (_payloads.Count >= expectedCount)
+                        return;
+
+                    waitTask = _countChanged.Task;
+                }
+
+                await waitTask.WaitAsync(timeout).ConfigureAwait(false);
+            }
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CountingTransformer<T> : IPipelineTransformer<T, T>
+    {
+        private int _count;
+        private readonly object _gate = new();
+        private TaskCompletionSource _countChanged =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<T>> TransformAsync(
+            ProcessingEnvelope<T> envelope,
+            CancellationToken ct = default
+        )
+        {
+            lock (_gate)
+            {
+                _count++;
+                _countChanged.TrySetResult();
+                _countChanged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            return ValueTask.FromResult(StageResult<T>.Success(envelope.Payload));
+        }
+
+        public async Task WaitForCountAsync(int expectedCount, TimeSpan timeout)
+        {
+            while (true)
+            {
+                Task waitTask;
+                lock (_gate)
+                {
+                    if (_count >= expectedCount)
                         return;
 
                     waitTask = _countChanged.Task;

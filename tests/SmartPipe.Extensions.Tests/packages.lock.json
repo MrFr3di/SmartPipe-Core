@@ -507,7 +507,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.8, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.8, )",
           "Microsoft.Extensions.Resilience": "[10.6.0, )",
-          "SmartPipe.Core": "[1.1.0, )"
+          "SmartPipe.Core": "[2.0.0, )"
         }
       }
     }

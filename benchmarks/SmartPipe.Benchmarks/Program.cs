@@ -1,3 +1,8 @@
+using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Running;
+using BenchmarkDotNet.Toolchains.InProcess.NoEmit;
 
-BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
+var config = DefaultConfig.Instance.AddJob(Job.Default.WithToolchain(InProcessNoEmitToolchain.Instance));
+
+BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args, config);

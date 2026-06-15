@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Version>1.1.0</Version>
+    <Version>2.0.0</Version>
     <Authors>SmartPipe</Authors>
     <Description>Streaming pipeline engine for .NET based on System.Threading.Channels with source, transform, sink, resilience, diagnostics, and compatibility APIs.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -20,6 +20,8 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EnablePackageValidation>true</EnablePackageValidation>
+    <EnableStrictModeForCompatibleTfms>true</EnableStrictModeForCompatibleTfms>
+    <IsAotCompatible>true</IsAotCompatible>
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <EnableAotAnalyzer>true</EnableAotAnalyzer>
     <VerifyReferenceAotCompatibility>true</VerifyReferenceAotCompatibility>

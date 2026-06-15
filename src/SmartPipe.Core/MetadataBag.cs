@@ -7,7 +7,7 @@ namespace SmartPipe.Core;
 
 /// <summary>Immutable metadata collection carried by pipeline envelopes.</summary>
 /// <remarks>
-/// Keys use ordinal case-sensitive comparison. Values are strings in SmartPipe 1.1.0 so that
+/// Keys use ordinal case-sensitive comparison. Values are strings in SmartPipe 2.0.0 so that
 /// metadata remains simple to serialize, redact, and expose through diagnostics. Each mutation
 /// returns a new <see cref="MetadataBag"/> instance; performance-sensitive callers should avoid
 /// adding high-cardinality or large values until benchmark evidence justifies it.

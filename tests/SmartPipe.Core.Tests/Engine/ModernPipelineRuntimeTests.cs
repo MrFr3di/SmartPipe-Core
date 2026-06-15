@@ -107,6 +107,42 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
+    public async Task PipelineBuilder_ModernApi_SourceInitializeFailure_FaultsRunAndDisposesSource()
+    {
+        var source = new ThrowingInitializeEnvelopeSource<int>("source init boom");
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .Run();
+
+        var act = async () => await run.Completion;
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("source init boom");
+        run.State.Should().Be(PipelineRunState.Faulted);
+        run.Outputs.Completion.IsFaulted.Should().BeTrue();
+        source.DisposeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_ModernApi_SinkInitializeFailure_FaultsRunAndDisposesSink()
+    {
+        var sink = new ThrowingInitializeEnvelopeSink<int>("sink init boom");
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .To(sink);
+
+        var act = async () => await run.Completion;
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("sink init boom");
+        run.State.Should().Be(PipelineRunState.Faulted);
+        run.Outputs.Completion.IsFaulted.Should().BeTrue();
+        sink.DisposeCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task TypedRuntime_ShouldDisposeRuntimeOwnedSourceTransformerSink_OnSuccess()
     {
         var source = new CountingEnvelopeSource<int>(1);
@@ -414,6 +450,31 @@ public class ModernPipelineRuntimeTests
         deadLetter.OriginalPayload.Should().Be(42);
         deadLetter.StageId.Should().Be("stage-1");
         deadLetter.Error.Category.Should().Be("TestFailure");
+    }
+
+    [Fact]
+    public async Task PipelineBuilder_ModernApi_DeadLetterWriteFailure_FaultsRunWithoutWrittenEvent()
+    {
+        await using var stream = new MemoryStream();
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(42))
+            .Transform(
+                new FailingStageTransformer<int, string>(),
+                new StageFailureOptions { OnPermanentFailure = FailureAction.DeadLetter },
+                new StageDeadLetterOptions<int>(stream, new ThrowingDeadLetterSerializer<int>())
+            )
+            .WithObserver(observer)
+            .Run();
+
+        var act = async () => await run.Completion;
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("dead-letter boom");
+        run.State.Should().Be(PipelineRunState.Faulted);
+        run.Outputs.Completion.IsFaulted.Should().BeTrue();
+        observer.Events.OfType<DeadLetterWrittenEvent>().Should().BeEmpty();
+        observer.Events.OfType<PipelineFaultedEvent>().Should().ContainSingle();
     }
 
     [Fact]
@@ -1073,6 +1134,35 @@ public class ModernPipelineRuntimeTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
+    private sealed class ThrowingInitializeEnvelopeSource<T> : IPipelineSource<T>
+    {
+        private readonly string _message;
+
+        public ThrowingInitializeEnvelopeSource(string message)
+        {
+            _message = message;
+        }
+
+        public int DisposeCount { get; private set; }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) =>
+            throw new InvalidOperationException(_message);
+
+        public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
+        )
+        {
+            await Task.Yield();
+            yield break;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private sealed class CountingEnvelopeSource<T> : IPipelineSource<T>, IPipelineComponentDescriptor
     {
         private readonly EnvelopeSource<T> _inner;
@@ -1302,6 +1392,47 @@ public class ModernPipelineRuntimeTests
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ThrowingInitializeEnvelopeSink<T> : IPipelineSink<T>
+    {
+        private readonly string _message;
+
+        public ThrowingInitializeEnvelopeSink(string message)
+        {
+            _message = message;
+        }
+
+        public int DisposeCount { get; private set; }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) =>
+            throw new InvalidOperationException(_message);
+
+        public ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingDeadLetterSerializer<T> : IDeadLetterSerializer<T>
+    {
+        public ValueTask WriteAsync(
+            DeadLetterEnvelope<T> envelope,
+            Stream stream,
+            CancellationToken ct = default) =>
+            throw new InvalidOperationException("dead-letter boom");
+
+        public async IAsyncEnumerable<DeadLetterEnvelope<T>> ReadAsync(
+            Stream stream,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            yield break;
+        }
     }
 
     private sealed class RecordingObserver : IPipelineObserver

@@ -71,13 +71,28 @@ failure timestamp.
 ## Observability
 
 Runtime activities use the `SmartPipe.Core` `ActivitySource`. The runtime emits
-`Pipeline.Run` and `Transform` activities with low-cardinality tags such as
+`Pipeline.Run` and `Transform` activities with tags such as
 `smartpipe.pipeline_id`, `smartpipe.run_id`, `smartpipe.parallelism`,
-`smartpipe.stage_id`, and `smartpipe.trace_id`.
+`smartpipe.stage_id`, and `smartpipe.trace_id`. `run_id` and `trace_id` are
+debugging/tracing identifiers and must not be used as metric dimensions by
+default.
 
 Runtime instruments use the `SmartPipe.Core` `Meter`. Current instruments
-include processed, failed, retried, dead-lettered, duplicate-filtered counters
-and a stage latency histogram.
+are `smartpipe.items.processed`, `smartpipe.items.failed`,
+`smartpipe.items.retried`, `smartpipe.items.deadlettered`,
+`smartpipe.items.duplicates_filtered`, `smartpipe.stage.duration`, and
+`smartpipe.sink.duration`.
+
+Concurrency and lifecycle tests must be deterministic. They should use explicit
+coordination primitives such as `TaskCompletionSource`, bounded channels,
+barriers, fake clocks, or blocked source/sink components. Timeouts are guards,
+not synchronization.
+
+Failure coverage should exercise source initialization/read failures,
+transformer default/throw/timeout paths, retry cancellation, circuit-breaker
+open and rejection paths, dead-letter write failures, sink initialization/write
+failures, observer failures, absent or slow output readers, cancellation during
+output writes, drain during source reads, and disposal during in-flight work.
 
 ## Scope Boundary
 

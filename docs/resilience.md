@@ -57,3 +57,15 @@ The envelope preserves original payload and replay context.
 - `Skip`
 - `StopPipeline`
 - `FaultPipeline`
+
+## Failure Coverage
+
+Release hardening covers source initialization/read failures, blocked source
+reads during drain, transformer default results, thrown and timed-out
+transformers, cancelled retry delay, circuit-breaker open and rejection paths,
+dead-letter write failures, sink initialization/write failures, inline and
+buffered observer failures, absent or slow output readers, cancellation during
+output writes, drain during source read, and disposal during in-flight stages.
+
+These scenarios belong in runtime and resilience tests, not in a separate
+fault-injection matrix document.

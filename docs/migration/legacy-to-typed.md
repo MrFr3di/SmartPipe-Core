@@ -15,6 +15,18 @@ runtime APIs:
 | retry queue behavior | `StageFailureOptions.Retry` inside `StageExecutor` |
 | channel factory/DI runtime singleton | `ISmartPipeDefinition<TInput,TOutput>` + `ISmartPipeFactory<TInput,TOutput>` |
 
+## Removed Legacy APIs
+
+The typed-only release removes the legacy channel runtime model, including
+`SmartPipeChannel`, `SmartPipeChannelOptions`, `ProcessingContext`,
+`ProcessingResult`, legacy `ISource<T>`, legacy `ITransformer<TInput,TOutput>`,
+legacy `ISink<T>`, legacy adapters, middleware transformer APIs, retry queue
+types, channel pool types, and legacy pipeline cancellation helpers.
+
+The compatibility names `MaxDegreeOfParallelism` and `OutputPolicy` remain as
+typed runtime aliases for 2.0 consumers. Prefer `MaxConcurrency` and
+`OutputMode` in new code.
+
 ## Simple Delegate Pipelines
 
 ```csharp
