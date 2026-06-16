@@ -148,6 +148,33 @@ public sealed record StageFailedEvent(
     SmartPipeError Error
 ) : PipelineEvent(PipelineId, RunId, TraceId, StageId, Attempt, TimestampUtc);
 
+/// <summary>Event emitted when a stage filters an item as normal terminal control flow.</summary>
+public sealed record ItemFilteredEvent(
+    string PipelineId,
+    string RunId,
+    ulong TraceId,
+    string StageId,
+    string StageName,
+    int Attempt,
+    DateTimeOffset TimestampUtc
+) : PipelineEvent(PipelineId, RunId, TraceId, StageId, Attempt, TimestampUtc);
+
+/// <summary>Event emitted when an input item is dropped by a bounded input channel policy.</summary>
+public sealed record InputDroppedEvent(
+    string PipelineId,
+    string RunId,
+    ulong TraceId,
+    DateTimeOffset TimestampUtc
+) : PipelineEvent(PipelineId, RunId, TraceId, null, 0, TimestampUtc);
+
+/// <summary>Event emitted when an output item is dropped by a bounded output channel policy.</summary>
+public sealed record OutputDroppedEvent(
+    string PipelineId,
+    string RunId,
+    ulong TraceId,
+    DateTimeOffset TimestampUtc
+) : PipelineEvent(PipelineId, RunId, TraceId, null, 0, TimestampUtc);
+
 /// <summary>Event emitted when a retry is scheduled for a failed stage attempt.</summary>
 public sealed record RetryScheduledEvent(
     string PipelineId,
@@ -220,8 +247,24 @@ public sealed record ObserverFailedEvent(
     Exception Exception
 ) : PipelineEvent(PipelineId, RunId, 0, null, 0, TimestampUtc);
 
+/// <summary>Event emitted when a buffered observer dispatcher drops a queued event.</summary>
+public sealed record ObserverEventDroppedEvent(
+    string PipelineId,
+    string RunId,
+    DateTimeOffset TimestampUtc,
+    string DroppedEventName
+) : PipelineEvent(PipelineId, RunId, 0, null, 0, TimestampUtc);
+
 /// <summary>Event emitted when a circuit breaker opens for a stage.</summary>
 public sealed record CircuitBreakerOpenedEvent(
+    string PipelineId,
+    string RunId,
+    string StageId,
+    DateTimeOffset TimestampUtc
+) : PipelineEvent(PipelineId, RunId, 0, StageId, 0, TimestampUtc);
+
+/// <summary>Event emitted when a circuit breaker closes for a stage.</summary>
+public sealed record CircuitBreakerClosedEvent(
     string PipelineId,
     string RunId,
     string StageId,

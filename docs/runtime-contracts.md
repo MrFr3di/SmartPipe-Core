@@ -14,8 +14,8 @@ IPipelineSource<TInput>
   -> bounded input channel of ProcessingEnvelope<TInput>
   -> one or more typed workers
   -> StageExecutor
-  -> PipelineOutputEmitter
   -> optional IPipelineSink<TOutput>
+  -> PipelineOutputEmitter
   -> PipelineRun<TOutput>.Outputs
 ```
 
@@ -30,7 +30,9 @@ typed runtime factories with `AllowSynchronousContinuations = false`.
 
 `InputFullMode = Wait` and `OutputFullMode = Wait` apply backpressure. Lossy
 bounded modes may drop work and should be used only when that is acceptable to
-the caller.
+the caller. Input and output drop callbacks record `smartpipe.items.dropped`
+and `smartpipe.output.items.dropped` and emit best-effort `InputDroppedEvent`
+or `OutputDroppedEvent`.
 
 ## Lifecycle
 
@@ -49,6 +51,10 @@ Completed/Cancelled/Aborted/Faulted -> Disposed
 already accepted work. A drain timeout throws `TimeoutException` and does not
 mark the run as cancelled.
 
+`TryDrainAsync` is the structured non-throwing drain API. It returns
+`PipelineDrainResult` with `Completed`, `TimedOutStillRunning`,
+`CancelledByCaller`, `Faulted`, or `AlreadyCompleted`.
+
 `CancelAsync` requests cooperative cancellation and completes outputs as
 cancelled.
 
@@ -63,6 +69,15 @@ and terminal failure action decisions.
 
 Circuit-breaker rejection is a terminal failure for the current item. It is not
 retried into the open breaker.
+
+For sink-backed pipelines, a success output means both transform processing and
+the sink write completed successfully. The runtime writes the sink first and
+emits `PipelineResult.Success` only after the sink write returns successfully.
+
+`StageResult.Filtered()` is a non-failure terminal state: it does not call the
+sink, does not increment failed metrics, and does not write dead-letter records.
+It emits `ItemFilteredEvent`, records `smartpipe.items.filtered`, and can appear
+as `PipelineResultKind.Filtered` when output policy emits all terminal states.
 
 Dead-letter records use `DeadLetterEnvelope<T>` and preserve original payload,
 pipeline id, run id, trace id, stage id/name, metadata, error, attempt, and
@@ -79,6 +94,8 @@ default.
 
 Runtime instruments use the `SmartPipe.Core` `Meter`. Current instruments
 are `smartpipe.items.processed`, `smartpipe.items.failed`,
+`smartpipe.items.filtered`, `smartpipe.items.dropped`,
+`smartpipe.output.items.dropped`, `smartpipe.observer.events.dropped`,
 `smartpipe.items.retried`, `smartpipe.items.deadlettered`,
 `smartpipe.items.duplicates_filtered`, `smartpipe.stage.duration`, and
 `smartpipe.sink.duration`.

@@ -25,6 +25,7 @@ when a run starts. The monitor exposes immutable snapshots containing:
 - `LastProcessedAtUtc`;
 - `InputQueueDepth` and `OutputQueueDepth`;
 - `ItemsFailed`;
+- `ItemsDropped`, `OutputItemsDropped`, and `ObserverEventsDropped`;
 - `ItemsDeadLettered`;
 - input and output capacities.
 
@@ -42,6 +43,10 @@ when a run starts. The monitor exposes immutable snapshots containing:
 Queue checks are capacity-aware. The default degraded threshold is `0.80`,
 `StaleAfter` defaults to 30 seconds, and not-started pipelines default to
 degraded.
+
+For hosted services, `SmartPipeHostedFailureBehavior.MarkUnhealthyAndKeepHostAlive`
+keeps the host process alive after a pipeline fault; the tracked run state then
+causes the health check to report `Unhealthy`.
 
 ```csharp
 services.Configure<SmartPipeHealthCheckOptions>(options =>

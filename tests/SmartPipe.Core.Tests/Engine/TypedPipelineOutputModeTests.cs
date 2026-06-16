@@ -1,4 +1,5 @@
 #nullable enable
+#pragma warning disable CS0618 // These tests cover compatibility aliases.
 
 using System.Threading.Channels;
 using FluentAssertions;
@@ -83,6 +84,208 @@ public sealed class TypedPipelineOutputModeTests
     }
 
     [Fact]
+    public async Task ToSink_DoesNotEmitSuccessBeforeSinkWriteSucceeds()
+    {
+        var sink = new BlockingSink<string>();
+        var source = new EnvelopeSource<int>(1);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString()))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputPolicy = PipelineOutputPolicy.EmitAll,
+            })
+            .To(sink);
+
+        await sink.WriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        run.Outputs.TryRead(out _).Should().BeFalse(
+            "sink-backed success output must not be visible until the sink write succeeds");
+
+        sink.Release();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Should().ContainSingle();
+        outputs[0].Result.IsSuccess.Should().BeTrue();
+        outputs[0].Result.Value.Should().Be("1");
+    }
+
+    [Fact]
+    public async Task ToSink_SinkFailure_DoesNotEmitSuccess()
+    {
+        var source = new EnvelopeSource<int>(1);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString()))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputPolicy = PipelineOutputPolicy.EmitAll,
+            })
+            .To(new ThrowingSink<string>());
+
+        var completion = async () => await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await completion.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("sink boom");
+        run.Outputs.TryRead(out var output).Should().BeFalse(
+            "a failed sink write must not leave a pre-published success output behind");
+    }
+
+    [Fact]
+    public async Task ToSink_SinkSuccess_EmitsSuccessAfterSinkWrite()
+    {
+        var sink = new EnvelopeCollectingSink<string>();
+        var source = new EnvelopeSource<int>(1);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString()))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputPolicy = PipelineOutputPolicy.EmitAll,
+            })
+            .To(sink);
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        sink.Payloads.Should().Equal("1");
+        outputs.Should().ContainSingle();
+        outputs[0].Result.IsSuccess.Should().BeTrue();
+        outputs[0].Result.Value.Should().Be("1");
+    }
+
+    [Fact]
+    public async Task WithoutSink_TransformSuccess_EmitsSuccess()
+    {
+        var source = new EnvelopeSource<int>(1);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString()))
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Should().ContainSingle();
+        outputs[0].Result.IsSuccess.Should().BeTrue();
+        outputs[0].Result.Value.Should().Be("1");
+    }
+
+    [Fact]
+    public async Task Filtered_DoesNotWriteSink()
+    {
+        var sink = new EnvelopeCollectingSink<string>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(new ConditionalTransformer<int, string>(_ => StageResult<string>.Filtered()))
+            .To(sink);
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        sink.Payloads.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Filtered_DoesNotIncrementFailedMetric()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(new ConditionalTransformer<int, string>(_ => StageResult<string>.Filtered()))
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        run.Metrics.ItemsFailed.Should().Be(0);
+        run.Metrics.ItemsFiltered.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Filtered_DoesNotWriteDeadLetter()
+    {
+        await using var stream = new MemoryStream();
+        var serializer = new JsonLinesDeadLetterSerializer<int>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(
+                new ConditionalTransformer<int, string>(_ => StageResult<string>.Filtered()),
+                new StageFailureOptions { OnPermanentFailure = FailureAction.DeadLetter },
+                new StageDeadLetterOptions<int>(stream, serializer))
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        stream.Length.Should().Be(0);
+        run.Metrics.ItemsDeadLettered.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Filtered_EmitsItemFilteredEvent()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(new ConditionalTransformer<int, string>(_ => StageResult<string>.Filtered()))
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        observer.Events.OfType<ItemFilteredEvent>().Should().ContainSingle();
+        observer.Events.OfType<StageFailedEvent>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Filtered_OutputPolicyCanEmitFilteredTerminalOutput()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(new ConditionalTransformer<int, string>(_ => StageResult<string>.Filtered()))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputPolicy = PipelineOutputPolicy.EmitAll,
+            })
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Should().ContainSingle();
+        outputs[0].Result.Kind.Should().Be(PipelineResultKind.Filtered);
+        outputs[0].Result.IsFailure.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Filtered_OutputPolicyCanSuppressFilteredTerminalOutput()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(new ConditionalTransformer<int, string>(_ => StageResult<string>.Filtered()))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputPolicy = PipelineOutputPolicy.EmitFailuresOnly,
+            })
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task OutputPolicySuppressSuccessWhenSinkAttached_WithSink_ShouldStillEmitFailures()
     {
         var sink = new EnvelopeCollectingSink<string>();
@@ -159,13 +362,13 @@ public sealed class TypedPipelineOutputModeTests
             })
             .To(sink);
 
-        await sink.ExpectedWritesReached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await sink.WaitForCountAsync(2, TimeSpan.FromSeconds(5));
         await transformer.SignalReached.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        Func<Task> secondSinkWrite = async () =>
-            await sink.WaitForCountAsync(2, TimeSpan.FromMilliseconds(150));
-        await secondSinkWrite.Should().ThrowAsync<TimeoutException>(
-            "the second output write should wait for the slow output reader");
+        Func<Task> thirdSinkWrite = async () =>
+            await sink.WaitForCountAsync(3, TimeSpan.FromMilliseconds(150));
+        await thirdSinkWrite.Should().ThrowAsync<TimeoutException>(
+            "the third item should wait because the second success output is blocked");
 
         var outputs = await ReadOutputsAsync(run.Outputs);
         await run.Completion;
@@ -629,4 +832,58 @@ internal sealed class SignalingSink<T> : IPipelineSink<T>
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+internal sealed class BlockingSink<T> : IPipelineSink<T>
+{
+    private readonly TaskCompletionSource _release =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public TaskCompletionSource WriteStarted { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+    public async ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
+    {
+        WriteStarted.TrySetResult();
+        await _release.Task.WaitAsync(ct).ConfigureAwait(false);
+    }
+
+    public void Release() => _release.TrySetResult();
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+internal sealed class ThrowingSink<T> : IPipelineSink<T>
+{
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+    public ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default) =>
+        ValueTask.FromException(new InvalidOperationException("sink boom"));
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+internal sealed class RecordingObserver : IPipelineObserver
+{
+    private readonly List<PipelineEvent> _events = [];
+    private readonly object _gate = new();
+
+    public IReadOnlyList<PipelineEvent> Events
+    {
+        get
+        {
+            lock (_gate)
+                return _events.ToArray();
+        }
+    }
+
+    public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+    {
+        lock (_gate)
+            _events.Add(pipelineEvent);
+
+        return ValueTask.CompletedTask;
+    }
 }

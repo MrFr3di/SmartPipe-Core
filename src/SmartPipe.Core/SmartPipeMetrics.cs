@@ -28,6 +28,26 @@ public static class SmartPipeMeter
         "items"
     );
 
+    internal static readonly Counter<long> ItemsFilteredCounter = Meter.CreateCounter<long>(
+        "smartpipe.items.filtered",
+        "items"
+    );
+
+    internal static readonly Counter<long> ItemsDroppedCounter = Meter.CreateCounter<long>(
+        "smartpipe.items.dropped",
+        "items"
+    );
+
+    internal static readonly Counter<long> OutputItemsDroppedCounter = Meter.CreateCounter<long>(
+        "smartpipe.output.items.dropped",
+        "items"
+    );
+
+    internal static readonly Counter<long> ObserverEventsDroppedCounter = Meter.CreateCounter<long>(
+        "smartpipe.observer.events.dropped",
+        "events"
+    );
+
     internal static readonly Counter<long> ItemsRetriedCounter = Meter.CreateCounter<long>(
         "smartpipe.items.retried",
         "items"
@@ -61,6 +81,10 @@ public sealed record SmartPipeMetricsSnapshot
     public static SmartPipeMetricsSnapshot Empty { get; } = new(
         itemsProcessed: 0,
         itemsFailed: 0,
+        itemsFiltered: 0,
+        itemsDropped: 0,
+        outputItemsDropped: 0,
+        observerEventsDropped: 0,
         itemsRetried: 0,
         itemsDeadLettered: 0,
         inputQueueDepth: 0,
@@ -78,6 +102,10 @@ public sealed record SmartPipeMetricsSnapshot
     public SmartPipeMetricsSnapshot(
         long itemsProcessed,
         long itemsFailed,
+        long itemsFiltered,
+        long itemsDropped,
+        long outputItemsDropped,
+        long observerEventsDropped,
         long itemsRetried,
         long itemsDeadLettered,
         int inputQueueDepth,
@@ -93,6 +121,10 @@ public sealed record SmartPipeMetricsSnapshot
     {
         ItemsProcessed = itemsProcessed;
         ItemsFailed = itemsFailed;
+        ItemsFiltered = itemsFiltered;
+        ItemsDropped = itemsDropped;
+        OutputItemsDropped = outputItemsDropped;
+        ObserverEventsDropped = observerEventsDropped;
         ItemsRetried = itemsRetried;
         ItemsDeadLettered = itemsDeadLettered;
         InputQueueDepth = inputQueueDepth;
@@ -112,6 +144,18 @@ public sealed record SmartPipeMetricsSnapshot
 
     /// <summary>Total items that failed processing in the sampled view.</summary>
     public long ItemsFailed { get; }
+
+    /// <summary>Total items filtered as normal terminal control flow in the sampled view.</summary>
+    public long ItemsFiltered { get; }
+
+    /// <summary>Total input items dropped by bounded channel policy in the sampled view.</summary>
+    public long ItemsDropped { get; }
+
+    /// <summary>Total output items dropped by bounded channel policy in the sampled view.</summary>
+    public long OutputItemsDropped { get; }
+
+    /// <summary>Total observer events dropped by buffered dispatch pressure in the sampled view.</summary>
+    public long ObserverEventsDropped { get; }
 
     /// <summary>Total retry attempts made in the sampled view.</summary>
     public long ItemsRetried { get; }
@@ -158,6 +202,10 @@ public sealed record SmartPipeMetricsSnapshot
         {
             ["items_processed"] = ItemsProcessed,
             ["items_failed"] = ItemsFailed,
+            ["items_filtered"] = ItemsFiltered,
+            ["items_dropped"] = ItemsDropped,
+            ["output_items_dropped"] = OutputItemsDropped,
+            ["observer_events_dropped"] = ObserverEventsDropped,
             ["duplicates_filtered"] = DuplicatesFiltered,
             ["retries"] = Retries,
             ["items_dead_lettered"] = ItemsDeadLettered,
@@ -179,6 +227,10 @@ public sealed class SmartPipeMetricsRecorder
     private readonly IPipelineClock _clock;
     private long _itemsProcessed;
     private long _itemsFailed;
+    private long _itemsFiltered;
+    private long _itemsDropped;
+    private long _outputItemsDropped;
+    private long _observerEventsDropped;
     private long _itemsRetried;
     private long _itemsDeadLettered;
     private long _duplicatesFiltered;
@@ -207,6 +259,18 @@ public sealed class SmartPipeMetricsRecorder
 
     /// <summary>Total items that failed processing.</summary>
     public long ItemsFailed => Interlocked.Read(ref _itemsFailed);
+
+    /// <summary>Total items filtered as normal terminal control flow.</summary>
+    public long ItemsFiltered => Interlocked.Read(ref _itemsFiltered);
+
+    /// <summary>Total input items dropped by bounded channel policy.</summary>
+    public long ItemsDropped => Interlocked.Read(ref _itemsDropped);
+
+    /// <summary>Total output items dropped by bounded channel policy.</summary>
+    public long OutputItemsDropped => Interlocked.Read(ref _outputItemsDropped);
+
+    /// <summary>Total observer events dropped by buffered dispatch pressure.</summary>
+    public long ObserverEventsDropped => Interlocked.Read(ref _observerEventsDropped);
 
     /// <summary>Total retry attempts made.</summary>
     public long ItemsRetried => Interlocked.Read(ref _itemsRetried);
@@ -279,6 +343,34 @@ public sealed class SmartPipeMetricsRecorder
         SmartPipeMeter.ItemsFailedCounter.Add(1);
     }
 
+    /// <summary>Record a filtered item.</summary>
+    public void RecordFiltered()
+    {
+        Interlocked.Increment(ref _itemsFiltered);
+        SmartPipeMeter.ItemsFilteredCounter.Add(1);
+    }
+
+    /// <summary>Record an input item dropped by bounded channel policy.</summary>
+    public void RecordItemDropped()
+    {
+        Interlocked.Increment(ref _itemsDropped);
+        SmartPipeMeter.ItemsDroppedCounter.Add(1);
+    }
+
+    /// <summary>Record an output item dropped by bounded channel policy.</summary>
+    public void RecordOutputDropped()
+    {
+        Interlocked.Increment(ref _outputItemsDropped);
+        SmartPipeMeter.OutputItemsDroppedCounter.Add(1);
+    }
+
+    /// <summary>Record an observer event dropped by buffered dispatch pressure.</summary>
+    public void RecordObserverEventDropped()
+    {
+        Interlocked.Increment(ref _observerEventsDropped);
+        SmartPipeMeter.ObserverEventsDroppedCounter.Add(1);
+    }
+
     /// <summary>Record a filtered duplicate.</summary>
     public void RecordDuplicate()
     {
@@ -339,6 +431,10 @@ public sealed class SmartPipeMetricsRecorder
         return new SmartPipeMetricsSnapshot(
             itemsProcessed,
             ItemsFailed,
+            ItemsFiltered,
+            ItemsDropped,
+            OutputItemsDropped,
+            ObserverEventsDropped,
             ItemsRetried,
             ItemsDeadLettered,
             InputQueueDepth,
@@ -379,6 +475,18 @@ public class SmartPipeMetrics
     /// <summary>Total duplicate items filtered out.</summary>
     public long DuplicatesFiltered => _recorder.DuplicatesFiltered;
 
+    /// <summary>Total items filtered as normal terminal control flow.</summary>
+    public long ItemsFiltered => _recorder.ItemsFiltered;
+
+    /// <summary>Total input items dropped by bounded channel policy.</summary>
+    public long ItemsDropped => _recorder.ItemsDropped;
+
+    /// <summary>Total output items dropped by bounded channel policy.</summary>
+    public long OutputItemsDropped => _recorder.OutputItemsDropped;
+
+    /// <summary>Total observer events dropped by buffered dispatch pressure.</summary>
+    public long ObserverEventsDropped => _recorder.ObserverEventsDropped;
+
     /// <summary>Total retry attempts made.</summary>
     public long Retries => _recorder.ItemsRetried;
 
@@ -405,6 +513,18 @@ public class SmartPipeMetrics
 
     /// <summary>Record a failed item.</summary>
     public void RecordFailed() => _recorder.RecordFailed();
+
+    /// <summary>Record a filtered item.</summary>
+    public void RecordFiltered() => _recorder.RecordFiltered();
+
+    /// <summary>Record an input item dropped by bounded channel policy.</summary>
+    public void RecordItemDropped() => _recorder.RecordItemDropped();
+
+    /// <summary>Record an output item dropped by bounded channel policy.</summary>
+    public void RecordOutputDropped() => _recorder.RecordOutputDropped();
+
+    /// <summary>Record an observer event dropped by buffered dispatch pressure.</summary>
+    public void RecordObserverEventDropped() => _recorder.RecordObserverEventDropped();
 
     /// <summary>Record a filtered duplicate.</summary>
     public void RecordDuplicate() => _recorder.RecordDuplicate();

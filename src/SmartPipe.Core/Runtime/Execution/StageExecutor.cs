@@ -104,51 +104,63 @@ internal sealed class StageExecutor
         while (true)
         {
             var correlation = stage.GetCorrelation(current);
+            var breakerProbe = default(CircuitBreakerProbe);
+            var hasBreakerProbe = false;
 
-            if (breaker is not null && !breaker.AllowRequest())
+            if (breaker is not null)
             {
-                var cbError = new SmartPipeError(
-                    $"Circuit breaker is open for stage '{stage.StageId}'.",
-                    ErrorType.Transient,
-                    "CircuitBreaker"
-                );
-                var rejectedOutcome = stage.CreateFailureResult(
-                    current,
-                    cbError,
-                    StageResultKind.Failure,
-                    _lineageMode,
-                    _clock,
-                    stageStartedAtUtc
-                );
-                await _emitAsync(
-                        new CircuitBreakerRejectedEvent(
-                            _pipelineId,
-                            _runId,
-                            correlation.TraceId,
-                            stage.StageId,
-                            correlation.Attempt,
-                            _clock.GetUtcNow(),
-                            cbError
-                        ),
-                        ct
-                    )
-                    .ConfigureAwait(false);
+                var state = breaker.State;
+                var allowed =
+                    state == CircuitState.Open || state == CircuitState.HalfOpen
+                        ? breaker.TryAcquireHalfOpenProbe(out breakerProbe)
+                        : breaker.AllowRequest();
+                hasBreakerProbe = state == CircuitState.Open || state == CircuitState.HalfOpen;
 
-                if (stage.FailureOptions.Retry is not null)
-                    await _emitRetryExhaustedAsync(stage, rejectedOutcome, cbError, ct)
+                if (!allowed)
+                {
+                    var cbError = new SmartPipeError(
+                        $"Circuit breaker is open for stage '{stage.StageId}'.",
+                        ErrorType.Transient,
+                        "CircuitBreaker"
+                    );
+                    var rejectedOutcome = stage.CreateFailureResult(
+                        current,
+                        cbError,
+                        StageResultKind.Failure,
+                        _lineageMode,
+                        _clock,
+                        stageStartedAtUtc
+                    );
+                    await _emitAsync(
+                            new CircuitBreakerRejectedEvent(
+                                _pipelineId,
+                                _runId,
+                                correlation.TraceId,
+                                stage.StageId,
+                                correlation.Attempt,
+                                _clock.GetUtcNow(),
+                                cbError
+                            ),
+                            ct
+                        )
                         .ConfigureAwait(false);
 
-                var action = stage.FailureOptions.Retry is not null
-                    ? stage.FailureOptions.OnRetryExhausted
-                    : stage.FailureOptions.OnPermanentFailure;
-                return await CompleteTerminalFailureAsync(
-                        stage,
-                        current,
-                        rejectedOutcome,
-                        cbError,
-                        action,
-                        ct)
-                    .ConfigureAwait(false);
+                    if (stage.FailureOptions.Retry is not null)
+                        await _emitRetryExhaustedAsync(stage, rejectedOutcome, cbError, ct)
+                            .ConfigureAwait(false);
+
+                    var action = stage.FailureOptions.Retry is not null
+                        ? stage.FailureOptions.OnRetryExhausted
+                        : stage.FailureOptions.OnPermanentFailure;
+                    return await CompleteTerminalFailureAsync(
+                            stage,
+                            current,
+                            rejectedOutcome,
+                            cbError,
+                            action,
+                            ct)
+                        .ConfigureAwait(false);
+                }
             }
 
             await _emitAsync(
@@ -193,6 +205,19 @@ internal sealed class StageExecutor
                     .ConfigureAwait(false);
                 throw;
             }
+            finally
+            {
+                if (hasBreakerProbe)
+                    breakerProbe.Dispose();
+            }
+
+            if (outcome.IsTerminalNonFailure)
+            {
+                await RecordBreakerSuccessAsync(breaker, stage, ct).ConfigureAwait(false);
+                await CompleteTerminalNonFailureAsync(stage, outcome, ct)
+                    .ConfigureAwait(false);
+                return new StageExecutionResult(current, null, StopProcessing: true);
+            }
 
             if (!outcome.IsSuccess)
             {
@@ -213,7 +238,7 @@ internal sealed class StageExecutor
                 return failure.Result;
             }
 
-            breaker?.RecordSuccess();
+            await RecordBreakerSuccessAsync(breaker, stage, ct).ConfigureAwait(false);
 
             await _emitAsync(
                     new StageSucceededEvent(
@@ -230,6 +255,31 @@ internal sealed class StageExecutor
                 .ConfigureAwait(false);
 
             return new StageExecutionResult(outcome.Envelope!, null, StopProcessing: false);
+        }
+    }
+
+    private async ValueTask RecordBreakerSuccessAsync(
+        CircuitBreaker? breaker,
+        ITypedPipelineStage stage,
+        CancellationToken ct)
+    {
+        if (breaker is null)
+            return;
+
+        var wasHalfOpen = breaker.State == CircuitState.HalfOpen;
+        breaker.RecordSuccess();
+        if (wasHalfOpen && breaker.State == CircuitState.Closed)
+        {
+            await _emitAsync(
+                    new CircuitBreakerClosedEvent(
+                        _pipelineId,
+                        _runId,
+                        stage.StageId,
+                        _clock.GetUtcNow()
+                    ),
+                    ct
+                )
+                .ConfigureAwait(false);
         }
     }
 
@@ -354,6 +404,31 @@ internal sealed class StageExecutor
             current,
             action == FailureAction.StopPipeline ? action : null,
             StopProcessing: true);
+    }
+
+    private async ValueTask CompleteTerminalNonFailureAsync(
+        ITypedPipelineStage stage,
+        TypedStageExecutionResult outcome,
+        CancellationToken ct)
+    {
+        if (outcome.Kind == StageResultKind.Filtered)
+        {
+            await _emitAsync(
+                    new ItemFilteredEvent(
+                        _pipelineId,
+                        _runId,
+                        outcome.TraceId,
+                        stage.StageId,
+                        stage.StageName,
+                        outcome.Attempt,
+                        _clock.GetUtcNow()
+                    ),
+                    ct
+                )
+                .ConfigureAwait(false);
+        }
+
+        await _writeTerminalAsync(outcome, ct).ConfigureAwait(false);
     }
 
     private async ValueTask<RetryStageResult> TryRetryAsync(

@@ -56,13 +56,18 @@ await run.Completion;
 ```
 
 `PipelineRun<T>.Outputs` exposes `PipelineOutput<T>` records with the final
-`ProcessingEnvelope<T>` when available and a `PipelineResult<T>` success/failure
-result.
+`ProcessingEnvelope<T>` when available and a classified `PipelineResult<T>`.
+For sink-backed pipelines, success output means transform processing and sink
+write both completed successfully. `StageResult.Filtered()` is non-failure
+terminal control flow: it does not call the sink, does not dead-letter, and does
+not increment failed metrics.
 
 ## Lifecycle
 
 - `DrainAsync` stops accepting new source items at source boundaries and waits
   for accepted work.
+- `TryDrainAsync` returns a structured `PipelineDrainResult` instead of
+  throwing for timeout or run fault status.
 - `CancelAsync` requests cooperative cancellation.
 - `AbortAsync` is the immediate stop path.
 - `DisposeAsync` is idempotent and disposes runtime-owned components once.
@@ -94,6 +99,15 @@ services
 The health check reads the typed run state and immutable metrics snapshot. It
 reports high queue utilization or stale processing as degraded and faulted runs
 as unhealthy.
+
+Hosted-service pipeline faults are configurable through
+`SmartPipeHostedServiceOptions`. The default `FailureBehavior` is
+`StopApplication`, so a background pipeline fault requests host shutdown instead
+of being logged and swallowed.
+
+Lossy bounded channel modes are observable. Input, output, and buffered
+observer drops record `smartpipe.items.dropped`,
+`smartpipe.output.items.dropped`, and `smartpipe.observer.events.dropped`.
 
 ## AOT And Trimming
 

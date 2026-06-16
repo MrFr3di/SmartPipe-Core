@@ -36,6 +36,7 @@ public static class SmartPipeServiceCollectionExtensions
         services.AddSingleton<ISmartPipeRunHealthMonitor<TInput, TOutput>>(healthMonitor);
         services.AddSingleton<ISmartPipeFactory<TInput, TOutput>, SmartPipeFactory<TInput, TOutput>>();
         services.AddOptions<SmartPipeHealthCheckOptions>();
+        services.AddOptions<SmartPipeHostedServiceOptions>();
         return services;
     }
 

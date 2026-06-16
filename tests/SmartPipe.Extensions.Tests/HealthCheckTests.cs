@@ -134,6 +134,10 @@ public sealed class HealthCheckTests
         new(
             itemsProcessed: lastProcessedAtUtc is null ? 0 : 1,
             itemsFailed: 0,
+            itemsFiltered: 0,
+            itemsDropped: 0,
+            outputItemsDropped: 0,
+            observerEventsDropped: 0,
             itemsRetried: 0,
             itemsDeadLettered: 0,
             inputQueueDepth,

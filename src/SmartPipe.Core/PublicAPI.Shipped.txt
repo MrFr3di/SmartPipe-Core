@@ -579,7 +579,6 @@ SmartPipe.Core.SmartPipeMetricsSnapshot.OutputQueueDepth.get -> int
 SmartPipe.Core.SmartPipeMetricsSnapshot.PoolHitRate.get -> double
 SmartPipe.Core.SmartPipeMetricsSnapshot.QueueSize.get -> int
 SmartPipe.Core.SmartPipeMetricsSnapshot.Retries.get -> long
-SmartPipe.Core.SmartPipeMetricsSnapshot.SmartPipeMetricsSnapshot(long itemsProcessed, long itemsFailed, long itemsRetried, long itemsDeadLettered, int inputQueueDepth, int outputQueueDepth, double lastStageLatencyMs, System.DateTimeOffset? lastProcessedAtUtc, long duplicatesFiltered, double avgLatencyMs, double smoothLatencyMs, double smoothThroughput, int queueSize, double poolHitRate) -> void
 SmartPipe.Core.SmartPipeMetricsSnapshot.SmoothLatencyMs.get -> double
 SmartPipe.Core.SmartPipeMetricsSnapshot.SmoothThroughput.get -> double
 static SmartPipe.Core.SmartPipeMetricsSnapshot.Empty.get -> SmartPipe.Core.SmartPipeMetricsSnapshot!

@@ -16,14 +16,15 @@ internal static class PipelineObserverDispatcher
     public static IPipelineObserverDispatcher Create(
         IReadOnlyList<PipelineObserverRegistration> observers,
         ObserverDispatchOptions options,
-        IPipelineClock clock
+        IPipelineClock clock,
+        Action<PipelineEvent>? onObserverEventDropped = null
     )
     {
         options.Validate();
         ArgumentNullException.ThrowIfNull(clock);
         return options.Mode == ObserverDispatchMode.Inline
             ? new InlinePipelineObserverDispatcher(observers, options, clock)
-            : new BufferedPipelineObserverDispatcher(observers, options);
+            : new BufferedPipelineObserverDispatcher(observers, options, clock, onObserverEventDropped);
     }
 }
 
@@ -114,6 +115,8 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
 {
     private readonly ActiveObserverRegistration[] _observers;
     private readonly ObserverDispatchOptions _options;
+    private readonly IPipelineClock _clock;
+    private readonly Action<PipelineEvent>? _onObserverEventDropped;
     private readonly Channel<PipelineEvent> _events;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _worker;
@@ -121,15 +124,23 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
     private Exception? _pipelineFault;
     private int _completed;
     private int _disposed;
+    private int _emittingDroppedEvent;
 
     public BufferedPipelineObserverDispatcher(
         IReadOnlyList<PipelineObserverRegistration> observers,
-        ObserverDispatchOptions options
+        ObserverDispatchOptions options,
+        IPipelineClock clock,
+        Action<PipelineEvent>? onObserverEventDropped
     )
     {
         _observers = ObserverRegistrationState.CreateActiveObservers(observers);
         _options = options;
-        _events = PipelineChannelFactory.CreateObserverBuffer(options.Capacity, options.FullMode);
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _onObserverEventDropped = onObserverEventDropped;
+        _events = PipelineChannelFactory.CreateObserverBuffer(
+            options.Capacity,
+            options.FullMode,
+            RecordDroppedEvent);
         _worker = Task.Run(ProcessAsync, CancellationToken.None);
     }
 
@@ -148,13 +159,20 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
 
             if (_options.FullMode == BoundedChannelFullMode.Wait)
             {
-                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+                using var timeoutCts = new CancellationTokenSource(_options.BestEffortWriteTimeout);
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
                 try
                 {
                     await _events.Writer.WriteAsync(pipelineEvent, linked.Token).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested) { }
+                catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+                {
+                    RecordDroppedEvent(pipelineEvent);
+                }
+            }
+            else
+            {
+                RecordDroppedEvent(pipelineEvent);
             }
             return;
         }
@@ -228,6 +246,30 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
                         registration.Remove();
                 }
             }
+        }
+    }
+
+    private void RecordDroppedEvent(PipelineEvent droppedEvent)
+    {
+        _onObserverEventDropped?.Invoke(droppedEvent);
+
+        if (!_options.EmitDroppedObserverEvents || droppedEvent is ObserverEventDroppedEvent)
+            return;
+
+        if (Interlocked.Exchange(ref _emittingDroppedEvent, 1) != 0)
+            return;
+
+        try
+        {
+            _events.Writer.TryWrite(new ObserverEventDroppedEvent(
+                droppedEvent.PipelineId,
+                droppedEvent.RunId,
+                _clock.GetUtcNow(),
+                droppedEvent.GetType().Name));
+        }
+        finally
+        {
+            Volatile.Write(ref _emittingDroppedEvent, 0);
         }
     }
 }

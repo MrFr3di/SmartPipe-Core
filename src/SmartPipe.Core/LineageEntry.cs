@@ -43,6 +43,9 @@ public enum StageOutcome
 
     /// <summary>The stage exceeded its timeout.</summary>
     TimedOut,
+
+    /// <summary>The stage filtered the item out as normal control flow.</summary>
+    Filtered,
 }
 
 /// <summary>Serializable lineage information for one stage execution.</summary>

@@ -111,6 +111,63 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    public void CircuitBreaker_HalfOpen_AllowsUpToMaxConcurrentProbes()
+    {
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 5,
+            breakDuration: TimeSpan.FromMilliseconds(10),
+            maxHalfOpenRequests: 2);
+        for (var i = 0; i < 5; i++)
+            cb.RecordFailure();
+        Thread.Sleep(15);
+
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void CircuitBreaker_HalfOpen_ProbeCompletionReleasesSlot()
+    {
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 5,
+            breakDuration: TimeSpan.FromMilliseconds(10),
+            maxHalfOpenRequests: 1);
+        for (var i = 0; i < 5; i++)
+            cb.RecordFailure();
+        Thread.Sleep(15);
+
+        cb.TryAcquireHalfOpenProbe(out var firstProbe).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse();
+
+        firstProbe.Dispose();
+
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CircuitBreaker_HalfOpen_FailureReopensBreaker()
+    {
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 5,
+            breakDuration: TimeSpan.FromMilliseconds(10),
+            maxHalfOpenRequests: 1);
+        for (var i = 0; i < 5; i++)
+            cb.RecordFailure();
+        Thread.Sleep(15);
+
+        cb.TryAcquireHalfOpenProbe(out var probe).Should().BeTrue();
+        cb.RecordFailure();
+        probe.Dispose();
+
+        cb.State.Should().Be(CircuitState.Open);
+        cb.AllowRequest().Should().BeFalse();
+    }
+
+    [Fact]
     public void HalfOpen_WithSuccesses_ShouldClose()
     {
         var cb = new CircuitBreaker(failureRatio: 0.5, minimumThroughput: 5, breakDuration: TimeSpan.FromMilliseconds(10), maxHalfOpenRequests: 3);

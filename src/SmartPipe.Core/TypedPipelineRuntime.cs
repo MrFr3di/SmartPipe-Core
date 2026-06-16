@@ -333,10 +333,31 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
         {
             result = await _transformer.TransformAsync(input, ct).ConfigureAwait(false);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            throw;
+            var failedAt = clock.GetUtcNow();
+            var failedLineage = AppendLineage(
+                input.Lineage,
+                lineageMode,
+                started,
+                failedAt,
+                StageOutcome.Failed,
+                includeForError: true);
+            return TypedStageExecutionResult.Terminal(
+                new SmartPipeError(
+                    ex.Message,
+                    ErrorType.Permanent,
+                    "StageException",
+                    ex),
+                StageResultKind.Failure,
+                input.TraceId,
+                input.Attempt,
+                failedLineage);
         }
 
         if (!result.IsValid)
@@ -347,22 +368,19 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
         var completed = clock.GetUtcNow();
         if (!result.IsSuccess)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, result.Error?.Message ?? result.Kind.ToString());
+            if (result.IsFailure)
+                activity?.SetStatus(ActivityStatusCode.Error, result.Error?.Message ?? result.Kind.ToString());
+
             var failedLineage = AppendLineage(
                 input.Lineage,
                 lineageMode,
                 started,
                 completed,
                 ToOutcome(result.Kind),
-                includeForError: true
+                includeForError: result.IsFailure
             );
             return TypedStageExecutionResult.Terminal(
-                result.Error
-                    ?? new SmartPipeError(
-                        result.Kind.ToString(),
-                        ErrorType.Permanent,
-                        result.Kind.ToString()
-                    ),
+                result.Error,
                 result.Kind,
                 input.TraceId,
                 input.Attempt,
@@ -537,6 +555,7 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
             StageResultKind.Cancelled => StageOutcome.Cancelled,
             StageResultKind.TimedOut => StageOutcome.TimedOut,
             StageResultKind.Skipped => StageOutcome.Skipped,
+            StageResultKind.Filtered => StageOutcome.Filtered,
             _ => StageOutcome.Failed,
         };
     }
@@ -561,6 +580,14 @@ internal readonly record struct TypedStageExecutionResult(
     IReadOnlyList<LineageEntry>? Lineage
 )
 {
+    public bool IsTerminalNonFailure =>
+        Kind is StageResultKind.Filtered or StageResultKind.Skipped;
+
+    public bool IsFailure =>
+        Kind is StageResultKind.Failure
+            or StageResultKind.Cancelled
+            or StageResultKind.TimedOut;
+
     public static TypedStageExecutionResult Success(object envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
@@ -576,7 +603,7 @@ internal readonly record struct TypedStageExecutionResult(
     }
 
     public static TypedStageExecutionResult Terminal(
-        SmartPipeError error,
+        SmartPipeError? error,
         StageResultKind kind,
         ulong traceId,
         int attempt,
@@ -639,7 +666,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _options = _runtime.Options;
         _clock = _options.Clock;
         _metrics = new SmartPipeMetricsRecorder(_clock);
-        _outputs = CreateOutputChannel(_options);
+        _outputs = CreateOutputChannel(_options, OnOutputDropped);
         _outputEmitter = new PipelineOutputEmitter<TOutput>(
             _outputs.Writer,
             _options,
@@ -669,19 +696,22 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _observerDispatcher = PipelineObserverDispatcher.Create(
             _spec.Observers,
             _options.ObserverDispatch,
-            _clock
+            _clock,
+            OnObserverEventDropped
         );
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
     }
 
     private static Channel<PipelineOutput<TOutput>> CreateOutputChannel(
-        PipelineRuntimeOptions options)
+        PipelineRuntimeOptions options,
+        Action<PipelineOutput<TOutput>> itemDropped)
     {
         options.Validate();
         var capacity = options.OutputCapacity ?? DefaultOutputCapacity;
         return PipelineChannelFactory.CreateOutput<TOutput>(
             capacity,
-            options.OutputFullMode);
+            options.OutputFullMode,
+            itemDropped);
     }
 
     public PipelineRun<TOutput> Start()
@@ -693,6 +723,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             () => _lifecycle.State,
             CancelAsync,
             DrainAsync,
+            TryDrainAsync,
             AbortAsync,
             DisposeAsync,
             _metrics.CaptureSnapshot
@@ -713,14 +744,68 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     public async ValueTask DrainAsync(TimeSpan timeout, CancellationToken ct = default)
     {
+        var result = await TryDrainAsync(timeout, ct).ConfigureAwait(false);
+        switch (result.Status)
+        {
+            case PipelineDrainStatus.Completed:
+            case PipelineDrainStatus.AlreadyCompleted:
+                return;
+            case PipelineDrainStatus.TimedOutStillRunning:
+                throw new TimeoutException(
+                    $"Pipeline drain timed out after {timeout} while run state was {result.State}.");
+            case PipelineDrainStatus.CancelledByCaller:
+                throw result.Exception
+                    ?? new OperationCanceledException("Pipeline drain was cancelled by the caller.", ct);
+            case PipelineDrainStatus.Faulted:
+                throw result.Exception
+                    ?? new InvalidOperationException("Pipeline drain failed because the run faulted.");
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported pipeline drain status '{result.Status}'.");
+        }
+    }
+
+    public async ValueTask<PipelineDrainResult> TryDrainAsync(
+        TimeSpan timeout,
+        CancellationToken ct = default)
+    {
+        var started = _clock.GetTimestamp();
         RequestDrain();
         var runTask = _runTask ?? throw new InvalidOperationException("Pipeline run has not started.");
-        if (!runTask.IsCompleted)
+        var alreadyCompleted = runTask.IsCompleted;
+        if (!alreadyCompleted)
             _lifecycle.MarkDrainingIfRunning();
 
-        await runTask.WaitAsync(timeout, ct).ConfigureAwait(false);
+        try
+        {
+            await runTask.WaitAsync(timeout, ct).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            return CreateDrainResult(PipelineDrainStatus.TimedOutStillRunning, started);
+        }
+        catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
+        {
+            return CreateDrainResult(PipelineDrainStatus.CancelledByCaller, started, ex);
+        }
+        catch (Exception ex)
+        {
+            return CreateDrainResult(PipelineDrainStatus.Faulted, started, ex);
+        }
 
         _lifecycle.MarkCompletedIfDraining();
+        return CreateDrainResult(
+            alreadyCompleted ? PipelineDrainStatus.AlreadyCompleted : PipelineDrainStatus.Completed,
+            started);
+    }
+
+    private PipelineDrainResult CreateDrainResult(
+        PipelineDrainStatus status,
+        long started,
+        Exception? exception = null)
+    {
+        var elapsed = _clock.GetElapsedTime(started, _clock.GetTimestamp());
+        return new PipelineDrainResult(status, _lifecycle.State, elapsed, exception);
     }
 
     public ValueTask AbortAsync(CancellationToken ct = default)
@@ -784,7 +869,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             await _observerDispatcher.CompleteAsync(_cts.Token).ConfigureAwait(false);
             _outputs.Writer.TryComplete();
         }
-        catch (OperationCanceledException ex) when (_cts.IsCancellationRequested)
+        catch (OperationCanceledException ex)
         {
             _lifecycle.MarkCancelledUnlessAborted();
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
@@ -894,7 +979,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     {
         var input = PipelineChannelFactory.CreateInput<TInput>(
             _options.InputCapacity,
-            _options.InputFullMode);
+            _options.InputFullMode,
+            OnInputDropped);
 
         Exception? workerFailure = null;
         object workerFailureGate = new();
@@ -934,6 +1020,31 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         await Task.WhenAll(workers).ConfigureAwait(false);
     }
 
+    private void OnInputDropped(ProcessingEnvelope<TInput> envelope)
+    {
+        _metrics.RecordItemDropped();
+        _ = TryEmitAsync(new InputDroppedEvent(
+            _spec.PipelineId,
+            _runtime.RunId,
+            envelope.TraceId,
+            _clock.GetUtcNow())).AsTask();
+    }
+
+    private void OnOutputDropped(PipelineOutput<TOutput> output)
+    {
+        _metrics.RecordOutputDropped();
+        _ = TryEmitAsync(new OutputDroppedEvent(
+            _spec.PipelineId,
+            _runtime.RunId,
+            output.Result.TraceId,
+            _clock.GetUtcNow())).AsTask();
+    }
+
+    private void OnObserverEventDropped(PipelineEvent pipelineEvent)
+    {
+        _metrics.RecordObserverEventDropped();
+    }
+
     private async ValueTask InitializeComponentsAsync(CancellationToken ct)
     {
         await _spec.Source.InitializeAsync(ct).ConfigureAwait(false);
@@ -966,11 +1077,13 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             outputEnvelope.Payload,
             outputEnvelope.TraceId
         );
+
+        await _sinkExecutor.WriteAsync(outputEnvelope, ct).ConfigureAwait(false);
+
         await _outputEmitter
             .WriteAsync(new PipelineOutput<TOutput>(outputEnvelope, result), ct)
             .ConfigureAwait(false);
 
-        await _sinkExecutor.WriteAsync(outputEnvelope, ct).ConfigureAwait(false);
         var elapsed = _clock.GetUtcNow() - startedAtUtc;
         _metrics.RecordProcessed(Math.Max(0, elapsed.TotalMilliseconds));
 
@@ -1198,6 +1311,25 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         CancellationToken ct
     )
     {
+        if (outcome.IsTerminalNonFailure)
+        {
+            if (outcome.Kind == StageResultKind.Filtered)
+                _metrics.RecordFiltered();
+
+            var terminalResult = outcome.Kind switch
+            {
+                StageResultKind.Filtered => PipelineResult<TOutput>.Filtered(outcome.TraceId),
+                StageResultKind.Skipped => PipelineResult<TOutput>.Skipped(outcome.TraceId),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported non-failure terminal result '{outcome.Kind}'."),
+            };
+
+            await _outputEmitter
+                .WriteAsync(new PipelineOutput<TOutput>(null, terminalResult), ct)
+                .ConfigureAwait(false);
+            return;
+        }
+
         _metrics.RecordFailed();
         var error =
             outcome.Error

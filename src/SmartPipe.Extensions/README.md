@@ -54,6 +54,11 @@ Ready-to-use integrations for SmartPipe.Core: file, HTTP, database, mapping, val
 | `AddSmartPipe<TIn,TOut>()` | Typed definition/factory DI registration |
 | `AddSmartPipeHostedService<TIn,TOut>()` | Typed hosted-service registration |
 
+`SmartPipeHostedServiceOptions` controls hosted fault behavior and drain
+timeout. The default fault behavior is `StopApplication`; use `Rethrow`,
+`MarkUnhealthyAndKeepHostAlive`, or `Ignore` only when that lifecycle policy is
+intentional for the host.
+
 ## Streaming
 
 | Component | Description |

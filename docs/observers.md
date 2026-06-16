@@ -33,6 +33,8 @@ var options = new PipelineRuntimeOptions
         FullMode = BoundedChannelFullMode.Wait,
         FailureMode = ObserverFailureMode.UseRegistrationPolicy,
         FlushOnCompletion = true,
+        BestEffortWriteTimeout = TimeSpan.FromMilliseconds(100),
+        EmitDroppedObserverEvents = true,
     },
 };
 ```
@@ -42,6 +44,11 @@ observer exception when a registration-level or critical observer failure
 faults the run. `BufferedBestEffort` is for diagnostics that must not block the
 pipeline.
 
+Buffered best-effort pressure is observable. Dropped observer events increment
+`smartpipe.observer.events.dropped`. When `EmitDroppedObserverEvents` is true,
+the dispatcher also tries to publish `ObserverEventDroppedEvent`; the metric is
+the reliable signal when the observer queue is already full.
+
 ## Rules
 
 - Observers are diagnostic hooks, not lifecycle synchronization primitives.
@@ -50,3 +57,17 @@ pipeline.
   the run.
 - Observer handlers should avoid throwing for ordinary logging/export failures
   unless the configured policy intentionally faults the pipeline.
+
+## Circuit Breaker And Filter Events
+
+The circuit breaker event contract includes:
+
+- `CircuitBreakerOpenedEvent`
+- `CircuitBreakerClosedEvent`
+- `CircuitBreakerRejectedEvent`
+
+Filtered items emit `ItemFilteredEvent`. Filtering is non-failure terminal
+control flow, so a filtered item does not emit `StageFailedEvent`.
+
+Bounded input and output drop policies emit `InputDroppedEvent` and
+`OutputDroppedEvent` when the runtime channel callback reports a dropped item.

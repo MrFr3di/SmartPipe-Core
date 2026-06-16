@@ -21,7 +21,9 @@ public class FilterTransformTests
         var filter = new FilterTransform<int>(x => x > 5);
         var result = await filter.TransformAsync(ProcessingEnvelope<int>.Create(3));
         result.IsSuccess.Should().BeFalse();
-        result.Error!.Value.Category.Should().Be("Filtered");
+        result.IsTerminalNonFailure.Should().BeTrue();
+        result.Kind.Should().Be(StageResultKind.Filtered);
+        result.Error.Should().BeNull();
     }
 
     [Fact]

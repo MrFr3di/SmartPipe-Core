@@ -4,7 +4,9 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using SmartPipe.Core;
 
 namespace SmartPipe.Extensions.Tests.Extensions;
@@ -89,6 +91,60 @@ public sealed class SmartPipeTypedDiTests
         factory.StartCalls.Should().Be(1);
         factory.DrainCalls.Should().Be(1);
         factory.DisposeCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task HostedService_FaultBehaviorStopApplication_StopsApplication()
+    {
+        var lifetime = new RecordingApplicationLifetime();
+        var hostedService = new ExposedHostedService(
+            new FaultingTypedFactory(new InvalidOperationException("pipeline failed")),
+            new SmartPipeHostedServiceOptions
+            {
+                FailureBehavior = SmartPipeHostedFailureBehavior.StopApplication,
+            },
+            lifetime);
+
+        await hostedService.ExecuteForTestAsync(CancellationToken.None);
+
+        lifetime.StopApplicationCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task HostedService_FaultBehaviorRethrow_Rethrows()
+    {
+        var exception = new InvalidOperationException("pipeline failed");
+        var hostedService = new ExposedHostedService(
+            new FaultingTypedFactory(exception),
+            new SmartPipeHostedServiceOptions
+            {
+                FailureBehavior = SmartPipeHostedFailureBehavior.Rethrow,
+            });
+
+        var act = () => hostedService.ExecuteForTestAsync(CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("pipeline failed");
+    }
+
+    [Fact]
+    public async Task HostedService_StopAsync_UsesConfiguredDrainTimeout()
+    {
+        var factory = new RecordingTypedFactory();
+        var hostedService = new SmartPipeHostedService<int, int>(
+            factory,
+            NullLogger<SmartPipeHostedService<int, int>>.Instance,
+            Options.Create(new SmartPipeHostedServiceOptions
+            {
+                DrainTimeout = TimeSpan.FromMilliseconds(123),
+            }));
+
+        await hostedService.StartAsync(CancellationToken.None);
+        await factory.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await hostedService.StopAsync(CancellationToken.None);
+
+        factory.LastDrainTimeout.Should().Be(TimeSpan.FromMilliseconds(123));
     }
 
     private static ServiceCollection CreateTypedPipelineServices()
@@ -217,6 +273,8 @@ public sealed class SmartPipeTypedDiTests
 
         public int DisposeCalls { get; private set; }
 
+        public TimeSpan? LastDrainTimeout { get; private set; }
+
         public PipelineRun<int> Start(CancellationToken ct = default)
         {
             StartCalls++;
@@ -225,9 +283,10 @@ public sealed class SmartPipeTypedDiTests
                 _outputs.Reader,
                 _completion.Task,
                 () => PipelineRunState.Running,
-                drain: (_, _) =>
+                drain: (timeout, _) =>
                 {
                     DrainCalls++;
+                    LastDrainTimeout = timeout;
                     _completion.TrySetResult();
                     _outputs.Writer.TryComplete();
                     return ValueTask.CompletedTask;
@@ -238,5 +297,55 @@ public sealed class SmartPipeTypedDiTests
                     return ValueTask.CompletedTask;
                 });
         }
+    }
+
+    private sealed class FaultingTypedFactory : ISmartPipeFactory<int, int>
+    {
+        private readonly Channel<PipelineOutput<int>> _outputs = Channel.CreateUnbounded<PipelineOutput<int>>();
+        private readonly Exception _exception;
+
+        public FaultingTypedFactory(Exception exception)
+        {
+            _exception = exception;
+        }
+
+        public PipelineRun<int> Start(CancellationToken ct = default)
+        {
+            _outputs.Writer.TryComplete(_exception);
+            return new PipelineRun<int>(
+                _outputs.Reader,
+                Task.FromException(_exception),
+                () => PipelineRunState.Faulted);
+        }
+    }
+
+    private sealed class ExposedHostedService : SmartPipeHostedService<int, int>
+    {
+        public ExposedHostedService(
+            ISmartPipeFactory<int, int> factory,
+            SmartPipeHostedServiceOptions options,
+            IHostApplicationLifetime? lifetime = null)
+            : base(
+                factory,
+                NullLogger<SmartPipeHostedService<int, int>>.Instance,
+                Options.Create(options),
+                lifetime)
+        {
+        }
+
+        public Task ExecuteForTestAsync(CancellationToken ct) => ExecuteAsync(ct);
+    }
+
+    private sealed class RecordingApplicationLifetime : IHostApplicationLifetime
+    {
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+
+        public CancellationToken ApplicationStopping => CancellationToken.None;
+
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+
+        public int StopApplicationCalls { get; private set; }
+
+        public void StopApplication() => StopApplicationCalls++;
     }
 }

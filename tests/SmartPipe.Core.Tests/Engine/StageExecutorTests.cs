@@ -130,6 +130,41 @@ public sealed class StageExecutorTests
     }
 
     [Fact]
+    public async Task CircuitBreaker_HalfOpenToClosed_EmitsClosedEvent()
+    {
+        var observer = new RecordingPipelineObserver();
+        var clock = new AdvancingPipelineClock(
+            new DateTimeOffset(2026, 6, 16, 10, 0, 0, TimeSpan.Zero));
+
+        var run = PipelineBuilder
+            .From(new ClockAdvancingSource<int>([1, 2, 3], clock, advanceAfterFirst: TimeSpan.FromSeconds(2)))
+            .Transform(
+                new FailFirstItemTransformer(),
+                new StageFailureOptions
+                {
+                    CircuitBreaker = new CircuitBreakerPolicy
+                    {
+                        FailureThreshold = 1,
+                        BreakDuration = TimeSpan.FromSeconds(1),
+                    },
+                    OnPermanentFailure = FailureAction.Skip,
+                })
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                Clock = clock,
+            })
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        observer.Events.OfType<CircuitBreakerOpenedEvent>().Should().ContainSingle();
+        observer.Events.OfType<CircuitBreakerClosedEvent>().Should().ContainSingle();
+        observer.Events.OfType<CircuitBreakerRejectedEvent>().Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task StageExecutor_CircuitBreaker_RejectionIsNotRetriedForever()
     {
         var transformer = new AlwaysFailingTransformer<int>(ErrorType.Transient);
@@ -190,6 +225,100 @@ public sealed class StageExecutorTests
         deadLetter.OriginalPayload.Should().Be(123);
         deadLetter.Error.Type.Should().Be(ErrorType.Permanent);
         deadLetter.StageId.Should().Be("stage-1");
+    }
+
+    [Fact]
+    public async Task TransformerException_RetriesWhenRetryPolicyAllows()
+    {
+        var transformer = new ThrowThenSucceedTransformer();
+
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([5]))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(1, TimeSpan.Zero, retryOn: _ => true),
+                })
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        outputs.Should().ContainSingle();
+        outputs[0].Result.IsSuccess.Should().BeTrue();
+        outputs[0].Result.Value.Should().Be(5);
+        transformer.Attempts.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task TransformerException_WritesDeadLetterWhenConfigured()
+    {
+        await using var stream = new MemoryStream();
+        var serializer = new CapturingDeadLetterSerializer<int>();
+
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([5]))
+            .Transform(
+                new ThrowingPolicyTransformer(),
+                new StageFailureOptions { OnPermanentFailure = FailureAction.DeadLetter },
+                new StageDeadLetterOptions<int>(stream, serializer))
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        outputs.Should().ContainSingle();
+        outputs[0].Result.IsSuccess.Should().BeFalse();
+        serializer.Written.Should().ContainSingle()
+            .Which.Error.Category.Should().Be("StageException");
+    }
+
+    [Fact]
+    public async Task TransformerException_EmitsFailureResultByDefault()
+    {
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([5]))
+            .Transform(new ThrowingPolicyTransformer())
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        outputs.Should().ContainSingle();
+        outputs[0].Result.IsFailure.Should().BeTrue();
+        outputs[0].Result.Error!.Value.Category.Should().Be("StageException");
+    }
+
+    [Fact]
+    public async Task TransformerException_FaultsOnlyWhenPolicyIsFaultPipeline()
+    {
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([5]))
+            .Transform(
+                new ThrowingPolicyTransformer(),
+                new StageFailureOptions { OnPermanentFailure = FailureAction.FaultPipeline })
+            .Run();
+
+        var completion = async () => await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await completion.Should().ThrowAsync<PipelineFailureActionException>()
+            .WithMessage("*stage exception boom*");
+        run.State.Should().Be(PipelineRunState.Faulted);
+    }
+
+    [Fact]
+    public async Task TransformerOperationCanceledException_RemainsCancellation()
+    {
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([5]))
+            .Transform(new CancelingPolicyTransformer())
+            .Run();
+
+        var completion = async () => await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await completion.Should().ThrowAsync<OperationCanceledException>();
+        run.State.Should().Be(PipelineRunState.Cancelled);
     }
 
     [Fact]
@@ -324,6 +453,134 @@ public sealed class StageExecutorTests
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ThrowingPolicyTransformer : IPipelineTransformer<int, int>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<int>> TransformAsync(
+            ProcessingEnvelope<int> envelope,
+            CancellationToken ct = default) =>
+            ValueTask.FromException<StageResult<int>>(
+                new InvalidOperationException("stage exception boom"));
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ThrowThenSucceedTransformer : IPipelineTransformer<int, int>
+    {
+        private int _attempts;
+
+        public int Attempts => Volatile.Read(ref _attempts);
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<int>> TransformAsync(
+            ProcessingEnvelope<int> envelope,
+            CancellationToken ct = default)
+        {
+            if (Interlocked.Increment(ref _attempts) == 1)
+            {
+                return ValueTask.FromException<StageResult<int>>(
+                    new InvalidOperationException("stage exception boom"));
+            }
+
+            return ValueTask.FromResult(StageResult<int>.Success(envelope.Payload));
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CancelingPolicyTransformer : IPipelineTransformer<int, int>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<int>> TransformAsync(
+            ProcessingEnvelope<int> envelope,
+            CancellationToken ct = default) =>
+            ValueTask.FromException<StageResult<int>>(
+                new OperationCanceledException("stage cancelled"));
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class FailFirstItemTransformer : IPipelineTransformer<int, int>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<int>> TransformAsync(
+            ProcessingEnvelope<int> envelope,
+            CancellationToken ct = default)
+        {
+            return ValueTask.FromResult(
+                envelope.Payload == 1
+                    ? StageResult<int>.Failure(new SmartPipeError(
+                        "first item fails",
+                        ErrorType.Permanent,
+                        "FirstItem"))
+                    : StageResult<int>.Success(envelope.Payload));
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ClockAdvancingSource<T> : IPipelineSource<T>
+    {
+        private readonly IReadOnlyList<T> _items;
+        private readonly AdvancingPipelineClock _clock;
+        private readonly TimeSpan _advanceAfterFirst;
+
+        public ClockAdvancingSource(
+            IReadOnlyList<T> items,
+            AdvancingPipelineClock clock,
+            TimeSpan advanceAfterFirst)
+        {
+            _items = items;
+            _clock = clock;
+            _advanceAfterFirst = advanceAfterFirst;
+        }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            for (var i = 0; i < _items.Count; i++)
+            {
+                if (i == 1)
+                    _clock.Advance(_advanceAfterFirst);
+
+                ct.ThrowIfCancellationRequested();
+                yield return ProcessingEnvelope<T>.Create(
+                    _items[i],
+                    "stage-executor-tests",
+                    "stage-executor-run",
+                    (ulong)(i + 1));
+                await Task.Yield();
+            }
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class AdvancingPipelineClock : IPipelineClock
+    {
+        private DateTimeOffset _now;
+
+        public AdvancingPipelineClock(DateTimeOffset now)
+        {
+            _now = now;
+        }
+
+        public DateTimeOffset GetUtcNow() => _now;
+
+        public long GetTimestamp() => _now.UtcTicks;
+
+        public TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp) =>
+            TimeSpan.FromTicks(endingTimestamp - startingTimestamp);
+
+        public void Advance(TimeSpan duration) => _now += duration;
     }
 
     private sealed class BlockingTimeoutTransformer<T> : IPipelineTransformer<T, T>

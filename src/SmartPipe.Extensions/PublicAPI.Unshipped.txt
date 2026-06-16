@@ -1,1 +1,14 @@
 #nullable enable
+SmartPipe.Extensions.SmartPipeHostedFailureBehavior
+SmartPipe.Extensions.SmartPipeHostedFailureBehavior.Ignore = 3 -> SmartPipe.Extensions.SmartPipeHostedFailureBehavior
+SmartPipe.Extensions.SmartPipeHostedFailureBehavior.MarkUnhealthyAndKeepHostAlive = 2 -> SmartPipe.Extensions.SmartPipeHostedFailureBehavior
+SmartPipe.Extensions.SmartPipeHostedFailureBehavior.Rethrow = 1 -> SmartPipe.Extensions.SmartPipeHostedFailureBehavior
+SmartPipe.Extensions.SmartPipeHostedFailureBehavior.StopApplication = 0 -> SmartPipe.Extensions.SmartPipeHostedFailureBehavior
+SmartPipe.Extensions.SmartPipeHostedService<TInput, TOutput>.SmartPipeHostedService(SmartPipe.Extensions.ISmartPipeFactory<TInput, TOutput>! typedFactory, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.SmartPipeHostedService<TInput, TOutput>!>! logger, Microsoft.Extensions.Options.IOptions<SmartPipe.Extensions.SmartPipeHostedServiceOptions!>! options, Microsoft.Extensions.Hosting.IHostApplicationLifetime? applicationLifetime = null) -> void
+SmartPipe.Extensions.SmartPipeHostedServiceOptions
+SmartPipe.Extensions.SmartPipeHostedServiceOptions.DrainTimeout.get -> System.TimeSpan
+SmartPipe.Extensions.SmartPipeHostedServiceOptions.DrainTimeout.init -> void
+SmartPipe.Extensions.SmartPipeHostedServiceOptions.FailureBehavior.get -> SmartPipe.Extensions.SmartPipeHostedFailureBehavior
+SmartPipe.Extensions.SmartPipeHostedServiceOptions.FailureBehavior.init -> void
+SmartPipe.Extensions.SmartPipeHostedServiceOptions.SmartPipeHostedServiceOptions() -> void
+SmartPipe.Extensions.SmartPipeHostedServiceOptions.Validate() -> void

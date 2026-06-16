@@ -1,4 +1,5 @@
 #nullable enable
+#pragma warning disable CS0618 // Compatibility OutputMode remains supported at the boundary.
 
 using System.Threading.Channels;
 
@@ -34,7 +35,7 @@ internal sealed class PipelineOutputEmitter<TOutput>
         {
             return _options.OutputPolicy switch
             {
-                PipelineOutputPolicy.EmitFailuresOnly => !result.IsSuccess,
+                PipelineOutputPolicy.EmitFailuresOnly => result.IsFailure,
                 PipelineOutputPolicy.SuppressSuccessWhenSinkAttached => !_hasSink || !result.IsSuccess,
                 PipelineOutputPolicy.SuppressAllWhenSinkAttached => !_hasSink,
                 _ => throw new InvalidOperationException(
@@ -45,7 +46,7 @@ internal sealed class PipelineOutputEmitter<TOutput>
         return _options.OutputMode switch
         {
             PipelineOutputMode.EmitAll => true,
-            PipelineOutputMode.FailuresOnlyWhenSinkAttached => !_hasSink || !result.IsSuccess,
+            PipelineOutputMode.FailuresOnlyWhenSinkAttached => !_hasSink || result.IsFailure,
             PipelineOutputMode.SuppressWhenSinkAttached => !_hasSink,
             PipelineOutputMode.SuppressAll => false,
             _ => throw new InvalidOperationException(

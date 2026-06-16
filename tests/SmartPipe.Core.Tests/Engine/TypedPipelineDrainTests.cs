@@ -1,4 +1,5 @@
 #nullable enable
+#pragma warning disable CS0618 // These tests cover compatibility aliases.
 
 using System.Threading.Channels;
 using FluentAssertions;
@@ -85,6 +86,90 @@ public sealed class TypedPipelineDrainTests
         await run.DrainAsync(TimeSpan.FromSeconds(5));
 
         run.State.Should().Be(PipelineRunState.Completed);
+    }
+
+    [Fact]
+    public async Task TryDrainAsync_Completed_ReturnsCompleted()
+    {
+        var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new BarrierGateControlledSource<int>(barrier, () => 0, 1, 2);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new BarrierTransformer<int, int>(barrier))
+            .Run();
+
+        await source.FirstItemYielded.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var drainTask = run.TryDrainAsync(TimeSpan.FromSeconds(5)).AsTask();
+
+        barrier.TrySetResult();
+
+        var result = await drainTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        result.Status.Should().Be(PipelineDrainStatus.Completed);
+        result.State.Should().Be(PipelineRunState.Completed);
+        result.Exception.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TryDrainAsync_Timeout_ReturnsTimedOutStillRunning()
+    {
+        var transformer = new BlockingLifecycleTransformer<int>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(transformer)
+            .Run();
+
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var result = await run.TryDrainAsync(TimeSpan.FromMilliseconds(50));
+
+        result.Status.Should().Be(PipelineDrainStatus.TimedOutStillRunning);
+        result.State.Should().NotBe(PipelineRunState.Cancelled);
+
+        await run.AbortAsync();
+    }
+
+    [Fact]
+    public async Task TryDrainAsync_Faulted_ReturnsFaulted()
+    {
+        var source = new EnvelopeSource<int>(1);
+        var transformer = new GateFailingTransformer<int, int>(ErrorType.Permanent);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(
+                transformer,
+                new StageFailureOptions { OnPermanentFailure = FailureAction.FaultPipeline })
+            .Run();
+
+        await transformer.TransformEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var drainTask = run.TryDrainAsync(TimeSpan.FromSeconds(5)).AsTask();
+        transformer.Release();
+
+        var result = await drainTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        result.Status.Should().Be(PipelineDrainStatus.Faulted);
+        result.State.Should().Be(PipelineRunState.Faulted);
+        result.Exception.Should().BeOfType<PipelineFailureActionException>();
+    }
+
+    [Fact]
+    public async Task TryDrainAsync_AlreadyCompleted_ReturnsAlreadyCompleted()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .Run();
+
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var result = await run.TryDrainAsync(TimeSpan.FromSeconds(5));
+
+        result.Status.Should().Be(PipelineDrainStatus.AlreadyCompleted);
+        result.State.Should().Be(PipelineRunState.Completed);
     }
 
     [Fact]

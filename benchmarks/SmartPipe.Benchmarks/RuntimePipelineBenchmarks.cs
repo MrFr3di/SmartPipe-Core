@@ -40,7 +40,7 @@ public class RuntimePipelineBenchmarks
     {
         await using var run = CreateSinkBackedRun(
             maxConcurrency: 4,
-            outputMode: PipelineOutputMode.SuppressWhenSinkAttached);
+            outputPolicy: PipelineOutputPolicy.SuppressAllWhenSinkAttached);
         await run.Completion.ConfigureAwait(false);
     }
 
@@ -53,7 +53,7 @@ public class RuntimePipelineBenchmarks
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
                 MaxConcurrency = 4,
-                OutputMode = PipelineOutputMode.EmitAll,
+                OutputPolicy = PipelineOutputPolicy.EmitAll,
             })
             .Run();
 
@@ -69,7 +69,7 @@ public class RuntimePipelineBenchmarks
             .TransformFactory<int>(_ => new TypedPassthroughTransformer())
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
-                OutputMode = PipelineOutputMode.SuppressAll,
+                OutputPolicy = PipelineOutputPolicy.EmitFailuresOnly,
             })
             .Run();
 
@@ -89,7 +89,7 @@ public class RuntimePipelineBenchmarks
                 })
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
-                OutputMode = PipelineOutputMode.SuppressAll,
+                OutputPolicy = PipelineOutputPolicy.EmitFailuresOnly,
             })
             .Run();
 
@@ -111,7 +111,7 @@ public class RuntimePipelineBenchmarks
             .TransformFactory<int>(_ => new TypedPassthroughTransformer())
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
-                OutputMode = PipelineOutputMode.SuppressAll,
+                OutputPolicy = PipelineOutputPolicy.EmitFailuresOnly,
                 ObserverDispatch = ObserverDispatchOptions.Inline,
             })
             .WithObserver(new CountingObserver())
@@ -128,7 +128,7 @@ public class RuntimePipelineBenchmarks
             .TransformFactory<int>(_ => new TypedPassthroughTransformer())
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
-                OutputMode = PipelineOutputMode.SuppressAll,
+                OutputPolicy = PipelineOutputPolicy.EmitFailuresOnly,
                 ObserverDispatch = new ObserverDispatchOptions
                 {
                     Mode = ObserverDispatchMode.BufferedBestEffort,
@@ -146,7 +146,7 @@ public class RuntimePipelineBenchmarks
 
     private static PipelineRun<int> CreateSinkBackedRun(
         int maxConcurrency,
-        PipelineOutputMode outputMode = PipelineOutputMode.SuppressWhenSinkAttached)
+        PipelineOutputPolicy outputPolicy = PipelineOutputPolicy.SuppressAllWhenSinkAttached)
     {
         return PipelineBuilder
             .FromFactory<int>(_ => new TypedFastSource(ItemCount))
@@ -154,7 +154,7 @@ public class RuntimePipelineBenchmarks
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
                 MaxConcurrency = maxConcurrency,
-                OutputMode = outputMode,
+                OutputPolicy = outputPolicy,
             })
             .ToFactory(_ => new TypedCountingSink());
     }

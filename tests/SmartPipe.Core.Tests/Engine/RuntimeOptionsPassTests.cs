@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+#pragma warning disable CS0618 // These tests cover compatibility aliases.
 using System.Globalization;
 using System.Threading.Channels;
 using FluentAssertions;
@@ -322,12 +323,9 @@ public class RuntimeOptionsPassTests
             .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
             .To(sink);
 
-        await sink.WaitForCountAsync(defaultCapacity, TimeSpan.FromSeconds(5));
-        Func<Task> extraWrite = async () =>
-            await sink.WaitForCountAsync(defaultCapacity + 1, TimeSpan.FromMilliseconds(150));
-
-        await extraWrite.Should().ThrowAsync<TimeoutException>(
-            "default typed output must be bounded even when a sink is attached");
+        await sink.WaitForCountAsync(defaultCapacity + 1, TimeSpan.FromSeconds(5));
+        run.Completion.IsCompleted.Should().BeFalse(
+            "the final success output should wait for an output consumer after its sink write succeeds");
 
         var outputs = await ReadOutputsAsync(run.Outputs);
         await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
@@ -384,6 +382,85 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
+    public async Task InputDropMode_DroppedItem_IncrementsMetricAndEmitsEvent()
+    {
+        var observer = new RecordingObserver();
+        var transformer = new BlockingTrackingTransformer<int>(expectedConcurrentCalls: 2);
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(Enumerable.Range(1, 20).ToArray()))
+            .Transform(transformer)
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxConcurrency = 2,
+                InputCapacity = 1,
+                InputFullMode = BoundedChannelFullMode.DropWrite,
+            })
+            .WithObserver(observer)
+            .Run();
+
+        await transformer.ExpectedConcurrentCallsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        transformer.Release();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        run.Metrics.ItemsDropped.Should().BeGreaterThan(0);
+        observer.Events.OfType<InputDroppedEvent>().Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task OutputDropMode_DroppedOutput_IncrementsMetricAndEmitsEvent()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3))
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputCapacity = 1,
+                OutputFullMode = BoundedChannelFullMode.DropOldest,
+            })
+            .WithObserver(observer)
+            .Run();
+
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        var outputs = await ReadOutputsAsync(run.Outputs);
+
+        outputs.Should().ContainSingle();
+        run.Metrics.OutputItemsDropped.Should().BeGreaterThan(0);
+        observer.Events.OfType<OutputDroppedEvent>().Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task ObserverBufferedBestEffort_DroppedEvent_IncrementsMetric()
+    {
+        var observer = new RecordingObserver();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(Enumerable.Range(1, 20).ToArray()))
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                ObserverDispatch = new ObserverDispatchOptions
+                {
+                    Mode = ObserverDispatchMode.BufferedBestEffort,
+                    Capacity = 1,
+                    FullMode = BoundedChannelFullMode.DropOldest,
+                },
+            })
+            .WithObserver(new SlowObserver(TimeSpan.FromMilliseconds(25)))
+            .WithObserver(observer)
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(10));
+
+        run.Metrics.ObserverEventsDropped.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
     public async Task RuntimeOptions_BoundedOutput_WithSinkAndUnreadOutputs_ShouldRequireOutputConsumer()
     {
         var sink = new CountingEnvelopeSink<string>();
@@ -405,7 +482,7 @@ public class RuntimeOptionsPassTests
         run.Completion.IsCompleted.Should().BeFalse(
             "bounded output with Wait backpressures the run when outputs are not consumed"
         );
-        sink.Payloads.Should().Equal("1");
+        sink.Payloads.Should().Equal("1", "2");
 
         var outputs = await ReadOutputsAsync(run.Outputs);
         await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
@@ -1915,6 +1992,49 @@ public class RuntimeOptionsPassTests
                 await waitTask.WaitAsync(timeout).ConfigureAwait(false);
             }
         }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class BlockingTrackingTransformer<T> : IPipelineTransformer<T, T>
+        where T : notnull
+    {
+        private readonly int _expectedConcurrentCalls;
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _activeCalls;
+
+        public BlockingTrackingTransformer(int expectedConcurrentCalls)
+        {
+            _expectedConcurrentCalls = expectedConcurrentCalls;
+        }
+
+        public TaskCompletionSource ExpectedConcurrentCallsEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public async ValueTask<StageResult<T>> TransformAsync(
+            ProcessingEnvelope<T> envelope,
+            CancellationToken ct = default
+        )
+        {
+            var active = Interlocked.Increment(ref _activeCalls);
+            if (active >= _expectedConcurrentCalls)
+                ExpectedConcurrentCallsEntered.TrySetResult();
+
+            try
+            {
+                await _release.Task.WaitAsync(ct).ConfigureAwait(false);
+                return StageResult<T>.Success(envelope.Payload);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeCalls);
+            }
+        }
+
+        public void Release() => _release.TrySetResult();
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

@@ -86,4 +86,63 @@ public sealed class PipelineChannelFactoryTests
         var second = await channel.Reader.ReadAsync();
         second.Payload.Should().Be(2);
     }
+
+    [Fact]
+    public async Task PipelineChannelFactory_InputDropMode_InvokesDroppedCallback()
+    {
+        var dropped = new List<int>();
+        var channel = PipelineChannelFactory.CreateInput<int>(
+            capacity: 1,
+            fullMode: BoundedChannelFullMode.DropWrite,
+            itemDropped: envelope => dropped.Add(envelope.Payload));
+
+        await channel.Writer.WriteAsync(ProcessingEnvelope<int>.Create(1));
+        await channel.Writer.WriteAsync(ProcessingEnvelope<int>.Create(2));
+
+        dropped.Should().ContainSingle().Which.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task PipelineChannelFactory_OutputDropMode_InvokesDroppedCallback()
+    {
+        var dropped = new List<int>();
+        var channel = PipelineChannelFactory.CreateOutput<int>(
+            capacity: 1,
+            fullMode: BoundedChannelFullMode.DropOldest,
+            itemDropped: output => dropped.Add(output.Result.Value));
+
+        var first = ProcessingEnvelope<int>.Create(1);
+        var second = ProcessingEnvelope<int>.Create(2);
+
+        await channel.Writer.WriteAsync(new PipelineOutput<int>(
+            first,
+            PipelineResult<int>.Success(first.Payload, first.TraceId)));
+        await channel.Writer.WriteAsync(new PipelineOutput<int>(
+            second,
+            PipelineResult<int>.Success(second.Payload, second.TraceId)));
+
+        dropped.Should().ContainSingle().Which.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PipelineChannelFactory_ObserverDropMode_InvokesDroppedCallback()
+    {
+        var dropped = new List<PipelineEvent>();
+        var channel = PipelineChannelFactory.CreateObserverBuffer(
+            capacity: 1,
+            fullMode: BoundedChannelFullMode.DropWrite,
+            itemDropped: dropped.Add);
+
+        await channel.Writer.WriteAsync(new PipelineStartedEvent(
+            "pipeline",
+            "run",
+            DateTimeOffset.UtcNow));
+        await channel.Writer.WriteAsync(new PipelineCompletedEvent(
+            "pipeline",
+            "run",
+            DateTimeOffset.UtcNow));
+
+        dropped.Should().ContainSingle()
+            .Which.Should().BeOfType<PipelineCompletedEvent>();
+    }
 }

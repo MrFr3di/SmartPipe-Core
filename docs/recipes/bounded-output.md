@@ -9,9 +9,9 @@ runs with or without a sink.
 ## Consume Outputs While The Run Is Active
 
 When output emission is active and `OutputFullMode` is `Wait`, the runtime
-writes to `PipelineRun<T>.Outputs` before it writes to an attached sink. If
-nobody reads the output stream, the pipeline can block before the sink receives
-the item.
+writes to an attached sink before it publishes a success output. If nobody
+reads the output stream, the pipeline can block after a sink write succeeds and
+before the next item reaches the sink.
 
 ```csharp
 var run = PipelineBuilder
@@ -104,14 +104,14 @@ var run = PipelineBuilder
 await run.Completion;
 ```
 
-This keeps success outputs from blocking sink writes while preserving terminal
-failure outputs for a reader if one is attached.
+This keeps success outputs from blocking later sink writes while preserving
+terminal failure outputs for a reader if one is attached.
 
 ## Slow Output Reader
 
 `PipelineOutputPolicy.EmitAll` intentionally preserves output backpressure. If
-the output reader is slow and `OutputFullMode = Wait`, the run can wait before
-the next sink write:
+the output reader is slow and `OutputFullMode = Wait`, the run can wait after a
+sink write succeeds and before processing the next item:
 
 ```csharp
 var run = PipelineBuilder
@@ -137,10 +137,16 @@ Use this mode when output retention/backpressure is intentional. For a
 side-effect-only sink pipeline, prefer
 `SuppressSuccessWhenSinkAttached`.
 
+If a lossy `OutputFullMode` is selected, dropped output results increment
+`smartpipe.output.items.dropped` and emit a best-effort `OutputDroppedEvent`.
+Use `Wait` when output loss is not acceptable.
+
 ## Rules
 
 - With sink-attached runs, either read `PipelineRun<T>.Outputs` or configure an
   output policy that suppresses enough results for the workload.
+- For sink-backed pipelines, `PipelineResult.Success` means the sink write has
+  completed successfully.
 - Prefer `OutputFullMode.Wait` when losing outputs is not acceptable.
 - Do not configure bounded output just to limit sink concurrency; sink work is
   controlled by the pipeline and stage design, not by ignoring outputs.

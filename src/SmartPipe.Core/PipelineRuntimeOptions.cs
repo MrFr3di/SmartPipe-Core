@@ -1,4 +1,5 @@
 #nullable enable
+#pragma warning disable CS0618 // Compatibility aliases are intentionally defined and validated here.
 
 using System.Threading.Channels;
 
@@ -111,6 +112,12 @@ public sealed class ObserverDispatchOptions
     /// <summary>Gets a value indicating whether buffered dispatch should flush during completion.</summary>
     public bool FlushOnCompletion { get; init; } = true;
 
+    /// <summary>Gets the best-effort wait duration before an observer event is counted as dropped.</summary>
+    public TimeSpan BestEffortWriteTimeout { get; init; } = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>Gets a value indicating whether buffered dispatch should try to emit observer-drop events.</summary>
+    public bool EmitDroppedObserverEvents { get; init; } = true;
+
     internal void Validate()
     {
         if (!Enum.IsDefined(Mode))
@@ -127,6 +134,12 @@ public sealed class ObserverDispatchOptions
 
         if (Mode == ObserverDispatchMode.BufferedReliable && !FlushOnCompletion)
             throw new ArgumentException("BufferedReliable requires FlushOnCompletion = true.");
+
+        if (BestEffortWriteTimeout < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                nameof(BestEffortWriteTimeout),
+                BestEffortWriteTimeout,
+                "Best-effort observer write timeout must not be negative.");
     }
 }
 
@@ -135,6 +148,7 @@ public sealed class ObserverDispatchOptions
 /// Output mode filtering applies only at the output channel write boundary.
 /// Sink writes, observer events, retry, and failure routing are independent of output mode.
 /// </remarks>
+[Obsolete("Use PipelineOutputPolicy. PipelineOutputMode is a compatibility surface and will be removed in a future major version.")]
 public enum PipelineOutputMode
 {
     /// <summary>Emit all processing results — successful and failed — to the output channel.</summary>
@@ -196,7 +210,8 @@ public sealed class PipelineRuntimeOptions
     /// <summary>Gets the bounded output channel full mode.</summary>
     public BoundedChannelFullMode OutputFullMode { get; init; } = BoundedChannelFullMode.Wait;
 
-    /// <summary>Gets the output filtering mode. <see cref="PipelineOutputMode.EmitAll"/> is the default.</summary>
+    /// <summary>Gets the compatibility output filtering mode. Prefer <see cref="OutputPolicy"/>.</summary>
+    [Obsolete("Use OutputPolicy. OutputMode is a compatibility alias and will be removed in a future major version.")]
     public PipelineOutputMode OutputMode { get; init; } = PipelineOutputMode.EmitAll;
 
     /// <summary>Gets the maximum number of typed envelopes processed concurrently.</summary>
@@ -204,6 +219,7 @@ public sealed class PipelineRuntimeOptions
     /// Compatibility name for 1.1 callers. New typed-only code should prefer
     /// <see cref="MaxConcurrency"/>.
     /// </remarks>
+    [Obsolete("Use MaxConcurrency. This compatibility alias will be removed in a future major version.")]
     public int MaxDegreeOfParallelism { get; init; } = 1;
 
     /// <summary>Gets the typed output filtering policy.</summary>

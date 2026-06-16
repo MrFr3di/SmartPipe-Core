@@ -16,6 +16,7 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
 {
     private readonly Func<CancellationToken, ValueTask>? _cancel;
     private readonly Func<TimeSpan, CancellationToken, ValueTask>? _drain;
+    private readonly Func<TimeSpan, CancellationToken, ValueTask<PipelineDrainResult>>? _tryDrain;
     private readonly Func<CancellationToken, ValueTask>? _abort;
     private readonly Func<ValueTask>? _dispose;
     private readonly Func<SmartPipeMetricsSnapshot>? _metricsProvider;
@@ -44,6 +45,7 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
             stateProvider,
             cancel,
             drain,
+            tryDrain: null,
             abort,
             dispose,
             metricsProvider: null)
@@ -56,6 +58,7 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
         Func<PipelineRunState> stateProvider,
         Func<CancellationToken, ValueTask>? cancel,
         Func<TimeSpan, CancellationToken, ValueTask>? drain,
+        Func<TimeSpan, CancellationToken, ValueTask<PipelineDrainResult>>? tryDrain,
         Func<CancellationToken, ValueTask>? abort,
         Func<ValueTask>? dispose,
         Func<SmartPipeMetricsSnapshot>? metricsProvider
@@ -66,6 +69,7 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
         _stateProvider = stateProvider ?? throw new ArgumentNullException(nameof(stateProvider));
         _cancel = cancel;
         _drain = drain;
+        _tryDrain = tryDrain;
         _abort = abort;
         _dispose = dispose;
         _metricsProvider = metricsProvider;
@@ -109,6 +113,19 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
     public ValueTask DrainAsync(TimeSpan timeout, CancellationToken ct = default) =>
         _drain?.Invoke(timeout, ct) ?? ValueTask.CompletedTask;
 
+    /// <summary>Attempts to drain accepted work and returns structured completion status.</summary>
+    /// <param name="timeout">Maximum drain duration.</param>
+    /// <param name="ct">Cancellation token for the drain request.</param>
+    /// <returns>Structured drain result.</returns>
+    public ValueTask<PipelineDrainResult> TryDrainAsync(
+        TimeSpan timeout,
+        CancellationToken ct = default) =>
+        _tryDrain?.Invoke(timeout, ct)
+        ?? ValueTask.FromResult(new PipelineDrainResult(
+            PipelineDrainStatus.AlreadyCompleted,
+            State,
+            TimeSpan.Zero));
+
     /// <summary>Requests immediate abort of pending work.</summary>
     /// <param name="ct">Cancellation token for the abort request.</param>
     /// <returns>A value task representing abort dispatch.</returns>
@@ -143,3 +160,33 @@ public enum PipelineRunState
     /// <summary>The run faulted.</summary>
     Faulted,
 }
+
+/// <summary>Structured status returned by <see cref="PipelineRun{TOutput}.TryDrainAsync"/>.</summary>
+public enum PipelineDrainStatus
+{
+    /// <summary>The run drained and completed during this call.</summary>
+    Completed,
+
+    /// <summary>The drain timed out and the run is still active.</summary>
+    TimedOutStillRunning,
+
+    /// <summary>The drain request was cancelled by the caller.</summary>
+    CancelledByCaller,
+
+    /// <summary>The run faulted while the drain was waiting.</summary>
+    Faulted,
+
+    /// <summary>The run had already completed before this drain call.</summary>
+    AlreadyCompleted,
+}
+
+/// <summary>Structured result returned by a non-throwing drain attempt.</summary>
+/// <param name="Status">Drain outcome.</param>
+/// <param name="State">Pipeline run state observed when the drain attempt completed.</param>
+/// <param name="Elapsed">Elapsed drain wait time.</param>
+/// <param name="Exception">Fault or cancellation exception, when available.</param>
+public sealed record PipelineDrainResult(
+    PipelineDrainStatus Status,
+    PipelineRunState State,
+    TimeSpan Elapsed,
+    Exception? Exception = null);

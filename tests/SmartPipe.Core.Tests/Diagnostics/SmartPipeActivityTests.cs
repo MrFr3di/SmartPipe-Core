@@ -1,4 +1,5 @@
 #nullable enable
+#pragma warning disable CS0618 // These tests cover compatibility aliases.
 
 using System.Collections.Concurrent;
 using System.Diagnostics;

@@ -24,6 +24,22 @@ The hosted service:
 - drains the run during stop;
 - disposes runtime-owned components.
 
+Hosted pipeline faults are not log-only by default. Configure
+`SmartPipeHostedServiceOptions`:
+
+```csharp
+services.Configure<SmartPipeHostedServiceOptions>(options =>
+{
+    options.FailureBehavior = SmartPipeHostedFailureBehavior.StopApplication;
+    options.DrainTimeout = TimeSpan.FromSeconds(30);
+});
+```
+
+`StopApplication` is the default and requests host shutdown through
+`IHostApplicationLifetime`. `Rethrow` faults the hosted execution task.
+`MarkUnhealthyAndKeepHostAlive` keeps the host alive so health checks can report
+the tracked faulted run. `Ignore` is an explicit log-and-continue choice.
+
 Hosted services should use cooperative sources and sinks so `DrainAsync` and
 host shutdown can complete promptly.
 

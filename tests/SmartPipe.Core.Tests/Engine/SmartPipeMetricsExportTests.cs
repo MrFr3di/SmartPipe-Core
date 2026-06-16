@@ -16,6 +16,10 @@ public class SmartPipeMetricsExportTests
         var export = metrics.Export();
         export.Should().ContainKey("items_processed");
         export.Should().ContainKey("items_failed");
+        export.Should().ContainKey("items_filtered");
+        export.Should().ContainKey("items_dropped");
+        export.Should().ContainKey("output_items_dropped");
+        export.Should().ContainKey("observer_events_dropped");
         export.Should().ContainKey("duplicates_filtered");
         export.Should().ContainKey("retries");
         export.Should().ContainKey("avg_latency_ms");
@@ -35,6 +39,10 @@ public class SmartPipeMetricsExportTests
         [
             "items_processed",
             "items_failed",
+            "items_filtered",
+            "items_dropped",
+            "output_items_dropped",
+            "observer_events_dropped",
             "duplicates_filtered",
             "retries",
             "items_dead_lettered",
@@ -110,9 +118,13 @@ public class SmartPipeMetricsExportTests
     }
 
     private static bool HasExpectedShape(Dictionary<string, object> export) =>
-        export.Count == 14
+        export.Count == 18
         && export.TryGetValue("items_processed", out var itemsProcessed) && itemsProcessed is long
         && export.TryGetValue("items_failed", out var itemsFailed) && itemsFailed is long
+        && export.TryGetValue("items_filtered", out var itemsFiltered) && itemsFiltered is long
+        && export.TryGetValue("items_dropped", out var itemsDropped) && itemsDropped is long
+        && export.TryGetValue("output_items_dropped", out var outputItemsDropped) && outputItemsDropped is long
+        && export.TryGetValue("observer_events_dropped", out var observerEventsDropped) && observerEventsDropped is long
         && export.TryGetValue("duplicates_filtered", out var duplicatesFiltered) && duplicatesFiltered is long
         && export.TryGetValue("retries", out var retries) && retries is long
         && export.TryGetValue("items_dead_lettered", out var itemsDeadLettered) && itemsDeadLettered is long

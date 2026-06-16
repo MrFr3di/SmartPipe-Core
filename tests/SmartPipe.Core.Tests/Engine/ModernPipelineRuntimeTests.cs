@@ -163,7 +163,7 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
-    public async Task TypedRuntime_ShouldDisposeRuntimeOwnedComponents_OnFailure()
+    public async Task TypedRuntime_ShouldDisposeRuntimeOwnedComponents_OnTerminalFailure()
     {
         var source = new CountingEnvelopeSource<int>(1);
         var transformer = new CountingThrowingEnvelopeTransformer<int, string>();
@@ -171,9 +171,12 @@ public class ModernPipelineRuntimeTests
 
         var run = PipelineBuilder.From(source).Transform(transformer).To(sink);
 
-        var act = async () => await run.Completion;
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*stage boom*");
+        outputs.Should().ContainSingle();
+        outputs[0].Result.IsFailure.Should().BeTrue();
+        outputs[0].Result.Error!.Value.Category.Should().Be("StageException");
         source.DisposeCount.Should().Be(1);
         transformer.DisposeCount.Should().Be(1);
         sink.DisposeCount.Should().Be(1);
@@ -236,18 +239,19 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
-    public async Task TypedRuntime_ShouldDisposeOutputsAndCompleteRun_OnFailure()
+    public async Task TypedRuntime_ShouldDisposeOutputsAndCompleteRun_OnTerminalFailure()
     {
         var source = new CountingEnvelopeSource<int>(1);
         var transformer = new CountingThrowingEnvelopeTransformer<int, string>();
 
         var run = PipelineBuilder.From(source).Transform(transformer).Run();
 
-        var completionAct = async () => await run.Completion;
-        var outputsAct = async () => await ReadOutputsAsync(run.Outputs);
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
 
-        await completionAct.Should().ThrowAsync<InvalidOperationException>().WithMessage("*stage boom*");
-        await outputsAct.Should().ThrowAsync<InvalidOperationException>().WithMessage("*stage boom*");
+        outputs.Should().ContainSingle();
+        outputs[0].Result.IsFailure.Should().BeTrue();
+        outputs[0].Result.Error!.Value.Category.Should().Be("StageException");
         source.DisposeCount.Should().Be(1);
         transformer.DisposeCount.Should().Be(1);
     }
@@ -660,7 +664,7 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
-    public async Task PipelineBuilder_ModernApi_ShouldEmitPipelineFaultedEvent_WhenStageThrows()
+    public async Task PipelineBuilder_ModernApi_ShouldEmitStageFailedEvent_WhenStageThrows()
     {
         var observer = new RecordingObserver();
 
@@ -670,10 +674,14 @@ public class ModernPipelineRuntimeTests
             .WithObserver(observer)
             .Run();
 
-        var act = async () => await run.Completion;
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*stage boom*");
-        observer.Events.OfType<PipelineFaultedEvent>().Should().ContainSingle();
+        outputs.Should().ContainSingle();
+        outputs[0].Result.IsFailure.Should().BeTrue();
+        observer.Events.OfType<StageFailedEvent>().Should().ContainSingle()
+            .Which.Error.Category.Should().Be("StageException");
+        observer.Events.OfType<PipelineFaultedEvent>().Should().BeEmpty();
     }
 
     [Fact]

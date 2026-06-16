@@ -19,6 +19,11 @@ Attach retry to a transform stage with `StageFailureOptions`:
 Retries apply to transient stage failures. Retry delay observes cancellation and
 stage timeout budget.
 
+Transformer exceptions are converted to `SmartPipeError` with category
+`StageException` and routed through the same retry, dead-letter, and failure
+action policy as returned `StageResult.Failure(...)`. `OperationCanceledException`
+remains cancellation and is not converted into a stage failure.
+
 ## Timeout
 
 `TimeoutPolicy.AttemptTimeout` limits one attempt. `StageTimeout` limits the
@@ -32,6 +37,10 @@ failure after attempts.
 
 If the breaker is open, the item is rejected quickly and deterministically. The
 runtime does not retry an item into an already-open breaker.
+
+Half-open probes are limited by concurrent active probes. A completed probe
+releases its slot. A half-open failure reopens the breaker; enough half-open
+successes close it and emit `CircuitBreakerClosedEvent`.
 
 ## Dead Letter
 
@@ -57,6 +66,10 @@ The envelope preserves original payload and replay context.
 - `Skip`
 - `StopPipeline`
 - `FaultPipeline`
+
+`StageResult.Filtered()` is normal control flow, not a failure action. Filtered
+items do not retry, do not write dead-letter records, do not call sinks, and do
+not increment failed metrics.
 
 ## Failure Coverage
 

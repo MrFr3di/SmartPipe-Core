@@ -43,6 +43,16 @@ public readonly record struct StageResult<T>
     /// <summary>Gets a value indicating whether the result represents a successful stage.</summary>
     public bool IsSuccess => Kind == StageResultKind.Success;
 
+    /// <summary>Gets a value indicating whether the result is terminal control flow, not a failure.</summary>
+    public bool IsTerminalNonFailure =>
+        Kind is StageResultKind.Filtered or StageResultKind.Skipped;
+
+    /// <summary>Gets a value indicating whether the result is a failure terminal state.</summary>
+    public bool IsFailure =>
+        Kind is StageResultKind.Failure
+            or StageResultKind.Cancelled
+            or StageResultKind.TimedOut;
+
     /// <summary>Gets the stage output value when <see cref="IsSuccess"/> is true.</summary>
     public T? Value { get; }
 
@@ -69,11 +79,7 @@ public readonly record struct StageResult<T>
     /// <summary>Creates a filtered stage result.</summary>
     /// <returns>A valid filtered result.</returns>
     public static StageResult<T> Filtered() =>
-        new(
-            StageResultKind.Filtered,
-            default,
-            new SmartPipeError("Filtered out", ErrorType.Permanent, "Filtered")
-        );
+        new(StageResultKind.Filtered, default, null);
 
     /// <summary>Creates a cancelled stage result.</summary>
     /// <returns>A valid cancelled result.</returns>

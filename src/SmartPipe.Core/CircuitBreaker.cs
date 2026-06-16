@@ -41,6 +41,7 @@ public class CircuitBreaker
 
     private int _state = (int)CircuitState.Closed;
     private int _halfOpenCount;
+    private int _activeHalfOpenProbes;
     private int _halfOpenSuccesses;
     private long _openedAtTicks;
     private long _halfOpenAtTicks;
@@ -141,6 +142,42 @@ public class CircuitBreaker
         return true;
     }
 
+    /// <summary>Attempts to acquire a half-open probe slot.</summary>
+    /// <param name="probe">Lease that releases the half-open probe slot on disposal.</param>
+    /// <returns>True when a request may proceed through the half-open breaker.</returns>
+    public bool TryAcquireHalfOpenProbe(out CircuitBreakerProbe probe)
+    {
+        CleanupWindow();
+        probe = default;
+
+        var currentState = Volatile.Read(ref _state);
+        if (currentState == (int)CircuitState.Open)
+        {
+            if (_clock.UtcNow.Ticks - Interlocked.Read(ref _openedAtTicks) < _breakDuration.Ticks)
+                return false;
+
+            Interlocked.Exchange(ref _state, (int)CircuitState.HalfOpen);
+            Interlocked.Exchange(ref _halfOpenCount, 0);
+            Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
+            Interlocked.Exchange(ref _halfOpenSuccesses, 0);
+            Interlocked.Exchange(ref _halfOpenAtTicks, _clock.UtcNow.Ticks);
+            currentState = (int)CircuitState.HalfOpen;
+        }
+
+        if (currentState != (int)CircuitState.HalfOpen)
+            return false;
+
+        if (Interlocked.Increment(ref _activeHalfOpenProbes) > _maxHalfOpenRequests)
+        {
+            Interlocked.Decrement(ref _activeHalfOpenProbes);
+            return false;
+        }
+
+        Interlocked.Increment(ref _halfOpenCount);
+        probe = new CircuitBreakerProbe(this);
+        return true;
+    }
+
     /// <summary>Records a successful request and updates state.</summary>
     /// <remarks>May transition from HalfOpen to Closed on enough successes.</remarks>
     public void RecordSuccess()
@@ -159,6 +196,7 @@ public class CircuitBreaker
             {
                 Interlocked.Exchange(ref _state, (int)CircuitState.Closed);
                 Interlocked.Exchange(ref _halfOpenCount, 0);
+                Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
                 Interlocked.Exchange(ref _halfOpenSuccesses, 0);
                 Interlocked.Exchange(ref _ewmaFailureRate, 0.0);
             }
@@ -173,6 +211,13 @@ public class CircuitBreaker
         CleanupWindow();
         UpdateEwmaFailureRate();
         AddEarlyWarningToWindow();
+
+        if (Volatile.Read(ref _state) == (int)CircuitState.HalfOpen)
+        {
+            TransitionToOpenIfNeeded((int)CircuitState.HalfOpen);
+            return;
+        }
+
         EvaluateSlidingWindow();
     }
 
@@ -215,6 +260,7 @@ public class CircuitBreaker
             Interlocked.Exchange(ref _state, (int)CircuitState.Open);
             Interlocked.Exchange(ref _openedAtTicks, _clock.UtcNow.Ticks);
             Interlocked.Exchange(ref _halfOpenCount, 0);
+            Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
             Interlocked.Exchange(ref _halfOpenSuccesses, 0);
         }
     }
@@ -228,6 +274,7 @@ public class CircuitBreaker
         while (_window.TryDequeue(out _)) { }
         Interlocked.Exchange(ref _state, (int)CircuitState.Closed);
         Interlocked.Exchange(ref _halfOpenCount, 0);
+        Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
         Interlocked.Exchange(ref _halfOpenSuccesses, 0);
         Interlocked.Exchange(ref _ewmaFailureRate, 0.0);
     }
@@ -269,6 +316,12 @@ public class CircuitBreaker
         return dict;
     }
 
+    internal void ReleaseHalfOpenProbe()
+    {
+        if (Volatile.Read(ref _activeHalfOpenProbes) > 0)
+            Interlocked.Decrement(ref _activeHalfOpenProbes);
+    }
+
     private void CleanupWindow()
     {
         var cutoff = _clock.UtcNow - _samplingDuration;
@@ -277,5 +330,22 @@ public class CircuitBreaker
         {
             _window.TryDequeue(out _);
         }
+    }
+}
+
+/// <summary>Lease for a circuit breaker half-open probe slot.</summary>
+public readonly struct CircuitBreakerProbe : IDisposable
+{
+    private readonly CircuitBreaker? _owner;
+
+    internal CircuitBreakerProbe(CircuitBreaker owner)
+    {
+        _owner = owner;
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        _owner?.ReleaseHalfOpenProbe();
     }
 }

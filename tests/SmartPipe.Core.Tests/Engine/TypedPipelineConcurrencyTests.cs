@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+#pragma warning disable CS0618 // These tests cover compatibility aliases.
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using FluentAssertions;
@@ -160,7 +161,7 @@ public class TypedPipelineConcurrencyTests
     }
 
     [Fact]
-    public async Task TypedPipeline_WorkerException_FaultsRun()
+    public async Task TypedPipeline_WorkerException_UsesFailurePolicy()
     {
         var exception = new InvalidOperationException("worker failed");
         var source = new TestEnvelopeSource<int>(Enumerable.Range(1, 10));
@@ -176,10 +177,10 @@ public class TypedPipelineConcurrencyTests
             })
             .Run();
 
-        var act = async () => await run.Completion;
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("worker failed");
-        run.State.Should().Be(PipelineRunState.Faulted);
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        run.State.Should().Be(PipelineRunState.Completed);
+        run.Metrics.ItemsFailed.Should().BeGreaterThan(0);
     }
 
     private static async Task<List<PipelineOutput<T>>> ReadOutputsAsync<T>(

@@ -14,8 +14,9 @@ do not mutate public counter fields directly.
 
 The compatibility `SmartPipeMetrics` facade now exposes read-only properties and
 mutation methods such as `RecordProcessed`, `RecordFailed`, `RecordRetry`,
-`RecordDeadLetter`, `UpdateQueueDepths`, `UpdateQueueSize`, and
-`UpdateSmoothing`.
+`RecordFiltered`, `RecordItemDropped`, `RecordOutputDropped`,
+`RecordObserverEventDropped`, `RecordDeadLetter`, `UpdateQueueDepths`,
+`UpdateQueueSize`, and `UpdateSmoothing`.
 
 ## Snapshots
 
@@ -27,6 +28,10 @@ Snapshot fields include:
 
 - `ItemsProcessed`
 - `ItemsFailed`
+- `ItemsFiltered`
+- `ItemsDropped`
+- `OutputItemsDropped`
+- `ObserverEventsDropped`
 - `ItemsRetried`
 - `ItemsDeadLettered`
 - `InputQueueDepth`
@@ -35,6 +40,7 @@ Snapshot fields include:
 - `LastProcessedAtUtc`
 
 Compatibility export fields such as `duplicates_filtered`, `retries`,
+`items_dropped`, `output_items_dropped`, `observer_events_dropped`,
 `avg_latency_ms`, `smooth_latency_ms`, `smooth_throughput`, `queue_size`, and
 `pool_hit_rate` remain available through `Export()`, `ExportJson()`, and
 `ExportPrometheus()`.
@@ -61,6 +67,10 @@ Current instruments:
 
 - `smartpipe.items.processed` counter, unit `items`
 - `smartpipe.items.failed` counter, unit `items`
+- `smartpipe.items.filtered` counter, unit `items`
+- `smartpipe.items.dropped` counter, unit `items`
+- `smartpipe.output.items.dropped` counter, unit `items`
+- `smartpipe.observer.events.dropped` counter, unit `events`
 - `smartpipe.items.retried` counter, unit `items`
 - `smartpipe.items.deadlettered` counter, unit `items`
 - `smartpipe.items.duplicates_filtered` counter, unit `items`
