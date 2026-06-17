@@ -23,9 +23,9 @@ The typed-only release removes the legacy channel runtime model, including
 legacy `ISink<T>`, legacy adapters, middleware transformer APIs, retry queue
 types, channel pool types, and legacy pipeline cancellation helpers.
 
-The compatibility names `MaxDegreeOfParallelism` and `OutputPolicy` remain as
+The compatibility names `MaxDegreeOfParallelism` and `OutputMode` remain as
 typed runtime aliases for 2.0 consumers. Prefer `MaxConcurrency` and
-`OutputMode` in new code.
+`OutputPolicy` in new code.
 
 ## Simple Delegate Pipelines
 

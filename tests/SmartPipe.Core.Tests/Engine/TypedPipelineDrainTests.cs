@@ -175,17 +175,14 @@ public sealed class TypedPipelineDrainTests
     [Fact]
     public async Task DrainAsync_Timeout_ShouldThrowTimeoutException()
     {
-        // Arrange: source blocks indefinitely (never completes).
-        var neverComplete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        int moveNextAttempts = 0;
-        var source = new NeverCompletingSource<int>(neverComplete, () => Interlocked.Increment(ref moveNextAttempts));
+        var transformer = new BlockingLifecycleTransformer<int>();
 
         var run = PipelineBuilder
-            .From(source)
-            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .From(new EnvelopeSource<int>(1))
+            .Transform(transformer)
             .Run();
 
-        await source.FirstItemYielded.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         // Act: drain with very short timeout.
         var act = async () => await run.DrainAsync(TimeSpan.FromMilliseconds(100));
@@ -196,15 +193,12 @@ public sealed class TypedPipelineDrainTests
         // Assert: timeout did not mark the run as aborted.
         run.State.Should().NotBe(PipelineRunState.Aborted);
 
-        // Cleanup: release the source so the test doesn't hang.
-        neverComplete.TrySetResult();
+        await run.AbortAsync();
     }
 
     [Fact]
-    public async Task DrainAsync_WhenSourceIsBlockedInMoveNextAsync_ShouldWaitUntilSourceCooperates()
+    public async Task DrainAsync_WhenSourceIsBlockedInMoveNextAsync_ShouldCancelSourceRead()
     {
-        // This test documents the contract: if source is blocked inside MoveNextAsync,
-        // DrainAsync waits until the source cooperates or cancellation/abort is requested.
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         int moveNextAttempts = 0;
         var source = new GateAfterFirstSource<int>(gate, () => Interlocked.Increment(ref moveNextAttempts), 1, 2);
@@ -218,23 +212,13 @@ public sealed class TypedPipelineDrainTests
         await source.SecondMoveNextEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         // Start drain — but source is blocked on MoveNextAsync for item 2.
-        var drainTask = run.DrainAsync(TimeSpan.FromSeconds(10)).AsTask();
-
-        // Source still hasn't completed MoveNextAsync, so drain should still be running.
-        Func<Task> waitForDrainBeforeSourceRelease = async () =>
-            await drainTask.WaitAsync(TimeSpan.FromMilliseconds(150));
-        await waitForDrainBeforeSourceRelease.Should().ThrowAsync<TimeoutException>(
-            "drain cannot complete while source is blocked inside MoveNextAsync");
-
-        // Release the source so it can continue.
-        gate.TrySetResult();
-
-        await drainTask;
-        await run.Completion;
+        await run.DrainAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
 
         var outputs = await ReadOutputsAsync(run.Outputs);
-        outputs.Should().HaveCount(2,
-            "the second MoveNextAsync was already in progress before graceful drain was requested");
+        outputs.Should().HaveCount(1,
+            "source-boundary drain should cancel source reads that are blocked in MoveNextAsync");
+        Volatile.Read(ref moveNextAttempts).Should().Be(1);
     }
 
     [Fact]
@@ -300,32 +284,29 @@ public sealed class TypedPipelineDrainTests
         await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
 
         var outputs = await ReadOutputsAsync(run.Outputs);
-        outputs.Select(output => output.Result.Value).Should().BeEquivalentTo(Enumerable.Range(1, 6));
+        outputs.Select(output => output.Result.Value).Should().BeEquivalentTo(Enumerable.Range(1, 5));
         source.EmittedCount.Should().Be(6,
-            "source-boundary drain must stop before requesting additional source items");
+            "source-boundary drain can cancel the source read that crossed the threshold before accepting it");
     }
 
     [Fact]
     public async Task DrainAsync_WithCancellation_ShouldRespectCancellationToken()
     {
-        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        int moveNextAttempts = 0;
-        var source = new GateAfterFirstSource<int>(gate, () => Interlocked.Increment(ref moveNextAttempts), 1, 2);
+        var transformer = new BlockingLifecycleTransformer<int>();
 
         var run = PipelineBuilder
-            .From(source)
-            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .From(new EnvelopeSource<int>(1))
+            .Transform(transformer)
             .Run();
 
-        await source.FirstItemYielded.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await source.SecondMoveNextEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
         var act = async () => await run.DrainAsync(TimeSpan.FromSeconds(30), cts.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
 
-        gate.TrySetResult();
+        await run.AbortAsync();
     }
 
     [Fact]

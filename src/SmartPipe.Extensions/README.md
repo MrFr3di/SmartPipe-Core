@@ -39,6 +39,26 @@ Ready-to-use integrations for SmartPipe.Core: file, HTTP, database, mapping, val
 | `CsvFileSink<T>` | CsvHelper | Write CSV files |
 | `JsonFileSink<T>` | System.Text.Json | Write JSON files |
 
+## HTTP Integrations
+
+Use `HttpClientFactorySelector<T>` and `HttpClientFactorySink<T>` in DI-based
+applications so clients come from `IHttpClientFactory` named or default client
+configuration. Low-level `HttpSelector<T>` and `HttpSink<T>` remain available
+for callers that already own an `HttpClient`.
+
+HTTP JSON components accept source-generated `JsonTypeInfo<T>` /
+`JsonTypeInfo<List<T>>` overloads for NativeAOT and trimming-sensitive apps.
+`HttpSelector<T>` can read either buffered JSON arrays or streaming responses
+using `HttpSelectorStreamingMode.JsonArray` and
+`HttpSelectorStreamingMode.Ndjson`; the factory-backed selector exposes the
+same streaming modes.
+`HttpSink<T>` can send the envelope `TraceId` as an `Idempotency-Key` header for
+idempotent endpoints.
+
+Avoid configuring retry in both SmartPipe stage policies and HTTP/Polly client
+pipelines for the same operation unless that layered retry budget is
+intentional.
+
 ## Health Checks
 
 | Component | Description |

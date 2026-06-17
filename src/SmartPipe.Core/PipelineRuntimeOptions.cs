@@ -223,7 +223,8 @@ public sealed class PipelineRuntimeOptions
     public int MaxDegreeOfParallelism { get; init; } = 1;
 
     /// <summary>Gets the typed output filtering policy.</summary>
-    public PipelineOutputPolicy OutputPolicy { get; init; } = PipelineOutputPolicy.EmitAll;
+    public PipelineOutputPolicy OutputPolicy { get; init; } =
+        PipelineOutputPolicy.SuppressSuccessWhenSinkAttached;
 
     /// <summary>Gets the typed output ordering mode.</summary>
     public PipelineOrderingMode OrderingMode { get; init; } = PipelineOrderingMode.Unordered;

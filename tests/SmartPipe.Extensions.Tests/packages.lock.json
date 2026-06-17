@@ -290,6 +290,19 @@
           "Microsoft.Extensions.Logging.Abstractions": "10.0.8"
         }
       },
+      "Microsoft.Extensions.Http": {
+        "type": "Transitive",
+        "resolved": "10.0.8",
+        "contentHash": "/9LU/KWJOrtZJB9ymPjcARDyjp679BvBA/aSncv2Kt84WlSKz767HtxHg8EFsu8n21BMLZi+5XxlkKbLwfn4iA==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.8",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.8",
+          "Microsoft.Extensions.Diagnostics": "10.0.8",
+          "Microsoft.Extensions.Logging": "10.0.8",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.8",
+          "Microsoft.Extensions.Options": "10.0.8"
+        }
+      },
       "Microsoft.Extensions.Logging": {
         "type": "Transitive",
         "resolved": "10.0.8",
@@ -505,6 +518,7 @@
           "Microsoft.EntityFrameworkCore": "[10.0.8, )",
           "Microsoft.Extensions.Diagnostics.HealthChecks": "[10.0.8, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.8, )",
+          "Microsoft.Extensions.Http": "[10.0.8, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.8, )",
           "Microsoft.Extensions.Resilience": "[10.6.0, )",
           "SmartPipe.Core": "[2.0.0, )"

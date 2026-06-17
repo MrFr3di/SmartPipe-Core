@@ -21,6 +21,10 @@ public class ModernPipelineRuntimeTests
                     x.ToString(CultureInfo.InvariantCulture)
                 )
             )
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputPolicy = PipelineOutputPolicy.EmitAll,
+            })
             .To(sink);
 
         var outputs = await ReadOutputsAsync(run.Outputs);
@@ -45,6 +49,10 @@ public class ModernPipelineRuntimeTests
                     x.ToString(CultureInfo.InvariantCulture)
                 )
             )
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputPolicy = PipelineOutputPolicy.EmitAll,
+            })
             .To(sink);
 
         var outputs = await ReadOutputsAsync(run.Outputs);
@@ -299,6 +307,10 @@ public class ModernPipelineRuntimeTests
                 return new EnvelopeTransformer<double, string>(x =>
                     x.ToString(CultureInfo.InvariantCulture)
                 );
+            })
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputPolicy = PipelineOutputPolicy.EmitAll,
             });
 
         var firstRun = builder.ToFactory(_ => CreateSink(sinks));
@@ -355,6 +367,20 @@ public class ModernPipelineRuntimeTests
         sourceCreated.Should().Be(1);
         stageCreated.Should().Be(1);
         outputs.Single().Result.Value.Should().Be("7");
+    }
+
+    [Fact]
+    public void PipelineBuilder_InstancePipelineTransformFactory_ShouldThrowClearError()
+    {
+        var builder = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)));
+
+        var act = () => builder.TransformFactory<double>(_ =>
+            new EnvelopeTransformer<string, double>(x => double.Parse(x, CultureInfo.InvariantCulture)));
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*TransformFactory*FromFactory*");
     }
 
     [Fact]
@@ -1480,6 +1506,10 @@ public class ModernPipelineRuntimeTests
                     x.ToString(CultureInfo.InvariantCulture)
                 )
             )
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputPolicy = PipelineOutputPolicy.EmitAll,
+            })
             .To(sink);
 
         var outputs = await ReadOutputsAsync(run.Outputs);

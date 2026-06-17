@@ -17,8 +17,28 @@ Required package smoke shape:
 dotnet pack src\SmartPipe.Core\SmartPipe.Core.csproj -c Release --no-build -o artifacts\packages
 dotnet pack src\SmartPipe.Extensions\SmartPipe.Extensions.csproj -c Release --no-build -o artifacts\packages
 dotnet new console -n SmartPipe.ConsumerSmoke -o artifacts\consumer-smoke --force
-dotnet add artifacts\consumer-smoke\SmartPipe.ConsumerSmoke.csproj package SmartPipe.Core --version 2.0.0 --source "$PWD/artifacts/packages" --source "https://api.nuget.org/v3/index.json"
-dotnet add artifacts\consumer-smoke\SmartPipe.ConsumerSmoke.csproj package SmartPipe.Extensions --version 2.0.0 --source "$PWD/artifacts/packages" --source "https://api.nuget.org/v3/index.json"
+@'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="smartpipe-local" value="../packages" />
+    <add key="nuget" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="smartpipe-local">
+      <package pattern="SmartPipe.*" />
+    </packageSource>
+    <packageSource key="nuget">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
+</configuration>
+'@ | Set-Content artifacts\consumer-smoke\NuGet.Config
+Push-Location artifacts\consumer-smoke
+dotnet add SmartPipe.ConsumerSmoke.csproj package SmartPipe.Core --version 2.0.0
+dotnet add SmartPipe.ConsumerSmoke.csproj package SmartPipe.Extensions --version 2.0.0
+Pop-Location
 dotnet run --project artifacts\consumer-smoke\SmartPipe.ConsumerSmoke.csproj -c Release
 ```
 
@@ -35,6 +55,8 @@ CI runs this on `main`, `upd`, pull requests to `main`, and manual
 
 README examples are intentionally minimal. CI consumer smoke is the executable
 check for the public quick-start scenarios.
+
+CI also runs a lychee docs link check against `README.md` and `docs/**/*.md`.
 
 ## Performance Gate
 
@@ -61,3 +83,8 @@ SmartPipe.Extensions is currently a broad integration package. This release
 keeps it monolithic to avoid expanding the typed-only hardening scope. Future
 releases may split integrations into focused packages such as Hosting,
 HealthChecks, Json, Csv, EFCore, Dapper, Mapster, and Resilience.
+
+HTTP integrations should use `HttpClientFactorySelector<T>` /
+`HttpClientFactorySink<T>` for DI-owned clients. Avoid stacking SmartPipe stage
+retry and HTTP/Polly retry for the same operation unless the total retry budget
+is explicit.

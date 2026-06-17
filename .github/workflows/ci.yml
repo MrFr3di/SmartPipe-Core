@@ -28,12 +28,11 @@ jobs:
     - name: Verify NuGet lock files
       run: dotnet restore SmartPipe.Core.slnx --locked-mode
 
-    - name: Format verify (informational until repository formatting pass)
-      continue-on-error: true
+    - name: Format verify
       run: dotnet format SmartPipe.Core.slnx --verify-no-changes --no-restore
     
     - name: Build
-      run: dotnet build SmartPipe.Core.slnx --no-restore -c Release
+      run: dotnet build SmartPipe.Core.slnx --no-restore -c Release -warnaserror
     
     - name: Core tests with coverage
       run: dotnet test tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build --verbosity normal -c Release --collect:"XPlat Code Coverage"
@@ -48,16 +47,36 @@ jobs:
         dotnet build benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj --no-restore -c Release -warnaserror
 
     - name: Pack Core
-      run: dotnet pack src/SmartPipe.Core/SmartPipe.Core.csproj --no-build -c Release -o artifacts/packages
+      run: dotnet pack src/SmartPipe.Core/SmartPipe.Core.csproj --no-build -c Release -p:EnablePackageValidation=true -o artifacts/packages
 
     - name: Pack Extensions
-      run: dotnet pack src/SmartPipe.Extensions/SmartPipe.Extensions.csproj --no-build -c Release -o artifacts/packages
+      run: dotnet pack src/SmartPipe.Extensions/SmartPipe.Extensions.csproj --no-build -c Release -p:EnablePackageValidation=true -o artifacts/packages
 
     - name: Consumer smoke
       run: |
         dotnet new console -n SmartPipe.ConsumerSmoke -o artifacts/consumer-smoke
-        dotnet add artifacts/consumer-smoke/SmartPipe.ConsumerSmoke.csproj package SmartPipe.Core --version 2.0.0 --source "$PWD/artifacts/packages" --source "https://api.nuget.org/v3/index.json"
-        dotnet add artifacts/consumer-smoke/SmartPipe.ConsumerSmoke.csproj package SmartPipe.Extensions --version 2.0.0 --source "$PWD/artifacts/packages" --source "https://api.nuget.org/v3/index.json"
+        cat > artifacts/consumer-smoke/NuGet.Config <<'XML'
+        <?xml version="1.0" encoding="utf-8"?>
+        <configuration>
+          <packageSources>
+            <clear />
+            <add key="smartpipe-local" value="../packages" />
+            <add key="nuget" value="https://api.nuget.org/v3/index.json" />
+          </packageSources>
+          <packageSourceMapping>
+            <packageSource key="smartpipe-local">
+              <package pattern="SmartPipe.*" />
+            </packageSource>
+            <packageSource key="nuget">
+              <package pattern="*" />
+            </packageSource>
+          </packageSourceMapping>
+        </configuration>
+        XML
+        pushd artifacts/consumer-smoke
+        dotnet add SmartPipe.ConsumerSmoke.csproj package SmartPipe.Core --version 2.0.0
+        dotnet add SmartPipe.ConsumerSmoke.csproj package SmartPipe.Extensions --version 2.0.0
+        popd
         cat > artifacts/consumer-smoke/Program.cs <<'CS'
         using System.Runtime.CompilerServices;
         using Microsoft.Extensions.DependencyInjection;
@@ -488,6 +507,11 @@ jobs:
     - name: Outdated package report
       continue-on-error: true
       run: dotnet list SmartPipe.Core.slnx package --outdated
+
+    - name: Docs link check
+      uses: lycheeverse/lychee-action@v2
+      with:
+        args: --no-progress README.md 'docs/**/*.md'
 
     - name: Upload packages
       uses: actions/upload-artifact@v4

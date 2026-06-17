@@ -68,6 +68,38 @@ public sealed class PipelineChannelFactoryTests
     }
 
     [Fact]
+    public async Task PipelineChannelFactory_Output_MultipleReadersDistributeNotBroadcast()
+    {
+        var channel = PipelineChannelFactory.CreateOutput<int>(
+            capacity: 8,
+            fullMode: BoundedChannelFullMode.Wait);
+        var delivered = new ConcurrentDictionary<int, int>();
+
+        var readers = Enumerable.Range(0, 3)
+            .Select(_ => Task.Run(async () =>
+            {
+                await foreach (var output in channel.Reader.ReadAllAsync())
+                    delivered.AddOrUpdate(output.Result.Value, 1, static (_, count) => count + 1);
+            }))
+            .ToArray();
+
+        for (var i = 0; i < 50; i++)
+        {
+            var envelope = ProcessingEnvelope<int>.Create(i);
+            await channel.Writer.WriteAsync(new PipelineOutput<int>(
+                envelope,
+                PipelineResult<int>.Success(i, envelope.TraceId)));
+        }
+
+        channel.Writer.Complete();
+        await Task.WhenAll(readers).WaitAsync(TimeSpan.FromSeconds(5));
+
+        delivered.Keys.Should().BeEquivalentTo(Enumerable.Range(0, 50));
+        delivered.Values.Should().OnlyContain(count => count == 1,
+            "multiple output readers split work; they do not each receive every output");
+    }
+
+    [Fact]
     public async Task PipelineChannelFactory_BoundedInput_AppliesBackpressure()
     {
         var channel = PipelineChannelFactory.CreateInput<int>(

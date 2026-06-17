@@ -216,15 +216,8 @@ public class PipelineBuilder<TInput, TOutput>
             );
         }
 
-        if (_typedSpec is null)
-            throw new InvalidOperationException(
-                "Typed TransformFactory is available only for envelope-aware pipelines."
-            );
-
-        var instance =
-            transformerFactory(_serviceProvider)
-            ?? throw new InvalidOperationException("The transformer factory returned null.");
-        return new PipelineBuilder<TInput, TNext>(_typedSpec.AddStage(instance));
+        throw new InvalidOperationException(
+            "TransformFactory requires a reusable pipeline created with PipelineBuilder.FromFactory.");
     }
 
     /// <summary>Adds an observer to an envelope-aware typed pipeline.</summary>

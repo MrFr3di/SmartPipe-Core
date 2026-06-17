@@ -38,3 +38,6 @@ backups/
 .codebase-memory
 AGENTS.md
 .semgrepignore
+/scripts
+.opencode
+opencode.jsonc

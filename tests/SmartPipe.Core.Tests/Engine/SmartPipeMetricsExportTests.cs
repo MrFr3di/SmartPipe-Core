@@ -149,11 +149,23 @@ public class SmartPipeMetricsExportTests
     }
 
     [Fact]
-    public void ExportPrometheus_ShouldContainMetrics()
+    public void ToDiagnosticText_ShouldContainMetrics()
     {
         var metrics = new SmartPipeMetrics();
         metrics.RecordProcessed(5.0);
-        var prom = metrics.ExportPrometheus();
-        prom.Should().Contain("smartpipe_items_processed");
+        var diagnosticText = metrics.ToDiagnosticText();
+        diagnosticText.Should().Contain("smartpipe_items_processed");
+    }
+
+    [Fact]
+    public void ExportPrometheus_ShouldDelegateToDiagnosticText()
+    {
+        var metrics = new SmartPipeMetrics();
+        metrics.RecordProcessed(5.0);
+#pragma warning disable CS0618
+        var compatibilityText = metrics.ExportPrometheus();
+#pragma warning restore CS0618
+
+        compatibilityText.Should().Be(metrics.ToDiagnosticText());
     }
 }

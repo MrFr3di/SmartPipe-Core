@@ -1,5 +1,6 @@
 #nullable enable
 using System.Net.Http;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -12,7 +13,7 @@ using Xunit;
 
 namespace SmartPipe.Extensions.Tests.Sources;
 
-public class HttpSelectorTests
+public partial class HttpSelectorTests
 {
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenHttpClientIsNull()
@@ -341,9 +342,162 @@ public class HttpSelectorTests
         Assert.Equal("Test", items[0].Payload?.Name);
     }
 
+    [Fact]
+    public async Task ReadAsync_UsesJsonTypeInfo()
+    {
+        var mockHandler = new Mock<HttpMessageHandler>();
+        mockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = System.Net.HttpStatusCode.OK,
+                Content = new StringContent("[{\"Id\":2,\"Name\":\"Generated\"}]")
+            });
+
+        var client = new HttpClient(mockHandler.Object);
+        var selector = new HttpSelector<TestComplexType>(
+            client,
+            "http://test.com",
+            HttpSelectorTestJsonContext.Default.ListTestComplexType);
+
+        var items = new List<ProcessingEnvelope<TestComplexType>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
+            items.Add(item);
+
+        Assert.Single(items);
+        Assert.Equal(2, items[0].Payload.Id);
+        Assert.Equal("Generated", items[0].Payload.Name);
+    }
+
+    [Fact]
+    public async Task ReadAsync_StreamsJsonArray_WithItemJsonTypeInfo()
+    {
+        var mockHandler = new Mock<HttpMessageHandler>();
+        mockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = System.Net.HttpStatusCode.OK,
+                Content = new StringContent("[\"alpha\",\"beta\"]")
+            });
+
+        var client = new HttpClient(mockHandler.Object);
+        var selector = new HttpSelector<string>(
+            client,
+            "http://test.com",
+            HttpSelectorTestJsonContext.Default.String,
+            HttpSelectorStreamingMode.JsonArray);
+
+        var items = new List<ProcessingEnvelope<string>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
+            items.Add(item);
+
+        Assert.Equal(["alpha", "beta"], items.Select(x => x.Payload).ToArray());
+    }
+
+    [Fact]
+    public async Task ReadAsync_StreamsNdjson_WithItemJsonTypeInfo()
+    {
+        var mockHandler = new Mock<HttpMessageHandler>();
+        mockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = System.Net.HttpStatusCode.OK,
+                Content = new StringContent("\"alpha\"\n\n\"beta\"\n")
+            });
+
+        var client = new HttpClient(mockHandler.Object);
+        var selector = new HttpSelector<string>(
+            client,
+            "http://test.com",
+            HttpSelectorTestJsonContext.Default.String,
+            HttpSelectorStreamingMode.Ndjson);
+
+        var items = new List<ProcessingEnvelope<string>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
+            items.Add(item);
+
+        Assert.Equal(["alpha", "beta"], items.Select(x => x.Payload).ToArray());
+    }
+
+    [Fact]
+    public async Task ReadAsync_UsesHttpClientFactory()
+    {
+        var mockHandler = new Mock<HttpMessageHandler>();
+        mockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = System.Net.HttpStatusCode.OK,
+                Content = new StringContent("[\"test\"]")
+            });
+        var client = new HttpClient(mockHandler.Object);
+        var factory = new Mock<IHttpClientFactory>();
+        factory.Setup(x => x.CreateClient("orders")).Returns(client);
+        var selector = new HttpClientFactorySelector<string>(
+            factory.Object,
+            "http://test.com",
+            clientName: "orders");
+
+        var items = new List<ProcessingEnvelope<string>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
+            items.Add(item);
+
+        Assert.Single(items);
+        Assert.Equal("test", items[0].Payload);
+        factory.Verify(x => x.CreateClient("orders"), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReadAsync_UsesHttpClientFactory_ForStreamingNdjson()
+    {
+        var mockHandler = new Mock<HttpMessageHandler>();
+        mockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = System.Net.HttpStatusCode.OK,
+                Content = new StringContent("\"from-factory\"\n")
+            });
+        var client = new HttpClient(mockHandler.Object);
+        var factory = new Mock<IHttpClientFactory>();
+        factory.Setup(x => x.CreateClient("orders")).Returns(client);
+        var selector = new HttpClientFactorySelector<string>(
+            factory.Object,
+            "http://test.com",
+            HttpSelectorTestJsonContext.Default.String,
+            HttpSelectorStreamingMode.Ndjson,
+            clientName: "orders",
+            pipeline: null,
+            logger: null);
+
+        var items = new List<ProcessingEnvelope<string>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
+            items.Add(item);
+
+        Assert.Single(items);
+        Assert.Equal("from-factory", items[0].Payload);
+        factory.Verify(x => x.CreateClient("orders"), Times.Once);
+    }
+
     private class TestComplexType
     {
         public int Id { get; set; }
         public string? Name { get; set; }
     }
+
+    [JsonSerializable(typeof(string))]
+    [JsonSerializable(typeof(List<TestComplexType>))]
+    private sealed partial class HttpSelectorTestJsonContext : JsonSerializerContext;
 }

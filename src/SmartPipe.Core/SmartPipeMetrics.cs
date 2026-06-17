@@ -591,12 +591,16 @@ public class SmartPipeMetrics
         return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
-    /// <summary>Export in Prometheus text format.</summary>
-    public string ExportPrometheus()
+    /// <summary>Exports a diagnostic text snapshot for logs and support dumps.</summary>
+    public string ToDiagnosticText()
     {
         var sb = new StringBuilder();
         foreach (var (key, value) in Export())
             sb.AppendLine($"smartpipe_{key} {value}");
         return sb.ToString();
     }
+
+    /// <summary>Exports a diagnostic text snapshot.</summary>
+    [Obsolete("Use ToDiagnosticText(). Prometheus export should be provided by OpenTelemetry exporters.")]
+    public string ExportPrometheus() => ToDiagnosticText();
 }

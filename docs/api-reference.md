@@ -37,6 +37,10 @@ public interface IPipelineSink<T>
 - `ProcessingEnvelope<T>`
 - `StageResult<T>`
 
+`PipelineRuntimeOptions.OutputPolicy` defaults to
+`SuppressSuccessWhenSinkAttached`. Set `EmitAll` explicitly when a sink-backed
+pipeline also needs every success output to be consumed.
+
 ## Failure Handling
 
 - `StageFailureOptions`
@@ -57,3 +61,12 @@ public interface IPipelineSink<T>
 
 `SmartPipe.Extensions` provides typed selectors, transforms, sinks, DI
 registration, hosted service integration, and health-check support.
+
+## Observability
+
+- `SmartPipeMetrics.Export()`
+- `SmartPipeMetrics.ExportJson()`
+- `SmartPipeMetrics.ToDiagnosticText()`
+
+`ToDiagnosticText()` is diagnostic text, not a Prometheus exporter. Use
+OpenTelemetry metrics exporters for Prometheus integration.

@@ -53,6 +53,7 @@ SmartPipe.Core.SmartPipeMetrics.RecordItemDropped() -> void
 SmartPipe.Core.SmartPipeMetrics.RecordObserverEventDropped() -> void
 SmartPipe.Core.SmartPipeMetrics.RecordOutputDropped() -> void
 SmartPipe.Core.SmartPipeMetrics.RecordFiltered() -> void
+SmartPipe.Core.SmartPipeMetrics.ToDiagnosticText() -> string!
 SmartPipe.Core.SmartPipeMetricsRecorder.ItemsDropped.get -> long
 SmartPipe.Core.SmartPipeMetricsRecorder.ItemsFiltered.get -> long
 SmartPipe.Core.SmartPipeMetricsRecorder.ObserverEventsDropped.get -> long

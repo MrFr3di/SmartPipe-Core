@@ -189,7 +189,8 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
         try
         {
             var inner = _definition.Start(scope.ServiceProvider, ct);
-            var completion = CompleteAndDisposeScopeAsync(inner, scope);
+            var scopedRun = new ScopedPipelineRun(inner, scope);
+            var completion = scopedRun.CompleteAndDisposeAsync();
             _healthMonitor?.Track(inner);
             var run = new PipelineRun<TOutput>(
                 inner.Outputs,
@@ -198,11 +199,7 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
                 inner.CancelAsync,
                 inner.DrainAsync,
                 inner.AbortAsync,
-                async () =>
-                {
-                    await inner.DisposeAsync().ConfigureAwait(false);
-                    scope.Dispose();
-                });
+                scopedRun.DisposeAsync);
             return run;
         }
         catch
@@ -212,18 +209,37 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
         }
     }
 
-    private static async Task CompleteAndDisposeScopeAsync(
-        PipelineRun<TOutput> inner,
-        AsyncServiceScope scope)
+    private sealed class ScopedPipelineRun : IAsyncDisposable
     {
-        try
+        private readonly PipelineRun<TOutput> _inner;
+        private readonly AsyncServiceScope _scope;
+        private int _disposed;
+
+        public ScopedPipelineRun(PipelineRun<TOutput> inner, AsyncServiceScope scope)
         {
-            await inner.Completion.ConfigureAwait(false);
+            _inner = inner;
+            _scope = scope;
         }
-        finally
+
+        public async Task CompleteAndDisposeAsync()
         {
-            await inner.DisposeAsync().ConfigureAwait(false);
-            await scope.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                await _inner.Completion.ConfigureAwait(false);
+            }
+            finally
+            {
+                await DisposeAsync().ConfigureAwait(false);
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
+
+            await _inner.DisposeAsync().ConfigureAwait(false);
+            await _scope.DisposeAsync().ConfigureAwait(false);
         }
     }
 }

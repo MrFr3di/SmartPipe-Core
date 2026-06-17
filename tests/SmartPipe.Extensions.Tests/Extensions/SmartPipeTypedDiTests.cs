@@ -63,6 +63,40 @@ public sealed class SmartPipeTypedDiTests
     }
 
     [Fact]
+    public async Task DI_Factory_ManualDisposeAfterCompletion_DisposesScopeOnce()
+    {
+        var services = CreateTypedPipelineServices();
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
+        var recorder = provider.GetRequiredService<TypedDiRecorder>();
+
+        var run = factory.Start();
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.DisposeAsync();
+
+        recorder.DisposedSinkScopeIds.Should().HaveCount(1);
+        recorder.DisposedMarkerScopeIds.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task DI_Factory_CompletionAndManualDisposeRace_DisposesScopeOnce()
+    {
+        var services = CreateTypedPipelineServices();
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
+        var recorder = provider.GetRequiredService<TypedDiRecorder>();
+
+        var run = factory.Start();
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => run.DisposeAsync().AsTask()));
+
+        recorder.DisposedSinkScopeIds.Should().HaveCount(1);
+        recorder.DisposedMarkerScopeIds.Should().HaveCount(1);
+    }
+
+    [Fact]
     public void DI_ValidateScopes_DoesNotThrow()
     {
         var services = CreateTypedPipelineServices();

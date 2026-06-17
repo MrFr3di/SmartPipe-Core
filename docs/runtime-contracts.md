@@ -28,6 +28,10 @@ is not guaranteed.
 Runtime input, output, and buffered observer channels are bounded and created by
 typed runtime factories with `AllowSynchronousContinuations = false`.
 
+`PipelineRun<T>.Outputs` supports multiple readers as work distribution, not
+broadcast. Each output is consumed by one reader. If every consumer needs every
+output, fan out explicitly in user code.
+
 `InputFullMode = Wait` and `OutputFullMode = Wait` apply backpressure. Lossy
 bounded modes may drop work and should be used only when that is acceptable to
 the caller. Input and output drop callbacks record `smartpipe.items.dropped`
@@ -48,8 +52,10 @@ Completed/Cancelled/Aborted/Faulted -> Disposed
 ```
 
 `DrainAsync` stops accepting new source items at source boundaries and completes
-already accepted work. A drain timeout throws `TimeoutException` and does not
-mark the run as cancelled.
+already accepted work. It cancels the source-read token so a cooperative source
+blocked inside `MoveNextAsync` can stop promptly, but it does not cancel the
+processing token for work that was already accepted. A drain timeout throws
+`TimeoutException` and does not mark the run as cancelled.
 
 `TryDrainAsync` is the structured non-throwing drain API. It returns
 `PipelineDrainResult` with `Completed`, `TimedOutStillRunning`,

@@ -227,7 +227,7 @@ public class RuntimeOptionsPassTests
         options.MaxConcurrency.Should().Be(1);
         options.InputCapacity.Should().Be(1024);
         options.InputFullMode.Should().Be(BoundedChannelFullMode.Wait);
-        options.OutputPolicy.Should().Be(PipelineOutputPolicy.EmitAll);
+        options.OutputPolicy.Should().Be(PipelineOutputPolicy.SuppressSuccessWhenSinkAttached);
         options.OrderingMode.Should().Be(PipelineOrderingMode.Unordered);
         options.ObserverDispatch.Should().BeSameAs(ObserverDispatchOptions.Inline);
         options.Clock.Should().BeSameAs(SystemPipelineClock.Instance);
@@ -313,7 +313,7 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
-    public async Task RuntimeOptions_DefaultWithSinkAndEmitAll_ShouldRequireOutputConsumer()
+    public async Task RuntimeOptions_EmitAllWithSink_ShouldRequireOutputConsumer()
     {
         const int defaultCapacity = 1024;
         var sink = new CountingEnvelopeSink<string>();
@@ -321,6 +321,10 @@ public class RuntimeOptionsPassTests
         var run = PipelineBuilder
             .From(new EnvelopeSource<int>(Enumerable.Range(1, defaultCapacity + 1).ToArray()))
             .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputPolicy = PipelineOutputPolicy.EmitAll,
+            })
             .To(sink);
 
         await sink.WaitForCountAsync(defaultCapacity + 1, TimeSpan.FromSeconds(5));
@@ -371,6 +375,7 @@ public class RuntimeOptionsPassTests
                 {
                     OutputCapacity = 1,
                     OutputFullMode = BoundedChannelFullMode.Wait,
+                    OutputPolicy = PipelineOutputPolicy.EmitAll,
                 }
             )
             .Run();
@@ -461,7 +466,7 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
-    public async Task RuntimeOptions_BoundedOutput_WithSinkAndUnreadOutputs_ShouldRequireOutputConsumer()
+    public async Task RuntimeOptions_BoundedOutput_DefaultSinkPolicy_ShouldCompleteWithoutOutputConsumer()
     {
         var sink = new CountingEnvelopeSink<string>();
 
@@ -477,17 +482,10 @@ public class RuntimeOptionsPassTests
             .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
             .To(sink);
 
-        await sink.WaitForCountAsync(1, TimeSpan.FromSeconds(5));
-
-        run.Completion.IsCompleted.Should().BeFalse(
-            "bounded output with Wait backpressures the run when outputs are not consumed"
-        );
-        sink.Payloads.Should().Equal("1", "2");
-
-        var outputs = await ReadOutputsAsync(run.Outputs);
         await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        var outputs = await ReadOutputsAsync(run.Outputs);
 
-        outputs.Select(o => o.Result.Value).Should().Equal("1", "2");
+        outputs.Should().BeEmpty();
         sink.Payloads.Should().Equal("1", "2");
     }
 
@@ -1240,7 +1238,7 @@ public class RuntimeOptionsPassTests
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
                 OutputCapacity = 1,
-                OutputMode = PipelineOutputMode.EmitAll,
+                OutputPolicy = PipelineOutputPolicy.EmitAll,
             })
             .Transform(new EnvelopeTransformer<int, int>(x => x))
             .To(sink);
@@ -1371,7 +1369,7 @@ public class RuntimeOptionsPassTests
             .From(new EnvelopeSource<int>(Enumerable.Range(1, itemCount).ToArray()))
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
-                OutputMode = PipelineOutputMode.SuppressAll,
+                OutputPolicy = PipelineOutputPolicy.EmitFailuresOnly,
                 ObserverDispatch = new ObserverDispatchOptions
                 {
                     Mode = ObserverDispatchMode.BufferedReliable,
@@ -1391,7 +1389,7 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
-    public async Task TypedPipeline_DrainAsync_ShouldTimeoutWhenSourceIsBlockedInsideMoveNextAsync()
+    public async Task TypedPipeline_DrainAsync_ShouldCancelBlockedSourceRead()
     {
         var source = new GateControlledSource<int>(1, 2);
 
@@ -1402,14 +1400,11 @@ public class RuntimeOptionsPassTests
 
         await source.FirstItemYielded.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        var act = async () => await run.DrainAsync(TimeSpan.FromMilliseconds(50));
-        await act.Should().ThrowAsync<TimeoutException>();
-
-        source.ReleaseRemainingItems();
-        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.DrainAsync(TimeSpan.FromSeconds(5));
         await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        var outputs = await ReadOutputsAsync(run.Outputs);
 
-        outputs.Select(o => o.Result.Value).Should().Equal(1, 2);
+        outputs.Select(o => o.Result.Value).Should().Equal(1);
     }
 
     [Fact]

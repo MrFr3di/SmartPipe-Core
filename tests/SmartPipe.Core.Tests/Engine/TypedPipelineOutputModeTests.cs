@@ -428,7 +428,7 @@ public sealed class TypedPipelineOutputModeTests
             ))
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
-                OutputMode = PipelineOutputMode.EmitAll,
+                OutputPolicy = PipelineOutputPolicy.EmitAll,
             })
             .Run();
 
@@ -456,7 +456,7 @@ public sealed class TypedPipelineOutputModeTests
             ))
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
-                OutputMode = PipelineOutputMode.EmitAll,
+                OutputPolicy = PipelineOutputPolicy.EmitAll,
             })
             .To(sink);
 
@@ -477,7 +477,7 @@ public sealed class TypedPipelineOutputModeTests
             .Transform(new EnvelopeTransformer<int, string>(x => x.ToString()))
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
-                OutputMode = PipelineOutputMode.SuppressWhenSinkAttached,
+                OutputPolicy = PipelineOutputPolicy.SuppressAllWhenSinkAttached,
             })
             .Run();
 
@@ -502,7 +502,7 @@ public sealed class TypedPipelineOutputModeTests
             ))
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
-                OutputMode = PipelineOutputMode.SuppressWhenSinkAttached,
+                OutputPolicy = PipelineOutputPolicy.SuppressAllWhenSinkAttached,
             })
             .To(sink);
 
@@ -530,7 +530,7 @@ public sealed class TypedPipelineOutputModeTests
             ))
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
-                OutputMode = PipelineOutputMode.SuppressWhenSinkAttached,
+                OutputPolicy = PipelineOutputPolicy.SuppressAllWhenSinkAttached,
             })
             .To(sink);
 

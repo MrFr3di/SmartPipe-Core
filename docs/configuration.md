@@ -14,7 +14,7 @@ This document lists the typed runtime configuration surface.
 | `InputFullMode` | `Wait` | Input queue full-mode behavior. |
 | `OutputCapacity` | `null` | Automatic bounded default when null. |
 | `OutputFullMode` | `Wait` | Output queue full-mode behavior. |
-| `OutputPolicy` | `EmitAll` | Preferred typed output policy. |
+| `OutputPolicy` | `SuppressSuccessWhenSinkAttached` | Preferred typed output policy. |
 | `OutputMode` | `EmitAll` | Obsolete compatibility output filter; use `OutputPolicy`. |
 | `OrderingMode` | `Unordered` | `PreserveInputOrder` with parallelism is rejected. |
 | `ObserverDispatch` | `Inline` | Inline or bounded buffered observer dispatch. |
@@ -33,6 +33,10 @@ records drop metrics and emits best-effort drop events.
 - `EmitFailuresOnly`
 - `SuppressSuccessWhenSinkAttached`
 - `SuppressAllWhenSinkAttached`
+
+The default `SuppressSuccessWhenSinkAttached` prevents sink-backed runs from
+blocking on unconsumed success outputs. Set `EmitAll` explicitly when a
+sink-backed run also needs a consumer for every successful output.
 
 Output policy only controls `PipelineRun<T>.Outputs`. Sink writes, observers,
 retry, circuit breaker, and dead-letter behavior are independent.

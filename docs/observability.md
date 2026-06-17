@@ -43,7 +43,11 @@ Compatibility export fields such as `duplicates_filtered`, `retries`,
 `items_dropped`, `output_items_dropped`, `observer_events_dropped`,
 `avg_latency_ms`, `smooth_latency_ms`, `smooth_throughput`, `queue_size`, and
 `pool_hit_rate` remain available through `Export()`, `ExportJson()`, and
-`ExportPrometheus()`.
+`ToDiagnosticText()`.
+
+`ToDiagnosticText()` is a diagnostic snapshot for logs and support dumps. It is
+not a Prometheus exporter. Prometheus scraping should be wired through .NET
+OpenTelemetry metrics exporters at the host boundary.
 
 Snapshots are point-in-time samples. Under concurrent updates, individual values
 may come from adjacent moments, so snapshots are suitable for reporting and

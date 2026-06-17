@@ -14,7 +14,7 @@ SmartPipe.Extensions.Selectors.EfCoreSelector<T>
 SmartPipe.Extensions.Selectors.EfCoreSelector<T>.EfCoreSelector(Microsoft.EntityFrameworkCore.DbContext! dbContext, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.EfCoreSelector<T!>!>? logger = null) -> void
 SmartPipe.Extensions.Selectors.EfCoreSelector<T>.WithQuery(System.Func<Microsoft.EntityFrameworkCore.DbSet<T!>!, System.Linq.IQueryable<T!>!>! configure) -> SmartPipe.Extensions.Selectors.EfCoreSelector<T!>!
 SmartPipe.Extensions.Selectors.HttpSelector<T>
-SmartPipe.Extensions.Selectors.HttpSelector<T>.HttpSelector(System.Net.Http.HttpClient! httpClient, string! requestUri, Polly.ResiliencePipeline? pipeline = null, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.HttpSelector<T>!>? logger = null) -> void
+SmartPipe.Extensions.Selectors.HttpSelector<T>.HttpSelector(System.Net.Http.HttpClient! httpClient, string! requestUri, Polly.ResiliencePipeline? pipeline, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.HttpSelector<T>!>? logger) -> void
 SmartPipe.Extensions.Selectors.JsonFileSource<T>
 SmartPipe.Extensions.Selectors.JsonFileSource<T>.JsonFileSource(string! path) -> void
 SmartPipe.Extensions.Selectors.JsonFileSource<T>.JsonFileSource(string! path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Generic.List<T>!>! listTypeInfo, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! itemTypeInfo) -> void
@@ -28,7 +28,7 @@ SmartPipe.Extensions.Sinks.DeadLetterSink<T>.DeadLetterSink(string! path = "dead
 SmartPipe.Extensions.Sinks.DeadLetterSink<T>.DeadLetterSink(string! path) -> void
 SmartPipe.Extensions.Sinks.DeadLetterSink<T>.DeadLetterSink(string! path, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Sinks.DeadLetterSink<T>!>? logger) -> void
 SmartPipe.Extensions.Sinks.HttpSink<T>
-SmartPipe.Extensions.Sinks.HttpSink<T>.HttpSink(System.Net.Http.HttpClient! http, string! url, Polly.ResiliencePipeline? resilience = null) -> void
+SmartPipe.Extensions.Sinks.HttpSink<T>.HttpSink(System.Net.Http.HttpClient! http, string! url, Polly.ResiliencePipeline? resilience) -> void
 SmartPipe.Extensions.Sinks.JsonFileSink<T>
 SmartPipe.Extensions.Sinks.JsonFileSink<T>.JsonFileSink(string! path) -> void
 SmartPipe.Extensions.Sinks.JsonFileSink<T>.JsonFileSink(string! path, int flushInterval = 1000) -> void

@@ -57,6 +57,8 @@ await run.Completion;
 
 `PipelineRun<T>.Outputs` exposes `PipelineOutput<T>` records with the final
 `ProcessingEnvelope<T>` when available and a classified `PipelineResult<T>`.
+Multiple output readers distribute records; they do not each receive a
+broadcast copy.
 For sink-backed pipelines, success output means transform processing and sink
 write both completed successfully. `StageResult.Filtered()` is non-failure
 terminal control flow: it does not call the sink, does not dead-letter, and does
@@ -64,8 +66,8 @@ not increment failed metrics.
 
 ## Lifecycle
 
-- `DrainAsync` stops accepting new source items at source boundaries and waits
-  for accepted work.
+- `DrainAsync` stops accepting new source items at source boundaries, cancels
+  cooperative source reads, and waits for already accepted work.
 - `TryDrainAsync` returns a structured `PipelineDrainResult` instead of
   throwing for timeout or run fault status.
 - `CancelAsync` requests cooperative cancellation.
