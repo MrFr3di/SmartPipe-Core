@@ -47,7 +47,7 @@ public sealed class SmartPipeTypedDiTests
     }
 
     [Fact]
-    public async Task DI_ScopedSinkDisposedWithScope()
+    public async Task DI_Factory_ScopedComponentsDisposedWithScope()
     {
         var services = CreateTypedPipelineServices();
         using var provider = services.BuildServiceProvider(
@@ -96,7 +96,7 @@ public sealed class SmartPipeTypedDiTests
     }
 
     [Fact]
-    public async Task DI_Factory_ManualDisposeBeforeCompletionDisposesScopeOnce()
+    public async Task DI_Factory_ManualDisposeBeforeCompletion_DisposesScopeOnce()
     {
         // A controllable source blocks on a TCS gate. The test disposes the run
         // before the source yields, then signals the gate; the scope must be
@@ -184,7 +184,7 @@ public sealed class SmartPipeTypedDiTests
     }
 
     [Fact]
-    public void DI_ValidateScopes_DoesNotThrow()
+    public void DI_Factory_ValidateScopes_RemainsGreen()
     {
         var services = CreateTypedPipelineServices();
 

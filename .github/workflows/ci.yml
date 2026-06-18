@@ -52,6 +52,11 @@ jobs:
     - name: Pack Extensions
       run: dotnet pack src/SmartPipe.Extensions/SmartPipe.Extensions.csproj --no-build -c Release -p:EnablePackageValidation=true -o artifacts/packages
 
+    - name: Set package version
+      run: |
+        PACKAGE_VERSION=$(dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version)
+        echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> "$GITHUB_ENV"
+
     - name: Consumer smoke
       run: |
         dotnet new console -n SmartPipe.ConsumerSmoke -o artifacts/consumer-smoke
@@ -74,8 +79,8 @@ jobs:
         </configuration>
         XML
         pushd artifacts/consumer-smoke
-        dotnet add SmartPipe.ConsumerSmoke.csproj package SmartPipe.Core --version 2.0.0
-        dotnet add SmartPipe.ConsumerSmoke.csproj package SmartPipe.Extensions --version 2.0.0
+        dotnet add SmartPipe.ConsumerSmoke.csproj package SmartPipe.Core --version "$PACKAGE_VERSION"
+        dotnet add SmartPipe.ConsumerSmoke.csproj package SmartPipe.Extensions --version "$PACKAGE_VERSION"
         popd
         cat > artifacts/consumer-smoke/Program.cs <<'CS'
         using System.Runtime.CompilerServices;
@@ -288,7 +293,7 @@ jobs:
           </packageSourceMapping>
         </configuration>
         XML
-        cat > artifacts/json-deadletter-aot-smoke/SmartPipe.JsonDeadLetterAotSmoke.csproj <<'XML'
+        cat > artifacts/json-deadletter-aot-smoke/SmartPipe.JsonDeadLetterAotSmoke.csproj <<XML
         <Project Sdk="Microsoft.NET.Sdk">
           <PropertyGroup>
             <OutputType>Exe</OutputType>
@@ -298,8 +303,8 @@ jobs:
             <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
           </PropertyGroup>
           <ItemGroup>
-            <PackageReference Include="SmartPipe.Core" Version="2.0.0" />
-            <PackageReference Include="SmartPipe.Extensions" Version="2.0.0" />
+            <PackageReference Include="SmartPipe.Core" Version="$PACKAGE_VERSION" />
+            <PackageReference Include="SmartPipe.Extensions" Version="$PACKAGE_VERSION" />
           </ItemGroup>
         </Project>
         XML

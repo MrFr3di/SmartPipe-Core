@@ -113,6 +113,86 @@ public sealed class TypedPipelineDrainTests
     }
 
     [Fact]
+    public async Task TryDrainAsync_CancelsSourceRead_ButFinishesAcceptedItems()
+    {
+        var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new BarrierGateControlledSource<int>(barrier, () => 0, 1, 2);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new BarrierTransformer<int, int>(barrier))
+            .Run();
+
+        await source.FirstItemYielded.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var drainTask = run.TryDrainAsync(TimeSpan.FromSeconds(5)).AsTask();
+        drainTask.IsCompleted.Should().BeFalse("accepted in-flight work must finish before drain completes");
+
+        barrier.TrySetResult();
+
+        var result = await drainTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        var outputs = await ReadOutputsAsync(run.Outputs);
+
+        result.Status.Should().BeOneOf(
+            PipelineDrainStatus.Completed,
+            PipelineDrainStatus.AlreadyCompleted);
+        result.State.Should().Be(PipelineRunState.Completed);
+        outputs.Select(output => output.Result.Value).Should().Equal(1);
+    }
+
+    [Fact]
+    public async Task TryDrainAsync_SourceBlockedInMoveNext_ReturnsPredictably()
+    {
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int moveNextAttempts = 0;
+        var source = new GateAfterFirstSource<int>(gate, () => Interlocked.Increment(ref moveNextAttempts), 1, 2);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new EnvelopeTransformer<int, int>(x => x))
+            .Run();
+
+        await source.FirstItemYielded.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await source.SecondMoveNextEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var result = await run.TryDrainAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        var outputs = await ReadOutputsAsync(run.Outputs);
+
+        result.Status.Should().BeOneOf(
+            PipelineDrainStatus.Completed,
+            PipelineDrainStatus.AlreadyCompleted);
+        result.State.Should().Be(PipelineRunState.Completed);
+        outputs.Select(output => output.Result.Value).Should().Equal(1);
+        Volatile.Read(ref moveNextAttempts).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TryDrainAsync_InFlightStageCompletes()
+    {
+        var transformer = new BlockingLifecycleTransformer<int>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(transformer)
+            .Run();
+
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var drainTask = run.TryDrainAsync(TimeSpan.FromSeconds(5)).AsTask();
+        drainTask.IsCompleted.Should().BeFalse();
+        transformer.Release();
+
+        var result = await drainTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        result.Status.Should().Be(PipelineDrainStatus.Completed);
+        transformer.CompletedCount.Should().Be(1);
+        run.State.Should().Be(PipelineRunState.Completed);
+    }
+
+    [Fact]
     public async Task TryDrainAsync_Timeout_ReturnsTimedOutStillRunning()
     {
         var transformer = new BlockingLifecycleTransformer<int>();
@@ -130,6 +210,97 @@ public sealed class TypedPipelineDrainTests
         result.State.Should().NotBe(PipelineRunState.Cancelled);
 
         await run.AbortAsync();
+    }
+
+    [Fact]
+    public async Task DrainAsync_Timeout_ThrowsButRunCanStillBeCancelled()
+    {
+        var transformer = new BlockingLifecycleTransformer<int>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(transformer)
+            .Run();
+
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var drainAct = async () => await run.DrainAsync(TimeSpan.FromMilliseconds(50));
+        await drainAct.Should().ThrowAsync<TimeoutException>();
+
+        await run.CancelAsync();
+        var completionAct = async () => await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await completionAct.Should().ThrowAsync<OperationCanceledException>();
+        run.State.Should().Be(PipelineRunState.Cancelled);
+    }
+
+    [Fact]
+    public async Task CancelAsync_CancelsSourceAndWorkers()
+    {
+        var source = new BlockingAfterFirstLifecycleSource<int>(1);
+        var transformer = new BlockingLifecycleTransformer<int>();
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(transformer)
+            .WithRuntimeOptions(new PipelineRuntimeOptions { MaxConcurrency = 2 })
+            .Run();
+
+        await source.BlockEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await run.CancelAsync();
+
+        await source.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await transformer.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var completionAct = async () => await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await completionAct.Should().ThrowAsync<OperationCanceledException>();
+        run.State.Should().Be(PipelineRunState.Cancelled);
+    }
+
+    [Fact]
+    public async Task AbortAsync_CancelsSourceAndWorkersImmediately()
+    {
+        var source = new BlockingAfterFirstLifecycleSource<int>(1);
+        var transformer = new BlockingLifecycleTransformer<int>();
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(transformer)
+            .WithRuntimeOptions(new PipelineRuntimeOptions { MaxConcurrency = 2 })
+            .Run();
+
+        await source.BlockEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await run.AbortAsync();
+
+        await source.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await transformer.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        run.State.Should().Be(PipelineRunState.Aborted);
+    }
+
+    [Fact]
+    public async Task DrainThenCancel_TransitionsPredictably()
+    {
+        var transformer = new BlockingLifecycleTransformer<int>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(transformer)
+            .Run();
+
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var drainTask = run.DrainAsync(TimeSpan.FromSeconds(30)).AsTask();
+        drainTask.IsCompleted.Should().BeFalse();
+
+        await run.CancelAsync();
+
+        var drainAct = async () => await drainTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await drainAct.Should().ThrowAsync<OperationCanceledException>();
+        var completionAct = async () => await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await completionAct.Should().ThrowAsync<OperationCanceledException>();
+        run.State.Should().Be(PipelineRunState.Cancelled);
     }
 
     [Fact]

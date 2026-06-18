@@ -12,6 +12,8 @@
 ### Changed
 
 - Default `OutputPolicy` is now `SuppressSuccessWhenSinkAttached` for sink-backed pipelines.
+  This is the safe default for sink-backed pipelines because successful outputs are not written to `PipelineRun<T>.Outputs` unless the caller explicitly opts into `EmitAll`.
+  Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
 - `PipelineRun<T>.Outputs` output channel is now single-reader by contract.
 
 ### Deprecated

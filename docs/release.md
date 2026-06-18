@@ -16,6 +16,7 @@ Required package smoke shape:
 ```powershell
 dotnet pack src\SmartPipe.Core\SmartPipe.Core.csproj -c Release --no-build -o artifacts\packages
 dotnet pack src\SmartPipe.Extensions\SmartPipe.Extensions.csproj -c Release --no-build -o artifacts\packages
+$PACKAGE_VERSION = dotnet msbuild src\SmartPipe.Core\SmartPipe.Core.csproj -getProperty:Version
 dotnet new console -n SmartPipe.ConsumerSmoke -o artifacts\consumer-smoke --force
 @'
 <?xml version="1.0" encoding="utf-8"?>
@@ -36,8 +37,8 @@ dotnet new console -n SmartPipe.ConsumerSmoke -o artifacts\consumer-smoke --forc
 </configuration>
 '@ | Set-Content artifacts\consumer-smoke\NuGet.Config
 Push-Location artifacts\consumer-smoke
-dotnet add SmartPipe.ConsumerSmoke.csproj package SmartPipe.Core --version 2.0.0
-dotnet add SmartPipe.ConsumerSmoke.csproj package SmartPipe.Extensions --version 2.0.0
+dotnet add SmartPipe.ConsumerSmoke.csproj package SmartPipe.Core --version $PACKAGE_VERSION
+dotnet add SmartPipe.ConsumerSmoke.csproj package SmartPipe.Extensions --version $PACKAGE_VERSION
 Pop-Location
 dotnet run --project artifacts\consumer-smoke\SmartPipe.ConsumerSmoke.csproj -c Release
 ```

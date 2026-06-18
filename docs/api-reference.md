@@ -41,6 +41,12 @@ public interface IPipelineSink<T>
 `SuppressSuccessWhenSinkAttached`. Set `EmitAll` explicitly when a sink-backed
 pipeline also needs every success output to be consumed.
 
+`PipelineBuilder.From(source).Transform(stage).To(sink)` is the single-use
+instance path. Reusable definitions use `FromFactory`, `TransformFactory`, and
+`ToFactory` together so every start receives fresh components. `TransformFactory`
+and `ToFactory` throw on instance pipelines; use `.Transform(instance)` and
+`.To(instance)` there.
+
 ## Failure Handling
 
 - `StageFailureOptions`

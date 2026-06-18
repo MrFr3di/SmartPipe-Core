@@ -217,7 +217,7 @@ public class PipelineBuilder<TInput, TOutput>
         }
 
         throw new InvalidOperationException(
-            "TransformFactory requires a reusable pipeline created with PipelineBuilder.FromFactory.");
+            "TransformFactory requires a reusable pipeline created with PipelineBuilder.FromFactory. Use .Transform(instance) for instance pipelines.");
     }
 
     /// <summary>Adds an observer to an envelope-aware typed pipeline.</summary>

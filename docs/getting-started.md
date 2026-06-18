@@ -41,6 +41,22 @@ await foreach (var output in run.Outputs.ReadAllAsync())
 await run.Completion;
 ```
 
+Instance pipelines are single-use. If the same definition must start multiple
+runs, build it with factories from source through sink:
+
+```csharp
+var builder = PipelineBuilder
+    .FromFactory(_ => new OrdersSource())
+    .TransformFactory(_ => new ValidateOrderStage())
+    .TransformFactory(_ => new OrderDtoStage());
+
+var first = builder.ToFactory(_ => new OrderSink());
+var second = builder.ToFactory(_ => new OrderSink());
+```
+
+Do not call `TransformFactory` or `ToFactory` on a pipeline that started with
+`.From(source)`. Use `.Transform(instance)` and `.To(instance)` there.
+
 ## Runtime Options
 
 ```csharp

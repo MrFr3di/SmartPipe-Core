@@ -46,6 +46,12 @@ or exactly-once delivery system.
 | Default `OutputPolicy` | `SuppressSuccessWhenSinkAttached` — safe default for sink-backed runs. |
 | `PipelineOutputPolicy.EmitAll` | Requires an active consumer of `PipelineRun<T>.Outputs`; otherwise the run can backpressure. |
 
+Default `OutputPolicy` is `SuppressSuccessWhenSinkAttached`.
+
+This is the safe default for sink-backed pipelines because successful outputs are not written to `PipelineRun<T>.Outputs` unless the caller explicitly opts into `EmitAll`.
+
+Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
+
 ### Failure Semantics
 
 | Event | Behavior |
@@ -142,6 +148,30 @@ services.AddSmartPipe<Order, OrderDto>(
 
 Resolve `ISmartPipeFactory<Order, OrderDto>` and call `Start()`, or use
 `AddSmartPipeHostedService<TInput,TOutput>()` for background hosting.
+
+### Factory Vs Instance Builders
+
+Instance pipelines use concrete components and are single-use:
+
+```csharp
+PipelineBuilder
+    .From(source)
+    .Transform(stage)
+    .To(sink);
+```
+
+Reusable factory pipelines must use factories from source through sink:
+
+```csharp
+PipelineBuilder
+    .FromFactory(_ => new Source())
+    .TransformFactory(_ => new Stage())
+    .ToFactory(_ => new Sink());
+```
+
+Do not mix instance components with `TransformFactory` or `ToFactory`. Use
+`.Transform(instance)` and `.To(instance)` for instance pipelines, or start with
+`.FromFactory(...)` when every run needs fresh runtime-owned components.
 
 Typed health checks can be registered for DI pipelines:
 

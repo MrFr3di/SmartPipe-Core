@@ -14,6 +14,93 @@ namespace SmartPipe.Core.Tests.Engine;
 public sealed class TypedPipelineOutputModeTests
 {
     [Fact]
+    public void PipelineRuntimeOptions_Defaults_AreReleaseContract()
+    {
+        var options = new PipelineRuntimeOptions();
+
+        options.OutputPolicy.Should().Be(PipelineOutputPolicy.SuppressSuccessWhenSinkAttached);
+        options.OutputMode.Should().Be(PipelineOutputMode.EmitAll);
+        options.MaxConcurrency.Should().Be(1);
+        options.MaxDegreeOfParallelism.Should().Be(1);
+        options.InputCapacity.Should().Be(1024);
+        options.InputFullMode.Should().Be(BoundedChannelFullMode.Wait);
+        options.OutputCapacity.Should().BeNull();
+        options.OutputFullMode.Should().Be(BoundedChannelFullMode.Wait);
+        options.OrderingMode.Should().Be(PipelineOrderingMode.Unordered);
+    }
+
+    [Fact]
+    public async Task SinkBackedPipeline_DefaultOutputPolicy_DoesNotEmitSuccessOutputs()
+    {
+        var sink = new EnvelopeCollectingSink<string>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2))
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString()))
+            .To(sink);
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SinkBackedPipeline_DefaultOutputPolicy_WritesAllItemsToSink()
+    {
+        var sink = new EnvelopeCollectingSink<string>();
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3))
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString()))
+            .To(sink);
+
+        await run.Completion;
+
+        sink.Payloads.Should().Equal("1", "2", "3");
+    }
+
+    [Fact]
+    public async Task OutputConsumerPipeline_NoSink_DefaultPolicy_EmitsSuccessOutputs()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(4, 5))
+            .Transform(new EnvelopeTransformer<int, int>(x => x * 2))
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Select(output => output.Result.Value).Should().Equal(8, 10);
+    }
+
+    [Fact]
+    public async Task EmitFailuresOnly_EmitsOnlyFailures()
+    {
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1, 2, 3))
+            .Transform(new ConditionalTransformer<int, string>(
+                x => x switch
+                {
+                    2 => StageResult<string>.Failure(new SmartPipeError("e1", ErrorType.Permanent, "T1")),
+                    _ => StageResult<string>.Success($"ok:{x}"),
+                }
+            ))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputPolicy = PipelineOutputPolicy.EmitFailuresOnly,
+            })
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Should().ContainSingle();
+        outputs[0].Result.IsFailure.Should().BeTrue();
+        outputs[0].Result.Error!.Value.Category.Should().Be("T1");
+    }
+
+    [Fact]
     public async Task TypedPipeline_OutputPolicyEmitAll_EmitsSuccessOutputs()
     {
         var source = new EnvelopeSource<int>(1, 2);

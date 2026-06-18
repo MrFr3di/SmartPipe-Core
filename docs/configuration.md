@@ -4,6 +4,10 @@ This document lists the typed runtime configuration surface.
 
 Default `OutputPolicy` is `SuppressSuccessWhenSinkAttached`.
 
+This is the safe default for sink-backed pipelines because successful outputs are not written to `PipelineRun<T>.Outputs` unless the caller explicitly opts into `EmitAll`.
+
+Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
+
 ## Runtime Options
 
 `PipelineRuntimeOptions` controls runtime behavior:

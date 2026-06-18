@@ -23,6 +23,31 @@ The stage chain inside one envelope is sequential. `MaxConcurrency > 1` permits
 multiple envelopes to be processed at the same time. Cross-envelope output order
 is not guaranteed.
 
+## Factory And Instance Lifetimes
+
+Instance pipelines use concrete components and are single-use:
+
+```csharp
+PipelineBuilder
+    .From(source)
+    .Transform(stage)
+    .To(sink);
+```
+
+Factory pipelines are reusable definitions. `FromFactory`, `TransformFactory`,
+and `ToFactory` create fresh runtime-owned components per start:
+
+```csharp
+PipelineBuilder
+    .FromFactory(_ => new Source())
+    .TransformFactory(_ => new Stage())
+    .ToFactory(_ => new Sink());
+```
+
+Factory APIs are strict. `TransformFactory` and `ToFactory` require a pipeline
+created with `.FromFactory(...)`; use `.Transform(instance)` and `.To(instance)`
+for instance pipelines.
+
 ## Channels
 
 Runtime input, output, and buffered observer channels are bounded and created by
@@ -36,6 +61,12 @@ bounded modes may drop work and should be used only when that is acceptable to
 the caller. Input and output drop callbacks record `smartpipe.items.dropped`
 and `smartpipe.output.items.dropped` and emit best-effort `InputDroppedEvent`
 or `OutputDroppedEvent`.
+
+Default `OutputPolicy` is `SuppressSuccessWhenSinkAttached`.
+
+This is the safe default for sink-backed pipelines because successful outputs are not written to `PipelineRun<T>.Outputs` unless the caller explicitly opts into `EmitAll`.
+
+Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
 
 ## Lifecycle
 

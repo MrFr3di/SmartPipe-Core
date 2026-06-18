@@ -265,7 +265,7 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
-    public async Task PipelineBuilder_ModernApi_ShouldRejectSecondRunForSingleUseInstances()
+    public async Task InstancePipeline_SecondStart_ThrowsClearError()
     {
         var builder = PipelineBuilder
             .From(new EnvelopeSource<int>(1))
@@ -283,7 +283,131 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
-    public async Task PipelineBuilder_ModernApi_ShouldAllowRepeatedRunsForFactoryDefinitions()
+    public async Task FactoryPipeline_CreatesFreshComponents_PerStart()
+    {
+        var sourceCreated = 0;
+        var stageCreated = 0;
+
+        var builder = PipelineBuilder
+            .FromFactory<int>(_ =>
+            {
+                sourceCreated++;
+                return new EnvelopeSource<int>(1);
+            })
+            .TransformFactory<string>(_ =>
+            {
+                stageCreated++;
+                return new EnvelopeTransformer<int, string>(x =>
+                    x.ToString(CultureInfo.InvariantCulture)
+                );
+            });
+
+        var firstRun = builder.Run();
+        _ = await ReadOutputsAsync(firstRun.Outputs);
+        await firstRun.Completion;
+
+        var secondRun = builder.Run();
+        _ = await ReadOutputsAsync(secondRun.Outputs);
+        await secondRun.Completion;
+
+        sourceCreated.Should().Be(2);
+        stageCreated.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task FactoryPipeline_SecondStart_CreatesNewSourceStageSink()
+    {
+        var sources = new List<EnvelopeSource<int>>();
+        var stages = new List<EnvelopeTransformer<int, string>>();
+        var sinks = new List<EnvelopeCollectingSink<string>>();
+
+        var builder = PipelineBuilder
+            .FromFactory<int>(_ =>
+            {
+                var source = new EnvelopeSource<int>(1);
+                sources.Add(source);
+                return source;
+            })
+            .TransformFactory<string>(_ =>
+            {
+                var stage = new EnvelopeTransformer<int, string>(x =>
+                    x.ToString(CultureInfo.InvariantCulture)
+                );
+                stages.Add(stage);
+                return stage;
+            });
+
+        var firstRun = builder.ToFactory(_ => CreateSink(sinks));
+        _ = await ReadOutputsAsync(firstRun.Outputs);
+        await firstRun.Completion;
+
+        var secondRun = builder.ToFactory(_ => CreateSink(sinks));
+        _ = await ReadOutputsAsync(secondRun.Outputs);
+        await secondRun.Completion;
+
+        sources.Should().HaveCount(2);
+        stages.Should().HaveCount(2);
+        sinks.Should().HaveCount(2);
+        sources[0].Should().NotBeSameAs(sources[1]);
+        stages[0].Should().NotBeSameAs(stages[1]);
+        sinks[0].Should().NotBeSameAs(sinks[1]);
+
+        static EnvelopeCollectingSink<string> CreateSink(
+            List<EnvelopeCollectingSink<string>> created
+        )
+        {
+            var sink = new EnvelopeCollectingSink<string>();
+            created.Add(sink);
+            return sink;
+        }
+    }
+
+    [Fact]
+    public async Task FactoryPipeline_DisposesComponentsPerRun()
+    {
+        var sources = new List<CountingEnvelopeSource<int>>();
+        var stages = new List<CountingEnvelopeTransformer<int, string>>();
+        var sinks = new List<CountingEnvelopeSink<string>>();
+
+        var builder = PipelineBuilder
+            .FromFactory<int>(_ =>
+            {
+                var source = new CountingEnvelopeSource<int>(1);
+                sources.Add(source);
+                return source;
+            })
+            .TransformFactory<string>(_ =>
+            {
+                var stage = new CountingEnvelopeTransformer<int, string>(x =>
+                    x.ToString(CultureInfo.InvariantCulture)
+                );
+                stages.Add(stage);
+                return stage;
+            });
+
+        var firstRun = builder.ToFactory(_ => CreateSink(sinks));
+        await firstRun.Completion;
+
+        var secondRun = builder.ToFactory(_ => CreateSink(sinks));
+        await secondRun.Completion;
+
+        sources.Should().HaveCount(2);
+        stages.Should().HaveCount(2);
+        sinks.Should().HaveCount(2);
+        sources.Should().OnlyContain(source => source.DisposeCount == 1);
+        stages.Should().OnlyContain(stage => stage.DisposeCount == 1);
+        sinks.Should().OnlyContain(sink => sink.DisposeCount == 1);
+
+        static CountingEnvelopeSink<string> CreateSink(List<CountingEnvelopeSink<string>> created)
+        {
+            var sink = new CountingEnvelopeSink<string>();
+            created.Add(sink);
+            return sink;
+        }
+    }
+
+    [Fact]
+    public async Task FromFactory_TransformFactory_ToFactory_AllowsMultipleStarts()
     {
         var sourceCreated = 0;
         var firstStageCreated = 0;
@@ -370,7 +494,7 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
-    public void PipelineBuilder_InstancePipelineTransformFactory_ShouldThrowClearError()
+    public void FromInstance_TransformFactory_ThrowsClearError()
     {
         var builder = PipelineBuilder
             .From(new EnvelopeSource<int>(1))
@@ -380,7 +504,7 @@ public class ModernPipelineRuntimeTests
             new EnvelopeTransformer<string, double>(x => double.Parse(x, CultureInfo.InvariantCulture)));
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*TransformFactory*FromFactory*");
+            .WithMessage("*TransformFactory*FromFactory*.Transform(instance)*");
     }
 
     [Fact]

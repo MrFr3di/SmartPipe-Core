@@ -22,6 +22,11 @@ scope owns scoped source/stage/sink services. The returned run and the
 completion path share one idempotent disposal path. Scoped dependencies are
 resolved inside that run scope and are disposed with it.
 
+The DI registration model is factory-based: each factory start creates fresh
+source, stage, and sink components in the run scope. Do not mix singleton
+component instances into a DI factory definition unless the component is
+explicitly registered and intended to be reused by the container.
+
 Use `ValidateScopes = true` in tests and hosted applications to catch accidental
 root-scope captures.
 

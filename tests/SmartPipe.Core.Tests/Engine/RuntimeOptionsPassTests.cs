@@ -1214,10 +1214,6 @@ public class RuntimeOptionsPassTests
 
         var run = PipelineBuilder
             .From(new EnvelopeSource<int>(Enumerable.Range(1, itemCount).ToArray()))
-            .WithRuntimeOptions(new PipelineRuntimeOptions
-            {
-                OutputMode = PipelineOutputMode.SuppressWhenSinkAttached,
-            })
             .Transform(new EnvelopeTransformer<int, int>(x => x))
             .To(sink);
 

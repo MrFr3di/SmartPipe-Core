@@ -10,6 +10,12 @@ The output channel is single-reader by contract. Callers that need fan-out
 must implement it explicitly (for example by reading outputs and re-publishing
 through their own dispatcher).
 
+Default `OutputPolicy` is `SuppressSuccessWhenSinkAttached`.
+
+This is the safe default for sink-backed pipelines because successful outputs are not written to `PipelineRun<T>.Outputs` unless the caller explicitly opts into `EmitAll`.
+
+Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
+
 ## Consume Outputs While The Run Is Active
 
 When output emission is active and `OutputFullMode` is `Wait`, the runtime
