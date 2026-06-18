@@ -23,6 +23,15 @@ public interface ISmartPipeFactory<TInput, TOutput>
     /// <param name="ct">Cancellation token linked to the run.</param>
     /// <returns>A started pipeline run.</returns>
     PipelineRun<TOutput> Start(CancellationToken ct = default);
+
+    /// <summary>Asynchronously creates and starts a fresh typed pipeline runtime.</summary>
+    /// <param name="ct">Cancellation token linked to the run.</param>
+    /// <returns>A task that completes with a started pipeline run.</returns>
+    /// <remarks>
+    /// Default interface method (DIM) so existing implementors are not source-broken.
+    /// The default bridges to <see cref="Start"/>; production implementations should override.
+    /// </remarks>
+    Task<PipelineRun<TOutput>> StartAsync(CancellationToken ct = default) => Task.FromResult(Start(ct));
 }
 
 /// <summary>Builder used to configure a typed SmartPipe DI definition.</summary>
@@ -183,7 +192,7 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
     }
 
     /// <inheritdoc />
-    public PipelineRun<TOutput> Start(CancellationToken ct = default)
+    public async Task<PipelineRun<TOutput>> StartAsync(CancellationToken ct = default)
     {
         var scope = _scopeFactory.CreateAsyncScope();
         try
@@ -204,10 +213,14 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
         }
         catch
         {
-            scope.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            await scope.DisposeAsync().ConfigureAwait(false);
             throw;
         }
     }
+
+    /// <inheritdoc />
+    public PipelineRun<TOutput> Start(CancellationToken ct = default) =>
+        StartAsync(ct).GetAwaiter().GetResult();
 
     private sealed class ScopedPipelineRun : IAsyncDisposable
     {

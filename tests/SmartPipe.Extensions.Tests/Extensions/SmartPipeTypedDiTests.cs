@@ -80,7 +80,7 @@ public sealed class SmartPipeTypedDiTests
     }
 
     [Fact]
-    public async Task DI_Factory_CompletionAndManualDisposeRace_DisposesScopeOnce()
+    public async Task DI_Factory_CompletionDisposesScopeOnce()
     {
         var services = CreateTypedPipelineServices();
         using var provider = services.BuildServiceProvider(
@@ -90,9 +90,96 @@ public sealed class SmartPipeTypedDiTests
 
         var run = factory.Start();
         await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => run.DisposeAsync().AsTask()));
+        // No manual dispose: completion alone must dispose the scope exactly once.
+        recorder.DisposedSinkScopeIds.Should().HaveCount(1);
+        recorder.DisposedMarkerScopeIds.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task DI_Factory_ManualDisposeBeforeCompletionDisposesScopeOnce()
+    {
+        // A controllable source blocks on a TCS gate. The test disposes the run
+        // before the source yields, then signals the gate; the scope must be
+        // disposed exactly once across the disposal race.
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var services = CreateControllablePipelineServices(gate);
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true });
+        var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
+        var recorder = provider.GetRequiredService<TypedDiRecorder>();
+
+        var run = factory.Start();
+        // Dispose while the source is still blocked on the gate.
+        await run.DisposeAsync();
+
+        // After dispose, releasing the gate must not cause a second scope disposal.
+        gate.SetResult();
+        await ObserveCompletionAfterManualDisposeAsync(run);
 
         recorder.DisposedSinkScopeIds.Should().HaveCount(1);
+        recorder.DisposedMarkerScopeIds.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task DI_Factory_CompletionAndManualDisposeRace_DisposesScopeOnce()
+    {
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var services = CreateControllablePipelineServices(gate);
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true });
+        var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
+        var recorder = provider.GetRequiredService<TypedDiRecorder>();
+
+        var run = factory.Start();
+
+        // 8 concurrent disposes race the completion path; exactly one must win.
+        var disposeTasks = Enumerable.Range(0, 8).Select(_ => run.DisposeAsync().AsTask()).ToArray();
+        var disposes = Task.WhenAll(disposeTasks);
+        gate.SetResult();
+
+        await disposes.WaitAsync(TimeSpan.FromSeconds(5));
+        await ObserveCompletionAfterManualDisposeAsync(run);
+
+        recorder.DisposedSinkScopeIds.Should().HaveCount(1);
+        recorder.DisposedMarkerScopeIds.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task DI_Factory_StartFailure_DisposesScope()
+    {
+        // Use a source that takes a scoped marker and throws in its constructor;
+        // resolution happens inside the factory's StartAsync, the catch block
+        // must dispose the scope (and the marker within it) before rethrowing.
+        var services = new ServiceCollection();
+        services.AddSingleton<TypedDiRecorder>();
+        services.AddScoped<TypedScopedMarker>();
+        services.AddScoped<ThrowingInitSource>();
+        services.AddScoped<ScopedMarkerStage>();
+        services.AddScoped<ScopedRecordingSink>();
+        services.AddSmartPipe<int, Guid>(
+            "typed-di-start-fail",
+            builder => builder
+                .UseSource<ThrowingInitSource>()
+                .UseStage<ScopedMarkerStage>()
+                .UseSink<ScopedRecordingSink>()
+                .WithRuntimeOptions(new PipelineRuntimeOptions
+                {
+                    OutputPolicy = PipelineOutputPolicy.SuppressSuccessWhenSinkAttached,
+                }));
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true });
+        var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
+        var recorder = provider.GetRequiredService<TypedDiRecorder>();
+
+        var act = async () => await factory.StartAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("init boom");
+
+        // The source takes a scoped marker as a constructor dependency. The
+        // constructor of ThrowingInitSource is invoked during scope resolution,
+        // so the marker has been created; the start-failure catch block must
+        // dispose the scope and therefore the marker.
         recorder.DisposedMarkerScopeIds.Should().HaveCount(1);
     }
 
@@ -202,6 +289,44 @@ public sealed class SmartPipeTypedDiTests
         return services;
     }
 
+    private static ServiceCollection CreateControllablePipelineServices(
+        TaskCompletionSource startGate)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<TypedDiRecorder>();
+        services.AddScoped<TypedScopedMarker>();
+        services.AddScoped(sp => new ControllableSource(startGate));
+        services.AddScoped<ScopedMarkerStage>();
+        services.AddScoped<ScopedRecordingSink>();
+        services.AddSmartPipe<int, Guid>(
+            "typed-di-controllable",
+            builder => builder
+                .UseSource<ControllableSource>()
+                .UseStage<ScopedMarkerStage>()
+                .UseSink<ScopedRecordingSink>()
+                .WithRuntimeOptions(new PipelineRuntimeOptions
+                {
+                    OutputPolicy = PipelineOutputPolicy.SuppressSuccessWhenSinkAttached,
+                }));
+        return services;
+    }
+
+    private static async Task ObserveCompletionAfterManualDisposeAsync(PipelineRun<Guid> run)
+    {
+        try
+        {
+            await run.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        catch (OperationCanceledException)
+        {
+            // Manual dispose cancels the inner run; this test asserts scope disposal idempotency.
+        }
+        catch (TimeoutException)
+        {
+            // Completion may not reach a terminal state after the run is already disposed.
+        }
+    }
+
     private sealed class SingleItemSource : IPipelineSource<int>
     {
         public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
@@ -212,6 +337,64 @@ public sealed class SmartPipeTypedDiTests
             await Task.Yield();
             yield return ProcessingEnvelope<int>.Create(1, "typed-di", "run", 1);
         }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ControllableSource : IPipelineSource<int>
+    {
+        private readonly TaskCompletionSource _startGate;
+
+        public ControllableSource(TaskCompletionSource startGate)
+        {
+            _startGate = startGate;
+        }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            // Wait for the gate OR for cancellation, whichever comes first.
+            // Avoid WaitAsync(ct) because the runtime's CTS is disposed during
+            // run dispose, which would surface as ObjectDisposedException here.
+            var gateTask = _startGate.Task;
+            var cancelTcs = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            CancellationTokenRegistration registration = default;
+            try
+            {
+                registration = ct.Register(static state => ((TaskCompletionSource<bool>)state!).TrySetResult(false), cancelTcs);
+            }
+            catch (ObjectDisposedException)
+            {
+                cancelTcs.TrySetResult(false);
+            }
+            try
+            {
+                var winner = await Task.WhenAny(gateTask, cancelTcs.Task).ConfigureAwait(false);
+                if (winner != gateTask)
+                    yield break;
+            }
+            finally
+            {
+                registration.Dispose();
+            }
+            yield return ProcessingEnvelope<int>.Create(1, "typed-di", "run", 1);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ThrowingInitSource : IPipelineSource<int>
+    {
+        public ThrowingInitSource(TypedScopedMarker marker) =>
+            throw new InvalidOperationException("init boom");
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
+            CancellationToken ct = default) => throw new NotSupportedException();
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

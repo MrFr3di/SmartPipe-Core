@@ -12,6 +12,8 @@ SmartPipe.Extensions.SmartPipeHostedServiceOptions.FailureBehavior.get -> SmartP
 SmartPipe.Extensions.SmartPipeHostedServiceOptions.FailureBehavior.init -> void
 SmartPipe.Extensions.SmartPipeHostedServiceOptions.SmartPipeHostedServiceOptions() -> void
 SmartPipe.Extensions.SmartPipeHostedServiceOptions.Validate() -> void
+SmartPipe.Extensions.ISmartPipeFactory<TInput, TOutput>.StartAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SmartPipe.Core.PipelineRun<TOutput>!>!
+SmartPipe.Extensions.SmartPipeFactory<TInput, TOutput>.StartAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SmartPipe.Core.PipelineRun<TOutput>!>!
 SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>
 SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
 SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.HttpClientFactorySelector(System.Net.Http.IHttpClientFactory! httpClientFactory, string! requestUri) -> void

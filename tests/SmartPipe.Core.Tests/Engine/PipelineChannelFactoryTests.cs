@@ -35,19 +35,20 @@ public sealed class PipelineChannelFactoryTests
     }
 
     [Fact]
-    public async Task PipelineChannelFactory_Output_AllowsMultipleWritersAndReaders()
+    public async Task PipelineChannelFactory_Output_AllowsMultipleWritersForSingleConsumer()
     {
         var channel = PipelineChannelFactory.CreateOutput<int>(
             capacity: 8,
             fullMode: BoundedChannelFullMode.Wait);
         var outputs = new ConcurrentDictionary<int, byte>();
-        var readers = Enumerable.Range(0, 2)
-            .Select(_ => Task.Run(async () =>
+
+        var reader = Task.Run(async () =>
+        {
+            await foreach (var output in channel.Reader.ReadAllAsync())
             {
-                await foreach (var output in channel.Reader.ReadAllAsync())
-                    outputs.TryAdd(output.Result.Value, 0);
-            }))
-            .ToArray();
+                outputs.TryAdd(output.Result.Value, 0);
+            }
+        });
 
         var writers = Enumerable.Range(0, 100)
             .Select(i => Task.Run(async () =>
@@ -62,41 +63,23 @@ public sealed class PipelineChannelFactoryTests
 
         await Task.WhenAll(writers).WaitAsync(TimeSpan.FromSeconds(5));
         channel.Writer.Complete();
-        await Task.WhenAll(readers).WaitAsync(TimeSpan.FromSeconds(5));
+        await reader.WaitAsync(TimeSpan.FromSeconds(5));
 
         outputs.Keys.Should().BeEquivalentTo(Enumerable.Range(0, 100));
     }
 
     [Fact]
-    public async Task PipelineChannelFactory_Output_MultipleReadersDistributeNotBroadcast()
+    public void OutputChannel_IsSingleReaderByContract()
     {
-        var channel = PipelineChannelFactory.CreateOutput<int>(
+        var options = PipelineChannelFactory.CreateOutputOptions(
             capacity: 8,
             fullMode: BoundedChannelFullMode.Wait);
-        var delivered = new ConcurrentDictionary<int, int>();
 
-        var readers = Enumerable.Range(0, 3)
-            .Select(_ => Task.Run(async () =>
-            {
-                await foreach (var output in channel.Reader.ReadAllAsync())
-                    delivered.AddOrUpdate(output.Result.Value, 1, static (_, count) => count + 1);
-            }))
-            .ToArray();
-
-        for (var i = 0; i < 50; i++)
-        {
-            var envelope = ProcessingEnvelope<int>.Create(i);
-            await channel.Writer.WriteAsync(new PipelineOutput<int>(
-                envelope,
-                PipelineResult<int>.Success(i, envelope.TraceId)));
-        }
-
-        channel.Writer.Complete();
-        await Task.WhenAll(readers).WaitAsync(TimeSpan.FromSeconds(5));
-
-        delivered.Keys.Should().BeEquivalentTo(Enumerable.Range(0, 50));
-        delivered.Values.Should().OnlyContain(count => count == 1,
-            "multiple output readers split work; they do not each receive every output");
+        options.Capacity.Should().Be(8);
+        options.FullMode.Should().Be(BoundedChannelFullMode.Wait);
+        options.SingleReader.Should().BeTrue();
+        options.SingleWriter.Should().BeFalse();
+        options.AllowSynchronousContinuations.Should().BeFalse();
     }
 
     [Fact]

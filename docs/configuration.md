@@ -2,6 +2,8 @@
 
 This document lists the typed runtime configuration surface.
 
+Default `OutputPolicy` is `SuppressSuccessWhenSinkAttached`.
+
 ## Runtime Options
 
 `PipelineRuntimeOptions` controls runtime behavior:
@@ -15,7 +17,7 @@ This document lists the typed runtime configuration surface.
 | `OutputCapacity` | `null` | Automatic bounded default when null. |
 | `OutputFullMode` | `Wait` | Output queue full-mode behavior. |
 | `OutputPolicy` | `SuppressSuccessWhenSinkAttached` | Preferred typed output policy. |
-| `OutputMode` | `EmitAll` | Obsolete compatibility output filter; use `OutputPolicy`. |
+| `OutputMode` | `EmitAll` | Obsolete compatibility output filter used only when explicitly set without `OutputPolicy`; use `OutputPolicy`. |
 | `OrderingMode` | `Unordered` | `PreserveInputOrder` with parallelism is rejected. |
 | `ObserverDispatch` | `Inline` | Inline or bounded buffered observer dispatch. |
 | `Clock` | `SystemPipelineClock.Instance` | Timestamps and timeout budgets. |
@@ -43,6 +45,11 @@ retry, circuit breaker, and dead-letter behavior are independent.
 
 For sink-backed pipelines, success output is emitted only after the sink write
 succeeds. If the sink throws, no success output is published for that item.
+
+`OutputMode` is retained only as a compatibility alias. If `OutputMode` is
+explicitly set and `OutputPolicy` is not, the runtime applies the legacy
+`OutputMode` behavior. If both are explicitly set to incompatible behaviors,
+validation fails.
 
 ## Stage Failure Options
 

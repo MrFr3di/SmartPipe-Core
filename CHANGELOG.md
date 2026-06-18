@@ -9,6 +9,27 @@
 - Removed legacy public runtime concepts are documented in
   `docs/migration/legacy-to-typed.md`.
 
+### Changed
+
+- Default `OutputPolicy` is now `SuppressSuccessWhenSinkAttached` for sink-backed pipelines.
+- `PipelineRun<T>.Outputs` output channel is now single-reader by contract.
+
+### Deprecated
+
+- Marked `PipelineOrderingMode.PreserveInputOrder` as obsolete; parallel order preservation is not supported.
+
+### Added
+
+- `ISmartPipeFactory<TInput,TOutput>.StartAsync` as a default interface method for async DI factory startup.
+- NuGet audit properties (`NuGetAudit`, `NuGetAuditMode`, `NuGetAuditLevel`) to `Directory.Build.props`.
+- Regression tests for DI scoped run disposal idempotency and factory/instance pipeline separation.
+
+### Fixed
+
+- `PipelineBuilder.ToFactory` now throws a clear error when used on instance pipelines.
+- Race condition in `TypedPipelineRuntime.DisposeAsync` when disposing cancellation token sources.
+- Explicit compatibility `OutputMode` settings are honored when `OutputPolicy` is not set; incompatible explicit settings now fail validation.
+
 ### Typed-Only Runtime
 
 - SmartPipe.Core now uses the typed envelope runtime as the only runtime model.

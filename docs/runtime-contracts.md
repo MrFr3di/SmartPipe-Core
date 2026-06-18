@@ -28,9 +28,8 @@ is not guaranteed.
 Runtime input, output, and buffered observer channels are bounded and created by
 typed runtime factories with `AllowSynchronousContinuations = false`.
 
-`PipelineRun<T>.Outputs` supports multiple readers as work distribution, not
-broadcast. Each output is consumed by one reader. If every consumer needs every
-output, fan out explicitly in user code.
+`PipelineRun<T>.Outputs` is intended for one consumer. It is configured as a
+single-reader channel. Users who need fan-out must do it explicitly.
 
 `InputFullMode = Wait` and `OutputFullMode = Wait` apply backpressure. Lossy
 bounded modes may drop work and should be used only when that is acceptable to
@@ -51,20 +50,21 @@ Running -> Faulted
 Completed/Cancelled/Aborted/Faulted -> Disposed
 ```
 
-`DrainAsync` stops accepting new source items at source boundaries and completes
-already accepted work. It cancels the source-read token so a cooperative source
-blocked inside `MoveNextAsync` can stop promptly, but it does not cancel the
-processing token for work that was already accepted. A drain timeout throws
+`DrainAsync` stops source reading and waits for already accepted work to
+complete. It cancels the source-read token so a cooperative source blocked
+inside `MoveNextAsync` can stop promptly, but it does not cancel the processing
+token for work that was already accepted. A drain timeout throws
 `TimeoutException` and does not mark the run as cancelled.
 
 `TryDrainAsync` is the structured non-throwing drain API. It returns
 `PipelineDrainResult` with `Completed`, `TimedOutStillRunning`,
 `CancelledByCaller`, `Faulted`, or `AlreadyCompleted`.
 
-`CancelAsync` requests cooperative cancellation and completes outputs as
-cancelled.
+`CancelAsync` cancels source and in-flight processing. It requests cooperative
+cancellation and completes outputs as cancelled.
 
-`AbortAsync` is the immediate stop path. It is distinct from graceful drain.
+`AbortAsync` performs immediate cancellation and marks the run aborted. It is
+the immediate stop path, distinct from graceful drain.
 
 `DisposeAsync` is idempotent and disposes runtime-owned components once.
 

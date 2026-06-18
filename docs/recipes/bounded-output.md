@@ -6,6 +6,10 @@ capacity when `OutputCapacity = null`: the nullable public option is preserved
 for compatibility, and the runtime uses the bounded default capacity for typed
 runs with or without a sink.
 
+The output channel is single-reader by contract. Callers that need fan-out
+must implement it explicitly (for example by reading outputs and re-publishing
+through their own dispatcher).
+
 ## Consume Outputs While The Run Is Active
 
 When output emission is active and `OutputFullMode` is `Wait`, the runtime

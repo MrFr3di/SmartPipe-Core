@@ -13,6 +13,58 @@ or exactly-once delivery system.
 [![NuGet Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.svg)](https://www.nuget.org/packages/SmartPipe.Extensions)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
+## Contract
+
+### Guarantees
+
+| Guarantee | Notes |
+|---|---|
+| In-process processing only | Pipelines run inside the caller's process. No cross-process hops. |
+| Bounded channels | Input, output, and buffered observer channels are bounded. |
+| Envelope metadata | `ProcessingEnvelope<T>` carries `PipelineId`, `RunId`, `TraceId`, `Metadata`, `Lineage`, `Attempt`, `CreatedAtUtc`. |
+| Typed source/transform/sink | `IPipelineSource<T>`, `IPipelineTransformer<TInput,TOutput>`, `IPipelineSink<T>`. |
+| Configured retry/timeout/circuit breaker | Per-stage `StageFailureOptions`; circuit breaker uses half-open probe leases. |
+| Observer events | Lifecycle, stage, sink, retry, dead-letter, drop, and circuit-breaker transitions. |
+| Metrics snapshots | `SmartPipeMetricsRecorder` and immutable `SmartPipeMetricsSnapshot`. |
+
+### Non-Goals
+
+| Non-goal | Notes |
+|---|---|
+| Distributed coordination | No cluster or leader election. |
+| Durable queue | Work is in memory; crash recovery is the user's source/sink responsibility. |
+| Exactly-once guarantee | At-least-once and at-most-once only. |
+| Replay after process crash | Provided only if the user source/sink implements it. |
+| Broker semantics | Not a message broker or workflow engine. |
+
+### Output Semantics
+
+| Situation | Behavior |
+|---|---|
+| No sink attached | Success output is emitted after transform success. |
+| Sink attached | Success output is emitted only after sink write succeeds. |
+| Default `OutputPolicy` | `SuppressSuccessWhenSinkAttached` — safe default for sink-backed runs. |
+| `PipelineOutputPolicy.EmitAll` | Requires an active consumer of `PipelineRun<T>.Outputs`; otherwise the run can backpressure. |
+
+### Failure Semantics
+
+| Event | Behavior |
+|---|---|
+| Transformer exception | Routed through the stage's `FailureAction` policy. |
+| `StageResult.Filtered()` | Non-failure terminal state. No sink call, no dead-letter, no failed-metric increment. |
+| Stage timeout | Treated as transient failure; subject to retry policy. |
+| Circuit breaker rejection | Terminal for the current item; not retried into the open breaker. |
+| Dead-letter action | Requires `StageDeadLetterOptions<T>`; the action fails the run if misconfigured. |
+
+### Lifecycle Semantics
+
+| Operation | Semantics |
+|---|---|
+| `DrainAsync` / `TryDrainAsync` | Stops source reading and waits for already accepted work to complete. |
+| `CancelAsync` | Cancels source reading and in-flight processing. |
+| `AbortAsync` | Immediate cancellation of source and processing. |
+| `DisposeAsync` | Idempotent; disposes runtime-owned components once. |
+
 ## Install
 
 ```bash
@@ -57,8 +109,9 @@ await run.Completion;
 
 `PipelineRun<T>.Outputs` exposes `PipelineOutput<T>` records with the final
 `ProcessingEnvelope<T>` when available and a classified `PipelineResult<T>`.
-Multiple output readers distribute records; they do not each receive a
-broadcast copy.
+The output channel is single-reader by contract. Callers that need fan-out
+must do it explicitly in user code (for example by reading outputs and
+re-publishing through their own dispatcher).
 For sink-backed pipelines, success output means transform processing and sink
 write both completed successfully. `StageResult.Filtered()` is non-failure
 terminal control flow: it does not call the sink, does not dead-letter, and does

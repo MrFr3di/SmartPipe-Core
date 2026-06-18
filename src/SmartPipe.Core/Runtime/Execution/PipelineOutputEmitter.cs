@@ -31,10 +31,11 @@ internal sealed class PipelineOutputEmitter<TOutput>
 
     public bool ShouldEmit(PipelineResult<TOutput> result)
     {
-        if (_options.OutputPolicy != PipelineOutputPolicy.EmitAll)
+        if (!_options.UseCompatibilityOutputMode)
         {
             return _options.OutputPolicy switch
             {
+                PipelineOutputPolicy.EmitAll => true,
                 PipelineOutputPolicy.EmitFailuresOnly => result.IsFailure,
                 PipelineOutputPolicy.SuppressSuccessWhenSinkAttached => !_hasSink || !result.IsSuccess,
                 PipelineOutputPolicy.SuppressAllWhenSinkAttached => !_hasSink,

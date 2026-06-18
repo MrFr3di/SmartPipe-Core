@@ -189,12 +189,17 @@ public enum PipelineOrderingMode
     Unordered = 0,
 
     /// <summary>Preserve input order. Parallel preserving is not implemented yet.</summary>
+    [Obsolete("Not supported. Use sequential processing.")]
     PreserveInputOrder = 1,
 }
 
 /// <summary>Options for the envelope-aware pipeline runtime.</summary>
 public sealed class PipelineRuntimeOptions
 {
+    private PipelineOutputMode _outputMode = PipelineOutputMode.EmitAll;
+    private PipelineOutputPolicy _outputPolicy =
+        PipelineOutputPolicy.SuppressSuccessWhenSinkAttached;
+
     /// <summary>Gets the maximum number of typed envelopes processed concurrently.</summary>
     public int MaxConcurrency { get; init; } = 1;
 
@@ -212,7 +217,15 @@ public sealed class PipelineRuntimeOptions
 
     /// <summary>Gets the compatibility output filtering mode. Prefer <see cref="OutputPolicy"/>.</summary>
     [Obsolete("Use OutputPolicy. OutputMode is a compatibility alias and will be removed in a future major version.")]
-    public PipelineOutputMode OutputMode { get; init; } = PipelineOutputMode.EmitAll;
+    public PipelineOutputMode OutputMode
+    {
+        get => _outputMode;
+        init
+        {
+            _outputMode = value;
+            IsOutputModeConfigured = true;
+        }
+    }
 
     /// <summary>Gets the maximum number of typed envelopes processed concurrently.</summary>
     /// <remarks>
@@ -223,8 +236,15 @@ public sealed class PipelineRuntimeOptions
     public int MaxDegreeOfParallelism { get; init; } = 1;
 
     /// <summary>Gets the typed output filtering policy.</summary>
-    public PipelineOutputPolicy OutputPolicy { get; init; } =
-        PipelineOutputPolicy.SuppressSuccessWhenSinkAttached;
+    public PipelineOutputPolicy OutputPolicy
+    {
+        get => _outputPolicy;
+        init
+        {
+            _outputPolicy = value;
+            IsOutputPolicyConfigured = true;
+        }
+    }
 
     /// <summary>Gets the typed output ordering mode.</summary>
     public PipelineOrderingMode OrderingMode { get; init; } = PipelineOrderingMode.Unordered;
@@ -234,6 +254,13 @@ public sealed class PipelineRuntimeOptions
 
     /// <summary>Gets the runtime clock. The system clock is the default.</summary>
     public IPipelineClock Clock { get; init; } = SystemPipelineClock.Instance;
+
+    internal bool IsOutputModeConfigured { get; private init; }
+
+    internal bool IsOutputPolicyConfigured { get; private init; }
+
+    internal bool UseCompatibilityOutputMode =>
+        IsOutputModeConfigured && !IsOutputPolicyConfigured;
 
     internal int EffectiveMaxConcurrency =>
         MaxConcurrency != 1 ? MaxConcurrency : MaxDegreeOfParallelism;
@@ -274,6 +301,14 @@ public sealed class PipelineRuntimeOptions
         if (!Enum.IsDefined(OutputPolicy))
             throw new ArgumentOutOfRangeException(nameof(OutputPolicy), OutputPolicy, "Output policy is invalid.");
 
+        if (IsOutputModeConfigured
+            && IsOutputPolicyConfigured
+            && !AreEquivalent(OutputMode, OutputPolicy))
+        {
+            throw new InvalidOperationException(
+                "OutputMode and OutputPolicy cannot specify different output behavior.");
+        }
+
         if (!Enum.IsDefined(OrderingMode))
             throw new ArgumentOutOfRangeException(nameof(OrderingMode), OrderingMode, "Ordering mode is invalid.");
 
@@ -285,4 +320,7 @@ public sealed class PipelineRuntimeOptions
         ObserverDispatch.Validate();
         ArgumentNullException.ThrowIfNull(Clock);
     }
+
+    private static bool AreEquivalent(PipelineOutputMode mode, PipelineOutputPolicy policy) =>
+        mode == PipelineOutputMode.EmitAll && policy == PipelineOutputPolicy.EmitAll;
 }

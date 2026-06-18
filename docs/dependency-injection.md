@@ -17,9 +17,10 @@ The registration adds:
 - stateless `ISmartPipeFactory<TInput,TOutput>`;
 - source, stage, and sink component registrations chosen by the application.
 
-`ISmartPipeFactory<TInput,TOutput>.Start()` creates a fresh service scope and a
-fresh runtime. Scoped dependencies are resolved inside that run scope and are
-disposed with it.
+`ISmartPipeFactory<TInput,TOutput>.Start()` creates one DI scope per run. The
+scope owns scoped source/stage/sink services. The returned run and the
+completion path share one idempotent disposal path. Scoped dependencies are
+resolved inside that run scope and are disposed with it.
 
 Use `ValidateScopes = true` in tests and hosted applications to catch accidental
 root-scope captures.

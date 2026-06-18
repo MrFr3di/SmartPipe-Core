@@ -41,17 +41,30 @@ internal static class PipelineChannelFactory
         if (!Enum.IsDefined(fullMode))
             throw new ArgumentOutOfRangeException(nameof(fullMode), fullMode, "Output full mode is invalid.");
 
-        var options = new BoundedChannelOptions(capacity)
-        {
-            FullMode = fullMode,
-            SingleWriter = false,
-            SingleReader = false,
-            AllowSynchronousContinuations = false,
-        };
+        var options = CreateOutputOptions(capacity, fullMode);
 
         return itemDropped is null
             ? Channel.CreateBounded<PipelineOutput<T>>(options)
             : Channel.CreateBounded(options, itemDropped);
+    }
+
+    internal static BoundedChannelOptions CreateOutputOptions(
+        int capacity,
+        BoundedChannelFullMode fullMode)
+    {
+        if (capacity <= 0)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Output capacity must be greater than zero.");
+
+        if (!Enum.IsDefined(fullMode))
+            throw new ArgumentOutOfRangeException(nameof(fullMode), fullMode, "Output full mode is invalid.");
+
+        return new BoundedChannelOptions(capacity)
+        {
+            FullMode = fullMode,
+            SingleWriter = false,
+            SingleReader = true,
+            AllowSynchronousContinuations = false,
+        };
     }
 
     public static Channel<PipelineEvent> CreateObserverBuffer(

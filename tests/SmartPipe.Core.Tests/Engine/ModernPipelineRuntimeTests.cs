@@ -384,6 +384,20 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
+    public void FromInstance_ToFactory_ThrowsClearError()
+    {
+        // Build a single-use instance pipeline (uses .From(source), not .FromFactory).
+        var builder = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString(CultureInfo.InvariantCulture)));
+
+        var act = () => builder.ToFactory(_ => new EnvelopeCollectingSink<string>());
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("ToFactory requires a reusable pipeline created with PipelineBuilder.FromFactory. Use .To(sink) for instance pipelines.");
+    }
+
+    [Fact]
     public async Task PipelineBuilder_ModernApi_ShouldEmitLifecycleEventsToObservers()
     {
         var observer = new RecordingObserver();

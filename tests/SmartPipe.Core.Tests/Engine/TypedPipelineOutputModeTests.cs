@@ -570,6 +570,28 @@ public sealed class TypedPipelineOutputModeTests
     }
 
     [Fact]
+    public async Task OutputModeEmitAll_WithSink_ShouldEmitSuccessWhenPolicyIsNotSet()
+    {
+        var sink = new EnvelopeCollectingSink<string>();
+        var source = new EnvelopeSource<int>(1, 2);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString()))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputMode = PipelineOutputMode.EmitAll,
+            })
+            .To(sink);
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Select(output => output.Result.Value).Should().Equal("1", "2");
+        sink.Payloads.Should().Equal("1", "2");
+    }
+
+    [Fact]
     public async Task FailuresOnlyWhenSinkAttached_WithSink_ShouldEmitOnlyFailures()
     {
         var sink = new EnvelopeCollectingSink<string>();
@@ -628,6 +650,26 @@ public sealed class TypedPipelineOutputModeTests
     }
 
     [Fact]
+    public async Task OutputModeSuppressAll_WithoutSink_ShouldSuppressSuccessWhenPolicyIsNotSet()
+    {
+        var source = new EnvelopeSource<int>(1, 2);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new EnvelopeTransformer<int, string>(x => x.ToString()))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputMode = PipelineOutputMode.SuppressAll,
+            })
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Should().BeEmpty();
+    }
+
+    [Fact]
     public void UndefinedOutputMode_ShouldBeRejectedByValidation()
     {
         var options = new PipelineRuntimeOptions
@@ -641,6 +683,21 @@ public sealed class TypedPipelineOutputModeTests
 
         act.Should().Throw<ArgumentOutOfRangeException>()
             .Which.ParamName.Should().Be("OutputMode");
+    }
+
+    [Fact]
+    public void OutputModeAndOutputPolicyConflict_ShouldBeRejectedByValidation()
+    {
+        var options = new PipelineRuntimeOptions
+        {
+            OutputMode = PipelineOutputMode.SuppressAll,
+            OutputPolicy = PipelineOutputPolicy.EmitAll,
+        };
+
+        var act = () => options.Validate();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*OutputMode*OutputPolicy*");
     }
 
     private static async Task<List<PipelineOutput<T>>> ReadOutputsAsync<T>(

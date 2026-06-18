@@ -828,6 +828,23 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _cts.Cancel();
         _sourceCts.Cancel();
         _processingCts.Cancel();
+
+        // Wait for the in-flight run task to drain before disposing the linked
+        // CTSs, otherwise RunAsync may observe ObjectDisposedException when
+        // it next accesses a CTS token after a dispose-triggered resumption.
+        var runTask = _runTask;
+        if (runTask is not null)
+        {
+            try
+            {
+                await runTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                // RunAsync faults are observed via the pipeline run's Completion task.
+            }
+        }
+
         await DisposeComponentsAsync(CancellationToken.None).ConfigureAwait(false);
         await _observerDispatcher.DisposeAsync().ConfigureAwait(false);
         _sourceCts.Dispose();

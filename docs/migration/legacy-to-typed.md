@@ -25,7 +25,9 @@ types, channel pool types, and legacy pipeline cancellation helpers.
 
 The compatibility names `MaxDegreeOfParallelism` and `OutputMode` remain as
 typed runtime aliases for 2.0 consumers. Prefer `MaxConcurrency` and
-`OutputPolicy` in new code.
+`OutputPolicy` in new code. `OutputMode` is honored only when explicitly set
+without `OutputPolicy`; incompatible explicit `OutputMode`/`OutputPolicy`
+combinations fail validation.
 
 ## Simple Delegate Pipelines
 

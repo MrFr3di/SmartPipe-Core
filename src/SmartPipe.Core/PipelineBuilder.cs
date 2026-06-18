@@ -329,6 +329,7 @@ public class PipelineBuilder<TInput, TOutput>
     /// <param name="ct">Cancellation token linked to the run.</param>
     /// <returns>A single-use pipeline run handle.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="sinkFactory"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when called on a non-factory pipeline.</exception>
     public PipelineRun<TOutput> ToFactory(
         Func<IServiceProvider?, IPipelineSink<TOutput>> sinkFactory,
         CancellationToken ct = default
@@ -338,6 +339,11 @@ public class PipelineBuilder<TInput, TOutput>
         if (_typedSpec is null && _typedSpecFactory is null)
             throw new InvalidOperationException(
                 "Envelope-aware sink factories require an envelope-aware typed pipeline."
+            );
+
+        if (_typedSpecFactory is null)
+            throw new InvalidOperationException(
+                "ToFactory requires a reusable pipeline created with PipelineBuilder.FromFactory. Use .To(sink) for instance pipelines."
             );
 
         var sink =

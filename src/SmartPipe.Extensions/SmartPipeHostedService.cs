@@ -64,7 +64,7 @@ public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
 
         try
         {
-            _typedRun = _typedFactory.Start(ct);
+            _typedRun = await _typedFactory.StartAsync(ct).ConfigureAwait(false);
             await _typedRun.Completion.ConfigureAwait(false);
             _logger.LogInformation("Typed SmartPipe pipeline completed normally");
         }
