@@ -110,8 +110,14 @@ public class CircuitBreaker
     }
 
     /// <summary>Checks if a request is allowed through the circuit.</summary>
-    /// <returns>True if request is allowed; false if circuit is open.</returns>
-    /// <remarks>Transitions to HalfOpen after break duration expires.</remarks>
+    /// <returns>True if request is allowed; false if circuit is open or isolated.</returns>
+    /// <remarks>
+    /// This is a compatibility/simple gate. Closed breakers allow requests.
+    /// Open breakers deny requests until the break duration expires, then transition to
+    /// half-open and allow up to the configured total half-open request count.
+    /// It does not return a lease and does not release half-open slots after completion.
+    /// Runtime half-open execution uses <see cref="TryAcquireHalfOpenProbe(out CircuitBreakerProbe)" />.
+    /// </remarks>
     public bool AllowRequest()
     {
         CleanupWindow();
@@ -144,7 +150,15 @@ public class CircuitBreaker
 
     /// <summary>Attempts to acquire a half-open probe slot.</summary>
     /// <param name="probe">Lease that releases the half-open probe slot on disposal.</param>
-    /// <returns>True when a request may proceed through the half-open breaker.</returns>
+    /// <returns>
+    /// True when the open breaker has reached its break duration and a probe slot was
+    /// acquired, or when the breaker is already half-open and a slot is available.
+    /// False for closed, isolated, still-open, or saturated half-open breakers.
+    /// </returns>
+    /// <remarks>
+    /// This is the authoritative half-open probe API for runtime execution.
+    /// Dispose the returned probe when the attempted operation completes.
+    /// </remarks>
     public bool TryAcquireHalfOpenProbe(out CircuitBreakerProbe probe)
     {
         CleanupWindow();

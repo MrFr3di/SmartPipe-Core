@@ -35,10 +35,10 @@ jobs:
       run: dotnet build SmartPipe.Core.slnx --no-restore -c Release -warnaserror
     
     - name: Core tests with coverage
-      run: dotnet test tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build --verbosity normal -c Release --collect:"XPlat Code Coverage"
+      run: dotnet run --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml
 
     - name: Extensions tests
-      run: dotnet test tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build --verbosity normal -c Release
+      run: dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build --verbosity normal -c Release
 
     - name: Test and benchmark warning gate
       run: |

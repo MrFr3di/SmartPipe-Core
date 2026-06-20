@@ -130,7 +130,7 @@ public sealed class StageExecutorTests
     }
 
     [Fact]
-    public async Task CircuitBreaker_HalfOpenToClosed_EmitsClosedEvent()
+    public async Task CircuitBreakerClosed_EmitsClosedEvent()
     {
         var observer = new RecordingPipelineObserver();
         var clock = new AdvancingPipelineClock(
@@ -165,7 +165,7 @@ public sealed class StageExecutorTests
     }
 
     [Fact]
-    public async Task StageExecutor_CircuitBreaker_RejectionIsNotRetriedForever()
+    public async Task CircuitBreakerRejected_NotRetriedIntoOpenBreaker()
     {
         var transformer = new AlwaysFailingTransformer<int>(ErrorType.Transient);
         var observer = new RecordingPipelineObserver();

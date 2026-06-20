@@ -58,14 +58,14 @@ jobs:
 
       - name: Test Core
         run: |
-          dotnet test tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj \
+          dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj \
             --configuration Release \
             --no-build \
             --verbosity normal
 
       - name: Test Extensions
         run: |
-          dotnet test tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj \
+          dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj \
             --configuration Release \
             --no-build \
             --verbosity normal
@@ -106,4 +106,3 @@ jobs:
             --api-key "$NUGET_API_KEY" \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
-            

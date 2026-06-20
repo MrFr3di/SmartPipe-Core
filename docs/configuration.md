@@ -15,14 +15,12 @@ Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
 | Option | Default | Notes |
 |---|---|---|
 | `MaxConcurrency` | `1` | Preferred typed-only concurrency setting. |
-| `MaxDegreeOfParallelism` | `1` | Obsolete compatibility alias; use `MaxConcurrency`. Conflicting non-default values are rejected. |
 | `InputCapacity` | `1024` | Bounded input queue capacity. |
 | `InputFullMode` | `Wait` | Input queue full-mode behavior. |
 | `OutputCapacity` | `null` | Automatic bounded default when null. |
 | `OutputFullMode` | `Wait` | Output queue full-mode behavior. |
-| `OutputPolicy` | `SuppressSuccessWhenSinkAttached` | Preferred typed output policy. |
-| `OutputMode` | `EmitAll` | Obsolete compatibility output filter used only when explicitly set without `OutputPolicy`; use `OutputPolicy`. |
-| `OrderingMode` | `Unordered` | `PreserveInputOrder` with parallelism is rejected. |
+| `OutputPolicy` | `SuppressSuccessWhenSinkAttached` | Typed output policy. |
+| `OrderingMode` | `Unordered` | Cross-item output ordering is not guaranteed. |
 | `ObserverDispatch` | `Inline` | Inline or bounded buffered observer dispatch. |
 | `Clock` | `SystemPipelineClock.Instance` | Timestamps and timeout budgets. |
 
@@ -49,11 +47,6 @@ retry, circuit breaker, and dead-letter behavior are independent.
 
 For sink-backed pipelines, success output is emitted only after the sink write
 succeeds. If the sink throws, no success output is published for that item.
-
-`OutputMode` is retained only as a compatibility alias. If `OutputMode` is
-explicitly set and `OutputPolicy` is not, the runtime applies the legacy
-`OutputMode` behavior. If both are explicitly set to incompatible behaviors,
-validation fails.
 
 ## Stage Failure Options
 

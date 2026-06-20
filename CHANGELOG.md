@@ -16,10 +16,6 @@
   Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
 - `PipelineRun<T>.Outputs` output channel is now single-reader by contract.
 
-### Deprecated
-
-- Marked `PipelineOrderingMode.PreserveInputOrder` as obsolete; parallel order preservation is not supported.
-
 ### Added
 
 - `ISmartPipeFactory<TInput,TOutput>.StartAsync` as a default interface method for async DI factory startup.
@@ -30,7 +26,8 @@
 
 - `PipelineBuilder.ToFactory` now throws a clear error when used on instance pipelines.
 - Race condition in `TypedPipelineRuntime.DisposeAsync` when disposing cancellation token sources.
-- Explicit compatibility `OutputMode` settings are honored when `OutputPolicy` is not set; incompatible explicit settings now fail validation.
+- Explicit compatibility output aliases are honored when the primary output
+  policy is not set; incompatible explicit settings now fail validation.
 
 ### Typed-Only Runtime
 

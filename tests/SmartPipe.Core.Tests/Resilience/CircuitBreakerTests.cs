@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using FluentAssertions;
 using SmartPipe.Core;
-using Xunit.Abstractions;
 
 namespace SmartPipe.Core.Tests.Resilience;
 
@@ -100,7 +99,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
-    public void HalfOpen_ShouldLimitRequests()
+    public void CircuitBreaker_PublicAllowRequest_DocumentedBehavior()
     {
         var cb = new CircuitBreaker(failureRatio: 0.5, minimumThroughput: 5, breakDuration: TimeSpan.FromMilliseconds(10), maxHalfOpenRequests: 2);
         for (int i = 0; i < 5; i++) cb.RecordFailure();
@@ -168,14 +167,20 @@ public class CircuitBreakerTests
     }
 
     [Fact]
-    public void HalfOpen_WithSuccesses_ShouldClose()
+    public void CircuitBreaker_HalfOpen_SuccessThresholdClosesBreaker()
     {
         var cb = new CircuitBreaker(failureRatio: 0.5, minimumThroughput: 5, breakDuration: TimeSpan.FromMilliseconds(10), maxHalfOpenRequests: 3);
         for (int i = 0; i < 5; i++) cb.RecordFailure();
         Thread.Sleep(15);
-        cb.AllowRequest();
+
+        cb.TryAcquireHalfOpenProbe(out var firstProbe).Should().BeTrue();
         cb.RecordSuccess();
+        firstProbe.Dispose();
+
+        cb.TryAcquireHalfOpenProbe(out var secondProbe).Should().BeTrue();
         cb.RecordSuccess();
+        secondProbe.Dispose();
+
         cb.State.Should().Be(CircuitState.Closed);
     }
 

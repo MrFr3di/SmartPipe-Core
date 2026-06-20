@@ -1710,7 +1710,7 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
-    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldRejectWithoutCallingTransformer_WhenOpen()
+    public async Task CircuitBreaker_OpenRejectsWithoutExecutingStage()
     {
         var observer = new RecordingObserver();
         var failingTransformer = new FlakyStageTransformer<int, string>(
@@ -1778,7 +1778,7 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
-    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldEmitRejectedEvent_WhenOpen()
+    public async Task CircuitBreakerRejected_EmitsRejectedEvent()
     {
         var observer = new RecordingObserver();
         var failingTransformer = new FlakyStageTransformer<int, string>(
@@ -2052,7 +2052,7 @@ public class ModernPipelineRuntimeTests
     }
 
     [Fact]
-    public async Task PipelineBuilder_ModernApi_CircuitBreaker_ShouldOpenAfterConfiguredFailedAttempts()
+    public async Task CircuitBreakerOpened_EmitsOpenedEvent()
     {
         var observer = new RecordingObserver();
         var failingTransformer = new FlakyStageTransformer<int, string>(

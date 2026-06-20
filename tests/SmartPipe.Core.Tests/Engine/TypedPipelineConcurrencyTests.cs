@@ -27,7 +27,35 @@ public class TypedPipelineConcurrencyTests
     }
 
     [Fact]
-    public async Task TypedPipeline_MaxConcurrency4_ProcessesAllItemsExactlyOnce()
+    public async Task MaxConcurrency_ControlsWorkerCount()
+    {
+        var source = new TestEnvelopeSource<int>(Enumerable.Range(1, 12));
+        var transformer = new BlockingTrackingTransformer<int>(expectedConcurrentCalls: 3);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(transformer)
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxConcurrency = 3,
+                InputCapacity = 3,
+            })
+            .Run();
+
+        await transformer.ExpectedConcurrentCallsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        transformer.MaxObservedConcurrency.Should().Be(3);
+
+        transformer.Release();
+        var outputs = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        outputs.Select(x => x.Result.Value).Should().BeEquivalentTo(Enumerable.Range(1, 12));
+        transformer.ProcessedCounts.Should().HaveCount(12);
+        transformer.ProcessedCounts.Values.Should().OnlyContain(x => x == 1);
+    }
+
+    [Fact]
+    public async Task MaxConcurrency4_ProcessesConcurrently()
     {
         var source = new TestEnvelopeSource<int>(Enumerable.Range(1, 40));
         var transformer = new BlockingTrackingTransformer<int>(expectedConcurrentCalls: 4);

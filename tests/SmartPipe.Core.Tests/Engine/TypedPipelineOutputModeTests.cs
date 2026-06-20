@@ -147,7 +147,7 @@ public sealed class TypedPipelineOutputModeTests
     }
 
     [Fact]
-    public async Task TypedPipeline_OutputPolicySuppressSuccessWhenSinkAttached_DoesNotBlockSink()
+    public async Task OutputEmitter_UsesOutputPolicy()
     {
         var sink = new EnvelopeCollectingSink<string>();
         var source = new EnvelopeSource<int>(1, 2, 3, 4);
@@ -679,7 +679,7 @@ public sealed class TypedPipelineOutputModeTests
     }
 
     [Fact]
-    public async Task FailuresOnlyWhenSinkAttached_WithSink_ShouldEmitOnlyFailures()
+    public async Task OutputModeAlias_MapsToOutputPolicy()
     {
         var sink = new EnvelopeCollectingSink<string>();
         var source = new EnvelopeSource<int>(1, 2, 3);
@@ -773,7 +773,7 @@ public sealed class TypedPipelineOutputModeTests
     }
 
     [Fact]
-    public void OutputModeAndOutputPolicyConflict_ShouldBeRejectedByValidation()
+    public void OutputModeAndOutputPolicyConflict_Throws()
     {
         var options = new PipelineRuntimeOptions
         {

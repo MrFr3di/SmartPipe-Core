@@ -249,6 +249,16 @@ public sealed class SmartPipeTypedDiTests
     }
 
     [Fact]
+    public void HostedServiceOptions_Defaults_AreReleaseContract()
+    {
+        var options = new SmartPipeHostedServiceOptions();
+
+        options.FailureBehavior.Should().Be(SmartPipeHostedFailureBehavior.StopApplication);
+        options.DrainTimeout.Should().Be(TimeSpan.FromSeconds(30));
+        options.Invoking(x => x.Validate()).Should().NotThrow();
+    }
+
+    [Fact]
     public async Task HostedService_StopAsync_UsesConfiguredDrainTimeout()
     {
         var factory = new RecordingTypedFactory();

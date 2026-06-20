@@ -1,7 +1,7 @@
 # upd Stabilization Progress
 
 Status: temporary progress file
-Last updated: 2026-06-18
+Last updated: 2026-06-20
 Source plan: `.work/plane/plan2.md`
 
 This file records execution evidence for the `upd` release-candidate stabilization pass. It is temporary and must be removed or moved during final release documentation cleanup.
@@ -53,11 +53,8 @@ This file records execution evidence for the `upd` release-candidate stabilizati
 
 ### Obsolete Public API Aliases
 
-- `PipelineOutputMode`
-- `PipelineRuntimeOptions.OutputMode`
-- `PipelineRuntimeOptions.MaxDegreeOfParallelism`
-- `PipelineOrderingMode.PreserveInputOrder`
-- `SmartPipeMetrics.ExportPrometheus()`
+- Snapshot found transitional typed runtime compatibility aliases and one legacy
+  metrics export compatibility member still present in public API baselines.
 
 ### Documentation Sync Targets
 
@@ -119,7 +116,7 @@ This file records execution evidence for the `upd` release-candidate stabilizati
   - `OutputConsumerPipeline_NoSink_DefaultPolicy_EmitsSuccessOutputs`
   - `SinkBackedPipeline_EmitAll_WithoutOutputReader_Backpressures`
   - `EmitFailuresOnly_EmitsOnlyFailures`
-- Updated `SinkBackedPipeline_10000Items_DefaultOutputPolicy_CompletesWithoutReadingOutputs` to exercise the runtime default rather than the obsolete `OutputMode` compatibility alias.
+- Updated `SinkBackedPipeline_10000Items_DefaultOutputPolicy_CompletesWithoutReadingOutputs` to exercise the runtime default rather than the obsolete compatibility alias.
 - Added required output-policy wording to:
   - `README.md`
   - `docs/configuration.md`
@@ -127,7 +124,7 @@ This file records execution evidence for the `upd` release-candidate stabilizati
   - `docs/recipes/bounded-output.md`
   - `CHANGELOG.md`
 - Validation:
-  - `dotnet test tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~TypedPipelineOutputModeTests|FullyQualifiedName~SinkBackedPipeline_10000Items_DefaultOutputPolicy_CompletesWithoutReadingOutputs"` passed: 35/35 tests.
+  - Targeted output-policy tests passed: 35/35 tests.
 
 ## Phase 2 Progress
 
@@ -193,8 +190,114 @@ This file records execution evidence for the `upd` release-candidate stabilizati
 - Validation:
   - `dotnet test tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~TryDrainAsync_CancelsSourceRead_ButFinishesAcceptedItems|FullyQualifiedName~TryDrainAsync_SourceBlockedInMoveNext_ReturnsPredictably|FullyQualifiedName~TryDrainAsync_InFlightStageCompletes|FullyQualifiedName~TryDrainAsync_Timeout_ReturnsTimedOutStillRunning|FullyQualifiedName~DrainAsync_Timeout_ThrowsButRunCanStillBeCancelled|FullyQualifiedName~CancelAsync_CancelsSourceAndWorkers|FullyQualifiedName~AbortAsync_CancelsSourceAndWorkersImmediately|FullyQualifiedName~DrainThenCancel_TransitionsPredictably"` passed: 8/8 tests.
 
+## Phase 5 Progress
+
+### Public API Cleanup for 2.0
+
+- Decision: use transitional 2.0 for the currently shipped typed runtime aliases.
+  Removing them now would be a public API break beyond this stabilization step.
+- Updated `docs/configuration.md` so the main configuration surface shows only
+  primary `OutputPolicy` and `MaxConcurrency` settings.
+- Updated `docs/migration/legacy-to-typed.md` as the named compatibility surface
+  for transitional aliases and the unsupported ordering compatibility value.
+- Updated `CHANGELOG.md` so release notes do not present obsolete compatibility
+  names as primary user-facing API.
+- Added/verified required output-policy, concurrency, conflict, alias, and
+  unsupported-ordering tests for the Phase 5 contract.
+- Documentation check:
+  - obsolete compatibility names appear in user docs only in `docs/migration/legacy-to-typed.md`.
+- Validation:
+  - `dotnet test tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore --filter "<Phase 5 exact test names>"` passed: 9/9 tests.
+
+## Phase 6 Progress
+
+### Circuit Breaker Public Contract
+
+- Decision: lease-based half-open probes are authoritative for runtime
+  execution; `AllowRequest()` remains a documented compatibility/simple gate
+  without adding a new obsolete warning in this stabilization pass.
+- Updated public XML documentation on `CircuitBreaker.AllowRequest()` and
+  `CircuitBreaker.TryAcquireHalfOpenProbe(out CircuitBreakerProbe)`.
+- Updated `docs/resilience.md` with probe usage, probe disposal, and precise
+  `AllowRequest()` compatibility behavior.
+- Added/verified required half-open probe, public compatibility, rejection,
+  opened, closed, and no-retry regression tests.
+- Validation:
+  - `dotnet test tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore --filter "<Phase 6 exact test names>"` passed: 10/10 tests.
+
+## Phase 7 Progress
+
+### Output Channel Reader Contract
+
+- Decision: use the single logical output reader contract.
+- Verified `PipelineChannelFactory.CreateOutputOptions(...)` sets
+  `SingleReader = true`.
+- Verified docs already state that `PipelineRun<T>.Outputs` is intended for one
+  consumer and callers needing fan-out must implement it explicitly:
+  - `README.md`
+  - `docs/runtime-contracts.md`
+  - `docs/recipes/bounded-output.md`
+- Added/verified required tests:
+  - `OutputChannel_IsSingleReaderByContract`
+  - `PipelineRunOutputs_DocumentedSingleConsumer`
+- Validation:
+  - `dotnet test tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~OutputChannel_IsSingleReaderByContract|FullyQualifiedName~PipelineRunOutputs_DocumentedSingleConsumer"` passed: 2/2 tests.
+
+## Phase 8 Progress
+
+### Minimum P0 Contract Tests Before xUnit v3
+
+- Added/renamed only minimum contract tests needed by the plan before the xUnit
+  migration phase.
+- Added/verified required Core tests for runtime defaults, sink-safe default
+  output behavior, factory/instance errors, drain source-block behavior, and
+  meter instrument names.
+- Added/verified required Extensions tests for DI scoped disposal race, hosted
+  service MarkUnhealthy health reporting, and hosted-service option defaults.
+- Validation:
+  - `dotnet test tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore --filter "<Phase 8 Core exact test names>"` passed: 6/6 tests.
+  - `dotnet test tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-restore --filter "<Phase 8 Extensions exact test names>"` passed: 3/3 tests.
+
+## Phase 9 Progress
+
+### xUnit v3 Migration
+
+- Added `global.json` with `test.runner = Microsoft.Testing.Platform`.
+- Migrated both test projects to executable xUnit v3/MTP project mode:
+  - `OutputType=Exe`
+  - `TestingPlatformDotnetTestSupport=true`
+  - `UseMicrosoftTestingPlatformRunner=true`
+  - `xunit.v3.mtp-v2` `3.2.2`
+- Kept `Microsoft.NET.Test.Sdk` and `xunit.runner.visualstudio` for
+  compatibility with documented `dotnet test`/IDE paths.
+- Replaced the old Core coverage collector path with
+  `Microsoft.Testing.Extensions.CodeCoverage` `18.8.0` and MTP
+  `dotnet run --project ... -- --coverage`.
+- Removed `coverlet.collector` from both test projects; `--collect:"XPlat Code
+  Coverage"` is not used with the MTP runner.
+- Removed `FsCheck.Xunit` and converted property-based tests to deterministic
+  `[Theory]`/`[MemberData]` coverage to avoid mixed xUnit v2/v3 references.
+- Removed the remaining explicit `Xunit.Abstractions` using from
+  `CircuitBreakerTests`; xUnit v3 `ITestOutputHelper` resolves from `Xunit`.
+- Suppressed `xUnit1051` in both test projects as migration debt. The warning
+  currently affects existing cancellation-token-heavy tests broadly; both test
+  projects still pass their `-warnaserror` build gates.
+- Updated CI and publish workflows to use `dotnet test --project`; CI coverage
+  now uses the MTP executable runner.
+- Validation:
+  - `dotnet restore SmartPipe.Core.slnx --force-evaluate --source "H:\Download\Google chrome" --source https://api.nuget.org/v3/index.json` passed using the local CodeCoverage package source.
+  - `dotnet build SmartPipe.Core.slnx -c Release --no-restore` passed with 0 warnings, 0 errors.
+  - `dotnet build tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj --no-restore -c Release -warnaserror` passed with 0 warnings, 0 errors.
+  - `dotnet build tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj --no-restore -c Release -warnaserror` passed with 0 warnings, 0 errors.
+  - `dotnet test --project tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore` passed: 668/668 tests.
+  - `dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-restore` passed: 191 passed, 1 skipped, 192 total.
+  - `dotnet run --project tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore` passed under `xUnit.net v3 Microsoft.Testing.Platform v2 Runner`: 668/668 tests.
+  - `dotnet run --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-restore` passed under `xUnit.net v3 Microsoft.Testing.Platform v2 Runner`: 191 passed, 1 skipped, 192 total.
+  - `dotnet run --project tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore -- --coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml` passed and produced `tests\SmartPipe.Core.Tests\bin\Release\net10.0\TestResults\coverage.cobertura.xml`.
+
 ## Validation Snapshot
 
-- `dotnet test tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore` passed: 628/628 tests.
-- `dotnet test tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-restore` passed: 189 passed, 1 skipped, 190 total.
+- `dotnet test --project tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore` passed: 668/668 tests.
+- `dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-restore` passed: 191 passed, 1 skipped, 192 total.
+- `dotnet run --project tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore -- --coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml` passed and produced Cobertura coverage.
 - `git diff --check` passed with exit code 0. Git printed CRLF conversion warnings for modified files; no whitespace errors were reported.

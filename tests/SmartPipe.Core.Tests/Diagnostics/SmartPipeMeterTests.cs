@@ -34,7 +34,7 @@ public class SmartPipeMeterTests
     }
 
     [Fact]
-    public void Metrics_InstrumentNames_AreStable()
+    public void SmartPipeMeter_InstrumentNames_AreReleaseContract()
     {
         var snapshot = CaptureMetricMeasurements(metrics =>
         {

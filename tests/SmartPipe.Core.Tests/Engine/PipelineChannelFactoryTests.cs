@@ -83,6 +83,17 @@ public sealed class PipelineChannelFactoryTests
     }
 
     [Fact]
+    public void PipelineRunOutputs_DocumentedSingleConsumer()
+    {
+        var options = PipelineChannelFactory.CreateOutputOptions(
+            capacity: 1024,
+            fullMode: BoundedChannelFullMode.Wait);
+
+        options.SingleReader.Should().BeTrue(
+            "PipelineRun<T>.Outputs is documented and configured as a single-consumer channel");
+    }
+
+    [Fact]
     public async Task PipelineChannelFactory_BoundedInput_AppliesBackpressure()
     {
         var channel = PipelineChannelFactory.CreateInput<int>(

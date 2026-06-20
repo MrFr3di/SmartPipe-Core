@@ -8,10 +8,36 @@ For runtime or public API changes:
 ```powershell
 dotnet restore SmartPipe.Core.slnx --locked-mode
 dotnet build SmartPipe.Core.slnx -c Release --no-restore
-dotnet test SmartPipe.Core.slnx -c Release --no-build
+dotnet test --project tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-build
+dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-build
 dotnet pack src\SmartPipe.Core\SmartPipe.Core.csproj -c Release --no-build -o artifacts\packages
 dotnet pack src\SmartPipe.Extensions\SmartPipe.Extensions.csproj -c Release --no-build -o artifacts\packages
 ```
+
+## Test Runner And Coverage
+
+Test projects use xUnit v3 on Microsoft Testing Platform. The repository
+`global.json` selects the MTP runner, so pass projects with `--project`:
+
+```powershell
+dotnet test --project tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-build
+dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-build
+```
+
+Executable runner mode is supported for both test projects:
+
+```powershell
+dotnet run --project tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-build
+dotnet run --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-build
+```
+
+Coverage uses the MTP code coverage extension, not VSTest data collectors:
+
+```powershell
+dotnet run --project tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-build -- --coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml
+```
+
+Do not use `--collect:"XPlat Code Coverage"` with the MTP runner.
 
 Consumer smoke must install `SmartPipe.Core` and `SmartPipe.Extensions` from the
 local `artifacts/packages` directory, with nuget.org present only as the

@@ -273,7 +273,7 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
-    public void PipelineRuntimeOptions_PreserveOrderWithParallelism_ThrowsUntilImplemented()
+    public void PreserveInputOrder_WithMaxConcurrencyGreaterThanOne_Throws()
     {
         var options = new PipelineRuntimeOptions
         {
@@ -298,7 +298,17 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
-    public void PipelineRuntimeOptions_ConflictingConcurrencyNames_ShouldThrow()
+    public void MaxDegreeOfParallelismAlias_Works()
+    {
+        var options = new PipelineRuntimeOptions { MaxDegreeOfParallelism = 3 };
+
+        options.Validate();
+
+        options.EffectiveMaxConcurrency.Should().Be(3);
+    }
+
+    [Fact]
+    public void MaxConcurrencyAndAliasConflict_Throws()
     {
         var options = new PipelineRuntimeOptions
         {
@@ -1207,7 +1217,7 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
-    public async Task SinkBackedPipeline_10000Items_DefaultOutputPolicy_CompletesWithoutReadingOutputs()
+    public async Task SinkBackedPipeline_DefaultOutputPolicy_CompletesWithoutReadingOutputs()
     {
         var itemCount = 10_000;
         var sink = new CountingEnvelopeSink<int>();
@@ -1277,7 +1287,7 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
-    public async Task ParallelPipeline_MaxConcurrency16_ProcessesAllExactlyOnce()
+    public async Task MaxConcurrency16_ProcessesAllExactlyOnce()
     {
         var itemCount = 2_000;
         var sink = new ConcurrentBag<int>();

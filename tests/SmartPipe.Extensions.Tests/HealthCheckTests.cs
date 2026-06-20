@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SmartPipe.Core;
 
@@ -118,6 +119,42 @@ public sealed class HealthCheckTests
         snapshot.PipelineId.Should().Be("health-di");
     }
 
+    [Fact]
+    public async Task HostedService_FaultBehaviorMarkUnhealthy_HealthCheckReportsUnhealthy()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped<FaultingSource>();
+        services.AddScoped<GuidStage>();
+        services.AddScoped<NullGuidSink>();
+        services.AddSmartPipe<int, Guid>(
+            "hosted-health",
+            builder => builder
+                .UseSource<FaultingSource>()
+                .UseStage<GuidStage>()
+                .UseSink<NullGuidSink>());
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
+        var monitor = provider.GetRequiredService<ISmartPipeRunHealthMonitor<int, Guid>>();
+        var hostedService = new ExposedHostedService<int, Guid>(
+            factory,
+            new SmartPipeHostedServiceOptions
+            {
+                FailureBehavior = SmartPipeHostedFailureBehavior.MarkUnhealthyAndKeepHostAlive,
+            });
+
+        await hostedService.ExecuteForTestAsync(CancellationToken.None);
+
+        var healthCheck = new SmartPipeHealthCheck<int, Guid>(
+            monitor,
+            Options.Create(new SmartPipeHealthCheckOptions()));
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Data["state"].Should().Be(PipelineRunState.Faulted.ToString());
+    }
+
     private static SmartPipeRunHealthMonitor<int, int> CreateMonitor(
         PipelineRuntimeOptions? options = null) =>
         new("health", options ?? new PipelineRuntimeOptions());
@@ -165,6 +202,23 @@ public sealed class HealthCheckTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
+    private sealed class FaultingSource : IPipelineSource<int>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            throw new InvalidOperationException("source failed");
+#pragma warning disable CS0162
+            yield break;
+#pragma warning restore CS0162
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class GuidStage : IPipelineTransformer<int, Guid>
     {
         public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
@@ -185,5 +239,21 @@ public sealed class HealthCheckTests
             ValueTask.CompletedTask;
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ExposedHostedService<TInput, TOutput>
+        : SmartPipeHostedService<TInput, TOutput>
+    {
+        public ExposedHostedService(
+            ISmartPipeFactory<TInput, TOutput> factory,
+            SmartPipeHostedServiceOptions options)
+            : base(
+                factory,
+                NullLogger<SmartPipeHostedService<TInput, TOutput>>.Instance,
+                Options.Create(options))
+        {
+        }
+
+        public Task ExecuteForTestAsync(CancellationToken ct) => ExecuteAsync(ct);
     }
 }

@@ -42,6 +42,17 @@ Half-open probes are limited by concurrent active probes. A completed probe
 releases its slot. A half-open failure reopens the breaker; enough half-open
 successes close it and emit `CircuitBreakerClosedEvent`.
 
+The runtime uses `CircuitBreaker.TryAcquireHalfOpenProbe(out probe)` as the
+authoritative half-open API. Callers that use `CircuitBreaker` directly should
+dispose the returned `CircuitBreakerProbe` after the attempted operation
+completes so the active half-open slot is released.
+
+`CircuitBreaker.AllowRequest()` remains a compatibility/simple gate. It allows
+closed breakers, rejects isolated breakers, rejects open breakers until the
+break duration expires, and then counts admitted half-open requests up to
+`maxHalfOpenRequests`. It does not return a lease and does not release an
+active half-open slot after operation completion.
+
 ## Dead Letter
 
 Use `FailureAction.DeadLetter` with `StageDeadLetterOptions<T>`:
