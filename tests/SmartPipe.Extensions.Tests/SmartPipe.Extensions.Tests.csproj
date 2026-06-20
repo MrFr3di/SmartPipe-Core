@@ -14,14 +14,20 @@
 
   <ItemGroup>
     <PackageReference Include="FluentAssertions" Version="8.10.0" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.8" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.8" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
     <PackageReference Include="xunit.v3.mtp-v2" Version="3.2.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageReference Include="Moq" Version="4.20.72" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\SmartPipe.Testing\Fixtures\*.cs" Link="Fixtures\%(Filename)%(Extension)" />
+    <None Include="..\SmartPipe.Testing\Fixtures\fixture-manifest.json" Link="Fixtures\fixture-manifest.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

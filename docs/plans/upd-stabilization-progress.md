@@ -295,9 +295,111 @@ This file records execution evidence for the `upd` release-candidate stabilizati
   - `dotnet run --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-restore` passed under `xUnit.net v3 Microsoft.Testing.Platform v2 Runner`: 191 passed, 1 skipped, 192 total.
   - `dotnet run --project tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore -- --coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml` passed and produced `tests\SmartPipe.Core.Tests\bin\Release\net10.0\TestResults\coverage.cobertura.xml`.
 
+## Phase 10 Progress
+
+### Fixture Catalog, Manifest, And Generated Small Fixtures
+
+- Added `tests/SmartPipe.Testing/Fixtures/FixtureCatalog.cs` as a shared test
+  fixture helper and linked it into `SmartPipe.Extensions.Tests`.
+- Added `FixtureEnvironment` gates for:
+  - `SMARTPIPE_FIXTURES_ROOT`
+  - `SMARTPIPE_ENABLE_REAL_FIXTURES`
+  - `SMARTPIPE_ENABLE_LARGE_FIXTURES`
+  - `SMARTPIPE_ENABLE_HUGE_FIXTURES`
+  - `SMARTPIPE_SOC_POKEC_PATH`
+- Added catalog discovery for `.csv`, `.txt`, `.json`, `.jsonl`, and
+  `.ndjson`, with plan threshold classification, cheap BOM/newline detection,
+  and default SHA256 hashing only for small/medium fixtures.
+- Added `tests/SmartPipe.Testing/Fixtures/fixture-manifest.json` with relative
+  metadata-only entries for capital-plan CSV/JSON, business licences CSV/JSON,
+  and `soc-pokec-relationships`.
+- Added `GeneratedFixtureData` for normal-CI tiny CSV/JSON fixtures covering
+  the Step 10.4 CSV and JSON shapes without depending on `.work/sandbox`.
+- Added tests:
+  - `FixtureCatalogTests`
+  - `GeneratedFixtureDataTests`
+- Added CSV golden tests:
+  - `CsvGolden_BomAndNoBom_ParseCorrectly`
+  - `CsvGolden_CrlfAndLf_ParseCorrectly`
+  - `CsvGolden_QuotedCommas_ParseCorrectly`
+  - `CsvGolden_MultilineQuotedField_ParseCorrectly`
+  - `CsvGolden_EmptyAndNullLikeFields_AreHandled`
+  - `CsvGolden_DuplicateHeaders_UseConfiguredPolicy`
+  - `CsvGolden_MalformedRows_GoToDeadLetterOrFailurePolicy`
+  - `CsvGolden_LongFields_DoNotBreakPipeline`
+  - `CsvGolden_UnicodeHeadersAndValues_ParseCorrectly`
+- Added JSON golden tests:
+  - `JsonFixture_RootArray_StreamsItems`
+  - `JsonFixture_TopLevelValues_StreamsItems`
+  - `JsonFixture_Ndjson_StreamsItems_IfSupported`
+  - `JsonFixture_NullAndMissingProperties_AreHandled`
+  - `JsonFixture_NumericValues_AreCultureInvariant`
+  - `JsonFixture_MalformedJson_UsesFailurePolicy`
+  - `JsonFixture_EmptyArray_CompletesSuccessfully`
+  - `JsonFixture_EmptyFile_UsesConfiguredPolicy`
+  - `JsonFixture_SourceGeneratedJsonTypeInfo_Works`
+  - `JsonFixture_AotSafeOverload_IsUsedWhereRequired`
+- Added CSV pipeline tests:
+  - `CsvPipeline_ValidRows_WriteToSink`
+  - `CsvPipeline_InvalidRows_UseFailurePolicy`
+  - `CsvPipeline_FilteredRows_AreNotFailures`
+  - `CsvPipeline_OutputBackpressure_DoesNotLoseRows`
+  - `CsvPipeline_DropMode_RecordsDroppedRows`
+  - `CsvPipeline_DrainMidFile_CompletesAcceptedRows`
+  - `CsvPipeline_CancelMidFile_CancelsSourceAndWorkers`
+- Added CapitalPlan CSV/JSON parity tests:
+  - `CapitalPlan_CsvAndJson_ProduceSameLogicalItemCount`
+  - `CapitalPlan_CsvAndJson_HaveCompatibleSchema`
+  - `CapitalPlan_CsvAndJson_NumericFieldsMatchWithinTolerance`
+  - `CapitalPlan_CsvAndJson_NullFieldsMatchConfiguredPolicy`
+  - `CapitalPlan_CsvAndJson_CategoryFieldsMatch`
+- Updated `Microsoft.Data.Sqlite` to 10.0.9 and added a direct
+  `SQLitePCLRaw.bundle_e_sqlite3` 3.0.3 reference in
+  `SmartPipe.Extensions.Tests` so the vulnerable SQLite native package no
+  longer appears in NuGet audit output.
+- Added SocPokec fixture helpers and gated, deterministic SocPokec tests:
+  - `SocPokec_HugeFixture_IsSkippedUnlessEnabled`
+  - `SocPokec_StreamEdges_DoesNotMaterializeFile`
+  - `SocPokec_StreamEdges_CountsRows`
+  - `SocPokec_StreamEdges_ParsesTwoIdsPerLine`
+  - `SocPokec_StreamEdges_ComputesStableRollingDigest`
+  - `SocPokec_BoundedPipeline_ProcessesAllEdgesWithoutDrops`
+  - `SocPokec_BoundedPipeline_MaxConcurrency4_Completes`
+  - `SocPokec_BoundedPipeline_DrainMidFile_CompletesAcceptedEdges`
+  - `SocPokec_BoundedPipeline_CancelMidFile_CancelsPredictably`
+  - `SocPokec_InvalidLines_GoToFailurePolicy`
+  - `SocPokec_ThroughputSmoke_ReportsItemsPerSecond`
+  - `StressSummary_ContainsRequiredFields`
+- Added shared fixture category constants and explicit opt-in gates for
+  real, large, huge, stress, and slow fixture/stress tests. Normal golden tests
+  continue to use generated tiny fixtures rather than `.work/sandbox`.
+- Validation:
+  - `dotnet list tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj package --vulnerable --include-transitive` reported no vulnerable packages.
+  - `dotnet build tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-restore` passed with 0 warnings and 0 errors.
+  - `dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-build --filter-class SmartPipe.Extensions.Tests.Fixtures.FixtureCatalogTests` passed: 8/8 tests.
+  - `dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-build --filter-class SmartPipe.Extensions.Tests.Fixtures.FixtureCatalogTests --filter-class SmartPipe.Extensions.Tests.Fixtures.GeneratedFixtureDataTests` passed: 11/11 tests.
+  - `dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-build --filter-class SmartPipe.Extensions.Tests.Fixtures.CsvGoldenFixtureTests` passed: 9/9 tests.
+  - `dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-build --filter-class SmartPipe.Extensions.Tests.Fixtures.JsonGoldenFixtureTests` passed: 10/10 tests.
+  - `dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-build --filter-class SmartPipe.Extensions.Tests.Fixtures.CsvPipelineFixtureTests` passed: 7/7 tests.
+  - `dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-build --filter-class SmartPipe.Extensions.Tests.Fixtures.CapitalPlanParityFixtureTests` passed: 5/5 tests.
+  - `dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-build --filter-class SmartPipe.Extensions.Tests.Fixtures.SocPokecFixtureTests` passed: 12/12 tests.
+  - `dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-build --filter-class SmartPipe.Extensions.Tests.Fixtures.FixtureCatalogTests --filter-class SmartPipe.Extensions.Tests.Fixtures.GeneratedFixtureDataTests --filter-class SmartPipe.Extensions.Tests.Fixtures.CsvGoldenFixtureTests --filter-class SmartPipe.Extensions.Tests.Fixtures.JsonGoldenFixtureTests --filter-class SmartPipe.Extensions.Tests.Fixtures.CsvPipelineFixtureTests --filter-class SmartPipe.Extensions.Tests.Fixtures.CapitalPlanParityFixtureTests --filter-class SmartPipe.Extensions.Tests.Fixtures.SocPokecFixtureTests` passed: 54/54 tests.
+
+## Phase 11 Progress
+
+- Verified existing deterministic runtime coverage for output/backpressure,
+  filtered results, and lifecycle/drain/cancel/abort contracts.
+- Added `HostedService_FaultBehaviorIgnore_DoesNotStopHost` to cover the
+  remaining hosted-service failure behavior.
+- Validation:
+  - `dotnet build tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-restore` passed with 0 warnings and 0 errors.
+  - `dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-build --filter-class SmartPipe.Extensions.Tests.Extensions.SmartPipeTypedDiTests` passed: 15/15 tests.
+  - `dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-build --filter-class SmartPipe.Extensions.Tests.HealthCheckTests` passed: 7/7 tests.
+  - `dotnet test --project tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-build --filter-class SmartPipe.Core.Tests.Engine.TypedPipelineOutputModeTests --filter-class SmartPipe.Core.Tests.Engine.TypedPipelineDrainTests --filter-class SmartPipe.Core.Tests.Engine.RuntimeOptionsPassTests` passed: 144/144 tests.
+
 ## Validation Snapshot
 
 - `dotnet test --project tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore` passed: 668/668 tests.
 - `dotnet test --project tests\SmartPipe.Extensions.Tests\SmartPipe.Extensions.Tests.csproj -c Release --no-restore` passed: 191 passed, 1 skipped, 192 total.
 - `dotnet run --project tests\SmartPipe.Core.Tests\SmartPipe.Core.Tests.csproj -c Release --no-restore -- --coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml` passed and produced Cobertura coverage.
-- `git diff --check` passed with exit code 0. Git printed CRLF conversion warnings for modified files; no whitespace errors were reported.
+- `git diff --check` passed with exit code 0 after Phase 10 fixture/golden edits. Git printed CRLF conversion warnings for modified files; no whitespace errors were reported.

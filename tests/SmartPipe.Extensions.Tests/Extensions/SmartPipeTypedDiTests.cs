@@ -249,6 +249,23 @@ public sealed class SmartPipeTypedDiTests
     }
 
     [Fact]
+    public async Task HostedService_FaultBehaviorIgnore_DoesNotStopHost()
+    {
+        var lifetime = new RecordingApplicationLifetime();
+        var hostedService = new ExposedHostedService(
+            new FaultingTypedFactory(new InvalidOperationException("pipeline failed")),
+            new SmartPipeHostedServiceOptions
+            {
+                FailureBehavior = SmartPipeHostedFailureBehavior.Ignore,
+            },
+            lifetime);
+
+        await hostedService.ExecuteForTestAsync(CancellationToken.None);
+
+        lifetime.StopApplicationCalls.Should().Be(0);
+    }
+
+    [Fact]
     public void HostedServiceOptions_Defaults_AreReleaseContract()
     {
         var options = new SmartPipeHostedServiceOptions();

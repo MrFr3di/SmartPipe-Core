@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "capital-plan-csv",
+      "relativePath": "csv/2023-2026-capital-plan-and-2025-capital-budget-with-proposed-four-year-capital-0.csv",
+      "kind": "csv",
+      "sizeClass": "small",
+      "hasHeader": true,
+      "expectedColumns": 19,
+      "expectedRows": null,
+      "goldenScenarios": [
+        "stream-count",
+        "schema-detect",
+        "csv-json-parity",
+        "null-and-number-handling"
+      ]
+    },
+    {
+      "id": "capital-plan-json",
+      "relativePath": "json/2023-2026-capital-plan-and-2025-capital-budget-with-proposed-four-year-capital-0.json",
+      "kind": "json",
+      "sizeClass": "small",
+      "jsonShape": "array",
+      "expectedItems": null,
+      "goldenScenarios": [
+        "stream-count",
+        "schema-detect",
+        "csv-json-parity",
+        "null-and-number-handling"
+      ]
+    },
+    {
+      "id": "business-licences-csv",
+      "relativePath": "csv/business-licences.csv",
+      "kind": "csv",
+      "sizeClass": "large",
+      "hasHeader": true,
+      "expectedColumns": null,
+      "expectedRows": null,
+      "goldenScenarios": [
+        "stream-count",
+        "schema-detect"
+      ]
+    },
+    {
+      "id": "business-licences-json",
+      "relativePath": "json/business-licences.json",
+      "kind": "json",
+      "sizeClass": "large",
+      "jsonShape": "array",
+      "expectedItems": null,
+      "goldenScenarios": [
+        "stream-count",
+        "schema-detect"
+      ]
+    },
+    {
+      "id": "soc-pokec-relationships",
+      "relativePath": "csv/soc-pokec-relationships.txt",
+      "kind": "edge-list",
+      "sizeClass": "huge",
+      "delimiter": "whitespace-or-tab",
+      "hasHeader": false,
+      "expectedColumns": 2,
+      "expectedRows": null,
+      "goldenScenarios": [
+        "stream-count",
+        "zero-materialization",
+        "bounded-pipeline-throughput",
+        "cancel-drain-midstream"
+      ]
+    }
+  ]
+}
