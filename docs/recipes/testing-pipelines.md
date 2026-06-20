@@ -12,6 +12,10 @@ var sink = new CollectingSink<string>();
 var run = PipelineBuilder
     .From(new ArraySource<int>(1, 2, 3))
     .Transform(new MapStage<int, string>(x => x.ToString(CultureInfo.InvariantCulture)))
+    .WithRuntimeOptions(new PipelineRuntimeOptions
+    {
+        OutputPolicy = PipelineOutputPolicy.EmitAll,
+    })
     .To(sink);
 
 var outputs = new List<PipelineOutput<string>>();
@@ -24,8 +28,9 @@ outputs.Select(x => x.Result.Value).Should().Equal("1", "2", "3");
 sink.Payloads.Should().Equal("1", "2", "3");
 ```
 
-Read `run.Outputs` before awaiting `run.Completion` when output is bounded.
-This mirrors production use and avoids accidental backpressure deadlocks.
+Read `run.Outputs` before awaiting `run.Completion` when output is bounded and
+the test opts into success outputs. This mirrors production use and avoids
+accidental backpressure deadlocks.
 
 ## Failure Policy
 

@@ -241,4 +241,4 @@ check for the public quick-start scenarios.
 
 ## License
 
-MIT [LICENSE](LICENSE.md).
+MIT [LICENSE](LICENSE).

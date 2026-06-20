@@ -26,9 +26,10 @@ catch (TimeoutException)
 }
 ```
 
-If the source is already blocked inside `MoveNextAsync`, drain cannot interrupt
-that await. Use `CancelAsync` or `AbortAsync` when shutdown must interrupt a
-blocked source, stage, sink, or output reader.
+Drain cancels the source-read token. Cooperative sources blocked inside
+`MoveNextAsync` can stop promptly; non-cooperative awaits may still need to
+return on their own. Use `CancelAsync` or `AbortAsync` when shutdown must
+interrupt stages, sinks, processing, or output readers too.
 
 ## Cooperative cancellation
 
