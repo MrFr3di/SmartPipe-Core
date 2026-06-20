@@ -229,7 +229,6 @@ check for the public quick-start scenarios.
 - [Health checks](docs/health-checks.md)
 - [API reference](docs/api-reference.md)
 - [Contributing](docs/contributing.md)
-- [Release validation](docs/release.md)
 - [Migration from removed legacy APIs](docs/migration/legacy-to-typed.md)
 
 ## Requirements
