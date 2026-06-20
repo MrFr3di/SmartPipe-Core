@@ -1,5 +1,4 @@
 using FluentAssertions;
-using SmartPipe.Testing.Fixtures;
 
 namespace SmartPipe.Extensions.Tests.Fixtures;
 
@@ -55,14 +54,18 @@ public class GeneratedFixtureDataTests : IDisposable
     {
         GeneratedFixtureData.WriteAllTo(_root);
 
-        var fixtures = FixtureCatalog.Discover(_root);
+        var files = Directory
+            .EnumerateFiles(_root, "*", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(_root, path).Replace(Path.DirectorySeparatorChar, '/'))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
 
-        fixtures.Should().HaveCount(
-            GeneratedFixtureData.CsvFixtures.Count + GeneratedFixtureData.JsonFixtures.Count);
-        fixtures.Should().OnlyContain(f => f.SizeClass == FixtureSizeClass.Small);
-        fixtures.Should().OnlyContain(f => !Path.IsPathRooted(f.RelativePath));
-        fixtures.Single(f => f.RelativePath == "csv/bom.csv").Bom.Should().Be("utf-8");
-        fixtures.Single(f => f.RelativePath == "csv/crlf.csv").NewlineStyle.Should().Be(FixtureNewlineStyle.Crlf);
-        fixtures.Single(f => f.RelativePath == "csv/lf.csv").NewlineStyle.Should().Be(FixtureNewlineStyle.Lf);
+        files.Should().BeEquivalentTo(
+            GeneratedFixtureData.CsvFixtures.Concat(GeneratedFixtureData.JsonFixtures).Select(f => f.RelativePath));
+        files.Should().OnlyContain(path => !Path.IsPathRooted(path));
+        new FileInfo(Path.Combine(_root, "csv", "bom.csv")).Length.Should().BeLessThan(1024);
+        File.ReadAllBytes(Path.Combine(_root, "csv", "bom.csv"))[..3].Should().Equal(0xEF, 0xBB, 0xBF);
+        File.ReadAllText(Path.Combine(_root, "csv", "crlf.csv")).Should().Contain("\r\n");
+        File.ReadAllText(Path.Combine(_root, "csv", "lf.csv")).Should().NotContain("\r\n");
     }
 }

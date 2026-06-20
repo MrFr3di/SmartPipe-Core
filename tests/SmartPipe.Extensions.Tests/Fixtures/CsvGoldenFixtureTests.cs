@@ -1,7 +1,6 @@
 using CsvHelper.Configuration.Attributes;
 using FluentAssertions;
 using SmartPipe.Extensions.Selectors;
-using SmartPipe.Testing.Fixtures;
 
 namespace SmartPipe.Extensions.Tests.Fixtures;
 

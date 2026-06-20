@@ -3,7 +3,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using SmartPipe.Extensions.Selectors;
-using SmartPipe.Testing.Fixtures;
 
 namespace SmartPipe.Extensions.Tests.Fixtures;
 

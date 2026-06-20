@@ -4,7 +4,6 @@ using FluentAssertions;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Selectors;
 using SmartPipe.Extensions.Transforms;
-using SmartPipe.Testing.Fixtures;
 
 namespace SmartPipe.Extensions.Tests.Fixtures;
 

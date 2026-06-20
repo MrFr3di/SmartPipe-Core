@@ -26,11 +26,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\SmartPipe.Testing\Fixtures\*.cs" Link="Fixtures\%(Filename)%(Extension)" />
-    <None Include="..\SmartPipe.Testing\Fixtures\fixture-manifest.json" Link="Fixtures\fixture-manifest.json" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 

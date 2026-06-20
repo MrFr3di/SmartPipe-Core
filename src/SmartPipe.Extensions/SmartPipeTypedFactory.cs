@@ -219,7 +219,7 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
     }
 
     /// <inheritdoc />
-        public PipelineRun<TOutput> Start(CancellationToken ct = default) =>
+    public PipelineRun<TOutput> Start(CancellationToken ct = default) =>
         StartAsync(ct).GetAwaiter().GetResult();
 }
 

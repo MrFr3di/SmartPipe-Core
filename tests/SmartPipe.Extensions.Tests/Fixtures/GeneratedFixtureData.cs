@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace SmartPipe.Testing.Fixtures;
+namespace SmartPipe.Extensions.Tests.Fixtures;
 
 public sealed record GeneratedTextFixture(string Id, string RelativePath, byte[] Content);
 
