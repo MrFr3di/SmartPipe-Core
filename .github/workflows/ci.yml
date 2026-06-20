@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main, upd ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, upd ]
 
 permissions:
   contents: read
@@ -128,9 +128,9 @@ jobs:
                 var values = new List<int>();
                 await foreach (var result in run.ReadResultsAsync())
                 {
-                    if (!result.IsSuccess || result.Value is null)
+                    if (!result.IsSuccess)
                         throw new InvalidOperationException("Output consumer observed a failed result.");
-                    values.Add(result.Value.Value);
+                    values.Add(result.Value);
                 }
                 await run.Completion;
                 RequireSequence(values, [8, 10], "typed output consumer");

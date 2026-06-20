@@ -102,7 +102,7 @@
 - **NuGet vulnerability audit passed** for Core, Extensions, benchmarks, and test projects.
 - **Format verification passed** with `dotnet format --verify-no-changes`.
 - **Release build passed** with warnings as errors.
-- **Search guards passed** for tracked `.work` references, fixture environment gates, SocPokec tests, tracked real fixture manifests, local absolute paths, and temporary progress references.
+- **Release search guards passed** for local workbench leakage, fixture gates, tracked real fixture manifests, local absolute paths, and temporary progress references.
 
 ## [1.0.6] — 2026-05-15
 
