@@ -274,7 +274,8 @@ jobs:
 
     - name: JSON and dead-letter AOT smoke
       run: |
-        dotnet new console -n SmartPipe.JsonDeadLetterAotSmoke -o artifacts/json-deadletter-aot-smoke
+        dotnet new console -n SmartPipe.JsonDeadLetterAotSmoke -o artifacts/json-deadletter-aot-smoke --no-restore
+        rm -f artifacts/json-deadletter-aot-smoke/packages.lock.json
         cat > artifacts/json-deadletter-aot-smoke/NuGet.Config <<'XML'
         <?xml version="1.0" encoding="utf-8"?>
         <configuration>
