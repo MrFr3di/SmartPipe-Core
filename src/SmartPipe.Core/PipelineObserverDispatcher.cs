@@ -181,9 +181,13 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         {
             await _events.Writer.WriteAsync(pipelineEvent, ct).ConfigureAwait(false);
         }
-        catch (ChannelClosedException) when (_pipelineFault is not null)
+        catch (ChannelClosedException)
         {
-            throw _pipelineFault;
+            var pipelineFault = Volatile.Read(ref _pipelineFault);
+            if (pipelineFault is not null)
+                throw pipelineFault;
+
+            throw;
         }
     }
 
@@ -222,31 +226,56 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
     {
         await foreach (var pipelineEvent in _events.Reader.ReadAllAsync(_cts.Token).ConfigureAwait(false))
         {
-            foreach (var registration in _observers)
-            {
-                if (registration.IsRemoved)
-                    continue;
-
-                try
-                {
-                    await registration.Registration.Observer.OnEventAsync(pipelineEvent, _cts.Token)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _failure ??= ex;
-                    if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
-                    {
-                        _pipelineFault ??= ex;
-                        _events.Writer.TryComplete(ex);
-                        return;
-                    }
-
-                    if (registration.Registration.FailurePolicy == ObserverFailurePolicy.RemoveObserver)
-                        registration.Remove();
-                }
-            }
+            if (await DispatchEventAsync(pipelineEvent).ConfigureAwait(false))
+                return;
         }
+    }
+
+    private async ValueTask<bool> DispatchEventAsync(PipelineEvent pipelineEvent)
+    {
+        foreach (var registration in _observers)
+        {
+            if (registration.IsRemoved)
+                continue;
+
+            if (await DispatchObserverAsync(pipelineEvent, registration).ConfigureAwait(false))
+                return true;
+        }
+
+        return false;
+    }
+
+    private async ValueTask<bool> DispatchObserverAsync(
+        PipelineEvent pipelineEvent,
+        ActiveObserverRegistration registration)
+    {
+        try
+        {
+            await registration.Registration.Observer.OnEventAsync(pipelineEvent, _cts.Token)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return HandleObserverFailure(registration, ex);
+        }
+
+        return false;
+    }
+
+    private bool HandleObserverFailure(ActiveObserverRegistration registration, Exception exception)
+    {
+        _failure ??= exception;
+        if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
+        {
+            _pipelineFault ??= exception;
+            _events.Writer.TryComplete(exception);
+            return true;
+        }
+
+        if (registration.Registration.FailurePolicy == ObserverFailurePolicy.RemoveObserver)
+            registration.Remove();
+
+        return false;
     }
 
     private void RecordDroppedEvent(PipelineEvent droppedEvent)
