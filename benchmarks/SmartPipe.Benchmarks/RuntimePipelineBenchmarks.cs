@@ -163,6 +163,7 @@ public class RuntimePipelineBenchmarks
     {
         await foreach (var _ in reader.ReadAllAsync().ConfigureAwait(false))
         {
+            // Intentionally drain benchmark outputs; payload values are not used.
         }
     }
 

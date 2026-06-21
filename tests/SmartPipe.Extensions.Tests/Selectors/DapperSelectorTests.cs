@@ -351,7 +351,9 @@ public class DapperSelectorTests
         var selector = new DapperSelector<TestEntity>(connection, "SELECT 1");
 
         await selector.DisposeAsync();
-        selector.Dispose(); // Should not throw
+        var exception = Record.Exception(selector.Dispose);
+
+        Assert.Null(exception);
     }
 
     [Fact]
