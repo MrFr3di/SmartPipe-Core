@@ -1163,7 +1163,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
         catch (ObjectDisposedException ex) when (IsAdaptiveAdmissionShutdownInProgress())
         {
-            throw new OperationCanceledException("Pipeline run cancelled.", ex);
+            throw new OperationCanceledException("Pipeline run cancelled.", ex, ct);
         }
 
         var started = _clock.GetTimestamp();

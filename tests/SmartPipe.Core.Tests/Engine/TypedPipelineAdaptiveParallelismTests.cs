@@ -190,6 +190,7 @@ public sealed class TypedPipelineAdaptiveParallelismTests
 
         await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
             .Should().ThrowAsync<OperationCanceledException>();
+        run.State.Should().NotBe(PipelineRunState.Faulted);
         run.State.Should().Be(PipelineRunState.Cancelled);
     }
 
@@ -214,6 +215,7 @@ public sealed class TypedPipelineAdaptiveParallelismTests
 
         await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
             .Should().ThrowAsync<OperationCanceledException>();
+        run.State.Should().NotBe(PipelineRunState.Faulted);
         run.State.Should().Be(PipelineRunState.Aborted);
     }
 
@@ -244,14 +246,58 @@ public sealed class TypedPipelineAdaptiveParallelismTests
     }
 
     [Fact]
-    public void PipelineRuntimeOptions_Validate_RejectsAdaptiveWithDroppingInputFullMode()
+    public async Task AdaptiveEnabled_AdmissionWaitTimeIsNotCountedAsProcessingLatency()
+    {
+        var clock = new ManualPipelineClock();
+        var source = new CountingEnvelopeSource(Enumerable.Range(1, 8), emittedThreshold: 2);
+        var transformer = new PayloadGateTrackingTransformer(
+            clock,
+            _ => TimeSpan.FromMilliseconds(1),
+            payload => payload switch
+            {
+                1 => PayloadGate.First,
+                >= 4 => PayloadGate.Second,
+                _ => PayloadGate.None,
+            });
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(transformer)
+            .WithRuntimeOptions(Options(
+                clock,
+                maxConcurrency: 2,
+                initialConcurrency: 1,
+                minConcurrency: 1,
+                adaptiveMaxConcurrency: 2))
+            .Run();
+
+        await transformer.WaitForActiveAsync(1).WaitAsync(TimeSpan.FromSeconds(5));
+        await source.ThresholdReached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        clock.Advance(TimeSpan.FromSeconds(10));
+
+        transformer.ReleaseFirstGate();
+
+        await transformer.WaitForActiveAsync(2).WaitAsync(TimeSpan.FromSeconds(5));
+        transformer.MaxObservedConcurrency.Should().Be(2);
+
+        transformer.ReleaseSecondGate();
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Theory]
+    [InlineData(BoundedChannelFullMode.DropWrite)]
+    [InlineData(BoundedChannelFullMode.DropNewest)]
+    [InlineData(BoundedChannelFullMode.DropOldest)]
+    public void PipelineRuntimeOptions_Validate_RejectsAdaptiveWithDroppingInputFullMode(
+        BoundedChannelFullMode fullMode)
     {
         var options = new PipelineRuntimeOptions
         {
             MaxConcurrency = 4,
             InputCapacity = 4,
             Clock = new ManualPipelineClock(),
-            InputFullMode = BoundedChannelFullMode.DropWrite,
+            InputFullMode = fullMode,
             AdaptiveParallelism = new AdaptiveParallelismOptions
             {
                 Enabled = true,
@@ -457,6 +503,120 @@ public sealed class TypedPipelineAdaptiveParallelismTests
         public void Release() => _release.TrySetResult();
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        private static Task WaitForThresholdAsync(
+            ConcurrentDictionary<int, TaskCompletionSource> thresholds,
+            int threshold,
+            int current)
+        {
+            if (current >= threshold)
+                return Task.CompletedTask;
+
+            return thresholds.GetOrAdd(
+                threshold,
+                _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+        }
+
+        private static void CompleteThresholds(
+            ConcurrentDictionary<int, TaskCompletionSource> thresholds,
+            int value)
+        {
+            foreach (var pair in thresholds)
+            {
+                if (value >= pair.Key)
+                    pair.Value.TrySetResult();
+            }
+        }
+
+        private void TrackMax(int active)
+        {
+            while (true)
+            {
+                var current = Volatile.Read(ref _maxObservedConcurrency);
+                if (active <= current)
+                    return;
+
+                if (Interlocked.CompareExchange(ref _maxObservedConcurrency, active, current) == current)
+                    return;
+            }
+        }
+    }
+
+    private enum PayloadGate
+    {
+        None,
+        First,
+        Second,
+    }
+
+    private sealed class PayloadGateTrackingTransformer : IPipelineTransformer<int, int>
+    {
+        private readonly ManualPipelineClock _clock;
+        private readonly Func<int, TimeSpan> _latency;
+        private readonly Func<int, PayloadGate> _gateSelector;
+        private readonly TaskCompletionSource _firstGate =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _secondGate =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ConcurrentDictionary<int, TaskCompletionSource> _activeThresholds = [];
+        private int _activeCalls;
+        private int _maxObservedConcurrency;
+
+        public PayloadGateTrackingTransformer(
+            ManualPipelineClock clock,
+            Func<int, TimeSpan> latency,
+            Func<int, PayloadGate> gateSelector)
+        {
+            _clock = clock;
+            _latency = latency;
+            _gateSelector = gateSelector;
+        }
+
+        public int MaxObservedConcurrency => Volatile.Read(ref _maxObservedConcurrency);
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public async ValueTask<StageResult<int>> TransformAsync(
+            ProcessingEnvelope<int> envelope,
+            CancellationToken ct = default)
+        {
+            var active = Interlocked.Increment(ref _activeCalls);
+            TrackMax(active);
+            CompleteThresholds(_activeThresholds, active);
+
+            try
+            {
+                var elapsed = _latency(envelope.Payload);
+                if (elapsed > TimeSpan.Zero)
+                    _clock.Advance(elapsed);
+
+                await WaitForPayloadGateAsync(envelope.Payload, ct).ConfigureAwait(false);
+                return StageResult<int>.Success(envelope.Payload);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeCalls);
+            }
+        }
+
+        public Task WaitForActiveAsync(int threshold) =>
+            WaitForThresholdAsync(_activeThresholds, threshold, MaxObservedConcurrency);
+
+        public void ReleaseFirstGate() => _firstGate.TrySetResult();
+
+        public void ReleaseSecondGate() => _secondGate.TrySetResult();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        private Task WaitForPayloadGateAsync(int payload, CancellationToken ct)
+        {
+            return _gateSelector(payload) switch
+            {
+                PayloadGate.First => _firstGate.Task.WaitAsync(ct),
+                PayloadGate.Second => _secondGate.Task.WaitAsync(ct),
+                _ => Task.CompletedTask,
+            };
+        }
 
         private static Task WaitForThresholdAsync(
             ConcurrentDictionary<int, TaskCompletionSource> thresholds,
