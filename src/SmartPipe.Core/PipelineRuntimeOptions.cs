@@ -323,6 +323,19 @@ public sealed class PipelineRuntimeOptions
         ObserverDispatch.Validate();
         ArgumentNullException.ThrowIfNull(AdaptiveParallelism);
         AdaptiveParallelism.Validate();
+        if (AdaptiveParallelism.Enabled && InputFullMode != BoundedChannelFullMode.Wait)
+            throw new InvalidOperationException("Adaptive parallelism requires InputFullMode = Wait.");
+
+        if (AdaptiveParallelism.Enabled)
+        {
+            var effectiveAdaptiveMax = Math.Min(
+                EffectiveMaxConcurrency,
+                AdaptiveParallelism.MaxConcurrency);
+            if (AdaptiveParallelism.MinConcurrency > effectiveAdaptiveMax)
+                throw new InvalidOperationException(
+                    "Minimum adaptive concurrency cannot exceed the effective adaptive maximum.");
+        }
+
         ArgumentNullException.ThrowIfNull(Clock);
     }
 
