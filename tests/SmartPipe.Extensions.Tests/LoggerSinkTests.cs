@@ -13,22 +13,21 @@ public class LoggerSinkTests
         using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
         var logger = loggerFactory.CreateLogger<LoggerSink<string>>();
         var sink = new LoggerSink<string>(logger);
-        var result = ProcessingResult<string>.Success("data", 1UL);
+        var envelope = ProcessingEnvelope<string>.Create("data");
 
-        await sink.Invoking(s => s.WriteAsync(result))
+        await sink.Invoking(s => s.WriteAsync(envelope).AsTask())
             .Should().NotThrowAsync();
     }
 
     [Fact]
-    public async Task WriteAsync_FailureResult_ShouldNotThrow()
+    public async Task WriteAsync_NullPayload_ShouldNotThrow()
     {
         using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
-        var logger = loggerFactory.CreateLogger<LoggerSink<string>>();
-        var sink = new LoggerSink<string>(logger);
-        var error = new SmartPipeError("Test error", ErrorType.Permanent);
-        var result = ProcessingResult<string>.Failure(error, 1UL);
+        var logger = loggerFactory.CreateLogger<LoggerSink<string?>>();
+        var sink = new LoggerSink<string?>(logger);
+        var envelope = ProcessingEnvelope<string?>.Create(null);
 
-        await sink.Invoking(s => s.WriteAsync(result))
+        await sink.Invoking(s => s.WriteAsync(envelope).AsTask())
             .Should().NotThrowAsync();
     }
 }

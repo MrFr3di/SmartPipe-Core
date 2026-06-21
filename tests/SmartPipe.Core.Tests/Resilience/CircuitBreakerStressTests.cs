@@ -109,12 +109,12 @@ public class CircuitBreakerStressTests
                 {
                     if (cts.IsCancellationRequested)
                         return;
-                    
+
                     if (rnd.NextDouble() < 0.5)
                         cb.RecordSuccess();
                     else
                         cb.RecordFailure();
-                    
+
                     // Small delay to prevent tight loop
                     if (i % 100 == 0)
                         await Task.Delay(1, cts.Token);

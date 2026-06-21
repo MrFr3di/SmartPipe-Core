@@ -31,5 +31,3 @@ public sealed class TimeProviderClock : IClock
     /// </summary>
     public DateTime UtcNow => _timeProvider.GetUtcNow().UtcDateTime;
 }
-
-

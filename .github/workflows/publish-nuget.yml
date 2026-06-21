@@ -1,0 +1,108 @@
+name: Publish NuGet
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-nuget-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build, test, pack and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve package version from tag
+        id: version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $TAG"
+            echo "Expected examples: v1.1.0, v1.1.0-rc.1, v1.2.0-preview.1"
+            exit 1
+          fi
+
+          VERSION="${TAG#v}"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing SmartPipe packages version: $VERSION"
+
+      - name: Restore
+        run: dotnet restore SmartPipe.Core.slnx --locked-mode
+
+      - name: Build Release
+        run: |
+          dotnet build SmartPipe.Core.slnx \
+            --configuration Release \
+            --no-restore \
+            -warnaserror \
+            /p:ContinuousIntegrationBuild=true
+
+      - name: Test Core
+        run: |
+          dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj \
+            --configuration Release \
+            --no-build \
+            --verbosity normal
+
+      - name: Test Extensions
+        run: |
+          dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj \
+            --configuration Release \
+            --no-build \
+            --verbosity normal
+
+      - name: Pack
+        run: |
+          rm -rf artifacts/packages
+          mkdir -p artifacts/packages
+
+          dotnet pack src/SmartPipe.Core/SmartPipe.Core.csproj \
+            --configuration Release \
+            --no-build \
+            --output artifacts/packages \
+            /p:PackageVersion=${{ steps.version.outputs.version }} \
+            /p:ContinuousIntegrationBuild=true
+
+          dotnet pack src/SmartPipe.Extensions/SmartPipe.Extensions.csproj \
+            --configuration Release \
+            --no-build \
+            --output artifacts/packages \
+            /p:PackageVersion=${{ steps.version.outputs.version }} \
+            /p:ContinuousIntegrationBuild=true
+
+      - name: List packages
+        run: ls -la artifacts/packages
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages-${{ steps.version.outputs.version }}
+          path: artifacts/packages
+
+      - name: Push packages to NuGet
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          dotnet nuget push "artifacts/packages/*.nupkg" \
+            --api-key "$NUGET_API_KEY" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate

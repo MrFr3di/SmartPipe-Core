@@ -10,7 +10,7 @@ public class ConditionalTransformTests
     public async Task WhenConditionTrue_ShouldApplyTransform()
     {
         var transform = new ConditionalTransform<int>(x => x > 5, new DoubleTransform());
-        var result = await transform.TransformAsync(new ProcessingContext<int>(10));
+        var result = await transform.TransformAsync(ProcessingEnvelope<int>.Create(10));
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be(20); // 10 * 2
     }
@@ -19,16 +19,16 @@ public class ConditionalTransformTests
     public async Task WhenConditionFalse_ShouldPassThrough()
     {
         var transform = new ConditionalTransform<int>(x => x > 5, new DoubleTransform());
-        var result = await transform.TransformAsync(new ProcessingContext<int>(3));
+        var result = await transform.TransformAsync(ProcessingEnvelope<int>.Create(3));
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be(3); // unchanged
     }
 
-    private class DoubleTransform : ITransformer<int, int>
+    private class DoubleTransform : IPipelineTransformer<int, int>
     {
-        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public ValueTask<ProcessingResult<int>> TransformAsync(ProcessingContext<int> ctx, CancellationToken ct = default)
-            => ValueTask.FromResult(ProcessingResult<int>.Success(ctx.Payload * 2, ctx.TraceId));
-        public Task DisposeAsync() => Task.CompletedTask;
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask<StageResult<int>> TransformAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default)
+            => ValueTask.FromResult(StageResult<int>.Success(envelope.Payload * 2));
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

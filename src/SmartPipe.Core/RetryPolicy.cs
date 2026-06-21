@@ -9,10 +9,12 @@ public enum BackoffStrategy
 {
     /// <summary>Fixed delay between retries.</summary>
     Fixed,
+
     /// <summary>Linearly increasing delay (delay * attempt).</summary>
     Linear,
+
     /// <summary>Exponentially increasing delay (delay * 2^(attempt-1)).</summary>
-    Exponential
+    Exponential,
 }
 
 /// <summary>Defines retry behavior with configurable backoff strategy.</summary>
@@ -38,7 +40,7 @@ public class RetryPolicy
     public Predicate<SmartPipeError> RetryOn { get; }
 
     /// <summary>Callback invoked before each retry attempt.</summary>
-    public Action<ProcessingContext<object>, SmartPipeError, int>? OnRetry { get; }
+    public Action<ProcessingEnvelope<object>, SmartPipeError, int>? OnRetry { get; }
 
     /// <summary>Creates a new retry policy.</summary>
     /// <param name="maxRetries">Maximum retry attempts (must be > 0).</param>
@@ -54,9 +56,11 @@ public class RetryPolicy
         TimeSpan? maxDelay = null,
         BackoffStrategy strategy = BackoffStrategy.Exponential,
         Predicate<SmartPipeError>? retryOn = null,
-        Action<ProcessingContext<object>, SmartPipeError, int>? onRetry = null)
+        Action<ProcessingEnvelope<object>, SmartPipeError, int>? onRetry = null
+    )
     {
-        MaxRetries = maxRetries > 0 ? maxRetries : throw new ArgumentOutOfRangeException(nameof(maxRetries));
+        MaxRetries =
+            maxRetries > 0 ? maxRetries : throw new ArgumentOutOfRangeException(nameof(maxRetries));
         Delay = delay ?? TimeSpan.FromSeconds(1);
         MaxDelay = maxDelay ?? TimeSpan.FromSeconds(30);
         Strategy = strategy;
@@ -75,7 +79,8 @@ public class RetryPolicy
     /// <remarks>Result is capped at <see cref="MaxDelay"/>.</remarks>
     public TimeSpan GetDelay(int retryCount)
     {
-        if (retryCount < 1) return TimeSpan.Zero;
+        if (retryCount < 1)
+            return TimeSpan.Zero;
 
         long ticks;
         try
@@ -84,8 +89,10 @@ public class RetryPolicy
             {
                 BackoffStrategy.Fixed => Delay.Ticks,
                 BackoffStrategy.Linear => checked(Delay.Ticks * retryCount),
-                BackoffStrategy.Exponential => checked(Delay.Ticks * (long)Math.Pow(2, Math.Min(retryCount - 1, 62))),
-                _ => Delay.Ticks
+                BackoffStrategy.Exponential => checked(
+                    Delay.Ticks * (long)Math.Pow(2, Math.Min(retryCount - 1, 62))
+                ),
+                _ => Delay.Ticks,
             };
         }
         catch (OverflowException)

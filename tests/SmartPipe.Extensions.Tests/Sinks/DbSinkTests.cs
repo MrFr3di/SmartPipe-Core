@@ -18,7 +18,7 @@ public class DbSinkTests : IDisposable
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
-        
+
         // Create test table
         using var command = _connection.CreateCommand();
         command.CommandText = @"
@@ -48,7 +48,7 @@ public class DbSinkTests : IDisposable
         await sink.InitializeAsync();
 
         var entity = new TestEntity { Id = 1, Name = "Test" };
-        var result = ProcessingResult<TestEntity>.Success(entity, 1);
+        var result = ProcessingEnvelope<TestEntity>.Create(entity);
         await sink.WriteAsync(result);
 
         // Verify data was inserted
@@ -59,12 +59,12 @@ public class DbSinkTests : IDisposable
     }
 
     [Fact]
-    public async Task WriteAsync_DoesNotInsert_WhenResultIsFailure()
+    public async Task WriteAsync_DoesNotInsert_WhenPayloadIsNull()
     {
-        var sink = new DbSink<TestEntity>(_connection);
+        var sink = new DbSink<TestEntity?>(_connection, "INSERT INTO TestEntities (Id, Name) VALUES (@Id, @Name)");
         await sink.InitializeAsync();
 
-        var result = ProcessingResult<TestEntity>.Failure(new SmartPipeError("test", ErrorType.Permanent), 1);
+        var result = ProcessingEnvelope<TestEntity?>.Create(null);
         await sink.WriteAsync(result);
 
         // Verify no data was inserted

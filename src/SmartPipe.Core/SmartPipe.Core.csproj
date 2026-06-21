@@ -4,20 +4,37 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Version>1.0.6</Version>
+    <PackageId>SmartPipe.Core</PackageId>
+    <Version>2.0.0</Version>
     <Authors>SmartPipe</Authors>
-    <Description>Streaming ETL pipeline engine for .NET 10 based on System.Threading.Channels. 34 components, 0B allocations. Thread-safe with CircuitBreaker, RetryQueue, SecretScanner, and more.</Description>
+    <Description>Streaming pipeline engine for .NET based on System.Threading.Channels with source, transform, sink, resilience, diagnostics, and compatibility APIs.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageIcon>icon.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageTags>etl;pipeline;channels;resilience;circuit-breaker;retry;deduplication;opentelemetry;performance</PackageTags>
+    <PackageTags>etl;pipeline;channels;in-process;streaming;dataflow;resilience;circuit-breaker;retry;dead-letter;deduplication;performance</PackageTags>
+    <RepositoryUrl>https://github.com/MrFr3di/SmartPipe-Core</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/MrFr3di/SmartPipe-Core</PackageProjectUrl>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <EnableStrictModeForCompatibleTfms>true</EnableStrictModeForCompatibleTfms>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <VerifyReferenceAotCompatibility>true</VerifyReferenceAotCompatibility>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <None Include="icon.png" Pack="true" PackagePath="\" />
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="SmartPipe.Core.Tests" />

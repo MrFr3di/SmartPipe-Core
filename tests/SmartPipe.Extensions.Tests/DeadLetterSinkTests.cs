@@ -2,6 +2,7 @@
 
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -15,19 +16,19 @@ namespace SmartPipe.Extensions.Tests;
 public class DeadLetterSinkTests
 {
     [Fact]
-    public async Task WriteAsync_SuccessResult_ShouldNotStore()
+    public async Task WriteAsync_NullEnvelopePayload_ShouldNotStore()
     {
         var tempFile = Path.GetTempFileName();
         try
         {
             var sink = new DeadLetterSink<string>(tempFile);
-            var result = ProcessingResult<string>.Success("ok", 1UL);
+            await sink.InitializeAsync();
 
-            await sink.WriteAsync(result);
+            await sink.WriteAsync(ProcessingEnvelope<DeadLetterEnvelope<string>>.Create(null!));
             await sink.DisposeAsync();
 
             var content = await File.ReadAllTextAsync(tempFile);
-            content.Should().BeEmpty(); // No errors stored, empty file
+            content.Should().BeEmpty();
         }
         finally
         {
@@ -36,7 +37,7 @@ public class DeadLetterSinkTests
     }
 
     [Fact]
-    public async Task WriteAsync_FailureResult_ShouldStore()
+    public async Task WriteAsync_DeadLetterEnvelope_ShouldStoreReplayContext()
     {
         var tempFile = Path.GetTempFileName();
         try
@@ -44,15 +45,23 @@ public class DeadLetterSinkTests
             var sink = new DeadLetterSink<string>(tempFile);
             await sink.InitializeAsync();
 
-            var error = new SmartPipeError("test error", ErrorType.Permanent);
-            var result = ProcessingResult<string>.Failure(error, 2UL);
-            
-            await sink.WriteAsync(result);
+            var deadLetter = CreateDeadLetter("failed payload", "test error", 42UL);
+
+            await sink.WriteAsync(Envelope(deadLetter));
             await sink.DisposeAsync();
-            
-            File.Exists(tempFile).Should().BeTrue();
+
             var content = await File.ReadAllTextAsync(tempFile);
-            content.Should().Contain("test error");
+            var line = content.Split('\n', StringSplitOptions.RemoveEmptyEntries).Single();
+            using var document = JsonDocument.Parse(line);
+            var root = document.RootElement;
+
+            root.GetProperty("SchemaVersion").GetInt32().Should().Be(1);
+            root.GetProperty("PipelineId").GetString().Should().Be("pipe");
+            root.GetProperty("RunId").GetString().Should().Be("run");
+            root.GetProperty("TraceId").GetUInt64().Should().Be(42UL);
+            root.GetProperty("StageId").GetString().Should().Be("stage");
+            root.GetProperty("OriginalPayload").GetString().Should().Be("failed payload");
+            root.GetProperty("Error").GetProperty("Message").GetString().Should().Be("test error");
         }
         finally
         {
@@ -60,64 +69,49 @@ public class DeadLetterSinkTests
         }
     }
 
-    /// <summary>
-    /// Test 1: WriteAsync_SuccessfulWrite_ItemWrittenToFile
-    /// Creates DeadLetterSink with temp file, writes failed result, verifies item written.
-    /// </summary>
     [Fact]
-    public async Task WriteAsync_SuccessfulWrite_ItemWrittenToFile()
+    public async Task WriteAsync_WithSourceGeneratedTypeInfo_ShouldStoreDeadLetterEnvelope()
     {
-        var tempFile = Path.GetTempFileName();
-        try
-        {
-            var sink = new DeadLetterSink<string>(tempFile);
-            await sink.InitializeAsync();
+        await using var memoryStream = new MemoryStream();
+        var sink = new DeadLetterSink<AotDeadLetterItem>(
+            "dummy.json",
+            DeadLetterSinkTestJsonContext.Default.DeadLetterEnvelopeAotDeadLetterItem,
+            logger: null,
+            stream: memoryStream);
 
-            var error = new SmartPipeError("item failed", ErrorType.Transient);
-            var result = ProcessingResult<string>.Failure(error, 42UL);
+        var deadLetter = CreateDeadLetter(new AotDeadLetterItem(7, "seven"), "source-gen failure", 99UL);
 
-            await sink.WriteAsync(result);
-            await sink.DisposeAsync();
+        await sink.WriteAsync(Envelope(deadLetter));
+        await sink.DisposeAsync();
 
-            var content = await File.ReadAllTextAsync(tempFile);
-            content.Should().NotBeEmpty();
+        memoryStream.Position = 0;
+        using var reader = new StreamReader(memoryStream, Encoding.UTF8, leaveOpen: true);
+        var content = await reader.ReadToEndAsync();
 
-            var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            lines.Should().HaveCount(1);
-
-            var deserialized = JsonSerializer.Deserialize<JsonElement>(lines[0]);
-            deserialized.GetProperty("IsSuccess").GetBoolean().Should().BeFalse();
-            deserialized.GetProperty("TraceId").GetUInt64().Should().Be(42UL);
-        }
-        finally
-        {
-            File.Delete(tempFile);
-        }
+        content.Should().Contain("source-gen failure");
+        content.Should().Contain("\"TraceId\":99");
+        content.Should().Contain("\"OriginalPayload\"");
+        content.Should().Contain("\"Name\":\"seven\"");
     }
 
-    /// <summary>
-    /// Test 2: WriteAsync_IoException_RetriesAndSkips
-    /// Simulates IOException that always throws, verifies retries and skip behavior.
-    /// </summary>
     [Fact]
     public async Task WriteAsync_IoException_RetriesAndSkips()
     {
         var loggerMock = new Mock<ILogger<DeadLetterSink<string>>>();
-
-        // Create sink with memory stream for testing
-        var memoryStream = new MemoryStream();
+        await using var memoryStream = new MemoryStream();
         var sink = new DeadLetterSink<string>(path: "dummy.json", logger: loggerMock.Object, stream: memoryStream);
+        sink.SetTestExceptionForTesting([true, true, true]);
 
-        // Set all 3 attempts to throw IOException
-        sink.SetTestExceptionForTesting(new bool[] { true, true, true });
+        await sink.WriteAsync(Envelope(CreateDeadLetter("payload", "test error", 1UL)));
 
-        var error = new SmartPipeError("test error", ErrorType.Permanent);
-        var result = ProcessingResult<string>.Failure(error, 1UL);
-
-        // Should not throw, should skip after retries
-        await sink.WriteAsync(result);
-
-        // Verify Error log was called (final failure)
+        loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("attempt")),
+                It.IsAny<IOException>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Exactly(2));
         loggerMock.Verify(
             x => x.Log(
                 LogLevel.Error,
@@ -127,32 +121,20 @@ public class DeadLetterSinkTests
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
 
-        // Dispose to clean up
         await sink.DisposeAsync();
     }
 
-    /// <summary>
-    /// Test 3: WriteAsync_IoException_RecoversOnRetry
-    /// Simulates IOException for first 2 attempts, succeeds on 3rd.
-    /// </summary>
     [Fact]
     public async Task WriteAsync_IoException_RecoversOnRetry()
     {
         var loggerMock = new Mock<ILogger<DeadLetterSink<string>>>();
-
-        // Create sink with memory stream for testing
-        var memoryStream = new MemoryStream();
+        await using var memoryStream = new MemoryStream();
         var sink = new DeadLetterSink<string>(path: "dummy.json", logger: loggerMock.Object, stream: memoryStream);
+        sink.SetTestExceptionForTesting([true, true, false]);
 
-        // Throw on attempts 1 and 2, succeed on attempt 3
-        sink.SetTestExceptionForTesting(new bool[] { true, true, false });
+        await sink.WriteAsync(Envelope(CreateDeadLetter("payload", "recoverable error", 99UL)));
+        await sink.DisposeAsync();
 
-        var error = new SmartPipeError("recoverable error", ErrorType.Transient);
-        var result = ProcessingResult<string>.Failure(error, 99UL);
-
-        await sink.WriteAsync(result);
-
-        // Verify Warning logs for retries (2 warnings for attempts 1 and 2)
         loggerMock.Verify(
             x => x.Log(
                 LogLevel.Warning,
@@ -162,66 +144,13 @@ public class DeadLetterSinkTests
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Exactly(2));
 
-        // Dispose to clean up
-        await sink.DisposeAsync();
-
-        // Now check what was written to the memory stream
         memoryStream.Position = 0;
         using var reader = new StreamReader(memoryStream);
         var writtenContent = reader.ReadToEnd();
-        writtenContent.Should().NotBeEmpty();
         writtenContent.Should().Contain("recoverable error");
+        writtenContent.Should().Contain("\"TraceId\":99");
     }
 
-    /// <summary>
-    /// Test 4: WriteAsync_IoException_LogsRetries
-    /// Verifies that retry attempts are logged as Warning.
-    /// </summary>
-    [Fact]
-    public async Task WriteAsync_IoException_LogsRetries()
-    {
-        var loggerMock = new Mock<ILogger<DeadLetterSink<string>>>();
-        
-        // Create sink with memory stream for testing
-        var memoryStream = new MemoryStream();
-        var sink = new DeadLetterSink<string>(path: "dummy.json", logger: loggerMock.Object, stream: memoryStream);
-        
-        // Set all 3 attempts to throw IOException
-        sink.SetTestExceptionForTesting(new bool[] { true, true, true });
-        
-        var error = new SmartPipeError("logged error", ErrorType.Permanent);
-        var result = ProcessingResult<string>.Failure(error, 5UL);
-        
-        await sink.WriteAsync(result);
-        
-        // Verify 2 Warning logs (one for each retry attempt, 3rd attempt logs Error)
-        loggerMock.Verify(
-            x => x.Log(
-                LogLevel.Warning,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => true),
-                It.IsAny<IOException>(),
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.Exactly(2));
-        
-        // Verify 1 Error log (final failure after 3 attempts)
-        loggerMock.Verify(
-            x => x.Log(
-                LogLevel.Error,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => true),
-                It.IsAny<IOException>(),
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.Once);
-        
-        // Dispose to clean up
-        await sink.DisposeAsync();
-    }
-
-    /// <summary>
-    /// Test 5: DisposeAsync_DrainsRemainingItems
-    /// Posts 10 failed items and verifies all are written on DisposeAsync.
-    /// </summary>
     [Fact]
     public async Task DisposeAsync_DrainsRemainingItems()
     {
@@ -231,29 +160,22 @@ public class DeadLetterSinkTests
             var sink = new DeadLetterSink<string>(tempFile);
             await sink.InitializeAsync();
 
-            // Write 10 failed items
-            for (int i = 0; i < 10; i++)
+            for (var i = 0; i < 10; i++)
             {
-                var error = new SmartPipeError($"error {i}", ErrorType.Transient);
-                var result = ProcessingResult<string>.Failure(error, (ulong)i);
-                await sink.WriteAsync(result);
+                await sink.WriteAsync(Envelope(CreateDeadLetter($"payload {i}", $"error {i}", (ulong)i)));
             }
 
-            // Dispose should drain all items
             await sink.DisposeAsync();
 
             var content = await File.ReadAllTextAsync(tempFile);
-            content.Should().NotBeEmpty();
-
             var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
             lines.Should().HaveCount(10);
 
-            // Verify each line is valid JSON
-            for (int i = 0; i < 10; i++)
+            for (var i = 0; i < 10; i++)
             {
-                var json = JsonSerializer.Deserialize<JsonElement>(lines[i]);
-                json.GetProperty("TraceId").GetUInt64().Should().Be((ulong)i);
-                json.GetProperty("IsSuccess").GetBoolean().Should().BeFalse();
+                using var document = JsonDocument.Parse(lines[i]);
+                document.RootElement.GetProperty("TraceId").GetUInt64().Should().Be((ulong)i);
+                document.RootElement.GetProperty("Error").GetProperty("Message").GetString().Should().Be($"error {i}");
             }
         }
         finally
@@ -261,4 +183,33 @@ public class DeadLetterSinkTests
             File.Delete(tempFile);
         }
     }
+
+    private static ProcessingEnvelope<DeadLetterEnvelope<T>> Envelope<T>(DeadLetterEnvelope<T> deadLetter) =>
+        ProcessingEnvelope<DeadLetterEnvelope<T>>.Create(
+            deadLetter,
+            deadLetter.PipelineId,
+            deadLetter.RunId,
+            deadLetter.TraceId);
+
+    private static DeadLetterEnvelope<T> CreateDeadLetter<T>(T payload, string message, ulong traceId) =>
+        new()
+        {
+            SchemaVersion = 1,
+            PipelineId = "pipe",
+            RunId = "run",
+            TraceId = traceId,
+            StageId = "stage",
+            StageName = "Stage",
+            OriginalPayload = payload,
+            Metadata = MetadataBag.Empty,
+            Error = new SmartPipeError(message, ErrorType.Permanent),
+            Attempt = 3,
+            FailedAtUtc = new DateTimeOffset(2026, 6, 14, 0, 0, 0, TimeSpan.Zero),
+        };
 }
+
+public sealed record AotDeadLetterItem(int Id, string Name);
+
+[JsonSerializable(typeof(AotDeadLetterItem))]
+[JsonSerializable(typeof(DeadLetterEnvelope<AotDeadLetterItem>))]
+internal sealed partial class DeadLetterSinkTestJsonContext : JsonSerializerContext;

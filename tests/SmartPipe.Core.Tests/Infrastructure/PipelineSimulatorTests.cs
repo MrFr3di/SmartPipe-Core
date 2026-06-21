@@ -9,7 +9,7 @@ public class PipelineSimulatorTests
     public async Task GenerateAsync_ShouldProduceCorrectCount()
     {
         var sim = new PipelineSimulator(seed: 42);
-        var items = new List<ProcessingContext<int>>();
+        var items = new List<ProcessingEnvelope<int>>();
 
         await foreach (var item in sim.GenerateAsync(i => i, 10))
             items.Add(item);

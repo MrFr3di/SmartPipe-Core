@@ -9,5 +9,5 @@ public enum ErrorType
     Transient,
 
     /// <summary>Permanent error: retry is useless, requires intervention.</summary>
-    Permanent
+    Permanent,
 }

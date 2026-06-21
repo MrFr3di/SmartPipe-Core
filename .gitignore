@@ -33,3 +33,11 @@ benchmarks/SmartPipe.CompetitorBenchmarks/
 TestResults/
 backups/
 
+.work/
+.kilo
+.codebase-memory
+AGENTS.md
+.semgrepignore
+/scripts
+.opencode
+opencode.jsonc

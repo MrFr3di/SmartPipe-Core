@@ -1,17 +1,21 @@
 #nullable enable
 
+using System.Text.Json.Serialization;
+
 namespace SmartPipe.Core;
 
 /// <summary>Structured error for Partial Success pattern. Contains classification and optional exception.</summary>
 /// <param name="Message">Human-readable error description.</param>
 /// <param name="Type">Error classification: Transient or Permanent.</param>
 /// <param name="Category">Optional category for metrics (e.g., "Network", "IO", "Validation").</param>
-/// <param name="InnerException">Optional original exception.</param>
+/// <param name="InnerException">Optional original exception. This value is runtime-only and is not serialized to JSON.</param>
 public readonly record struct SmartPipeError(
     string Message,
     ErrorType Type,
     string? Category = null,
-    Exception? InnerException = null)
+    [property: JsonIgnore]
+    Exception? InnerException = null
+)
 {
     /// <summary>Human-readable error representation.</summary>
     public override string ToString() =>

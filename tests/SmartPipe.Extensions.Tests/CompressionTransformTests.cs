@@ -11,7 +11,7 @@ public class CompressionTransformTests
     {
         var data = System.Text.Encoding.UTF8.GetBytes("Hello, SmartPipe! This is test data for compression that should be large enough to compress.");
         var transform = new CompressionTransform(CompressionAlgorithm.Brotli);
-        var ctx = new ProcessingContext<byte[]>(data);
+        var ctx = ProcessingEnvelope<byte[]>.Create(data);
 
         var result = await transform.TransformAsync(ctx);
 
@@ -24,7 +24,7 @@ public class CompressionTransformTests
     {
         var data = System.Text.Encoding.UTF8.GetBytes("Hello, SmartPipe! GZip compression test data.");
         var transform = new CompressionTransform(CompressionAlgorithm.GZip);
-        var ctx = new ProcessingContext<byte[]>(data);
+        var ctx = ProcessingEnvelope<byte[]>.Create(data);
 
         var result = await transform.TransformAsync(ctx);
 

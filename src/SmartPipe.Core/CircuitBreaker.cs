@@ -11,20 +11,23 @@ public enum CircuitState
 {
     /// <summary>Normal operation, requests pass through.</summary>
     Closed,
+
     /// <summary>Circuit is open, requests are blocked.</summary>
     Open,
+
     /// <summary>Testing if the circuit can be closed.</summary>
     HalfOpen,
+
     /// <summary>Manually isolated, requests are blocked.</summary>
-    Isolated
+    Isolated,
 }
 
 /// <summary>
-/// Lock-free Circuit Breaker with hybrid failure detection:
+/// Thread-safe circuit breaker with hybrid failure detection:
 /// EWMA for fast reaction + Sliding window for accurate threshold decisions.
 /// </summary>
 /// <remarks>
-/// Uses lock-free atomic operations for state transitions.
+/// Uses atomic operations for state transitions.
 /// EWMA provides early warning, sliding window makes final decisions.
 /// </remarks>
 public class CircuitBreaker
@@ -38,6 +41,7 @@ public class CircuitBreaker
 
     private int _state = (int)CircuitState.Closed;
     private int _halfOpenCount;
+    private int _activeHalfOpenProbes;
     private int _halfOpenSuccesses;
     private long _openedAtTicks;
     private long _halfOpenAtTicks;
@@ -62,25 +66,65 @@ public class CircuitBreaker
         int minimumThroughput = 10,
         TimeSpan? breakDuration = null,
         int maxHalfOpenRequests = 3,
-        IClock? clock = null)
+        IClock? clock = null
+    )
     {
+        if (double.IsNaN(failureRatio) || failureRatio <= 0 || failureRatio > 1)
+            throw new ArgumentOutOfRangeException(
+                nameof(failureRatio),
+                failureRatio,
+                "Failure ratio must be greater than zero and less than or equal to one.");
+
+        var resolvedSamplingDuration = samplingDuration ?? TimeSpan.FromSeconds(30);
+        if (resolvedSamplingDuration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                nameof(samplingDuration),
+                resolvedSamplingDuration,
+                "Sampling duration must be greater than zero.");
+
+        if (minimumThroughput <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(minimumThroughput),
+                minimumThroughput,
+                "Minimum throughput must be greater than zero.");
+
+        var resolvedBreakDuration = breakDuration ?? TimeSpan.FromSeconds(30);
+        if (resolvedBreakDuration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                nameof(breakDuration),
+                resolvedBreakDuration,
+                "Break duration must be greater than zero.");
+
+        if (maxHalfOpenRequests <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(maxHalfOpenRequests),
+                maxHalfOpenRequests,
+                "Max half-open requests must be greater than zero.");
+
         _failureRatio = failureRatio;
-        _samplingDuration = samplingDuration ?? TimeSpan.FromSeconds(30);
+        _samplingDuration = resolvedSamplingDuration;
         _minimumThroughput = minimumThroughput;
-        _breakDuration = breakDuration ?? TimeSpan.FromSeconds(30);
+        _breakDuration = resolvedBreakDuration;
         _maxHalfOpenRequests = maxHalfOpenRequests;
         _clock = clock ?? new TimeProviderClock();
     }
 
     /// <summary>Checks if a request is allowed through the circuit.</summary>
-    /// <returns>True if request is allowed; false if circuit is open.</returns>
-    /// <remarks>Transitions to HalfOpen after break duration expires.</remarks>
+    /// <returns>True if request is allowed; false if circuit is open or isolated.</returns>
+    /// <remarks>
+    /// This is a compatibility/simple gate. Closed breakers allow requests.
+    /// Open breakers deny requests until the break duration expires, then transition to
+    /// half-open and allow up to the configured total half-open request count.
+    /// It does not return a lease and does not release half-open slots after completion.
+    /// Runtime half-open execution uses <see cref="TryAcquireHalfOpenProbe(out CircuitBreakerProbe)" />.
+    /// </remarks>
     public bool AllowRequest()
     {
         CleanupWindow();
         int currentState = Volatile.Read(ref _state);
 
-        if (currentState == (int)CircuitState.Closed) return true;
+        if (currentState == (int)CircuitState.Closed)
+            return true;
 
         if (currentState == (int)CircuitState.Open)
         {
@@ -99,7 +143,52 @@ public class CircuitBreaker
         if (currentState == (int)CircuitState.HalfOpen)
             return Interlocked.Increment(ref _halfOpenCount) <= _maxHalfOpenRequests;
 
-        if (currentState == (int)CircuitState.Isolated) return false;
+        if (currentState == (int)CircuitState.Isolated)
+            return false;
+        return true;
+    }
+
+    /// <summary>Attempts to acquire a half-open probe slot.</summary>
+    /// <param name="probe">Lease that releases the half-open probe slot on disposal.</param>
+    /// <returns>
+    /// True when the open breaker has reached its break duration and a probe slot was
+    /// acquired, or when the breaker is already half-open and a slot is available.
+    /// False for closed, isolated, still-open, or saturated half-open breakers.
+    /// </returns>
+    /// <remarks>
+    /// This is the authoritative half-open probe API for runtime execution.
+    /// Dispose the returned probe when the attempted operation completes.
+    /// </remarks>
+    public bool TryAcquireHalfOpenProbe(out CircuitBreakerProbe probe)
+    {
+        CleanupWindow();
+        probe = default;
+
+        var currentState = Volatile.Read(ref _state);
+        if (currentState == (int)CircuitState.Open)
+        {
+            if (_clock.UtcNow.Ticks - Interlocked.Read(ref _openedAtTicks) < _breakDuration.Ticks)
+                return false;
+
+            Interlocked.Exchange(ref _state, (int)CircuitState.HalfOpen);
+            Interlocked.Exchange(ref _halfOpenCount, 0);
+            Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
+            Interlocked.Exchange(ref _halfOpenSuccesses, 0);
+            Interlocked.Exchange(ref _halfOpenAtTicks, _clock.UtcNow.Ticks);
+            currentState = (int)CircuitState.HalfOpen;
+        }
+
+        if (currentState != (int)CircuitState.HalfOpen)
+            return false;
+
+        if (Interlocked.Increment(ref _activeHalfOpenProbes) > _maxHalfOpenRequests)
+        {
+            Interlocked.Decrement(ref _activeHalfOpenProbes);
+            return false;
+        }
+
+        Interlocked.Increment(ref _halfOpenCount);
+        probe = new CircuitBreakerProbe(this);
         return true;
     }
 
@@ -121,6 +210,7 @@ public class CircuitBreaker
             {
                 Interlocked.Exchange(ref _state, (int)CircuitState.Closed);
                 Interlocked.Exchange(ref _halfOpenCount, 0);
+                Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
                 Interlocked.Exchange(ref _halfOpenSuccesses, 0);
                 Interlocked.Exchange(ref _ewmaFailureRate, 0.0);
             }
@@ -135,13 +225,23 @@ public class CircuitBreaker
         CleanupWindow();
         UpdateEwmaFailureRate();
         AddEarlyWarningToWindow();
+
+        if (Volatile.Read(ref _state) == (int)CircuitState.HalfOpen)
+        {
+            TransitionToOpenIfNeeded((int)CircuitState.HalfOpen);
+            return;
+        }
+
         EvaluateSlidingWindow();
     }
 
     private void UpdateEwmaFailureRate()
     {
         double alpha = _ewmaFailureRate > 0.1 ? 0.5 : 0.2;
-        AtomicHelper.CompareExchangeLoop(ref _ewmaFailureRate, current => alpha * 1.0 + (1.0 - alpha) * current);
+        AtomicHelper.CompareExchangeLoop(
+            ref _ewmaFailureRate,
+            current => alpha * 1.0 + (1.0 - alpha) * current
+        );
     }
 
     private void AddEarlyWarningToWindow()
@@ -154,10 +254,13 @@ public class CircuitBreaker
     private void EvaluateSlidingWindow()
     {
         int total = _window.Count;
-        if (total < _minimumThroughput) return;
+        if (total < _minimumThroughput)
+            return;
 
         int failures = 0;
-        foreach (var (_, ok) in _window) if (!ok) failures++;
+        foreach (var (_, ok) in _window)
+            if (!ok)
+                failures++;
 
         int currentState = Volatile.Read(ref _state);
         if ((double)failures / total >= _failureRatio)
@@ -171,6 +274,7 @@ public class CircuitBreaker
             Interlocked.Exchange(ref _state, (int)CircuitState.Open);
             Interlocked.Exchange(ref _openedAtTicks, _clock.UtcNow.Ticks);
             Interlocked.Exchange(ref _halfOpenCount, 0);
+            Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
             Interlocked.Exchange(ref _halfOpenSuccesses, 0);
         }
     }
@@ -184,6 +288,7 @@ public class CircuitBreaker
         while (_window.TryDequeue(out _)) { }
         Interlocked.Exchange(ref _state, (int)CircuitState.Closed);
         Interlocked.Exchange(ref _halfOpenCount, 0);
+        Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
         Interlocked.Exchange(ref _halfOpenSuccesses, 0);
         Interlocked.Exchange(ref _ewmaFailureRate, 0.0);
     }
@@ -194,15 +299,24 @@ public class CircuitBreaker
     {
         CleanupWindow();
         int total = _window.Count;
-        if (total == 0) return 0;
+        if (total == 0)
+            return 0;
         int failures = 0;
-        foreach (var (_, ok) in _window) if (!ok) failures++;
+        foreach (var (_, ok) in _window)
+            if (!ok)
+                failures++;
         return (double)failures / total;
     }
 
     /// <summary>Export metrics for dashboard integration.</summary>
     /// <returns>Dictionary of circuit breaker metrics.</returns>
-    private static readonly string[] _metricKeys = ["cb_state", "cb_failure_ratio", "cb_ewma_failure_rate", "cb_half_open_attempts"];
+    private static readonly string[] _metricKeys =
+    [
+        "cb_state",
+        "cb_failure_ratio",
+        "cb_ewma_failure_rate",
+        "cb_half_open_attempts",
+    ];
 
     /// <summary>Export metrics for dashboard integration. Returns a dictionary with circuit breaker state, failure ratio, EWMA rate, and half-open attempts.</summary>
     /// <returns>Dictionary of circuit breaker metrics keyed by metric name.</returns>
@@ -216,20 +330,36 @@ public class CircuitBreaker
         return dict;
     }
 
+    internal void ReleaseHalfOpenProbe()
+    {
+        if (Volatile.Read(ref _activeHalfOpenProbes) > 0)
+            Interlocked.Decrement(ref _activeHalfOpenProbes);
+    }
+
     private void CleanupWindow()
     {
         var cutoff = _clock.UtcNow - _samplingDuration;
-        while (_window.TryDequeue(out var item))
+
+        while (_window.TryPeek(out var item) && item.Timestamp < cutoff)
         {
-            if (item.Timestamp >= cutoff)
-            {
-                // Item is not expired - re-enqueue it since we incorrectly removed it.
-                // This handles the race condition where TryPeek+TryDequeue would
-                // incorrectly remove a non-expired item.
-                _window.Enqueue(item);
-                break;
-            }
-            // Item was expired, continue to next item
+            _window.TryDequeue(out _);
         }
+    }
+}
+
+/// <summary>Lease for a circuit breaker half-open probe slot.</summary>
+public readonly struct CircuitBreakerProbe : IDisposable
+{
+    private readonly CircuitBreaker? _owner;
+
+    internal CircuitBreakerProbe(CircuitBreaker owner)
+    {
+        _owner = owner;
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        _owner?.ReleaseHalfOpenProbe();
     }
 }

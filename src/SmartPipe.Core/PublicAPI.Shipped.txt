@@ -1,0 +1,630 @@
+#nullable enable
+override SmartPipe.Core.SmartPipeError.ToString() -> string!
+SmartPipe.Core.BackoffStrategy
+SmartPipe.Core.BackoffStrategy.Exponential = 2 -> SmartPipe.Core.BackoffStrategy
+SmartPipe.Core.BackoffStrategy.Fixed = 0 -> SmartPipe.Core.BackoffStrategy
+SmartPipe.Core.BackoffStrategy.Linear = 1 -> SmartPipe.Core.BackoffStrategy
+SmartPipe.Core.BackpressureStrategy
+SmartPipe.Core.BackpressureStrategy.BackpressureStrategy(int capacity) -> void
+SmartPipe.Core.BackpressureStrategy.GetFillRatio(int currentSize) -> double
+SmartPipe.Core.BackpressureStrategy.UpdateThroughput(double throughputPerSec, double predictedLatencyMs = 0) -> void
+SmartPipe.Core.CircuitBreaker
+SmartPipe.Core.CircuitBreaker.AllowRequest() -> bool
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(double failureRatio = 0.5, System.TimeSpan? samplingDuration = null, int minimumThroughput = 10, System.TimeSpan? breakDuration = null, int maxHalfOpenRequests = 3, SmartPipe.Core.IClock? clock = null) -> void
+SmartPipe.Core.CircuitBreaker.GetCurrentFailureRatio() -> double
+SmartPipe.Core.CircuitBreaker.GetMetrics() -> System.Collections.Generic.Dictionary<string!, object!>!
+SmartPipe.Core.CircuitBreaker.Isolate() -> void
+SmartPipe.Core.CircuitBreaker.RecordFailure() -> void
+SmartPipe.Core.CircuitBreaker.RecordSuccess() -> void
+SmartPipe.Core.CircuitBreaker.Reset() -> void
+SmartPipe.Core.CircuitBreaker.State.get -> SmartPipe.Core.CircuitState
+SmartPipe.Core.CircuitBreakerOpenedEvent
+SmartPipe.Core.CircuitBreakerOpenedEvent.CircuitBreakerOpenedEvent(string! PipelineId, string! RunId, string! StageId, System.DateTimeOffset TimestampUtc) -> void
+SmartPipe.Core.CircuitBreakerPolicy
+SmartPipe.Core.CircuitBreakerPolicy.BreakDuration.get -> System.TimeSpan
+SmartPipe.Core.CircuitBreakerPolicy.BreakDuration.init -> void
+SmartPipe.Core.CircuitBreakerPolicy.CircuitBreakerPolicy() -> void
+SmartPipe.Core.CircuitBreakerPolicy.FailureThreshold.get -> int
+SmartPipe.Core.CircuitBreakerPolicy.FailureThreshold.init -> void
+SmartPipe.Core.CircuitBreakerRejectedEvent
+SmartPipe.Core.CircuitBreakerRejectedEvent.CircuitBreakerRejectedEvent(string! PipelineId, string! RunId, ulong TraceId, string! StageId, int Attempt, System.DateTimeOffset TimestampUtc, SmartPipe.Core.SmartPipeError Error) -> void
+SmartPipe.Core.CircuitBreakerRejectedEvent.Error.get -> SmartPipe.Core.SmartPipeError
+SmartPipe.Core.CircuitBreakerRejectedEvent.Error.init -> void
+SmartPipe.Core.CircuitState
+SmartPipe.Core.CircuitState.Closed = 0 -> SmartPipe.Core.CircuitState
+SmartPipe.Core.CircuitState.HalfOpen = 2 -> SmartPipe.Core.CircuitState
+SmartPipe.Core.CircuitState.Isolated = 3 -> SmartPipe.Core.CircuitState
+SmartPipe.Core.CircuitState.Open = 1 -> SmartPipe.Core.CircuitState
+SmartPipe.Core.ComponentOwnershipOptions
+SmartPipe.Core.ComponentOwnershipOptions.ComponentOwnershipOptions() -> void
+SmartPipe.Core.ComponentOwnershipOptions.DisposeExternalComponents.get -> bool
+SmartPipe.Core.ComponentOwnershipOptions.DisposeExternalComponents.init -> void
+SmartPipe.Core.CuckooFilter
+SmartPipe.Core.CuckooFilter.Add(ulong fp) -> bool
+SmartPipe.Core.CuckooFilter.Contains(ulong fp) -> bool
+SmartPipe.Core.CuckooFilter.Count.get -> long
+SmartPipe.Core.CuckooFilter.CuckooFilter(long expectedItems = 1000000, double falsePositiveRate = 0.001) -> void
+SmartPipe.Core.CuckooFilter.Merge(SmartPipe.Core.CuckooFilter! other) -> void
+SmartPipe.Core.CuckooFilter.Remove(ulong fp) -> bool
+SmartPipe.Core.DeadLetterEnvelope<T>
+SmartPipe.Core.DeadLetterEnvelope<T>.Attempt.get -> int
+SmartPipe.Core.DeadLetterEnvelope<T>.Attempt.init -> void
+SmartPipe.Core.DeadLetterEnvelope<T>.Error.get -> SmartPipe.Core.SmartPipeError
+SmartPipe.Core.DeadLetterEnvelope<T>.Error.init -> void
+SmartPipe.Core.DeadLetterEnvelope<T>.FailedAtUtc.get -> System.DateTimeOffset
+SmartPipe.Core.DeadLetterEnvelope<T>.FailedAtUtc.init -> void
+SmartPipe.Core.DeadLetterEnvelope<T>.Metadata.get -> SmartPipe.Core.MetadataBag!
+SmartPipe.Core.DeadLetterEnvelope<T>.Metadata.init -> void
+SmartPipe.Core.DeadLetterEnvelope<T>.OriginalPayload.get -> T
+SmartPipe.Core.DeadLetterEnvelope<T>.OriginalPayload.init -> void
+SmartPipe.Core.DeadLetterEnvelope<T>.PipelineId.get -> string!
+SmartPipe.Core.DeadLetterEnvelope<T>.PipelineId.init -> void
+SmartPipe.Core.DeadLetterEnvelope<T>.RunId.get -> string!
+SmartPipe.Core.DeadLetterEnvelope<T>.RunId.init -> void
+SmartPipe.Core.DeadLetterEnvelope<T>.SchemaVersion.get -> int
+SmartPipe.Core.DeadLetterEnvelope<T>.SchemaVersion.init -> void
+SmartPipe.Core.DeadLetterEnvelope<T>.StageId.get -> string!
+SmartPipe.Core.DeadLetterEnvelope<T>.StageId.init -> void
+SmartPipe.Core.DeadLetterEnvelope<T>.StageName.get -> string!
+SmartPipe.Core.DeadLetterEnvelope<T>.StageName.init -> void
+SmartPipe.Core.DeadLetterEnvelope<T>.TraceId.get -> ulong
+SmartPipe.Core.DeadLetterEnvelope<T>.TraceId.init -> void
+SmartPipe.Core.DeadLetterWrittenEvent
+SmartPipe.Core.DeadLetterWrittenEvent.DeadLetterWrittenEvent(string! PipelineId, string! RunId, ulong TraceId, string! StageId, string! StageName, int Attempt, System.DateTimeOffset TimestampUtc) -> void
+SmartPipe.Core.DeadLetterWrittenEvent.StageName.get -> string!
+SmartPipe.Core.DeadLetterWrittenEvent.StageName.init -> void
+SmartPipe.Core.DeduplicationFilter
+SmartPipe.Core.DeduplicationFilter.ContainsAndAdd(ulong traceId) -> bool
+SmartPipe.Core.DeduplicationFilter.DeduplicationFilter(long expectedItems = 1000000, double falsePositiveRate = 0.001, System.TimeSpan? ttl = null) -> void
+SmartPipe.Core.DeduplicationFilter.ItemsSeen.get -> long
+SmartPipe.Core.ErrorType
+SmartPipe.Core.ErrorType.Permanent = 1 -> SmartPipe.Core.ErrorType
+SmartPipe.Core.ErrorType.Transient = 0 -> SmartPipe.Core.ErrorType
+SmartPipe.Core.ExponentialHistogram
+SmartPipe.Core.ExponentialHistogram.ExponentialHistogram(double minValue = 0.1, double maxValue = 100000, int bucketCount = 100) -> void
+SmartPipe.Core.ExponentialHistogram.GetPercentile(double p) -> double
+SmartPipe.Core.ExponentialHistogram.P50.get -> double
+SmartPipe.Core.ExponentialHistogram.P95.get -> double
+SmartPipe.Core.ExponentialHistogram.P99.get -> double
+SmartPipe.Core.ExponentialHistogram.Record(double value) -> void
+SmartPipe.Core.FailureAction
+SmartPipe.Core.FailureAction.DeadLetter = 1 -> SmartPipe.Core.FailureAction
+SmartPipe.Core.FailureAction.EmitFailureResult = 0 -> SmartPipe.Core.FailureAction
+SmartPipe.Core.FailureAction.FaultPipeline = 4 -> SmartPipe.Core.FailureAction
+SmartPipe.Core.FailureAction.Skip = 2 -> SmartPipe.Core.FailureAction
+SmartPipe.Core.FailureAction.StopPipeline = 3 -> SmartPipe.Core.FailureAction
+SmartPipe.Core.HyperLogLogEstimator
+SmartPipe.Core.HyperLogLogEstimator.Add(ulong hash) -> void
+SmartPipe.Core.HyperLogLogEstimator.Estimate() -> double
+SmartPipe.Core.HyperLogLogEstimator.HyperLogLogEstimator(int precision = 12) -> void
+SmartPipe.Core.IClock
+SmartPipe.Core.IClock.UtcNow.get -> System.DateTime
+SmartPipe.Core.IDeadLetterRedactor<T>
+SmartPipe.Core.IDeadLetterRedactor<T>.Redact(SmartPipe.Core.DeadLetterEnvelope<T>! envelope) -> SmartPipe.Core.DeadLetterEnvelope<T>!
+SmartPipe.Core.IDeadLetterSerializer<T>
+SmartPipe.Core.IDeadLetterSerializer<T>.ReadAsync(System.IO.Stream! stream, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.DeadLetterEnvelope<T>!>!
+SmartPipe.Core.IDeadLetterSerializer<T>.WriteAsync(SmartPipe.Core.DeadLetterEnvelope<T>! envelope, System.IO.Stream! stream, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Core.IPipelineComponentDescriptor
+SmartPipe.Core.IPipelineComponentDescriptor.Lifetime.get -> SmartPipe.Core.PipelineComponentLifetime
+SmartPipe.Core.IPipelineComponentDescriptor.OwnsResources.get -> bool
+SmartPipe.Core.IPipelineObserver
+SmartPipe.Core.IPipelineObserver.OnEventAsync(SmartPipe.Core.PipelineEvent! pipelineEvent, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Core.IPipelineSink<T>
+SmartPipe.Core.IPipelineSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Core.IPipelineSink<T>.WriteAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Core.IPipelineSource<T>
+SmartPipe.Core.IPipelineSource<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Core.IPipelineSource<T>.ReadEnvelopesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingEnvelope<T>!>!
+SmartPipe.Core.IPipelineTransformer<TInput, TOutput>
+SmartPipe.Core.IPipelineTransformer<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Core.IPipelineTransformer<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<TInput>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<TOutput>>
+SmartPipe.Core.JsonLinesDeadLetterSerializer<T>
+SmartPipe.Core.JsonLinesDeadLetterSerializer<T>.JsonLinesDeadLetterSerializer(System.Text.Json.JsonSerializerOptions? options = null) -> void
+SmartPipe.Core.JsonLinesDeadLetterSerializer<T>.JsonLinesDeadLetterSerializer(System.Text.Json.Serialization.Metadata.JsonTypeInfo<SmartPipe.Core.DeadLetterEnvelope<T>!>! typeInfo) -> void
+SmartPipe.Core.JsonLinesDeadLetterSerializer<T>.ReadAsync(System.IO.Stream! stream, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.DeadLetterEnvelope<T>!>!
+SmartPipe.Core.JsonLinesDeadLetterSerializer<T>.WriteAsync(SmartPipe.Core.DeadLetterEnvelope<T>! envelope, System.IO.Stream! stream, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Core.JumpHash
+SmartPipe.Core.LineageEntry
+SmartPipe.Core.LineageEntry.CompletedAtUtc.get -> System.DateTimeOffset?
+SmartPipe.Core.LineageEntry.CompletedAtUtc.init -> void
+SmartPipe.Core.LineageEntry.InputTypeName.get -> string!
+SmartPipe.Core.LineageEntry.InputTypeName.init -> void
+SmartPipe.Core.LineageEntry.LineageEntry(string! StageId, string! StageName, string! InputTypeName, string! OutputTypeName, System.DateTimeOffset StartedAtUtc, System.DateTimeOffset? CompletedAtUtc, SmartPipe.Core.StageOutcome Outcome) -> void
+SmartPipe.Core.LineageEntry.Outcome.get -> SmartPipe.Core.StageOutcome
+SmartPipe.Core.LineageEntry.Outcome.init -> void
+SmartPipe.Core.LineageEntry.OutputTypeName.get -> string!
+SmartPipe.Core.LineageEntry.OutputTypeName.init -> void
+SmartPipe.Core.LineageEntry.StageId.get -> string!
+SmartPipe.Core.LineageEntry.StageId.init -> void
+SmartPipe.Core.LineageEntry.StageName.get -> string!
+SmartPipe.Core.LineageEntry.StageName.init -> void
+SmartPipe.Core.LineageEntry.StartedAtUtc.get -> System.DateTimeOffset
+SmartPipe.Core.LineageEntry.StartedAtUtc.init -> void
+SmartPipe.Core.LineageMode
+SmartPipe.Core.LineageMode.ErrorsOnly = 1 -> SmartPipe.Core.LineageMode
+SmartPipe.Core.LineageMode.Full = 3 -> SmartPipe.Core.LineageMode
+SmartPipe.Core.LineageMode.Minimal = 2 -> SmartPipe.Core.LineageMode
+SmartPipe.Core.LineageMode.Off = 0 -> SmartPipe.Core.LineageMode
+SmartPipe.Core.MetadataBag
+SmartPipe.Core.MetadataBag.AsReadOnlyDictionary() -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+SmartPipe.Core.MetadataBag.Contains(string! key) -> bool
+SmartPipe.Core.MetadataBag.GetString(string! key) -> string?
+SmartPipe.Core.MetadataBag.Items.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+SmartPipe.Core.MetadataBag.MetadataBag() -> void
+SmartPipe.Core.MetadataBag.MetadataBag(System.Collections.Generic.IReadOnlyDictionary<string!, string!>? items) -> void
+SmartPipe.Core.MetadataBag.Set(string! key, string! value) -> SmartPipe.Core.MetadataBag!
+SmartPipe.Core.MetadataBag.ToDictionary() -> System.Collections.Generic.Dictionary<string!, string!>!
+SmartPipe.Core.NoOpDeadLetterRedactor<T>
+SmartPipe.Core.NoOpDeadLetterRedactor<T>.NoOpDeadLetterRedactor() -> void
+SmartPipe.Core.NoOpDeadLetterRedactor<T>.Redact(SmartPipe.Core.DeadLetterEnvelope<T>! envelope) -> SmartPipe.Core.DeadLetterEnvelope<T>!
+SmartPipe.Core.ObjectPool<T>
+SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory) -> void
+SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory, int capacity) -> void
+SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory, int capacity = 256, int maxCapacity = 1024) -> void
+SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory, System.Action<T!>? reset, int capacity) -> void
+SmartPipe.Core.ObjectPool<T>.ObjectPool(System.Func<T!>! factory, System.Action<T!>? reset, int capacity, int maxCapacity) -> void
+SmartPipe.Core.ObjectPool<T>.Rent() -> T!
+SmartPipe.Core.ObjectPool<T>.Return(T! item) -> void
+SmartPipe.Core.ObserverFailedEvent
+SmartPipe.Core.ObserverFailedEvent.Exception.get -> System.Exception!
+SmartPipe.Core.ObserverFailedEvent.Exception.init -> void
+SmartPipe.Core.ObserverFailedEvent.ObserverFailedEvent(string! PipelineId, string! RunId, string! ObserverName, System.DateTimeOffset TimestampUtc, System.Exception! Exception) -> void
+SmartPipe.Core.ObserverFailedEvent.ObserverName.get -> string!
+SmartPipe.Core.ObserverFailedEvent.ObserverName.init -> void
+SmartPipe.Core.ObserverFailurePolicy
+SmartPipe.Core.ObserverFailurePolicy.FaultPipeline = 2 -> SmartPipe.Core.ObserverFailurePolicy
+SmartPipe.Core.ObserverFailurePolicy.Ignore = 0 -> SmartPipe.Core.ObserverFailurePolicy
+SmartPipe.Core.ObserverFailurePolicy.Log = 1 -> SmartPipe.Core.ObserverFailurePolicy
+SmartPipe.Core.ObserverFailurePolicy.RemoveObserver = 3 -> SmartPipe.Core.ObserverFailurePolicy
+SmartPipe.Core.ObserverQueueOverflowPolicy
+SmartPipe.Core.ObserverQueueOverflowPolicy.DropNewest = 1 -> SmartPipe.Core.ObserverQueueOverflowPolicy
+SmartPipe.Core.ObserverQueueOverflowPolicy.DropOldest = 2 -> SmartPipe.Core.ObserverQueueOverflowPolicy
+SmartPipe.Core.ObserverQueueOverflowPolicy.FaultPipeline = 3 -> SmartPipe.Core.ObserverQueueOverflowPolicy
+SmartPipe.Core.ObserverQueueOverflowPolicy.Wait = 0 -> SmartPipe.Core.ObserverQueueOverflowPolicy
+SmartPipe.Core.ObserverReliability
+SmartPipe.Core.ObserverReliability.BestEffort = 0 -> SmartPipe.Core.ObserverReliability
+SmartPipe.Core.ObserverReliability.Critical = 2 -> SmartPipe.Core.ObserverReliability
+SmartPipe.Core.ObserverReliability.Reliable = 1 -> SmartPipe.Core.ObserverReliability
+SmartPipe.Core.PipelineBuilder
+SmartPipe.Core.PipelineBuilder<TInput, TOutput>
+SmartPipe.Core.PipelineBuilder<TInput, TOutput>.Run(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> SmartPipe.Core.PipelineRun<TOutput>!
+SmartPipe.Core.PipelineBuilder<TInput, TOutput>.To(SmartPipe.Core.IPipelineSink<TOutput>! sink, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> SmartPipe.Core.PipelineRun<TOutput>!
+SmartPipe.Core.PipelineBuilder<TInput, TOutput>.ToFactory(System.Func<System.IServiceProvider?, SmartPipe.Core.IPipelineSink<TOutput>!>! sinkFactory, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> SmartPipe.Core.PipelineRun<TOutput>!
+SmartPipe.Core.PipelineBuilder<TInput, TOutput>.Transform<TNext>(SmartPipe.Core.IPipelineTransformer<TOutput, TNext>! transformer, SmartPipe.Core.StageFailureOptions? failureOptions = null, SmartPipe.Core.StageDeadLetterOptions<TOutput>? deadLetterOptions = null) -> SmartPipe.Core.PipelineBuilder<TInput, TNext>!
+SmartPipe.Core.PipelineBuilder<TInput, TOutput>.TransformFactory<TNext>(System.Func<System.IServiceProvider?, SmartPipe.Core.IPipelineTransformer<TOutput, TNext>!>! transformerFactory) -> SmartPipe.Core.PipelineBuilder<TInput, TNext>!
+SmartPipe.Core.PipelineBuilder<TInput, TOutput>.WithObserver(SmartPipe.Core.IPipelineObserver! observer, SmartPipe.Core.ObserverReliability reliability = SmartPipe.Core.ObserverReliability.BestEffort, SmartPipe.Core.ObserverFailurePolicy failurePolicy = SmartPipe.Core.ObserverFailurePolicy.Log) -> SmartPipe.Core.PipelineBuilder<TInput, TOutput>!
+SmartPipe.Core.PipelineBuilder<TInput>
+SmartPipe.Core.PipelineBuilder<TInput>.Transform(System.Func<TInput, TInput>! middleware) -> SmartPipe.Core.PipelineBuilder<TInput, TInput>!
+SmartPipe.Core.PipelineBuilder<TInput>.Transform<TOutput>(SmartPipe.Core.IPipelineTransformer<TInput, TOutput>! transformer, SmartPipe.Core.StageFailureOptions? failureOptions = null, SmartPipe.Core.StageDeadLetterOptions<TInput>? deadLetterOptions = null) -> SmartPipe.Core.PipelineBuilder<TInput, TOutput>!
+SmartPipe.Core.PipelineBuilder<TInput>.TransformFactory<TOutput>(System.Func<System.IServiceProvider?, SmartPipe.Core.IPipelineTransformer<TInput, TOutput>!>! transformerFactory) -> SmartPipe.Core.PipelineBuilder<TInput, TOutput>!
+SmartPipe.Core.PipelineCancelledEvent
+SmartPipe.Core.PipelineCancelledEvent.PipelineCancelledEvent(string! PipelineId, string! RunId, System.DateTimeOffset TimestampUtc) -> void
+SmartPipe.Core.PipelineCompletedEvent
+SmartPipe.Core.PipelineCompletedEvent.PipelineCompletedEvent(string! PipelineId, string! RunId, System.DateTimeOffset TimestampUtc) -> void
+SmartPipe.Core.PipelineComponentLifetime
+SmartPipe.Core.PipelineComponentLifetime.Reusable = 1 -> SmartPipe.Core.PipelineComponentLifetime
+SmartPipe.Core.PipelineComponentLifetime.SingletonExternal = 2 -> SmartPipe.Core.PipelineComponentLifetime
+SmartPipe.Core.PipelineComponentLifetime.SingleUse = 0 -> SmartPipe.Core.PipelineComponentLifetime
+SmartPipe.Core.PipelineComponentRegistration
+SmartPipe.Core.PipelineComponentRegistration.ComponentType.get -> System.Type!
+SmartPipe.Core.PipelineComponentRegistration.ComponentType.init -> void
+SmartPipe.Core.PipelineComponentRegistration.IsFactoryBased.get -> bool
+SmartPipe.Core.PipelineComponentRegistration.IsFactoryBased.init -> void
+SmartPipe.Core.PipelineComponentRegistration.Lifetime.get -> SmartPipe.Core.PipelineComponentLifetime
+SmartPipe.Core.PipelineComponentRegistration.Lifetime.init -> void
+SmartPipe.Core.PipelineComponentRegistration.OwnsResources.get -> bool
+SmartPipe.Core.PipelineComponentRegistration.OwnsResources.init -> void
+SmartPipe.Core.PipelineComponentRegistration.PipelineComponentRegistration(System.Type! ComponentType, SmartPipe.Core.PipelineComponentLifetime Lifetime, bool OwnsResources, bool IsFactoryBased) -> void
+SmartPipe.Core.PipelineDefinition
+SmartPipe.Core.PipelineDefinition.Components.get -> System.Collections.Generic.IReadOnlyList<SmartPipe.Core.PipelineComponentRegistration!>!
+SmartPipe.Core.PipelineDefinition.IsReusable.get -> bool
+SmartPipe.Core.PipelineDefinition.LineageMode.get -> SmartPipe.Core.LineageMode
+SmartPipe.Core.PipelineDefinition.MarkRuntimeCreated() -> void
+SmartPipe.Core.PipelineDefinition.OwnershipOptions.get -> SmartPipe.Core.ComponentOwnershipOptions!
+SmartPipe.Core.PipelineDefinition.PipelineDefinition(string! pipelineId, System.Collections.Generic.IEnumerable<SmartPipe.Core.PipelineComponentRegistration!>? components = null, System.Collections.Generic.IEnumerable<SmartPipe.Core.PipelineStageDefinition!>? stages = null, SmartPipe.Core.ComponentOwnershipOptions? ownershipOptions = null, SmartPipe.Core.LineageMode lineageMode = SmartPipe.Core.LineageMode.Minimal) -> void
+SmartPipe.Core.PipelineDefinition.PipelineId.get -> string!
+SmartPipe.Core.PipelineDefinition.Stages.get -> System.Collections.Generic.IReadOnlyList<SmartPipe.Core.PipelineStageDefinition!>!
+SmartPipe.Core.PipelineEvent
+SmartPipe.Core.PipelineEvent.Attempt.get -> int
+SmartPipe.Core.PipelineEvent.Attempt.init -> void
+SmartPipe.Core.PipelineEvent.PipelineEvent(string! PipelineId, string! RunId, ulong TraceId, string? StageId, int Attempt, System.DateTimeOffset TimestampUtc) -> void
+SmartPipe.Core.PipelineEvent.PipelineId.get -> string!
+SmartPipe.Core.PipelineEvent.PipelineId.init -> void
+SmartPipe.Core.PipelineEvent.RunId.get -> string!
+SmartPipe.Core.PipelineEvent.RunId.init -> void
+SmartPipe.Core.PipelineEvent.StageId.get -> string?
+SmartPipe.Core.PipelineEvent.StageId.init -> void
+SmartPipe.Core.PipelineEvent.TimestampUtc.get -> System.DateTimeOffset
+SmartPipe.Core.PipelineEvent.TimestampUtc.init -> void
+SmartPipe.Core.PipelineEvent.TraceId.get -> ulong
+SmartPipe.Core.PipelineEvent.TraceId.init -> void
+SmartPipe.Core.PipelineExecutionPlan
+SmartPipe.Core.PipelineExecutionPlan.Definition.get -> SmartPipe.Core.PipelineDefinition!
+SmartPipe.Core.PipelineFailureActionException
+SmartPipe.Core.PipelineFailureActionException.Error.get -> SmartPipe.Core.SmartPipeError
+SmartPipe.Core.PipelineFailureActionException.PipelineFailureActionException(string! stageId, string! stageName, SmartPipe.Core.SmartPipeError error) -> void
+SmartPipe.Core.PipelineFailureActionException.StageId.get -> string!
+SmartPipe.Core.PipelineFailureActionException.StageName.get -> string!
+SmartPipe.Core.PipelineFaultedEvent
+SmartPipe.Core.PipelineFaultedEvent.Exception.get -> System.Exception!
+SmartPipe.Core.PipelineFaultedEvent.Exception.init -> void
+SmartPipe.Core.PipelineFaultedEvent.PipelineFaultedEvent(string! PipelineId, string! RunId, System.DateTimeOffset TimestampUtc, System.Exception! Exception) -> void
+SmartPipe.Core.PipelineObserverRegistration
+SmartPipe.Core.PipelineObserverRegistration.FailurePolicy.get -> SmartPipe.Core.ObserverFailurePolicy
+SmartPipe.Core.PipelineObserverRegistration.FailurePolicy.init -> void
+SmartPipe.Core.PipelineObserverRegistration.Observer.get -> SmartPipe.Core.IPipelineObserver!
+SmartPipe.Core.PipelineObserverRegistration.Observer.init -> void
+SmartPipe.Core.PipelineObserverRegistration.PipelineObserverRegistration(SmartPipe.Core.IPipelineObserver! Observer, SmartPipe.Core.ObserverReliability Reliability = SmartPipe.Core.ObserverReliability.BestEffort, SmartPipe.Core.ObserverFailurePolicy FailurePolicy = SmartPipe.Core.ObserverFailurePolicy.Log) -> void
+SmartPipe.Core.PipelineObserverRegistration.Reliability.get -> SmartPipe.Core.ObserverReliability
+SmartPipe.Core.PipelineObserverRegistration.Reliability.init -> void
+SmartPipe.Core.PipelineOutput<T>
+SmartPipe.Core.PipelineOutput<T>.Envelope.get -> SmartPipe.Core.ProcessingEnvelope<T>?
+SmartPipe.Core.PipelineOutput<T>.Envelope.init -> void
+SmartPipe.Core.PipelineOutput<T>.Result.init -> void
+SmartPipe.Core.PipelineRun<TOutput>
+SmartPipe.Core.PipelineRun<TOutput>.AbortAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Core.PipelineRun<TOutput>.CancelAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Core.PipelineRun<TOutput>.Completion.get -> System.Threading.Tasks.Task!
+SmartPipe.Core.PipelineRun<TOutput>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Core.PipelineRun<TOutput>.DrainAsync(System.TimeSpan timeout, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Core.PipelineRun<TOutput>.Outputs.get -> System.Threading.Channels.ChannelReader<SmartPipe.Core.PipelineOutput<TOutput>!>!
+SmartPipe.Core.PipelineRun<TOutput>.PipelineRun(System.Threading.Channels.ChannelReader<SmartPipe.Core.PipelineOutput<TOutput>!>! outputs, System.Threading.Tasks.Task! completion, System.Func<SmartPipe.Core.PipelineRunState>! stateProvider, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>? cancel = null, System.Func<System.TimeSpan, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>? drain = null, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>? abort = null, System.Func<System.Threading.Tasks.ValueTask>? dispose = null) -> void
+SmartPipe.Core.PipelineRun<TOutput>.State.get -> SmartPipe.Core.PipelineRunState
+SmartPipe.Core.PipelineRunState
+SmartPipe.Core.PipelineRunState.Aborted = 5 -> SmartPipe.Core.PipelineRunState
+SmartPipe.Core.PipelineRunState.Cancelled = 4 -> SmartPipe.Core.PipelineRunState
+SmartPipe.Core.PipelineRunState.Completed = 3 -> SmartPipe.Core.PipelineRunState
+SmartPipe.Core.PipelineRunState.Draining = 2 -> SmartPipe.Core.PipelineRunState
+SmartPipe.Core.PipelineRunState.Faulted = 6 -> SmartPipe.Core.PipelineRunState
+SmartPipe.Core.PipelineRunState.NotStarted = 0 -> SmartPipe.Core.PipelineRunState
+SmartPipe.Core.PipelineRunState.Running = 1 -> SmartPipe.Core.PipelineRunState
+SmartPipe.Core.PipelineRuntime
+SmartPipe.Core.PipelineRuntime.ExecutionPlan.get -> SmartPipe.Core.PipelineExecutionPlan!
+SmartPipe.Core.PipelineRuntime.PipelineRuntime(SmartPipe.Core.PipelineExecutionPlan! executionPlan) -> void
+SmartPipe.Core.PipelineRuntime.RunId.get -> string!
+SmartPipe.Core.PipelineStageDefinition
+SmartPipe.Core.PipelineStageDefinition.FailureOptions.get -> SmartPipe.Core.StageFailureOptions!
+SmartPipe.Core.PipelineStageDefinition.FailureOptions.init -> void
+SmartPipe.Core.PipelineStageDefinition.InputType.get -> System.Type!
+SmartPipe.Core.PipelineStageDefinition.InputType.init -> void
+SmartPipe.Core.PipelineStageDefinition.OutputType.get -> System.Type!
+SmartPipe.Core.PipelineStageDefinition.OutputType.init -> void
+SmartPipe.Core.PipelineStageDefinition.PipelineStageDefinition(string! StageId, string! StageName, System.Type! InputType, System.Type! OutputType, SmartPipe.Core.StageFailureOptions! FailureOptions) -> void
+SmartPipe.Core.PipelineStageDefinition.StageId.get -> string!
+SmartPipe.Core.PipelineStageDefinition.StageId.init -> void
+SmartPipe.Core.PipelineStageDefinition.StageName.get -> string!
+SmartPipe.Core.PipelineStageDefinition.StageName.init -> void
+SmartPipe.Core.PipelineStartedEvent
+SmartPipe.Core.PipelineStartedEvent.PipelineStartedEvent(string! PipelineId, string! RunId, System.DateTimeOffset TimestampUtc) -> void
+SmartPipe.Core.ProcessingEnvelope<T>
+SmartPipe.Core.ProcessingEnvelope<T>.Attempt.get -> int
+SmartPipe.Core.ProcessingEnvelope<T>.Attempt.init -> void
+SmartPipe.Core.ProcessingEnvelope<T>.CreatedAtUtc.get -> System.DateTimeOffset
+SmartPipe.Core.ProcessingEnvelope<T>.CreatedAtUtc.init -> void
+SmartPipe.Core.ProcessingEnvelope<T>.Lineage.get -> System.Collections.Generic.IReadOnlyList<SmartPipe.Core.LineageEntry!>!
+SmartPipe.Core.ProcessingEnvelope<T>.Lineage.init -> void
+SmartPipe.Core.ProcessingEnvelope<T>.Metadata.get -> SmartPipe.Core.MetadataBag!
+SmartPipe.Core.ProcessingEnvelope<T>.Metadata.init -> void
+SmartPipe.Core.ProcessingEnvelope<T>.Payload.get -> T
+SmartPipe.Core.ProcessingEnvelope<T>.Payload.init -> void
+SmartPipe.Core.ProcessingEnvelope<T>.PipelineId.get -> string!
+SmartPipe.Core.ProcessingEnvelope<T>.PipelineId.init -> void
+SmartPipe.Core.ProcessingEnvelope<T>.RunId.get -> string!
+SmartPipe.Core.ProcessingEnvelope<T>.RunId.init -> void
+SmartPipe.Core.ProcessingEnvelope<T>.TraceId.get -> ulong
+SmartPipe.Core.ProcessingEnvelope<T>.TraceId.init -> void
+SmartPipe.Core.ReservoirSampler<T>
+SmartPipe.Core.ReservoirSampler<T>.Add(T item) -> void
+SmartPipe.Core.ReservoirSampler<T>.Capacity.get -> int
+SmartPipe.Core.ReservoirSampler<T>.Count.get -> long
+SmartPipe.Core.ReservoirSampler<T>.ReservoirSampler(int capacity = 1000) -> void
+SmartPipe.Core.ReservoirSampler<T>.Reset() -> void
+SmartPipe.Core.ReservoirSampler<T>.Sample.get -> T[]!
+SmartPipe.Core.RetryAttemptedEvent
+SmartPipe.Core.RetryAttemptedEvent.RetryAttemptedEvent(string! PipelineId, string! RunId, ulong TraceId, string! StageId, int Attempt, System.DateTimeOffset TimestampUtc) -> void
+SmartPipe.Core.RetryExhaustedEvent
+SmartPipe.Core.RetryExhaustedEvent.Error.get -> SmartPipe.Core.SmartPipeError
+SmartPipe.Core.RetryExhaustedEvent.Error.init -> void
+SmartPipe.Core.RetryExhaustedEvent.RetryExhaustedEvent(string! PipelineId, string! RunId, ulong TraceId, string! StageId, int Attempt, System.DateTimeOffset TimestampUtc, SmartPipe.Core.SmartPipeError Error) -> void
+SmartPipe.Core.RetryPolicy
+SmartPipe.Core.RetryPolicy.Delay.get -> System.TimeSpan
+SmartPipe.Core.RetryPolicy.GetDelay(int retryCount) -> System.TimeSpan
+SmartPipe.Core.RetryPolicy.MaxDelay.get -> System.TimeSpan
+SmartPipe.Core.RetryPolicy.MaxRetries.get -> int
+SmartPipe.Core.RetryPolicy.RetryOn.get -> System.Predicate<SmartPipe.Core.SmartPipeError>!
+SmartPipe.Core.RetryPolicy.ShouldRetry(SmartPipe.Core.SmartPipeError error) -> bool
+SmartPipe.Core.RetryPolicy.Strategy.get -> SmartPipe.Core.BackoffStrategy
+SmartPipe.Core.RetryScheduledEvent
+SmartPipe.Core.RetryScheduledEvent.Delay.get -> System.TimeSpan
+SmartPipe.Core.RetryScheduledEvent.Delay.init -> void
+SmartPipe.Core.RetryScheduledEvent.Error.get -> SmartPipe.Core.SmartPipeError
+SmartPipe.Core.RetryScheduledEvent.Error.init -> void
+SmartPipe.Core.RetryScheduledEvent.RetryScheduledEvent(string! PipelineId, string! RunId, ulong TraceId, string! StageId, int Attempt, System.DateTimeOffset TimestampUtc, System.TimeSpan Delay, SmartPipe.Core.SmartPipeError Error) -> void
+SmartPipe.Core.SecretScanner
+SmartPipe.Core.SinkWriteFailedEvent
+SmartPipe.Core.SinkWriteFailedEvent.Exception.get -> System.Exception!
+SmartPipe.Core.SinkWriteFailedEvent.Exception.init -> void
+SmartPipe.Core.SinkWriteFailedEvent.SinkWriteFailedEvent(string! PipelineId, string! RunId, ulong TraceId, int Attempt, System.DateTimeOffset TimestampUtc, System.Exception! Exception) -> void
+SmartPipe.Core.SinkWriteStartedEvent
+SmartPipe.Core.SinkWriteStartedEvent.SinkWriteStartedEvent(string! PipelineId, string! RunId, ulong TraceId, int Attempt, System.DateTimeOffset TimestampUtc) -> void
+SmartPipe.Core.SmartPipeError
+SmartPipe.Core.SmartPipeError.Category.get -> string?
+SmartPipe.Core.SmartPipeError.Category.init -> void
+SmartPipe.Core.SmartPipeError.InnerException.get -> System.Exception?
+SmartPipe.Core.SmartPipeError.InnerException.init -> void
+SmartPipe.Core.SmartPipeError.Message.get -> string!
+SmartPipe.Core.SmartPipeError.Message.init -> void
+SmartPipe.Core.SmartPipeError.SmartPipeError() -> void
+SmartPipe.Core.SmartPipeError.SmartPipeError(string! Message, SmartPipe.Core.ErrorType Type, string? Category = null, System.Exception? InnerException = null) -> void
+SmartPipe.Core.SmartPipeError.Type.get -> SmartPipe.Core.ErrorType
+SmartPipe.Core.SmartPipeError.Type.init -> void
+SmartPipe.Core.SmartPipeEventSource
+SmartPipe.Core.SmartPipeEventSource._cbState -> float
+SmartPipe.Core.SmartPipeEventSource._poolHitRate -> float
+SmartPipe.Core.SmartPipeEventSource._queueSize -> float
+SmartPipe.Core.SmartPipeEventSource.CountersInitialized.get -> bool
+SmartPipe.Core.SmartPipeEventSource.RecordBackpressureActivation() -> void
+SmartPipe.Core.SmartPipeEventSource.RecordItemProcessed() -> void
+SmartPipe.Core.SmartPipeMetrics
+SmartPipe.Core.SmartPipeMetrics.Export() -> System.Collections.Generic.Dictionary<string!, object!>!
+SmartPipe.Core.SmartPipeMetrics.ExportJson() -> string!
+SmartPipe.Core.SmartPipeMetrics.ExportPrometheus() -> string!
+SmartPipe.Core.SmartPipeMetrics.RecordDuplicate() -> void
+SmartPipe.Core.SmartPipeMetrics.RecordFailed() -> void
+SmartPipe.Core.SmartPipeMetrics.RecordPoolHitRate(double hitRate) -> void
+SmartPipe.Core.SmartPipeMetrics.RecordProcessed(double latencyMs) -> void
+SmartPipe.Core.SmartPipeMetrics.RecordRetry() -> void
+SmartPipe.Core.SmartPipeMetrics.SmartPipeMetrics() -> void
+SmartPipe.Core.StageDeadLetterOptions<T>
+SmartPipe.Core.StageDeadLetterOptions<T>.Redactor.get -> SmartPipe.Core.IDeadLetterRedactor<T>!
+SmartPipe.Core.StageDeadLetterOptions<T>.Serializer.get -> SmartPipe.Core.IDeadLetterSerializer<T>!
+SmartPipe.Core.StageDeadLetterOptions<T>.StageDeadLetterOptions(System.IO.Stream! stream, SmartPipe.Core.IDeadLetterSerializer<T>? serializer = null, SmartPipe.Core.IDeadLetterRedactor<T>? redactor = null) -> void
+SmartPipe.Core.StageDeadLetterOptions<T>.Stream.get -> System.IO.Stream!
+SmartPipe.Core.StageFailedEvent
+SmartPipe.Core.StageFailedEvent.Error.get -> SmartPipe.Core.SmartPipeError
+SmartPipe.Core.StageFailedEvent.Error.init -> void
+SmartPipe.Core.StageFailedEvent.StageFailedEvent(string! PipelineId, string! RunId, ulong TraceId, string! StageId, int Attempt, System.DateTimeOffset TimestampUtc, SmartPipe.Core.SmartPipeError Error) -> void
+SmartPipe.Core.StageFailureOptions
+SmartPipe.Core.StageFailureOptions.CircuitBreaker.get -> SmartPipe.Core.CircuitBreakerPolicy?
+SmartPipe.Core.StageFailureOptions.CircuitBreaker.init -> void
+SmartPipe.Core.StageFailureOptions.OnPermanentFailure.get -> SmartPipe.Core.FailureAction
+SmartPipe.Core.StageFailureOptions.OnPermanentFailure.init -> void
+SmartPipe.Core.StageFailureOptions.OnRetryExhausted.get -> SmartPipe.Core.FailureAction
+SmartPipe.Core.StageFailureOptions.OnRetryExhausted.init -> void
+SmartPipe.Core.StageFailureOptions.Retry.get -> SmartPipe.Core.RetryPolicy?
+SmartPipe.Core.StageFailureOptions.Retry.init -> void
+SmartPipe.Core.StageFailureOptions.StageFailureOptions() -> void
+SmartPipe.Core.StageFailureOptions.Timeout.get -> SmartPipe.Core.TimeoutPolicy?
+SmartPipe.Core.StageFailureOptions.Timeout.init -> void
+SmartPipe.Core.StageOutcome
+SmartPipe.Core.StageOutcome.Cancelled = 4 -> SmartPipe.Core.StageOutcome
+SmartPipe.Core.StageOutcome.Failed = 2 -> SmartPipe.Core.StageOutcome
+SmartPipe.Core.StageOutcome.Skipped = 3 -> SmartPipe.Core.StageOutcome
+SmartPipe.Core.StageOutcome.Started = 0 -> SmartPipe.Core.StageOutcome
+SmartPipe.Core.StageOutcome.Succeeded = 1 -> SmartPipe.Core.StageOutcome
+SmartPipe.Core.StageOutcome.TimedOut = 5 -> SmartPipe.Core.StageOutcome
+SmartPipe.Core.StageResult<T>
+SmartPipe.Core.StageResult<T>.Error.get -> SmartPipe.Core.SmartPipeError?
+SmartPipe.Core.StageResult<T>.IsSuccess.get -> bool
+SmartPipe.Core.StageResult<T>.IsValid.get -> bool
+SmartPipe.Core.StageResult<T>.Kind.get -> SmartPipe.Core.StageResultKind
+SmartPipe.Core.StageResult<T>.StageResult() -> void
+SmartPipe.Core.StageResult<T>.Value.get -> T?
+SmartPipe.Core.StageResultKind
+SmartPipe.Core.StageResultKind.Cancelled = 4 -> SmartPipe.Core.StageResultKind
+SmartPipe.Core.StageResultKind.Failure = 1 -> SmartPipe.Core.StageResultKind
+SmartPipe.Core.StageResultKind.Filtered = 2 -> SmartPipe.Core.StageResultKind
+SmartPipe.Core.StageResultKind.Skipped = 3 -> SmartPipe.Core.StageResultKind
+SmartPipe.Core.StageResultKind.Success = 0 -> SmartPipe.Core.StageResultKind
+SmartPipe.Core.StageResultKind.TimedOut = 5 -> SmartPipe.Core.StageResultKind
+SmartPipe.Core.StageStartedEvent
+SmartPipe.Core.StageStartedEvent.StageName.get -> string!
+SmartPipe.Core.StageStartedEvent.StageName.init -> void
+SmartPipe.Core.StageStartedEvent.StageStartedEvent(string! PipelineId, string! RunId, ulong TraceId, string! StageId, string! StageName, int Attempt, System.DateTimeOffset TimestampUtc) -> void
+SmartPipe.Core.StageSucceededEvent
+SmartPipe.Core.StageSucceededEvent.StageName.get -> string!
+SmartPipe.Core.StageSucceededEvent.StageName.init -> void
+SmartPipe.Core.StageSucceededEvent.StageSucceededEvent(string! PipelineId, string! RunId, ulong TraceId, string! StageId, string! StageName, int Attempt, System.DateTimeOffset TimestampUtc) -> void
+SmartPipe.Core.TimeoutPolicy
+SmartPipe.Core.TimeoutPolicy.AttemptTimeout.get -> System.TimeSpan?
+SmartPipe.Core.TimeoutPolicy.AttemptTimeout.init -> void
+SmartPipe.Core.TimeoutPolicy.StageTimeout.get -> System.TimeSpan?
+SmartPipe.Core.TimeoutPolicy.StageTimeout.init -> void
+SmartPipe.Core.TimeoutPolicy.TimeoutPolicy() -> void
+SmartPipe.Core.TimeProviderClock
+SmartPipe.Core.TimeProviderClock.TimeProviderClock(System.TimeProvider? timeProvider = null) -> void
+SmartPipe.Core.TimeProviderClock.UtcNow.get -> System.DateTime
+static readonly SmartPipe.Core.SmartPipeEventSource.Log -> SmartPipe.Core.SmartPipeEventSource!
+static SmartPipe.Core.ComponentOwnershipOptions.Default.get -> SmartPipe.Core.ComponentOwnershipOptions!
+static SmartPipe.Core.HyperLogLogEstimator.Merge(params SmartPipe.Core.HyperLogLogEstimator![]! es) -> SmartPipe.Core.HyperLogLogEstimator!
+static SmartPipe.Core.JumpHash.Hash(ulong key, int numBuckets) -> int
+static SmartPipe.Core.MetadataBag.Empty.get -> SmartPipe.Core.MetadataBag!
+static SmartPipe.Core.MetadataBag.From(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! metadata) -> SmartPipe.Core.MetadataBag!
+static SmartPipe.Core.PipelineBuilder.From<T>(SmartPipe.Core.IPipelineSource<T>! source) -> SmartPipe.Core.PipelineBuilder<T>!
+static SmartPipe.Core.PipelineBuilder.FromFactory<T>(System.Func<System.IServiceProvider?, SmartPipe.Core.IPipelineSource<T>!>! sourceFactory, System.IServiceProvider? serviceProvider = null) -> SmartPipe.Core.PipelineBuilder<T>!
+static SmartPipe.Core.PipelineExecutionPlan.Compile(SmartPipe.Core.PipelineDefinition! definition) -> SmartPipe.Core.PipelineExecutionPlan!
+static SmartPipe.Core.SecretScanner.HasSecrets(string! content) -> bool
+static SmartPipe.Core.SecretScanner.Redact(string! content) -> string!
+static SmartPipe.Core.StageFailureOptions.Default.get -> SmartPipe.Core.StageFailureOptions!
+static SmartPipe.Core.StageResult<T>.Cancelled() -> SmartPipe.Core.StageResult<T>
+static SmartPipe.Core.StageResult<T>.Failure(SmartPipe.Core.SmartPipeError error) -> SmartPipe.Core.StageResult<T>
+static SmartPipe.Core.StageResult<T>.Filtered() -> SmartPipe.Core.StageResult<T>
+static SmartPipe.Core.StageResult<T>.Success(T value) -> SmartPipe.Core.StageResult<T>
+static SmartPipe.Core.StageResult<T>.TimedOut(SmartPipe.Core.SmartPipeError error) -> SmartPipe.Core.StageResult<T>
+virtual SmartPipe.Core.BackpressureStrategy.ThrottleAsync(int currentSize, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
+SmartPipe.Core.CircuitBreakerEvaluationMode
+SmartPipe.Core.CircuitBreakerEvaluationMode.CompatibilityThreshold = 0 -> SmartPipe.Core.CircuitBreakerEvaluationMode
+SmartPipe.Core.CircuitBreakerEvaluationMode.FailureRatio = 1 -> SmartPipe.Core.CircuitBreakerEvaluationMode
+SmartPipe.Core.CircuitBreakerPolicy.EvaluationMode.get -> SmartPipe.Core.CircuitBreakerEvaluationMode
+SmartPipe.Core.CircuitBreakerPolicy.EvaluationMode.init -> void
+SmartPipe.Core.CircuitBreakerPolicy.FailureRatio.get -> double
+SmartPipe.Core.CircuitBreakerPolicy.FailureRatio.init -> void
+SmartPipe.Core.CircuitBreakerPolicy.MaxHalfOpenRequests.get -> int
+SmartPipe.Core.CircuitBreakerPolicy.MaxHalfOpenRequests.init -> void
+SmartPipe.Core.CircuitBreakerPolicy.MinimumThroughput.get -> int
+SmartPipe.Core.CircuitBreakerPolicy.MinimumThroughput.init -> void
+SmartPipe.Core.CircuitBreakerPolicy.SamplingDuration.get -> System.TimeSpan
+SmartPipe.Core.CircuitBreakerPolicy.SamplingDuration.init -> void
+SmartPipe.Core.IPipelineClock
+SmartPipe.Core.IPipelineClock.GetElapsedTime(long startingTimestamp, long endingTimestamp) -> System.TimeSpan
+SmartPipe.Core.IPipelineClock.GetTimestamp() -> long
+SmartPipe.Core.IPipelineClock.GetUtcNow() -> System.DateTimeOffset
+SmartPipe.Core.ObserverDispatchMode
+SmartPipe.Core.ObserverDispatchMode.BufferedBestEffort = 1 -> SmartPipe.Core.ObserverDispatchMode
+SmartPipe.Core.ObserverDispatchMode.BufferedReliable = 2 -> SmartPipe.Core.ObserverDispatchMode
+SmartPipe.Core.ObserverDispatchMode.Inline = 0 -> SmartPipe.Core.ObserverDispatchMode
+SmartPipe.Core.ObserverDispatchOptions
+SmartPipe.Core.ObserverDispatchOptions.Capacity.get -> int
+SmartPipe.Core.ObserverDispatchOptions.Capacity.init -> void
+SmartPipe.Core.ObserverDispatchOptions.FailureMode.get -> SmartPipe.Core.ObserverFailureMode
+SmartPipe.Core.ObserverDispatchOptions.FailureMode.init -> void
+SmartPipe.Core.ObserverDispatchOptions.FlushOnCompletion.get -> bool
+SmartPipe.Core.ObserverDispatchOptions.FlushOnCompletion.init -> void
+SmartPipe.Core.ObserverDispatchOptions.FullMode.get -> System.Threading.Channels.BoundedChannelFullMode
+SmartPipe.Core.ObserverDispatchOptions.FullMode.init -> void
+SmartPipe.Core.ObserverDispatchOptions.Mode.get -> SmartPipe.Core.ObserverDispatchMode
+SmartPipe.Core.ObserverDispatchOptions.Mode.init -> void
+SmartPipe.Core.ObserverDispatchOptions.ObserverDispatchOptions() -> void
+SmartPipe.Core.ObserverFailureMode
+SmartPipe.Core.ObserverFailureMode.FaultPipeline = 2 -> SmartPipe.Core.ObserverFailureMode
+SmartPipe.Core.ObserverFailureMode.Ignore = 1 -> SmartPipe.Core.ObserverFailureMode
+SmartPipe.Core.ObserverFailureMode.UseRegistrationPolicy = 0 -> SmartPipe.Core.ObserverFailureMode
+SmartPipe.Core.PipelineBuilder<TInput, TOutput>.WithPipelineId(string! pipelineId) -> SmartPipe.Core.PipelineBuilder<TInput, TOutput>!
+SmartPipe.Core.PipelineBuilder<TInput, TOutput>.WithRuntimeOptions(SmartPipe.Core.PipelineRuntimeOptions! options) -> SmartPipe.Core.PipelineBuilder<TInput, TOutput>!
+SmartPipe.Core.PipelineBuilder<TInput>.WithPipelineId(string! pipelineId) -> SmartPipe.Core.PipelineBuilder<TInput>!
+SmartPipe.Core.PipelineBuilder<TInput>.WithRuntimeOptions(SmartPipe.Core.PipelineRuntimeOptions! options) -> SmartPipe.Core.PipelineBuilder<TInput>!
+SmartPipe.Core.PipelineDefinition.RuntimeOptions.get -> SmartPipe.Core.PipelineRuntimeOptions!
+SmartPipe.Core.PipelineRuntime.Options.get -> SmartPipe.Core.PipelineRuntimeOptions!
+SmartPipe.Core.PipelineRuntimeOptions
+SmartPipe.Core.PipelineRuntimeOptions.Clock.get -> SmartPipe.Core.IPipelineClock!
+SmartPipe.Core.PipelineRuntimeOptions.Clock.init -> void
+SmartPipe.Core.PipelineRuntimeOptions.ObserverDispatch.get -> SmartPipe.Core.ObserverDispatchOptions!
+SmartPipe.Core.PipelineRuntimeOptions.ObserverDispatch.init -> void
+SmartPipe.Core.PipelineRuntimeOptions.OutputCapacity.get -> int?
+SmartPipe.Core.PipelineRuntimeOptions.OutputCapacity.init -> void
+SmartPipe.Core.PipelineRuntimeOptions.OutputFullMode.get -> System.Threading.Channels.BoundedChannelFullMode
+SmartPipe.Core.PipelineRuntimeOptions.OutputFullMode.init -> void
+SmartPipe.Core.PipelineRuntimeOptions.PipelineRuntimeOptions() -> void
+static SmartPipe.Core.ProcessingEnvelope<T>.Create(T payload) -> SmartPipe.Core.ProcessingEnvelope<T>!
+static SmartPipe.Core.ProcessingEnvelope<T>.Create(T payload, string! pipelineId, string! runId, ulong traceId, SmartPipe.Core.MetadataBag? metadata = null, System.DateTimeOffset? createdAtUtc = null) -> SmartPipe.Core.ProcessingEnvelope<T>!
+SmartPipe.Core.SystemPipelineClock
+SmartPipe.Core.SystemPipelineClock.GetElapsedTime(long startingTimestamp, long endingTimestamp) -> System.TimeSpan
+SmartPipe.Core.SystemPipelineClock.GetTimestamp() -> long
+SmartPipe.Core.SystemPipelineClock.GetUtcNow() -> System.DateTimeOffset
+SmartPipe.Core.TimeProviderPipelineClock
+SmartPipe.Core.TimeProviderPipelineClock.GetElapsedTime(long startingTimestamp, long endingTimestamp) -> System.TimeSpan
+SmartPipe.Core.TimeProviderPipelineClock.GetTimestamp() -> long
+SmartPipe.Core.TimeProviderPipelineClock.GetUtcNow() -> System.DateTimeOffset
+SmartPipe.Core.TimeProviderPipelineClock.TimeProviderPipelineClock(System.TimeProvider! timeProvider) -> void
+static SmartPipe.Core.ObserverDispatchOptions.Inline.get -> SmartPipe.Core.ObserverDispatchOptions!
+static SmartPipe.Core.SystemPipelineClock.Instance.get -> SmartPipe.Core.SystemPipelineClock!
+SmartPipe.Core.PipelineSink
+SmartPipe.Core.PipelineSource
+SmartPipe.Core.PipelineTransformer
+SmartPipe.Core.SmartPipeMeter
+const SmartPipe.Core.SmartPipeMeter.Name = "SmartPipe.Core" -> string!
+SmartPipe.Core.SmartPipeMetrics.AvgLatencyMs.get -> double
+SmartPipe.Core.SmartPipeMetrics.CaptureSnapshot() -> SmartPipe.Core.SmartPipeMetricsSnapshot!
+SmartPipe.Core.SmartPipeMetrics.DuplicatesFiltered.get -> long
+SmartPipe.Core.SmartPipeMetrics.ItemsFailed.get -> long
+SmartPipe.Core.SmartPipeMetrics.ItemsProcessed.get -> long
+SmartPipe.Core.SmartPipeMetrics.LastStageLatencyMs.get -> double
+SmartPipe.Core.SmartPipeMetrics.PoolHitRate.get -> double
+SmartPipe.Core.SmartPipeMetrics.QueueSize.get -> int
+SmartPipe.Core.SmartPipeMetrics.RecordDeadLetter() -> void
+SmartPipe.Core.SmartPipeMetrics.Retries.get -> long
+SmartPipe.Core.SmartPipeMetrics.SmoothLatencyMs.get -> double
+SmartPipe.Core.SmartPipeMetrics.SmoothThroughput.get -> double
+SmartPipe.Core.SmartPipeMetrics.UpdateSmoothing(double smoothLatencyMs, double smoothThroughput) -> void
+SmartPipe.Core.SmartPipeMetrics.UpdateQueueDepths(int inputQueueDepth, int outputQueueDepth) -> void
+SmartPipe.Core.SmartPipeMetrics.UpdateQueueSize(int queueSize) -> void
+SmartPipe.Core.SmartPipeMetricsRecorder
+SmartPipe.Core.SmartPipeMetricsRecorder.AvgLatencyMs.get -> double
+SmartPipe.Core.SmartPipeMetricsRecorder.CaptureSnapshot() -> SmartPipe.Core.SmartPipeMetricsSnapshot!
+SmartPipe.Core.SmartPipeMetricsRecorder.DuplicatesFiltered.get -> long
+SmartPipe.Core.SmartPipeMetricsRecorder.InputQueueDepth.get -> int
+SmartPipe.Core.SmartPipeMetricsRecorder.ItemsDeadLettered.get -> long
+SmartPipe.Core.SmartPipeMetricsRecorder.ItemsFailed.get -> long
+SmartPipe.Core.SmartPipeMetricsRecorder.ItemsProcessed.get -> long
+SmartPipe.Core.SmartPipeMetricsRecorder.ItemsRetried.get -> long
+SmartPipe.Core.SmartPipeMetricsRecorder.LastProcessedAtUtc.get -> System.DateTimeOffset?
+SmartPipe.Core.SmartPipeMetricsRecorder.LastStageLatencyMs.get -> double
+SmartPipe.Core.SmartPipeMetricsRecorder.OutputQueueDepth.get -> int
+SmartPipe.Core.SmartPipeMetricsRecorder.PoolHitRate.get -> double
+SmartPipe.Core.SmartPipeMetricsRecorder.QueueSize.get -> int
+SmartPipe.Core.SmartPipeMetricsRecorder.RecordDeadLetter() -> void
+SmartPipe.Core.SmartPipeMetricsRecorder.RecordDuplicate() -> void
+SmartPipe.Core.SmartPipeMetricsRecorder.RecordFailed() -> void
+SmartPipe.Core.SmartPipeMetricsRecorder.RecordPoolHitRate(double hitRate) -> void
+SmartPipe.Core.SmartPipeMetricsRecorder.RecordProcessed(double latencyMs) -> void
+SmartPipe.Core.SmartPipeMetricsRecorder.RecordRetry() -> void
+SmartPipe.Core.SmartPipeMetricsRecorder.SmartPipeMetricsRecorder() -> void
+SmartPipe.Core.SmartPipeMetricsRecorder.SmoothLatencyMs.get -> double
+SmartPipe.Core.SmartPipeMetricsRecorder.SmoothThroughput.get -> double
+SmartPipe.Core.SmartPipeMetricsRecorder.UpdateSmoothing(double smoothLatencyMs, double smoothThroughput) -> void
+SmartPipe.Core.SmartPipeMetricsRecorder.UpdateQueueDepths(int inputQueueDepth, int outputQueueDepth) -> void
+SmartPipe.Core.SmartPipeMetricsRecorder.UpdateQueueSize(int queueSize) -> void
+SmartPipe.Core.SmartPipeMetricsSnapshot
+SmartPipe.Core.SmartPipeMetricsSnapshot.AvgLatencyMs.get -> double
+SmartPipe.Core.SmartPipeMetricsSnapshot.DuplicatesFiltered.get -> long
+SmartPipe.Core.SmartPipeMetricsSnapshot.Export() -> System.Collections.Generic.Dictionary<string!, object!>!
+SmartPipe.Core.SmartPipeMetricsSnapshot.InputQueueDepth.get -> int
+SmartPipe.Core.SmartPipeMetricsSnapshot.ItemsDeadLettered.get -> long
+SmartPipe.Core.SmartPipeMetricsSnapshot.ItemsFailed.get -> long
+SmartPipe.Core.SmartPipeMetricsSnapshot.ItemsProcessed.get -> long
+SmartPipe.Core.SmartPipeMetricsSnapshot.ItemsRetried.get -> long
+SmartPipe.Core.SmartPipeMetricsSnapshot.LastProcessedAtUtc.get -> System.DateTimeOffset?
+SmartPipe.Core.SmartPipeMetricsSnapshot.LastStageLatencyMs.get -> double
+SmartPipe.Core.SmartPipeMetricsSnapshot.OutputQueueDepth.get -> int
+SmartPipe.Core.SmartPipeMetricsSnapshot.PoolHitRate.get -> double
+SmartPipe.Core.SmartPipeMetricsSnapshot.QueueSize.get -> int
+SmartPipe.Core.SmartPipeMetricsSnapshot.Retries.get -> long
+SmartPipe.Core.SmartPipeMetricsSnapshot.SmoothLatencyMs.get -> double
+SmartPipe.Core.SmartPipeMetricsSnapshot.SmoothThroughput.get -> double
+static SmartPipe.Core.SmartPipeMetricsSnapshot.Empty.get -> SmartPipe.Core.SmartPipeMetricsSnapshot!
+SmartPipe.Core.PipelineOutputMode
+SmartPipe.Core.PipelineOutputMode.EmitAll = 0 -> SmartPipe.Core.PipelineOutputMode
+SmartPipe.Core.PipelineOutputMode.FailuresOnlyWhenSinkAttached = 1 -> SmartPipe.Core.PipelineOutputMode
+SmartPipe.Core.PipelineOutputMode.SuppressWhenSinkAttached = 2 -> SmartPipe.Core.PipelineOutputMode
+SmartPipe.Core.PipelineOutputMode.SuppressAll = 3 -> SmartPipe.Core.PipelineOutputMode
+SmartPipe.Core.PipelineOutputPolicy
+SmartPipe.Core.PipelineOutputPolicy.EmitAll = 0 -> SmartPipe.Core.PipelineOutputPolicy
+SmartPipe.Core.PipelineOutputPolicy.EmitFailuresOnly = 1 -> SmartPipe.Core.PipelineOutputPolicy
+SmartPipe.Core.PipelineOutputPolicy.SuppressSuccessWhenSinkAttached = 2 -> SmartPipe.Core.PipelineOutputPolicy
+SmartPipe.Core.PipelineOutputPolicy.SuppressAllWhenSinkAttached = 3 -> SmartPipe.Core.PipelineOutputPolicy
+SmartPipe.Core.PipelineOrderingMode
+SmartPipe.Core.PipelineOrderingMode.Unordered = 0 -> SmartPipe.Core.PipelineOrderingMode
+SmartPipe.Core.PipelineOrderingMode.PreserveInputOrder = 1 -> SmartPipe.Core.PipelineOrderingMode
+SmartPipe.Core.PipelineRuntimeOptions.MaxConcurrency.get -> int
+SmartPipe.Core.PipelineRuntimeOptions.MaxConcurrency.init -> void
+SmartPipe.Core.PipelineRuntimeOptions.InputCapacity.get -> int
+SmartPipe.Core.PipelineRuntimeOptions.InputCapacity.init -> void
+SmartPipe.Core.PipelineRuntimeOptions.InputFullMode.get -> System.Threading.Channels.BoundedChannelFullMode
+SmartPipe.Core.PipelineRuntimeOptions.InputFullMode.init -> void
+SmartPipe.Core.PipelineRuntimeOptions.MaxDegreeOfParallelism.get -> int
+SmartPipe.Core.PipelineRuntimeOptions.MaxDegreeOfParallelism.init -> void
+SmartPipe.Core.PipelineRuntimeOptions.OutputMode.get -> SmartPipe.Core.PipelineOutputMode
+SmartPipe.Core.PipelineRuntimeOptions.OutputMode.init -> void
+SmartPipe.Core.PipelineRuntimeOptions.OutputPolicy.get -> SmartPipe.Core.PipelineOutputPolicy
+SmartPipe.Core.PipelineRuntimeOptions.OutputPolicy.init -> void
+SmartPipe.Core.PipelineRuntimeOptions.OrderingMode.get -> SmartPipe.Core.PipelineOrderingMode
+SmartPipe.Core.PipelineRuntimeOptions.OrderingMode.init -> void
+static SmartPipe.Core.PipelineSink.FromFunc<T>(System.Func<T, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>! write) -> SmartPipe.Core.IPipelineSink<T>!
+static SmartPipe.Core.PipelineSource.FromAsyncEnumerable<T>(System.Collections.Generic.IAsyncEnumerable<T>! items) -> SmartPipe.Core.IPipelineSource<T>!
+static SmartPipe.Core.PipelineSource.FromAsyncEnumerable<T>(System.Collections.Generic.IAsyncEnumerable<T>! items, string! pipelineId, string! runId) -> SmartPipe.Core.IPipelineSource<T>!
+static SmartPipe.Core.PipelineTransformer.FromFunc<TInput, TOutput>(System.Func<TInput, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<TOutput>>! transform) -> SmartPipe.Core.IPipelineTransformer<TInput, TOutput>!
+SmartPipe.Core.PipelineOutput<T>.PipelineOutput(SmartPipe.Core.ProcessingEnvelope<T>? Envelope, SmartPipe.Core.PipelineResult<T> Result) -> void
+SmartPipe.Core.PipelineOutput<T>.Result.get -> SmartPipe.Core.PipelineResult<T>
+SmartPipe.Core.PipelineResult<T>
+SmartPipe.Core.PipelineResult<T>.Error.get -> SmartPipe.Core.SmartPipeError?
+SmartPipe.Core.PipelineResult<T>.IsSuccess.get -> bool
+SmartPipe.Core.PipelineResult<T>.PipelineResult() -> void
+SmartPipe.Core.PipelineResult<T>.TraceId.get -> ulong
+SmartPipe.Core.PipelineResult<T>.Value.get -> T?
+SmartPipe.Core.PipelineRun<TOutput>.ReadResultsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.PipelineResult<TOutput>>!
+SmartPipe.Core.PipelineRun<TOutput>.Metrics.get -> SmartPipe.Core.SmartPipeMetricsSnapshot!
+SmartPipe.Core.RetryPolicy.OnRetry.get -> System.Action<SmartPipe.Core.ProcessingEnvelope<object!>!, SmartPipe.Core.SmartPipeError, int>?
+SmartPipe.Core.RetryPolicy.RetryPolicy(int maxRetries = 3, System.TimeSpan? delay = null, System.TimeSpan? maxDelay = null, SmartPipe.Core.BackoffStrategy strategy = SmartPipe.Core.BackoffStrategy.Exponential, System.Predicate<SmartPipe.Core.SmartPipeError>? retryOn = null, System.Action<SmartPipe.Core.ProcessingEnvelope<object!>!, SmartPipe.Core.SmartPipeError, int>? onRetry = null) -> void
+static SmartPipe.Core.PipelineResult<T>.Failure(SmartPipe.Core.SmartPipeError error, ulong traceId) -> SmartPipe.Core.PipelineResult<T>
+static SmartPipe.Core.PipelineResult<T>.implicit operator bool(SmartPipe.Core.PipelineResult<T> result) -> bool
+static SmartPipe.Core.PipelineResult<T>.Success(T value, ulong traceId) -> SmartPipe.Core.PipelineResult<T>

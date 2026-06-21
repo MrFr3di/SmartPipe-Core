@@ -1,376 +1,243 @@
 # SmartPipe.Core
 
-**Universal streaming pipeline engine for .NET 10**
+Typed in-process streaming pipelines for .NET.
 
-Built on `System.Threading.Channels`, SmartPipe.Core provides a production-ready pipeline engine for ETL, real-time stream processing, API aggregation, and AI agent integration — all with 0 allocations in hot path.
+SmartPipe.Core runs explicit `source -> transform -> sink` pipelines inside your
+process with bounded channels, envelope metadata, retry/timeout/circuit-breaker
+stage handling, observer events, metrics snapshots, and replay-safe dead-letter
+records. It is not a distributed workflow engine, message broker, durable queue,
+or exactly-once delivery system.
 
 [![CI](https://github.com/MrFr3di/SmartPipe-Core/actions/workflows/ci.yml/badge.svg)](https://github.com/MrFr3di/SmartPipe-Core/actions)
 [![NuGet Core](https://img.shields.io/nuget/v/SmartPipe.Core.svg)](https://www.nuget.org/packages/SmartPipe.Core)
 [![NuGet Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.svg)](https://www.nuget.org/packages/SmartPipe.Extensions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Coverage](https://img.shields.io/badge/coverage-89.2%25-brightgreen.svg)](https://github.com/MrFr3di/SmartPipe-Core)
+![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
-📖 **[Complete Feature Reference →](docs/features.md)**
+## Contract
 
-## What is SmartPipe?
+### Guarantees
 
-SmartPipe is not just another ETL library. It's a **universal streaming pipeline engine** that handles:
+| Guarantee | Notes |
+|---|---|
+| In-process processing only | Pipelines run inside the caller's process. No cross-process hops. |
+| Bounded channels | Input, output, and buffered observer channels are bounded. |
+| Envelope metadata | `ProcessingEnvelope<T>` carries `PipelineId`, `RunId`, `TraceId`, `Metadata`, `Lineage`, `Attempt`, `CreatedAtUtc`. |
+| Typed source/transform/sink | `IPipelineSource<T>`, `IPipelineTransformer<TInput,TOutput>`, `IPipelineSink<T>`. |
+| Configured retry/timeout/circuit breaker | Per-stage `StageFailureOptions`; circuit breaker uses half-open probe leases. |
+| Observer events | Lifecycle, stage, sink, retry, dead-letter, drop, and circuit-breaker transitions. |
+| Metrics snapshots | `SmartPipeMetricsRecorder` and immutable `SmartPipeMetricsSnapshot`. |
 
-- **ETL/ELT** — extract from DB/API, transform, load to anywhere
-- **Real-time stream processing** — process events as they arrive
-- **API aggregation** — fan-out requests, aggregate responses
-- **Data validation pipelines** — validate, enrich, route
-- **AI agent tools** — integrate with Semantic Kernel, AutoGen
-- **Log/sensor processing** — process IoT telemetry, application logs
-- **Error recovery & dead letter** — capture failures for later replay
-- **Stream merging** — combine multiple data sources into one pipeline
+### Non-Goals
 
-**All in 5 lines of code:**
+| Non-goal | Notes |
+|---|---|
+| Distributed coordination | No cluster or leader election. |
+| Durable queue | Work is in memory; crash recovery is the user's source/sink responsibility. |
+| Exactly-once guarantee | At-least-once and at-most-once only. |
+| Replay after process crash | Provided only if the user source/sink implements it. |
+| Broker semantics | Not a message broker or workflow engine. |
 
-```csharp
-using SmartPipe.Core;
-using SmartPipe.Extensions;
+### Output Semantics
 
-var pipeline = PipelineBuilder
-    .From(new HttpSelector<MyDto>("https://api.example.com/data"))
-    .Transform(x => x.Enrich())       // Middleware for simple ops
-    .Transform(new JsonTransform<MyDto, MyEntity>())  // ITransformer for complex
-    .WithOptions(o => o.MaxDegreeOfParallelism = 4);
-await pipeline.To(new LoggerSink<MyEntity>(logger));
-```
+| Situation | Behavior |
+|---|---|
+| No sink attached | Success output is emitted after transform success. |
+| Sink attached | Success output is emitted only after sink write succeeds. |
+| Default `OutputPolicy` | `SuppressSuccessWhenSinkAttached` — safe default for sink-backed runs. |
+| `PipelineOutputPolicy.EmitAll` | Requires an active consumer of `PipelineRun<T>.Outputs`; otherwise the run can backpressure. |
 
-## Getting Started | Installation
+Default `OutputPolicy` is `SuppressSuccessWhenSinkAttached`.
+
+This is the safe default for sink-backed pipelines because successful outputs are not written to `PipelineRun<T>.Outputs` unless the caller explicitly opts into `EmitAll`.
+
+Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
+
+### Failure Semantics
+
+| Event | Behavior |
+|---|---|
+| Transformer exception | Routed through the stage's `FailureAction` policy. |
+| `StageResult.Filtered()` | Non-failure terminal state. No sink call, no dead-letter, no failed-metric increment. |
+| Stage timeout | Treated as transient failure; subject to retry policy. |
+| Circuit breaker rejection | Terminal for the current item; not retried into the open breaker. |
+| Dead-letter action | Requires `StageDeadLetterOptions<T>`; the action fails the run if misconfigured. |
+
+### Lifecycle Semantics
+
+| Operation | Semantics |
+|---|---|
+| `DrainAsync` / `TryDrainAsync` | Stops source reading and waits for already accepted work to complete. |
+| `CancelAsync` | Cancels source reading and in-flight processing. |
+| `AbortAsync` | Immediate cancellation of source and processing. |
+| `DisposeAsync` | Idempotent; disposes runtime-owned components once. |
+
+## Install
 
 ```bash
-# Core engine 
 dotnet add package SmartPipe.Core
-
-# Extensions (Http, EF Core, Dapper, JSON, CSV, Mapster, Polly)
 dotnet add package SmartPipe.Extensions
 ```
 
-## Examples by Scenario
-
-### Middleware Pattern (5 lines)
+## Quick Start
 
 ```csharp
-var pipeline = PipelineBuilder
-    .From(new HttpSelector<int>("https://api.example.com/numbers"))
-    .Transform(x => x * 2)          // Middleware!
-    .Transform(x => x + 1)          // Middleware!
-    .WithOptions(o => o.MaxDegreeOfParallelism = 4);
-await pipeline.To(new LoggerSink<int>(logger));
+var run = PipelineBuilder
+    .From(PipelineSource.FromAsyncEnumerable(items))
+    .Transform(PipelineTransformer.FromFunc<int, string>(
+        static (value, ct) => ValueTask.FromResult(value.ToString())))
+    .To(PipelineSink.FromFunc<string>(
+        static (value, ct) => ValueTask.CompletedTask));
+
+await run.Completion;
 ```
 
-### ETL Pipeline (Database → Transform → API)
+For component-based pipelines:
 
 ```csharp
-var pipeline = PipelineBuilder
-    .From(new EfCoreSelector<Order>(dbContext).WithQuery(q => q.Where(o => o.Status == "Pending")))
-    .Transform(new MapsterTransform<Order, OrderDto>())
-    .Transform(new PollyResilienceTransform<OrderDto>(resiliencePipeline))
-    .WithOptions(o => o.MaxDegreeOfParallelism = 8);
-await pipeline.To(new HttpSink<OrderDto>(httpClient, "https://api.destination.com/orders"));
-```
+IPipelineSource<Order> source = new OrderSource();
+IPipelineTransformer<Order, OrderDto> stage = new OrderStage();
+IPipelineSink<OrderDto> sink = new OrderSink();
 
-### Real-time Stream Processing (API → Filter → Log)
-
-```csharp
-var pipeline = PipelineBuilder
-    .From(new HttpSelector<SensorData>("https://iot.example.com/telemetry"))
-    .Transform(new JsonTransform<SensorData, SensorData>())
-    .Transform(new MapsterTransform<SensorData, Alert>())
-    .WithOptions(o => { o.MaxDegreeOfParallelism = 2; o.ContinueOnError = true; });
-await pipeline.To(new LoggerSink<Alert>(logger));
-```
-
-### Single Item Processing
-
-```csharp
-var pipeline = new SmartPipeChannel<string, string>();
-pipeline.AddTransformer(new JsonTransform<string, PromptDto>());
-var result = await pipeline.ProcessSingleAsync(new ProcessingContext<string>("Long text to summarize..."));
-```
-
-### API Aggregation (Fan-out → Aggregate)
-
-```csharp
-var pipeline = PipelineBuilder
-    .From(new HttpSelector<User>("https://users.api.com"))
-    .Transform(new MapsterTransform<User, EnrichedUser>())
-    .Transform(new PollyResilienceTransform<EnrichedUser>(resiliencePipeline));
-await pipeline.To(new Sink<EnrichedUser>(user => enrichedUsers.Add(user)));
-```
-
-### Error Persistence with DeadLetterSink
-
-```csharp
-var pipeline = PipelineBuilder
-    .From(new HttpSelector<Order>("https://api.example.com/orders"))
-    .Transform(new OrderValidator())
-    .WithOptions(o => o.ContinueOnError = true);
-await pipeline.To(new DeadLetterSink<Order>("failed_orders.json"));
-```
-
-## First Pipeline (5 lines)
-
-```csharp
-using SmartPipe.Core;
-using SmartPipe.Extensions.Selectors;
-using SmartPipe.Extensions.Transforms;
-using SmartPipe.Extensions.Sinks;
-
-var pipeline = PipelineBuilder
-    .From(new HttpSelector<MyDto>("https://api.example.com/data"))
-    .Transform(new JsonTransform<MyDto, MyEntity>())
-    .WithOptions(o => o.MaxDegreeOfParallelism = 4);
-await pipeline.To(new LoggerSink<MyEntity>(logger));
-```
-
-## ASP.NET Core BackgroundService
-
-```csharp
-public class PipelineWorker : BackgroundService
-{
-    protected override async Task ExecuteAsync(CancellationToken ct)
+await using var run = PipelineBuilder
+    .From(source)
+    .WithPipelineId("orders")
+    .Transform(stage)
+    .WithRuntimeOptions(new PipelineRuntimeOptions
     {
-        var pipeline = PipelineBuilder
-            .From(new EfCoreSelector<Order>(_dbContext))
-            .Transform(new MapsterTransform<Order, OrderDto>())
-            .WithOptions(o => o.MaxDegreeOfParallelism = 8);
-        await pipeline.To(new HttpSink<OrderDto>(_httpClient, "https://api.dest.com"));
-    }
-}
+        MaxConcurrency = 4,
+        InputCapacity = 1024,
+        OutputPolicy = PipelineOutputPolicy.SuppressSuccessWhenSinkAttached,
+    })
+    .To(sink);
+
+await run.Completion;
 ```
 
-# SmartPipe Architecture
+`PipelineRun<T>.Outputs` exposes `PipelineOutput<T>` records with the final
+`ProcessingEnvelope<T>` when available and a classified `PipelineResult<T>`.
+The output channel is single-reader by contract. Callers that need fan-out
+must do it explicitly in user code (for example by reading outputs and
+re-publishing through their own dispatcher).
+For sink-backed pipelines, success output means transform processing and sink
+write both completed successfully. `StageResult.Filtered()` is non-failure
+terminal control flow: it does not call the sink, does not dead-letter, and does
+not increment failed metrics.
 
-## Overview
+## Lifecycle
 
-SmartPipe is a streaming pipeline engine built on `System.Threading.Channels`.
-It consists of **34 integrated components** organized in a resilience pipeline order.
+- `DrainAsync` stops accepting new source items at source boundaries, cancels
+  cooperative source reads, and waits for already accepted work.
+- `TryDrainAsync` returns a structured `PipelineDrainResult` instead of
+  throwing for timeout or run fault status.
+- `CancelAsync` requests cooperative cancellation.
+- `AbortAsync` is the immediate stop path.
+- `DisposeAsync` is idempotent and disposes runtime-owned components once.
 
-## Pipeline Flow
+## DI And Hosting
 
-```markdown
+`SmartPipe.Extensions` registers immutable definitions and per-run factories:
 
-ISource<T> (or RunInBackground)
-    ▼
-Bounded Channel (or Rendezvous Channel)
-    ▼
-BackpressureStrategy (P-controller: continuous throttling)
-    ▼
-DeduplicationFilter (Bloom, O(1)) + HyperLogLogEstimator
-    ▼
-AdaptiveParallelism (P-controller with dead zone + anti-windup)
-    ▼
-CircuitBreaker (Lock-free, Closed→Open→HalfOpen + Isolated)
-    │
-    ▼
-MiddlewareTransformer (Func<T,T>) + ITransformer (ValueTask)
-    ▼
-RetryQueue (Jitter + Exponential Backoff)
-    ▼
-Bounded Channel
-    ▼
-ISink<T> (Logger, DeadLetter, HealthChecks)
-    ▼
-AsChannelReader() → SignalR/gRPC
+```csharp
+services.AddSmartPipe<Order, OrderDto>(
+    "orders",
+    builder => builder
+        .UseSource<OrderSource>()
+        .UseStage<OrderStage>()
+        .UseSink<OrderSink>());
 ```
 
-## Resilience Pipeline Order
+Resolve `ISmartPipeFactory<Order, OrderDto>` and call `Start()`, or use
+`AddSmartPipeHostedService<TInput,TOutput>()` for background hosting.
 
-1. **TotalRequestTimeout** — maximum time for entire pipeline
-2. **CircuitBreaker** — stops processing on high failure rate
-3. **RetryQueue** — delays and retries transient errors
-4. **AttemptTimeout** — per-transformer timeout
-5. **DeadLetterSink** — captures exhausted retries for later replay
-6. **LivenessCheck** — detects stalled pipeline
-7. **ReadinessCheck** — detects overloaded pipeline
-8. **DefaultRetryPolicy** — per-pipeline default retry configuration
-9. **RetryBudget** — per-item retry budget control
+### Factory Vs Instance Builders
 
-## Component Overview
+Instance pipelines use concrete components and are single-use:
 
-| Component | Type | Memory | Performance |
-|-----------|------|--------|-------------|
-| DeduplicationFilter | Bloom filter | O(1) | 20.65 ns |
-| ObjectPool | Lock-free | O(n) | 15.55 ns |
-| CircuitBreaker | Lock-free (Interlocked) | O(n) | 29.30 ns |
-| RetryQueue | Lock-free (Channel) | O(n) | 69.16 ns |
-| ExponentialHistogram | Percentiles | O(log² n) | < 100 ns |
-| JumpHash | Sharding | O(1) | < 10 ns |
-| CuckooFilter | Dedup + delete | O(1) | < 50 ns |
-| ReservoirSampler | Sampling | O(k) | < 10 ns |
-| HyperLogLogEstimator | Count-Distinct | O(1) | < 50 ns |
-| DeadLetterSink | Error persistence | O(n) | — |
-| ChannelMerge | Stream merging | O(n) | — |
-| AdaptiveMetrics (Update) | Double EMA | O(1) | 20.25 ns |
-| AdaptiveMetrics (Predict) | Double EMA | O(1) | 0.16 ns |
-| IClock | Time abstraction | O(1) | < 5 ns |
-| AtomicHelper | Lock-free double ops | O(1) | < 10 ns |
-
-## Extension Architecture
-
-Extensions follow the **Selection Pattern** — a single package with categorized components:
-
-- **Selectors** — data sources (Http, EF Core, Dapper, CSV, JSON, DeadLetter)
-- **Transforms** — data transformers (JSON, CSV, Mapster, Compression, Polly, Filter, Validation, Conditional, Composite)
-- **Sinks** — data destinations (Logger, DeadLetter, Http, Db, CSV, JSON)
-- **Health** — Kubernetes probes (Liveness, Readiness)
-- **Streaming** — ChannelMerge, RunInBackground, AsChannelReader
-
-Instead of 12 separate NuGet packages, SmartPipe uses a single SmartPipe.Extensions package with the Selection Pattern:
-
-```text
-SmartPipe.Extensions/
-├── Selectors/          ← Data sources
-│   ├── HttpSelector      ← REST API client
-│   ├── EfCoreSelector    ← Entity Framework streaming
-│   ├── DapperSelector    ← High-performance SQL
-│   ├── CsvFileSource     ← CSV file reader
-│   ├── JsonFileSource    ← JSON array & NDJSON reader
-│   └── DeadLetterSource  ← Replay failed items
-├── Transforms/         ← Data transformers
-│   ├── JsonTransform          ← JSON serialization
-│   ├── CsvTransform           ← CSV parsing
-│   ├── MapsterTransform       ← Object mapping
-│   ├── CompressionTransform   ← Brotli/GZip
-│   ├── PollyResilienceTransform ← Retry/CB/Hedging
-│   ├── FilterTransform        ← Predicate filtering
-│   ├── ValidationTransform    ← DataAnnotations validation
-│   ├── ConditionalTransform   ← Conditional execution
-│   ├── CompositeTransform     ← Chain transforms
-│   └── FilterValidationExtensions ← ToFilter() conversion
-├── Sinks/              ← Data destinations
-│   ├── LoggerSink       ← Structured logging
-│   ├── DeadLetterSink   ← Failed items persistence
-│   ├── HttpSink         ← REST API client
-│   ├── DbSink           ← Database insert
-│   ├── CsvFileSink      ← CSV file writer
-│   └── JsonFileSink     ← JSON file writer
-├── Hosting/            ← ASP.NET Core integration
-│   ├── SmartPipeHostedService       ← BackgroundService
-│   ├── SmartPipeServiceCollectionExtensions ← AddSmartPipe DI
-│   └── SmartPipeResilienceExtensions ← Polly registration
-├── Health/             ← Kubernetes probes
-│   ├── SmartPipeLivenessCheck
-│   └── SmartPipeReadinessCheck
-└── Streaming/          ← Stream utilities
-    └── ChannelMerge    ← Merge two channels
-One package. All integrations. 
+```csharp
+PipelineBuilder
+    .From(source)
+    .Transform(stage)
+    .To(sink);
 ```
+
+Reusable factory pipelines must use factories from source through sink:
+
+```csharp
+PipelineBuilder
+    .FromFactory(_ => new Source())
+    .TransformFactory(_ => new Stage())
+    .ToFactory(_ => new Sink());
+```
+
+Do not mix instance components with `TransformFactory` or `ToFactory`. Use
+`.Transform(instance)` and `.To(instance)` for instance pipelines, or start with
+`.FromFactory(...)` when every run needs fresh runtime-owned components.
+
+Typed health checks can be registered for DI pipelines:
+
+```csharp
+services
+    .AddHealthChecks()
+    .AddSmartPipeHealthCheck<Order, OrderDto>("orders");
+```
+
+The health check reads the typed run state and immutable metrics snapshot. It
+reports high queue utilization or stale processing as degraded and faulted runs
+as unhealthy.
+
+Hosted-service pipeline faults are configurable through
+`SmartPipeHostedServiceOptions`. The default `FailureBehavior` is
+`StopApplication`, so a background pipeline fault requests host shutdown instead
+of being logged and swallowed.
+
+Lossy bounded channel modes are observable. Input, output, and buffered
+observer drops record `smartpipe.items.dropped`,
+`smartpipe.output.items.dropped`, and `smartpipe.observer.events.dropped`.
+
+## AOT And Trimming
+
+SmartPipe.Core is AOT-conscious and analyzer-gated.
+
+Reflection-based JSON file and dead-letter helpers are annotated with
+`RequiresUnreferencedCode` / `RequiresDynamicCode`. Use constructors that accept
+source-generated `JsonTypeInfo` for NativeAOT or trimming-sensitive consumers.
+
+Some SmartPipe.Extensions integrations may require source-generated serializers
+or may not be AOT-friendly.
+
+## Extensions Package Surface
+
+SmartPipe.Extensions is currently a broad integration package. This release
+keeps it monolithic to avoid expanding the typed-only hardening scope. Future
+releases may split integrations into focused packages such as Hosting,
+HealthChecks, Json, Csv, EFCore, Dapper, Mapster, and Resilience.
+
+README examples are intentionally minimal. CI consumer smoke is the executable
+check for the public quick-start scenarios.
+
+## Docs
+
+- [Getting started](docs/getting-started.md)
+- [Configuration](docs/configuration.md)
+- [Runtime contracts](docs/runtime-contracts.md)
+- [Resilience](docs/resilience.md)
+- [Architecture](docs/architecture.md)
+- [Observability](docs/observability.md)
+- [Observers](docs/observers.md)
+- [Dependency injection](docs/dependency-injection.md)
+- [Hosting](docs/hosting.md)
+- [Health checks](docs/health-checks.md)
+- [API reference](docs/api-reference.md)
+- [Contributing](docs/contributing.md)
+- [Migration from removed legacy APIs](docs/migration/legacy-to-typed.md)
 
 ## Requirements
 
-- .NET 10.0+
-- SmartPipe.Core: **0 dependencies**
-- SmartPipe.Extensions: Polly, EF Core, Dapper, Mapster, CsvHelper
-- **598 tests, 89.2% code coverage**
+- .NET 10.0 or later.
+- `SmartPipe.Core` depends on `Microsoft.Extensions.Logging.Abstractions`.
+- `SmartPipe.Extensions` adds HTTP, EF Core, Dapper, JSON, CSV, Mapster, Polly,
+  hosting, health-check, and file integration components.
 
-## What's New in v1.0.6
+## License
 
-
-- **Thread safety** — CuckooFilter, DeduplicationFilter, ReservoirSampler now fully thread-safe
-- **ObjectPool max capacity** — prevents unbounded pool growth under sustained load
-- **DeduplicationFilter TTL** — automatic entry expiration for long-running pipelines
-- **JsonFileSink periodic flushing** — NDJSON batch writes, prevents OOM on large datasets
-- **RetryQueue polling optimization** — single CancellationTokenSource per call, reduced allocations
-- **DrainAsync + WithTimeoutAsync** — CancellationToken support
-- **PipelineDashboard** — readonly record struct, `PipelineDashboard.Empty`
-- **TransformWithTimeoutAsync** — catch-all exception handling prevents consumer crashes
-- **SecretScanner** — disabled by default, explicit opt-in via `EnableFeature("SecretScanner")`
-- **ExponentialHistogram** — Volatile.Read for percentile reads, P50/P95/P99 caching
-- **AdaptiveMetrics** — Stopwatch.GetTimestamp() instead of TickCount64
-- **DbSink** — async ExecuteAsync, no thread pool blocking
-- **DapperSelector** — try/finally reader disposal
-- **ChannelMerge** — optional BoundedChannelOptions
-
-
-## What's New in v1.0.5
-
-- **598 tests, 95.8% code coverage**
-- **DefaultRetryPolicy** — per-pipeline retry configuration in SmartPipeChannelOptions
-- **RetryBudget** — per-item retry budget in RetryQueue, auto-routes exhausted items to DeadLetterSink
-- **DisposeAsync(CancellationToken)** — graceful cancellation during pipeline disposal
-- **AddSmartPipe DI** — service collection extensions for ASP.NET Core integration
-- **IClock integration** — time abstraction for testability, replaces DateTime.UtcNow
-- **AtomicHelper** — lock-free CompareExchange loop utility
-- **SecretScanner evasion detection** — Base64/URL decoding, MaxRecursionDepth=3, 164 tests
-- **DeadLetterSink retry** — IOException recovery with exponential backoff
-- **AdaptiveParallelism adaptive alpha** — faster response to latency changes
-- **CircuitBreaker CleanupWindow** — thread-safe via TryDequeue+check
-- **ObjectPool ABA protection** — version stamps prevent race conditions
-- **CuckooFilter Merge** — combine multiple filters
-
-
-## What's New in v1.0.4
-
-- **22 new features** (243 tests, 96.4% coverage)
-- **P-Controller Parallelism** — smooth thread scaling, no binary jumps
-- **Double EMA + Prediction** — velocity tracking + one-step latency forecast
-- **Hybrid CircuitBreaker** — EWMA early warning + Sliding window decisions
-- **P-Controller Backpressure** — continuous throttling, no oscillation
-- **PipelineState + Cancel()** — lifecycle management with events
-- **Progress reporting** — `OnProgress` with ETA calculation
-- **Auto DeadLetter routing** — exhausted retries → DeadLetterSink
-- **12 new Extensions** — CsvFileSource/Sink, JsonFileSource/Sink, FilterTransform, ValidationTransform, DbSink, HttpSink, ConditionalTransform, DeadLetterSource, CompositeTransform
-- **Metrics.Export()** — JSON + Prometheus format
-- **4 new OWASP patterns** in SecretScanner
-- **12% faster** ValueTask_Transform (69.12 ns)
-
-## What's New in v1.0.3
-
-- **13 new features** (215 tests, 96.3% coverage)
-- **Middleware Transformer** — `Func<T,T>` as lightweight ITransformer
-- **Rendezvous Channel** — (BoundedCapacity=0)
-- **HyperLogLogEstimator** — Count-Distinct with O(1) memory
-- **Dual-threshold Watermark** — Pause/Resume prevents oscillation
-- **Liveness/Readiness Health Checks** — Kubernetes-native
-- **DeadLetterSink** — failed items persistence
-- **Data Lineage** — provenance tracking in Metadata
-- **ChannelMerge** — merge two streams
-- **RunInBackground()** — streaming pipeline consumption
-- **Hybrid Queue** — FullMode option (Wait/DropOldest)
-- **AsChannelReader()** — SignalR/gRPC integration
-
-## What's New in v1.0.2
-
-- **Lock-free RetryQueue**
-- **Lock-free CircuitBreaker**
-- **SmartPipeEventSource** — monitor via `dotnet-counters`
-- **SmartPipeHostedService** — native ASP.NET Core integration
-- **SmartPipeHealthCheck** — pipeline health for YARP/Kubernetes
-- **Adaptive EMA** — dynamic α for spike detection
-- **Dynamic Watermark** — throughput-based backpressure
-- **96.3% code coverage** (up from 86.5%)
-- **47 new tests**, 0 regressions in benchmarks
-
-## Documentation
-
-- [Complete Feature Reference](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/features.md) — all 24 components in detail
-- [Architecture Overview](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/architecture.md) — pipeline flow and design
-- [API Reference](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/api-reference.md) — interfaces and configuration
-- [Contributing Guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CONTRIBUTING.md)
-- [Security Policy](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SECURITY.md)
-- [Changelog](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CHANGELOG.md)
-
-## Acknowledgements
-
-SmartPipe is built on ideas and research from:
-
-- **Polly** — resilience patterns for .NET ([github.com/App-vNext/Polly](https://github.com/App-vNext/Polly))
-- **System.Threading.Channels** — lock-free producer/consumer infrastructure by Microsoft
-- **OpenTelemetry** — observability framework for cloud-native software
-- **Little's Law** — queue theory applied to adaptive parallelism (ACM Queue, 2025)
-- **Bloom & Cuckoo Filters** — probabilistic data structures for deduplication
-- **ReTraced** — three-level retry model inspiration
-- **TheCodeMan** — production Channel pipeline patterns
-- **Microsoft.Extensions.Resilience** — resilience pipeline integration
-- **OWASP** — security patterns for secret detection
-- **BenchmarkDotNet** — performance measurement framework
-- **Control Theory (P-controllers)** — applied to AdaptiveParallelism and BackpressureStrategy
-- **HyperLogLog (Flajolet et al.)** — cardinality estimation algorithm
-
-License
-MIT License — see LICENSE for details.
+MIT [LICENSE](LICENSE).

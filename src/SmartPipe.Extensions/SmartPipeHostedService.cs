@@ -1,98 +1,159 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SmartPipe.Core;
 
 namespace SmartPipe.Extensions;
 
 /// <summary>
-/// Hosted service for running <see cref="SmartPipeChannel{TInput, TOutput}"/> pipelines in ASP.NET Core.
-/// Manages the full lifecycle: start, graceful shutdown (Drain), and stop with proper disposal.
-/// Inherits from <see cref="BackgroundService"/> for standard hosting integration.
+/// Hosted service for running typed SmartPipe pipelines.
 /// </summary>
 /// <typeparam name="TInput">Pipeline input type.</typeparam>
 /// <typeparam name="TOutput">Pipeline output type.</typeparam>
 public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
 {
-    private readonly SmartPipeChannel<TInput, TOutput> _pipeline;
+    private readonly ISmartPipeFactory<TInput, TOutput> _typedFactory;
     private readonly ILogger<SmartPipeHostedService<TInput, TOutput>> _logger;
-
-    private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(30);
+    private readonly SmartPipeHostedServiceOptions _options;
+    private readonly IHostApplicationLifetime? _applicationLifetime;
+    private PipelineRun<TOutput>? _typedRun;
 
     /// <summary>
     /// Initializes a new instance of <see cref="SmartPipeHostedService{TInput, TOutput}"/>.
     /// </summary>
-    /// <param name="pipeline">The SmartPipe pipeline to host.</param>
+    /// <param name="typedFactory">Factory used to create a fresh typed runtime for the hosted run.</param>
     /// <param name="logger">Logger for diagnostic information.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="pipeline"/> or <paramref name="logger"/> is null.</exception>
     public SmartPipeHostedService(
-        SmartPipeChannel<TInput, TOutput> pipeline,
+        ISmartPipeFactory<TInput, TOutput> typedFactory,
         ILogger<SmartPipeHostedService<TInput, TOutput>> logger)
+        : this(
+            typedFactory,
+            logger,
+            Options.Create(new SmartPipeHostedServiceOptions()),
+            applicationLifetime: null)
     {
-        _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
-    /// Executes the pipeline asynchronously. Handles cancellation and graceful draining.
+    /// Initializes a new instance of <see cref="SmartPipeHostedService{TInput, TOutput}"/>.
     /// </summary>
-    /// <param name="ct">Cancellation token for stopping the pipeline.</param>
+    /// <param name="typedFactory">Factory used to create a fresh typed runtime for the hosted run.</param>
+    /// <param name="logger">Logger for diagnostic information.</param>
+    /// <param name="options">Hosted service lifecycle options.</param>
+    /// <param name="applicationLifetime">Optional host application lifetime used for StopApplication behavior.</param>
+    public SmartPipeHostedService(
+        ISmartPipeFactory<TInput, TOutput> typedFactory,
+        ILogger<SmartPipeHostedService<TInput, TOutput>> logger,
+        IOptions<SmartPipeHostedServiceOptions> options,
+        IHostApplicationLifetime? applicationLifetime = null)
+    {
+        _typedFactory = typedFactory ?? throw new ArgumentNullException(nameof(typedFactory));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _options = (options ?? throw new ArgumentNullException(nameof(options))).Value;
+        _options.Validate();
+        _applicationLifetime = applicationLifetime;
+    }
+
+    /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        _logger.LogInformation("SmartPipe pipeline starting for {TInput} → {TOutput}",
-            typeof(TInput).Name, typeof(TOutput).Name);
+        _logger.LogInformation(
+            "Typed SmartPipe pipeline starting for {TInput} -> {TOutput}",
+            typeof(TInput).Name,
+            typeof(TOutput).Name);
 
         try
         {
-            await _pipeline.RunAsync(ct);
-            _logger.LogInformation("SmartPipe pipeline completed normally");
+            _typedRun = await _typedFactory.StartAsync(ct).ConfigureAwait(false);
+            await _typedRun.Completion.ConfigureAwait(false);
+            _logger.LogInformation("Typed SmartPipe pipeline completed normally");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            _logger.LogInformation("SmartPipe pipeline cancelled, draining...");
-            await DrainPipelineAsync();
-        }
-       catch (InvalidOperationException ex)
-        {
-            _logger.LogError(ex, "SmartPipe pipeline failed due to invalid operation");
-            throw;
-        }
-        catch (NotSupportedException ex)
-        {
-            _logger.LogError(ex, "SmartPipe pipeline failed due to unsupported operation");
-            throw;
+            _logger.LogInformation("Typed SmartPipe pipeline cancelled, draining...");
+            await DrainPipelineAsync(ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Pipeline is now in Faulted state — do not throw, let health checks detect it
-            _logger.LogError(ex, "SmartPipe pipeline faulted due to unhandled exception");
+            _logger.LogError(ex, "Typed SmartPipe pipeline faulted due to unhandled exception");
+            HandlePipelineFault(ex);
         }
     }
 
-    /// <summary>
-    /// Stops the hosted service by draining the pipeline, disposing resources, and then stopping the base service.
-    /// </summary>
-    /// <param name="ct">Cancellation token for the stop operation.</param>
+    /// <inheritdoc />
     public override async Task StopAsync(CancellationToken ct)
     {
-        _logger.LogInformation("SmartPipe pipeline stopping, draining...");
-        await DrainPipelineAsync();
-        await _pipeline.DisposeAsync().ConfigureAwait(false);
-        await base.StopAsync(ct);
+        _logger.LogInformation("Typed SmartPipe pipeline stopping, draining...");
+        await DrainPipelineAsync(ct).ConfigureAwait(false);
+        await base.StopAsync(ct).ConfigureAwait(false);
+        await DisposePipelineAsync().ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Drains the pipeline with the configured timeout.
-    /// </summary>
-    private async Task DrainPipelineAsync()
+    private async Task DrainPipelineAsync(CancellationToken stoppingToken)
     {
-        using var drainCts = new CancellationTokenSource(DrainTimeout);
+        if (_typedRun is null)
+            return;
+
+        using var timeoutCts = new CancellationTokenSource(_options.DrainTimeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            stoppingToken,
+            timeoutCts.Token);
         try
         {
-            await _pipeline.DrainAsync(DrainTimeout, drainCts.Token);
+            await _typedRun.DrainAsync(_options.DrainTimeout, linkedCts.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex) when (stoppingToken.IsCancellationRequested)
         {
-            _logger.LogWarning("SmartPipe pipeline drain timed out after {Timeout}", DrainTimeout);
+            _logger.LogWarning(
+                ex,
+                "Typed SmartPipe pipeline drain aborted by host cancellation");
+        }
+        catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Typed SmartPipe pipeline drain timed out after {Timeout}", _options.DrainTimeout);
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.LogWarning(ex, "Typed SmartPipe pipeline drain timed out after {Timeout}", _options.DrainTimeout);
+        }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogInformation(
+                ex,
+                "Typed SmartPipe pipeline drain observed pipeline cancellation");
+        }
+    }
+
+    private async Task DisposePipelineAsync()
+    {
+        if (_typedRun is not null)
+            await _typedRun.DisposeAsync().ConfigureAwait(false);
+    }
+
+    private void HandlePipelineFault(Exception exception)
+    {
+        switch (_options.FailureBehavior)
+        {
+            case SmartPipeHostedFailureBehavior.StopApplication:
+                if (_applicationLifetime is not null)
+                {
+                    _applicationLifetime.StopApplication();
+                    return;
+                }
+
+                throw new InvalidOperationException(
+                    "Hosted SmartPipe pipeline faulted and no IHostApplicationLifetime was available to stop the host.",
+                    exception);
+            case SmartPipeHostedFailureBehavior.Rethrow:
+                throw exception;
+            case SmartPipeHostedFailureBehavior.MarkUnhealthyAndKeepHostAlive:
+            case SmartPipeHostedFailureBehavior.Ignore:
+                return;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(SmartPipeHostedServiceOptions.FailureBehavior),
+                    _options.FailureBehavior,
+                    "Hosted service failure behavior is invalid.");
         }
     }
 }

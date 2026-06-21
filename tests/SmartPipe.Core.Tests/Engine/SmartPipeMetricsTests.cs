@@ -21,7 +21,7 @@ public class SmartPipeMetricsTests
     {
         var metrics = new SmartPipeMetrics();
         metrics.RecordProcessed(50.0);
-        
+
         metrics.ItemsProcessed.Should().Be(1);
         metrics.AvgLatencyMs.Should().Be(50.0);
     }
@@ -48,5 +48,31 @@ public class SmartPipeMetricsTests
         var metrics = new SmartPipeMetrics();
         metrics.RecordRetry();
         metrics.Retries.Should().Be(1);
+    }
+
+    [Fact]
+    public void CaptureSnapshot_ShouldReturnStableSampledView()
+    {
+        var metrics = new SmartPipeMetrics();
+        metrics.UpdateSmoothing(smoothLatencyMs: 12.5, smoothThroughput: 20.25);
+        metrics.UpdateQueueSize(3);
+        metrics.RecordPoolHitRate(0.75);
+
+        metrics.RecordProcessed(10.0);
+        metrics.RecordFailed();
+        metrics.RecordDuplicate();
+        metrics.RecordRetry();
+
+        var snapshot = metrics.CaptureSnapshot();
+
+        snapshot.ItemsProcessed.Should().Be(1);
+        snapshot.ItemsFailed.Should().Be(1);
+        snapshot.DuplicatesFiltered.Should().Be(1);
+        snapshot.Retries.Should().Be(1);
+        snapshot.AvgLatencyMs.Should().Be(10.0);
+        snapshot.SmoothLatencyMs.Should().Be(12.5);
+        snapshot.SmoothThroughput.Should().Be(20.25);
+        snapshot.QueueSize.Should().Be(3);
+        snapshot.PoolHitRate.Should().Be(0.75);
     }
 }

@@ -8,7 +8,7 @@ namespace SmartPipe.Extensions.Selectors;
 
 /// <summary>Streams CSV files as pipeline source using CsvHelper.</summary>
 /// <typeparam name="T">Record type to map.</typeparam>
-public class CsvFileSource<T> : ISource<T>
+public class CsvFileSource<T> : IPipelineSource<T>
 {
     private readonly string _path;
     private readonly CsvConfiguration _config;
@@ -19,28 +19,48 @@ public class CsvFileSource<T> : ISource<T>
     /// <param name="culture">Culture for parsing (default: InvariantCulture).</param>
     public CsvFileSource(string path, string delimiter = ",", CultureInfo? culture = null)
     {
-        _path = path;
+        _path = ValidatePath(path);
         _config = new CsvConfiguration(culture ?? CultureInfo.InvariantCulture)
         {
-            Delimiter = delimiter,
+            Delimiter = ValidateDelimiter(delimiter),
             HasHeaderRecord = true,
             MissingFieldFound = null,
-            BadDataFound = null
+            BadDataFound = null,
         };
     }
 
     /// <inheritdoc />
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
+        [EnumeratorCancellation] CancellationToken ct = default
+    )
     {
         using var reader = new StreamReader(_path);
         using var csv = new CsvReader(reader, _config);
         await foreach (var record in csv.GetRecordsAsync<T>(ct).ConfigureAwait(false))
-            yield return new ProcessingContext<T>(record);
+            yield return ProcessingEnvelope<T>.Create(record);
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    private static string ValidatePath(string? path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("Path cannot be empty or whitespace.", nameof(path));
+
+        return path;
+    }
+
+    private static string ValidateDelimiter(string? delimiter)
+    {
+        ArgumentNullException.ThrowIfNull(delimiter);
+        if (delimiter.Length == 0)
+            throw new ArgumentException("Delimiter cannot be empty.", nameof(delimiter));
+
+        return delimiter;
+    }
 }

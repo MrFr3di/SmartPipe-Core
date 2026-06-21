@@ -13,7 +13,8 @@ internal static class AtomicHelper
     /// <param name="update">Function that computes the new value from the current value.</param>
     public static void CompareExchangeLoop(ref double location, Func<double, double> update)
     {
-        double current, updated;
+        double current,
+            updated;
         do
         {
             current = location;

@@ -14,7 +14,8 @@ public static class JumpHash
     /// <returns>Bucket index in [0, numBuckets).</returns>
     public static int Hash(ulong key, int numBuckets)
     {
-        long b = -1, j = 0;
+        long b = -1,
+            j = 0;
         while (j < numBuckets)
         {
             b = j;

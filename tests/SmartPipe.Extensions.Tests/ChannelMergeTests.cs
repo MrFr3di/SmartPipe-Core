@@ -22,7 +22,7 @@ public class ChannelMergeTests
 
         var merged = ChannelMerge.Merge(ch1.Reader, ch2.Reader);
         var results = new List<int>();
-        
+
         await foreach (var item in merged.ReadAllAsync())
             results.Add(item);
 

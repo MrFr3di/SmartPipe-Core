@@ -36,11 +36,15 @@ public class BackpressureStrategy
     /// <param name="predictedLatencyMs">Predicted latency for next operations (optional).</param>
     public void UpdateThroughput(double throughputPerSec, double predictedLatencyMs = 0)
     {
-        if (throughputPerSec > HighThroughputThreshold) _targetFillRatio = MediumFillRatioThreshold;
-        else if (throughputPerSec < LowThroughputThreshold) _targetFillRatio = HighFillRatioThreshold;
-        else _targetFillRatio = DefaultTargetFillRatio;
+        if (throughputPerSec > HighThroughputThreshold)
+            _targetFillRatio = MediumFillRatioThreshold;
+        else if (throughputPerSec < LowThroughputThreshold)
+            _targetFillRatio = HighFillRatioThreshold;
+        else
+            _targetFillRatio = DefaultTargetFillRatio;
 
-        if (predictedLatencyMs > LatencyThresholdMs) _targetFillRatio = Math.Max(MinTargetFillRatio, _targetFillRatio - LatencyAdjustment);
+        if (predictedLatencyMs > LatencyThresholdMs)
+            _targetFillRatio = Math.Max(MinTargetFillRatio, _targetFillRatio - LatencyAdjustment);
     }
 
     /// <summary>Calculate current channel fill ratio.</summary>
@@ -57,12 +61,12 @@ public class BackpressureStrategy
         double fillRatio = GetFillRatio(currentSize);
         double error = fillRatio - _targetFillRatio;
 
-        if (error <= 0) return; // Below target — no throttling
+        if (error <= 0)
+            return; // Below target — no throttling
 
         double delayMs = KpGain * error * DelayScaleFactor;
         delayMs = Math.Max(MinDelayMs, Math.Min(delayMs, MaxDelayMs));
         if (delayMs > 1)
             await Task.Delay((int)delayMs, ct);
     }
-
 }

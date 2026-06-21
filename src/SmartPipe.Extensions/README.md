@@ -1,9 +1,7 @@
+
 # SmartPipe.Extensions
 
-**One package. All integrations. Zero boilerplate.**
-**Ready-to-use components for SmartPipe.Core — build ETL pipelines in minutes.**
-
-Extensions for SmartPipe.Core providing ready-to-use selectors, transforms, sinks, and health checks for building production ETL pipelines in minutes.
+Ready-to-use integrations for SmartPipe.Core: file, HTTP, database, mapping, validation, resilience, hosting, and health check components.
 
 ## Selectors (Data Sources)
 
@@ -14,7 +12,7 @@ Extensions for SmartPipe.Core providing ready-to-use selectors, transforms, sink
 | `DapperSelector<T>` | Dapper | High-performance SQL queries |
 | `CsvFileSource<T>` | CsvHelper | Read CSV files |
 | `JsonFileSource<T>` | System.Text.Json | Read JSON arrays and NDJSON |
-| `DeadLetterSource<T>` | System.Text.Json | Replay failed items |
+| `DeadLetterSource<T>` | System.Text.Json | Read persisted failed-item records |
 
 ## Transforms
 
@@ -41,6 +39,26 @@ Extensions for SmartPipe.Core providing ready-to-use selectors, transforms, sink
 | `CsvFileSink<T>` | CsvHelper | Write CSV files |
 | `JsonFileSink<T>` | System.Text.Json | Write JSON files |
 
+## HTTP Integrations
+
+Use `HttpClientFactorySelector<T>` and `HttpClientFactorySink<T>` in DI-based
+applications so clients come from `IHttpClientFactory` named or default client
+configuration. Low-level `HttpSelector<T>` and `HttpSink<T>` remain available
+for callers that already own an `HttpClient`.
+
+HTTP JSON components accept source-generated `JsonTypeInfo<T>` /
+`JsonTypeInfo<List<T>>` overloads for NativeAOT and trimming-sensitive apps.
+`HttpSelector<T>` can read either buffered JSON arrays or streaming responses
+using `HttpSelectorStreamingMode.JsonArray` and
+`HttpSelectorStreamingMode.Ndjson`; the factory-backed selector exposes the
+same streaming modes.
+`HttpSink<T>` can send the envelope `TraceId` as an `Idempotency-Key` header for
+idempotent endpoints.
+
+Avoid configuring retry in both SmartPipe stage policies and HTTP/Polly client
+pipelines for the same operation unless that layered retry budget is
+intentional.
+
 ## Health Checks
 
 | Component | Description |
@@ -53,8 +71,13 @@ Extensions for SmartPipe.Core providing ready-to-use selectors, transforms, sink
 | Component | Description |
 |-----------|-------------|
 | `SmartPipeHostedService` | ASP.NET Core BackgroundService |
-| `AddSmartPipe<TIn,TOut>()` | DI registration for SmartPipeChannel |
-| `AddSmartPipeResilience()` | DI registration for Polly pipelines |
+| `AddSmartPipe<TIn,TOut>()` | Typed definition/factory DI registration |
+| `AddSmartPipeHostedService<TIn,TOut>()` | Typed hosted-service registration |
+
+`SmartPipeHostedServiceOptions` controls hosted fault behavior and drain
+timeout. The default fault behavior is `StopApplication`; use `Rethrow`,
+`MarkUnhealthyAndKeepHostAlive`, or `Ignore` only when that lifecycle policy is
+intentional for the host.
 
 ## Streaming
 
@@ -71,8 +94,8 @@ dotnet add package SmartPipe.Extensions
 ## Requirements
 
 - .NET 10.0+
-- SmartPipe.Core 1.0.5 (included as dependency)
-- **Zero additional dependencies required for basic usage**
+- SmartPipe.Core 2.0.0 (included as dependency)
+- This package intentionally includes integration dependencies for the features below.
 - Individual features pull their own dependencies:
   - `HttpSelector` / `HttpSink` → Polly (via Microsoft.Extensions.Resilience)
   - `EfCoreSelector` → Entity Framework Core
@@ -81,14 +104,8 @@ dotnet add package SmartPipe.Extensions
   - `CsvFileSource` / `CsvFileSink` / `CsvTransform` → CsvHelper
   - `PollyResilienceTransform` → Polly.Core
   - `SmartPipeHostedService` / `SmartPipeHealthCheck` → Microsoft.Extensions.Hosting / HealthChecks
-  - All other components (FilterTransform, ValidationTransform, ConditionalTransform, CompositeTransform, LoggerSink, DeadLetterSink, JsonFileSource, JsonFileSink) — **zero additional dependencies**
+  - Other components use platform APIs or dependencies already carried by this package.
 
-## What's New in v1.0.5
-
-- **AddSmartPipe<TIn,TOut>()** — register SmartPipeChannel in ASP.NET Core DI
-- **DeadLetterSink retry** — automatic IOException recovery with exponential backoff (100ms/200ms/400ms)
-- **FilterValidationExtensions** — convert ValidationTransform to FilterTransform with `.ToFilter()`
-- **SmartPipeServiceCollectionExtensions** — fluent DI registration for all pipeline configurations
 
 ## License
 

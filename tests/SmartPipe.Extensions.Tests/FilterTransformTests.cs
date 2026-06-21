@@ -10,7 +10,7 @@ public class FilterTransformTests
     public async Task Filter_ShouldPassMatchingItems()
     {
         var filter = new FilterTransform<int>(x => x > 5);
-        var result = await filter.TransformAsync(new ProcessingContext<int>(10));
+        var result = await filter.TransformAsync(ProcessingEnvelope<int>.Create(10));
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be(10);
     }
@@ -19,30 +19,66 @@ public class FilterTransformTests
     public async Task Filter_ShouldBlockNonMatchingItems()
     {
         var filter = new FilterTransform<int>(x => x > 5);
-        var result = await filter.TransformAsync(new ProcessingContext<int>(3));
+        var result = await filter.TransformAsync(ProcessingEnvelope<int>.Create(3));
         result.IsSuccess.Should().BeFalse();
-        result.Error!.Value.Category.Should().Be("Filtered");
+        result.IsTerminalNonFailure.Should().BeTrue();
+        result.Kind.Should().Be(StageResultKind.Filtered);
+        result.Error.Should().BeNull();
     }
 
     [Fact]
-    public void And_ShouldCombinePredicates()
+    public async Task And_ShouldCombinePredicates()
     {
         var f1 = new FilterTransform<int>(x => x > 5);
         var f2 = new FilterTransform<int>(x => x < 20);
         var combined = f1.And(f2);
 
-        combined.TransformAsync(new ProcessingContext<int>(10)).Result.IsSuccess.Should().BeTrue();
-        combined.TransformAsync(new ProcessingContext<int>(3)).Result.IsSuccess.Should().BeFalse();
-        combined.TransformAsync(new ProcessingContext<int>(25)).Result.IsSuccess.Should().BeFalse();
+        (await combined.TransformAsync(ProcessingEnvelope<int>.Create(10))).IsSuccess.Should().BeTrue();
+        (await combined.TransformAsync(ProcessingEnvelope<int>.Create(3))).IsSuccess.Should().BeFalse();
+        (await combined.TransformAsync(ProcessingEnvelope<int>.Create(25))).IsSuccess.Should().BeFalse();
     }
 
     [Fact]
-    public void Not_ShouldInvertPredicate()
+    public async Task And_ShouldCombineAsyncPredicates()
+    {
+        var f1 = new FilterTransform<int>(x => Task.FromResult(x > 5));
+        var f2 = new FilterTransform<int>(x => Task.FromResult(x < 20));
+        var combined = f1.And(f2);
+
+        (await combined.TransformAsync(ProcessingEnvelope<int>.Create(10))).IsSuccess.Should().BeTrue();
+        (await combined.TransformAsync(ProcessingEnvelope<int>.Create(3))).IsSuccess.Should().BeFalse();
+        (await combined.TransformAsync(ProcessingEnvelope<int>.Create(25))).IsSuccess.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Or_ShouldCombineAsyncPredicates()
+    {
+        var f1 = new FilterTransform<int>(x => Task.FromResult(x < 5));
+        var f2 = new FilterTransform<int>(x => Task.FromResult(x > 20));
+        var combined = f1.Or(f2);
+
+        (await combined.TransformAsync(ProcessingEnvelope<int>.Create(3))).IsSuccess.Should().BeTrue();
+        (await combined.TransformAsync(ProcessingEnvelope<int>.Create(25))).IsSuccess.Should().BeTrue();
+        (await combined.TransformAsync(ProcessingEnvelope<int>.Create(10))).IsSuccess.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Not_ShouldInvertPredicate()
     {
         var filter = new FilterTransform<int>(x => x > 5);
         var inverted = filter.Not();
 
-        inverted.TransformAsync(new ProcessingContext<int>(3)).Result.IsSuccess.Should().BeTrue();
-        inverted.TransformAsync(new ProcessingContext<int>(10)).Result.IsSuccess.Should().BeFalse();
+        (await inverted.TransformAsync(ProcessingEnvelope<int>.Create(3))).IsSuccess.Should().BeTrue();
+        (await inverted.TransformAsync(ProcessingEnvelope<int>.Create(10))).IsSuccess.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Not_ShouldInvertAsyncPredicate()
+    {
+        var filter = new FilterTransform<int>(x => Task.FromResult(x > 5));
+        var inverted = filter.Not();
+
+        (await inverted.TransformAsync(ProcessingEnvelope<int>.Create(3))).IsSuccess.Should().BeTrue();
+        (await inverted.TransformAsync(ProcessingEnvelope<int>.Create(10))).IsSuccess.Should().BeFalse();
     }
 }

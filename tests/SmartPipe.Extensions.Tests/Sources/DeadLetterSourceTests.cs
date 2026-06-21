@@ -1,7 +1,8 @@
 #nullable enable
+
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
-using System.Threading.Tasks;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Selectors;
 using Xunit;
@@ -20,7 +21,8 @@ public class DeadLetterSourceTests
     public async Task InitializeAsync_ThrowsFileNotFoundException_WhenFileMissing()
     {
         var source = new DeadLetterSource<string>("nonexistent.json");
-        await Assert.ThrowsAsync<FileNotFoundException>(() => source.InitializeAsync());
+
+        await Assert.ThrowsAsync<FileNotFoundException>(() => source.InitializeAsync().AsTask());
     }
 
     [Fact]
@@ -30,259 +32,246 @@ public class DeadLetterSourceTests
         try
         {
             await File.WriteAllTextAsync(path, "[]");
-            
             var source = new DeadLetterSource<string>(path);
-            await source.InitializeAsync(); // Should not throw
-            
-            Assert.True(true); // If we get here, test passed
+
+            await source.InitializeAsync();
         }
         finally
         {
-            if (File.Exists(path))
-                File.Delete(path);
+            File.Delete(path);
         }
     }
 
     [Fact]
-    public async Task ReadAsync_ShouldReturnEmptyEnumerable_WhenNoDeadLetters()
-    {
-        var path = Path.GetTempFileName();
-        await File.WriteAllTextAsync(path, "[]");
-
-        var source = new DeadLetterSource<string>(path);
-        var items = new List<ProcessingContext<string>>();
-
-        await foreach (var item in source.ReadAsync())
-        {
-            items.Add(item);
-        }
-
-        Assert.Empty(items);
-        File.Delete(path);
-    }
-
-    [Fact]
-    public async Task ReadAsync_ReturnsItems_WhenDeadLettersExist()
+    public async Task ReadEnvelopesAsync_ReturnsEmpty_WhenNoDeadLetters()
     {
         var path = Path.GetTempFileName();
         try
         {
-            // Create JSON with failed items (dead letters) using proper ProcessingResult structure
+            await File.WriteAllTextAsync(path, "[]");
+            var source = new DeadLetterSource<string>(path);
+
+            var items = await ReadAllAsync(source);
+
+            Assert.Empty(items);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ReadEnvelopesAsync_ReplaysDeadLetterPayloadsAndContext()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
             var deadLetters = new[]
             {
-                new { Value = "item1", IsSuccess = false, Error = new { Message = "test error", Type = "Transient" }, TraceId = 1UL },
-                new { Value = "item2", IsSuccess = false, Error = new { Message = "test error 2", Type = "Permanent" }, TraceId = 2UL }
+                CreateDeadLetter("item1", 101UL, "customer", "gold"),
+                CreateDeadLetter("item2", 102UL, "customer", "silver"),
             };
-            var json = JsonSerializer.Serialize(deadLetters);
-            await File.WriteAllTextAsync(path, json);
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(deadLetters));
 
             var source = new DeadLetterSource<string>(path);
-            var items = new List<ProcessingContext<string>>();
+            var items = await ReadAllAsync(source);
 
-            await foreach (var item in source.ReadAsync())
-            {
-                items.Add(item);
-            }
-
-            Assert.NotEmpty(items);
-            Assert.Equal("item1", items[0].Payload);
+            Assert.Equal(["item1", "item2"], items.Select(x => x.Payload));
+            Assert.Equal("pipe", items[0].PipelineId);
+            Assert.Equal("run", items[0].RunId);
+            Assert.Equal(101UL, items[0].TraceId);
+            Assert.Equal("gold", items[0].Metadata.GetString("customer"));
+            Assert.Equal(new DateTimeOffset(2026, 6, 14, 0, 0, 0, TimeSpan.Zero), items[0].CreatedAtUtc);
         }
         finally
         {
-            if (File.Exists(path))
-                File.Delete(path);
+            File.Delete(path);
         }
     }
 
     [Fact]
-    public async Task ReadAsync_ShouldSkipSuccessfulItems()
+    public async Task ReadEnvelopesAsync_ReadsNdjsonDeadLetterRecords()
     {
         var path = Path.GetTempFileName();
         try
         {
-            // Create JSON with mix of success and failure
-            // Note: IsSuccess = true items should be skipped
+            var first = JsonSerializer.Serialize(CreateDeadLetter("item1", 201UL));
+            var second = JsonSerializer.Serialize(CreateDeadLetter("item2", 202UL));
+            await File.WriteAllTextAsync(path, $"{first}{Environment.NewLine}{second}");
+
+            var source = new DeadLetterSource<string>(path);
+            var result = await ReadAllAsync(source);
+
+            Assert.Equal(["item1", "item2"], result.Select(x => x.Payload));
+            Assert.Equal([201UL, 202UL], result.Select(x => x.TraceId));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ReadEnvelopesAsync_WithSourceGeneratedTypeInfo_ReturnsPayload()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var json = JsonSerializer.Serialize(new[]
+            {
+                CreateDeadLetter(new AotDeadLetterSourceItem(5, "five"), 5UL),
+            });
+            await File.WriteAllTextAsync(path, json);
+
+            var source = new DeadLetterSource<AotDeadLetterSourceItem>(
+                path,
+                DeadLetterSourceTestJsonContext.Default.AotDeadLetterSourceItem);
+            var result = await ReadAllAsync(source);
+
+            Assert.Single(result);
+            Assert.Equal(new AotDeadLetterSourceItem(5, "five"), result[0].Payload);
+            Assert.Equal(5UL, result[0].TraceId);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ReadEnvelopesAsync_SkipsRecordsWithoutPayload()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
             var items = new object[]
             {
-                new { Value = "success", IsSuccess = true, Error = default(object), TraceId = default(ulong?) },
-                new { Value = "failure", IsSuccess = false, Error = new { Message = "test", Type = "Transient" }, TraceId = (ulong?)1UL },
+                new { PipelineId = "pipe", RunId = "run", TraceId = 1UL },
+                new { OriginalPayload = (string?)null, PipelineId = "pipe", RunId = "run", TraceId = 2UL },
+                CreateDeadLetter("valid", 3UL),
             };
-            var json = JsonSerializer.Serialize(items);
-            await File.WriteAllTextAsync(path, json);
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(items));
 
             var source = new DeadLetterSource<string>(path);
-            var result = new List<ProcessingContext<string>>();
+            var result = await ReadAllAsync(source);
 
-            await foreach (var item in source.ReadAsync())
-            {
-                result.Add(item);
-            }
-
-            // Only failed items should be returned
             Assert.Single(result);
-            Assert.Equal("failure", result[0].Payload);
+            Assert.Equal("valid", result[0].Payload);
         }
         finally
         {
-            if (File.Exists(path))
-                File.Delete(path);
+            File.Delete(path);
         }
     }
 
     [Fact]
-    public async Task ReadAsync_ShouldHandleMissingValueProperty()
+    public async Task ReadEnvelopesAsync_HandlesSingleObjectJson()
     {
         var path = Path.GetTempFileName();
         try
         {
-            // Item without Value property - should be skipped
-            var items = new[]
-            {
-                new { IsSuccess = false, Error = "test error" }
-            };
-            var json = JsonSerializer.Serialize(items);
-            await File.WriteAllTextAsync(path, json);
-
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(CreateDeadLetter("single", 301UL)));
             var source = new DeadLetterSource<string>(path);
-            var result = new List<ProcessingContext<string>>();
 
-            await foreach (var item in source.ReadAsync())
-            {
-                result.Add(item);
-            }
+            var items = await ReadAllAsync(source);
 
-            // No valid items with Value property
-            Assert.Empty(result);
+            Assert.Single(items);
+            Assert.Equal("single", items[0].Payload);
+            Assert.Equal(301UL, items[0].TraceId);
         }
         finally
         {
-            if (File.Exists(path))
-                File.Delete(path);
+            File.Delete(path);
         }
     }
 
     [Fact]
-    public async Task ReadAsync_ShouldHandleNullValue()
+    public async Task ReadEnvelopesAsync_ShouldHandleComplexType()
     {
         var path = Path.GetTempFileName();
         try
         {
-            // Item with null Value - should be skipped
-            var items = new[]
-            {
-                new { Value = (string?)null, IsSuccess = false, Error = "test error" }
-            };
-            var json = JsonSerializer.Serialize(items);
-            await File.WriteAllTextAsync(path, json);
+            await File.WriteAllTextAsync(
+                path,
+                JsonSerializer.Serialize(new[] { CreateDeadLetter(new TestComplexType { Id = 1, Name = "Test" }, 401UL) }));
 
-            var source = new DeadLetterSource<string>(path);
-            var result = new List<ProcessingContext<string>>();
+            var source = new DeadLetterSource<TestComplexType>(path);
+            var result = await ReadAllAsync(source);
 
-            await foreach (var item in source.ReadAsync())
-            {
-                result.Add(item);
-            }
-
-            // Null values should be skipped
-            Assert.Empty(result);
+            Assert.Single(result);
+            Assert.Equal(1, result[0].Payload.Id);
+            Assert.Equal("Test", result[0].Payload.Name);
+            Assert.Equal(401UL, result[0].TraceId);
         }
         finally
         {
-            if (File.Exists(path))
-                File.Delete(path);
+            File.Delete(path);
         }
     }
 
     [Fact]
-    public async Task ReadAsync_ShouldHandleInvalidJson()
+    public async Task ReadEnvelopesAsync_ThrowsJsonException_ForInvalidJson()
     {
         var path = Path.GetTempFileName();
         try
         {
             await File.WriteAllTextAsync(path, "invalid json");
-
             var source = new DeadLetterSource<string>(path);
-            
+
             await Assert.ThrowsAnyAsync<JsonException>(async () =>
             {
-                await foreach (var item in source.ReadAsync()) { }
+                await foreach (var _ in source.ReadEnvelopesAsync()) { }
             });
         }
         finally
         {
-            if (File.Exists(path))
-                File.Delete(path);
+            File.Delete(path);
         }
     }
 
-    [Fact]
-    public async Task ReadAsync_ShouldHandleEmptyFile()
+    [Theory]
+    [InlineData("")]
+    [InlineData("\"just a string\"")]
+    [InlineData("12345")]
+    public async Task ReadEnvelopesAsync_ThrowsJsonException_ForUnexpectedJsonRoot(string json)
     {
         var path = Path.GetTempFileName();
         try
         {
-            await File.WriteAllTextAsync(path, "");
-
-            var source = new DeadLetterSource<string>(path);
-            
-            await Assert.ThrowsAnyAsync<JsonException>(async () =>
-            {
-                await foreach (var item in source.ReadAsync()) { }
-            });
-        }
-        finally
-        {
-            if (File.Exists(path))
-                File.Delete(path);
-        }
-    }
-
-    [Fact]
-    public async Task ReadAsync_ShouldHandleCancellation()
-    {
-        var path = Path.GetTempFileName();
-        await File.WriteAllTextAsync(path, "[{\"value\":\"test\",\"isSuccess\":false}]");
-
-        var source = new DeadLetterSource<string>(path);
-        var cts = new CancellationTokenSource();
-        cts.Cancel();
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
-        {
-            await foreach (var item in source.ReadAsync(cts.Token))
-            {
-            }
-        });
-
-        File.Delete(path);
-    }
-
-    [Fact]
-    public async Task ReadAsync_ShouldHandleSingleObjectJson()
-    {
-        var path = Path.GetTempFileName();
-        try
-        {
-            // Single object instead of array - should be handled as a single item
-            var json = JsonSerializer.Serialize(new { Value = "test", IsSuccess = false });
             await File.WriteAllTextAsync(path, json);
-
             var source = new DeadLetterSource<string>(path);
-            
-            var items = new List<ProcessingContext<string>>();
-            await foreach (var item in source.ReadAsync())
-            {
-                items.Add(item);
-            }
 
-            // Single object should be processed
-            Assert.Single(items);
-            Assert.Equal("test", items[0].Payload);
+            await Assert.ThrowsAnyAsync<JsonException>(async () =>
+            {
+                await foreach (var _ in source.ReadEnvelopesAsync()) { }
+            });
         }
         finally
         {
-            if (File.Exists(path))
-                File.Delete(path);
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ReadEnvelopesAsync_ObservesCancellation()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new[] { CreateDeadLetter("test", 1UL) }));
+            var source = new DeadLetterSource<string>(path);
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            {
+                await foreach (var _ in source.ReadEnvelopesAsync(cts.Token)) { }
+            });
+        }
+        finally
+        {
+            File.Delete(path);
         }
     }
 
@@ -290,95 +279,57 @@ public class DeadLetterSourceTests
     public async Task DisposeAsync_CompletesWithoutError()
     {
         var path = Path.GetTempFileName();
-        await File.WriteAllTextAsync(path, "[]");
-        
-        var source = new DeadLetterSource<string>(path);
-        await source.DisposeAsync();
-        
-        File.Delete(path);
-    }
-
-    [Fact]
-    public async Task ReadAsync_ShouldHandleComplexType()
-    {
-        var path = Path.GetTempFileName();
         try
         {
-            var deadLetters = new[]
-            {
-                new { Value = new { Id = 1, Name = "Test" }, IsSuccess = false, Error = "test error", TraceId = 1UL }
-            };
-            var json = JsonSerializer.Serialize(deadLetters);
-            await File.WriteAllTextAsync(path, json);
-
-            var source = new DeadLetterSource<TestComplexType>(path);
-            var result = new List<ProcessingContext<TestComplexType>>();
-
-            await foreach (var item in source.ReadAsync())
-            {
-                result.Add(item);
-            }
-
-            Assert.Single(result);
-            Assert.Equal(1, result[0].Payload?.Id);
-            Assert.Equal("Test", result[0].Payload?.Name);
-        }
-        finally
-        {
-            if (File.Exists(path))
-                File.Delete(path);
-        }
-    }
-
-    [Fact]
-    public async Task ReadAsync_ThrowsJsonException_ForUnexpectedJsonStructure()
-    {
-        var path = Path.GetTempFileName();
-        try
-        {
-            // JSON with unexpected root element (string instead of array or object)
-            await File.WriteAllTextAsync(path, "\"just a string\"");
-
+            await File.WriteAllTextAsync(path, "[]");
             var source = new DeadLetterSource<string>(path);
 
-            await Assert.ThrowsAsync<JsonException>(async () =>
-            {
-                await foreach (var item in source.ReadAsync()) { }
-            });
+            await source.DisposeAsync();
         }
         finally
         {
-            if (File.Exists(path))
-                File.Delete(path);
+            File.Delete(path);
         }
     }
 
-    [Fact]
-    public async Task ReadAsync_ThrowsJsonException_ForJsonNumberRoot()
+    private static async Task<List<ProcessingEnvelope<T>>> ReadAllAsync<T>(DeadLetterSource<T> source)
     {
-        var path = Path.GetTempFileName();
-        try
-        {
-            // JSON with unexpected root element (number instead of array or object)
-            await File.WriteAllTextAsync(path, "12345");
-
-            var source = new DeadLetterSource<string>(path);
-
-            await Assert.ThrowsAsync<JsonException>(async () =>
-            {
-                await foreach (var item in source.ReadAsync()) { }
-            });
-        }
-        finally
-        {
-            if (File.Exists(path))
-                File.Delete(path);
-        }
+        var items = new List<ProcessingEnvelope<T>>();
+        await foreach (var item in source.ReadEnvelopesAsync())
+            items.Add(item);
+        return items;
     }
 
-    private class TestComplexType
+    private static DeadLetterEnvelope<T> CreateDeadLetter<T>(
+        T payload,
+        ulong traceId,
+        string? metadataKey = null,
+        string? metadataValue = null) =>
+        new()
+        {
+            SchemaVersion = 1,
+            PipelineId = "pipe",
+            RunId = "run",
+            TraceId = traceId,
+            StageId = "stage",
+            StageName = "Stage",
+            OriginalPayload = payload,
+            Metadata = metadataKey is null
+                ? MetadataBag.Empty
+                : MetadataBag.Empty.Set(metadataKey, metadataValue ?? string.Empty),
+            Error = new SmartPipeError("failed", ErrorType.Permanent),
+            Attempt = 1,
+            FailedAtUtc = new DateTimeOffset(2026, 6, 14, 0, 0, 0, TimeSpan.Zero),
+        };
+
+    private sealed class TestComplexType
     {
         public int Id { get; set; }
         public string? Name { get; set; }
     }
 }
+
+public sealed record AotDeadLetterSourceItem(int Id, string Name);
+
+[JsonSerializable(typeof(AotDeadLetterSourceItem))]
+internal sealed partial class DeadLetterSourceTestJsonContext : JsonSerializerContext;

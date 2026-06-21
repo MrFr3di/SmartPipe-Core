@@ -1,5 +1,6 @@
 using FluentAssertions;
 using SmartPipe.Core;
+using System.Reflection;
 
 namespace SmartPipe.Core.Tests.Math;
 
@@ -51,5 +52,382 @@ public class DeduplicationFilterTests
     {
         var filter = new DeduplicationFilter(expectedItems: 100, falsePositiveRate: 0.01);
         filter.ContainsAndAdd(1UL).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenExpectedItemsIsInvalid(long expectedItems)
+    {
+        var act = () => new DeduplicationFilter(expectedItems: expectedItems);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("expectedItems");
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-0.1)]
+    [InlineData(1.0)]
+    [InlineData(1.1)]
+    [InlineData(double.NaN)]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenFalsePositiveRateIsInvalid(
+        double falsePositiveRate)
+    {
+        var act = () => new DeduplicationFilter(falsePositiveRate: falsePositiveRate);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("falsePositiveRate");
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenExpectedItemsWouldOverflowBitSize()
+    {
+        var act = () => new DeduplicationFilter(expectedItems: long.MaxValue);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("expectedItems");
+    }
+
+    [Fact]
+    public void TtlCleanup_ShouldNotCreateFalseNegativeForNonExpiredItemSharingBits()
+    {
+        var ttl = TimeSpan.FromMilliseconds(120);
+        var first = 1UL;
+        var second = FindValueSharingSomeButNotAllBits(first, expectedItems: 10, falsePositiveRate: 0.01);
+        var filter = new DeduplicationFilter(expectedItems: 10, falsePositiveRate: 0.01, ttl: ttl);
+
+        filter.ContainsAndAdd(first).Should().BeFalse();
+        Thread.Sleep(70);
+        filter.ContainsAndAdd(second).Should().BeFalse();
+
+        Thread.Sleep(70);
+
+        filter.ContainsAndAdd(second).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ContainsAndAdd_WithTtl_ShouldReturnDuplicateBeforeTtlExpires()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 100,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromMinutes(1),
+            clock: clock);
+
+        filter.ContainsAndAdd(42UL).Should().BeFalse();
+        clock.UtcNow = clock.UtcNow.AddSeconds(30);
+
+        filter.ContainsAndAdd(42UL).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ContainsAndAdd_WithTtl_ShouldAcceptItemAfterTtlExpires()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 100,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromMinutes(1),
+            clock: clock);
+
+        filter.ContainsAndAdd(42UL).Should().BeFalse();
+        clock.UtcNow = clock.UtcNow.AddMinutes(2);
+
+        filter.ContainsAndAdd(42UL).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ContainsAndAdd_WithTtl_ShouldAcceptZeroTraceIdAfterTtlExpires()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 100,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromMinutes(1),
+            clock: clock);
+
+        filter.ContainsAndAdd(0UL).Should().BeFalse();
+        clock.UtcNow = clock.UtcNow.AddMinutes(2);
+
+        filter.ContainsAndAdd(0UL).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ContainsAndAdd_WithTtl_ShouldUseClockAdvanceWithoutSleeping()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 100,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromSeconds(10),
+            clock: clock);
+
+        filter.ContainsAndAdd(42UL).Should().BeFalse();
+        clock.UtcNow = clock.UtcNow.AddSeconds(11);
+
+        filter.ContainsAndAdd(42UL).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Dedup_Ttl_OverwriteSlot_ShouldRemoveOldCounters()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 1,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromHours(1),
+            clock: clock);
+
+        filter.ContainsAndAdd(1UL).Should().BeFalse();
+        var firstOnlyIndexes = GetFilterIndexes(filter, 1UL)
+            .Except(GetFilterIndexes(filter, 2UL))
+            .ToArray();
+        firstOnlyIndexes.Should().NotBeEmpty();
+
+        filter.ContainsAndAdd(2UL).Should().BeFalse();
+
+        var counters = GetTtlCounters(filter);
+        firstOnlyIndexes.Should().OnlyContain(index => counters[index] == 0);
+    }
+
+    [Fact]
+    public void Dedup_Ttl_OverwriteSlot_ShouldNotClearSharedBitsForLiveEntries()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 1,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromHours(1),
+            clock: clock);
+        var first = 1UL;
+        var second = FindValueSharingSomeButNotAllFilterBits(filter, first);
+
+        filter.ContainsAndAdd(first).Should().BeFalse();
+        filter.ContainsAndAdd(second).Should().BeFalse();
+
+        filter.ContainsAndAdd(second).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Dedup_Ttl_CleanupCursor_ShouldNotRemoveOverwrittenNewerEntry()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 1,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromMinutes(1),
+            clock: clock);
+
+        filter.ContainsAndAdd(1UL).Should().BeFalse();
+        clock.UtcNow = clock.UtcNow.AddMinutes(2);
+        filter.ContainsAndAdd(2UL).Should().BeFalse();
+
+        filter.ContainsAndAdd(2UL).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Dedup_Ttl_RemoveEntry_ShouldNotDecrementCountersBelowZero()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 1,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromMinutes(1),
+            clock: clock);
+
+        filter.ContainsAndAdd(1UL).Should().BeFalse();
+        filter.ContainsAndAdd(2UL).Should().BeFalse();
+        clock.UtcNow = clock.UtcNow.AddMinutes(2);
+        filter.ContainsAndAdd(3UL).Should().BeFalse();
+
+        GetTtlCounters(filter).Should().OnlyContain(count => count >= 0);
+    }
+
+    [Fact]
+    public void Dedup_Ttl_TraceIdZero_ShouldExpireAndBeAcceptedAgain()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 1,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromMinutes(1),
+            clock: clock);
+
+        filter.ContainsAndAdd(0UL).Should().BeFalse();
+        clock.UtcNow = clock.UtcNow.AddMinutes(2);
+
+        filter.ContainsAndAdd(0UL).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Dedup_Ttl_RepeatedDuplicateBeforeExpiry_ShouldNotAddExtraCounterCopies()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 10,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromMinutes(1),
+            clock: clock);
+
+        filter.ContainsAndAdd(42UL).Should().BeFalse();
+        var afterFirstAdd = GetTtlCounters(filter).Sum();
+
+        filter.ContainsAndAdd(42UL).Should().BeTrue();
+        filter.ContainsAndAdd(42UL).Should().BeTrue();
+
+        GetTtlCounters(filter).Sum().Should().Be(afterFirstAdd);
+    }
+
+    [Fact]
+    public void Dedup_Ttl_Cleanup_IsBoundedPerCall()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 1_000,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromMinutes(1),
+            clock: clock);
+
+        for (ulong i = 1; i <= 600; i++)
+            filter.ContainsAndAdd(i).Should().BeFalse();
+
+        clock.UtcNow = clock.UtcNow.AddMinutes(2);
+
+        filter.ContainsAndAdd(10_000UL).Should().BeFalse();
+
+        GetPrivateField<long>(filter, "_ttlCleanupSequence").Should().Be(513);
+    }
+
+    [Fact]
+    public void Dedup_Ttl_RingCapacityExceeded_ShouldEvictOldestEntry_BeforeTtl()
+    {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
+        var filter = new DeduplicationFilter(
+            expectedItems: 1,
+            falsePositiveRate: 0.01,
+            ttl: TimeSpan.FromHours(1),
+            clock: clock);
+
+        filter.ContainsAndAdd(1UL).Should().BeFalse();
+        var firstOnlyIndexes = GetFilterIndexes(filter, 1UL)
+            .Except(GetFilterIndexes(filter, 2UL))
+            .ToArray();
+        firstOnlyIndexes.Should().NotBeEmpty();
+
+        filter.ContainsAndAdd(2UL).Should().BeFalse();
+
+        var counters = GetTtlCounters(filter);
+        firstOnlyIndexes.Should().OnlyContain(index => counters[index] == 0);
+    }
+
+    private static ulong FindValueSharingSomeButNotAllBits(
+        ulong first,
+        long expectedItems,
+        double falsePositiveRate)
+    {
+        var firstIndexes = GetIndexes(first, expectedItems, falsePositiveRate);
+
+        for (ulong candidate = first + 1; candidate < 100_000; candidate++)
+        {
+            var candidateIndexes = GetIndexes(candidate, expectedItems, falsePositiveRate);
+            if (candidateIndexes.Overlaps(firstIndexes) && !candidateIndexes.SetEquals(firstIndexes))
+                return candidate;
+        }
+
+        throw new InvalidOperationException("Could not find a deterministic shared-bit candidate.");
+    }
+
+    private static HashSet<int> GetIndexes(ulong value, long expectedItems, double falsePositiveRate)
+    {
+        var size = (int)(-expectedItems * System.Math.Log(falsePositiveRate) / (System.Math.Log(2) * System.Math.Log(2)));
+        var hashCount = System.Math.Max(1, (int)(size / (double)expectedItems * System.Math.Log(2)));
+        var indexes = new HashSet<int>();
+        var h1 = Hash1(value);
+        var h2 = Hash2(value);
+
+        for (int i = 0; i < hashCount; i++)
+        {
+            var index = (int)((h1 + (long)i * h2) % size);
+            if (index < 0)
+                index += size;
+            indexes.Add(index);
+        }
+
+        return indexes;
+    }
+
+    private static HashSet<int> GetFilterIndexes(DeduplicationFilter filter, ulong value)
+    {
+        var size = GetPrivateField<int>(filter, "_size");
+        var hashCount = GetPrivateField<int>(filter, "_hashCount");
+        var indexes = new HashSet<int>();
+        var h1 = Hash1(value);
+        var h2 = Hash2(value);
+
+        for (int i = 0; i < hashCount; i++)
+        {
+            var index = (int)((h1 + (long)i * h2) % size);
+            if (index < 0)
+                index += size;
+            indexes.Add(index);
+        }
+
+        return indexes;
+    }
+
+    private static ulong FindValueSharingSomeButNotAllFilterBits(
+        DeduplicationFilter filter,
+        ulong first)
+    {
+        var firstIndexes = GetFilterIndexes(filter, first);
+
+        for (ulong candidate = first + 1; candidate < 100_000; candidate++)
+        {
+            var candidateIndexes = GetFilterIndexes(filter, candidate);
+            if (candidateIndexes.Overlaps(firstIndexes) && !candidateIndexes.SetEquals(firstIndexes))
+                return candidate;
+        }
+
+        throw new InvalidOperationException("Could not find a deterministic shared-bit candidate.");
+    }
+
+    private static int[] GetTtlCounters(DeduplicationFilter filter) =>
+        GetPrivateField<int[]>(filter, "_ttlBitCounts");
+
+    private static T GetPrivateField<T>(DeduplicationFilter filter, string name)
+    {
+        var value = typeof(DeduplicationFilter)
+            .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(filter);
+
+        return value.Should().BeOfType<T>().Subject;
+    }
+
+    private static int Hash1(ulong x)
+    {
+        ulong h = 14695981039346656037;
+        for (int i = 0; i < 8; i++)
+        {
+            h ^= (byte)(x >> (i * 8));
+            h *= 1099511628211;
+        }
+        return (int)h;
+    }
+
+    private static int Hash2(ulong x)
+    {
+        x ^= x >> 33;
+        x *= 0xFF51AFD7ED558CCD;
+        x ^= x >> 33;
+        x *= 0xC4CEB9FE1A85EC53;
+        x ^= x >> 33;
+        return (int)x;
+    }
+
+    private sealed class MutableClock(DateTime utcNow) : IClock
+    {
+        public DateTime UtcNow { get; set; } = utcNow;
     }
 }

@@ -1,10 +1,20 @@
+# Security Policy
+
 ## Supported Versions
 
 | Version | Supported |
-|---------|-----------|
-| 1.0.x   | ✅ Active |
+|---|---|
+| 1.1.x | Active |
+| 1.0.x | Maintenance |
 
-## Security Best Practices
+## Reporting A Vulnerability
 
-SmartPipe includes `SecretScanner` for detecting API keys and passwords in pipeline data.
-Enable it in production pipelines to prevent accidental exposure of sensitive information.
+Please report vulnerabilities privately through the repository security advisory
+workflow when available, or contact the maintainers before publishing details.
+Include affected package versions, reproduction steps, and impact.
+
+## Secret Scanning
+
+SmartPipe includes an opt-in `SecretScanner` feature flag for legacy pipelines.
+It is disabled by default and should be enabled only when its behavior is
+appropriate for the application data path.

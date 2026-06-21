@@ -30,9 +30,9 @@ public class SecretScannerTests
     {
         var original = "test";
         var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(original));
-        
+
         var result = InvokeTryDecodeBase64(base64);
-        
+
         Assert.Equal(original, result);
     }
 
@@ -40,9 +40,9 @@ public class SecretScannerTests
     public void TryDecodeBase64_InvalidBase64_ReturnsNull()
     {
         var input = "invalid!base64";
-        
+
         var result = InvokeTryDecodeBase64(input);
-        
+
         Assert.Null(result);
     }
 
@@ -50,9 +50,9 @@ public class SecretScannerTests
     public void TryDecodeBase64_NullInput_ReturnsNull()
     {
         string? input = null;
-        
+
         var result = InvokeTryDecodeBase64(input!);
-        
+
         Assert.Null(result);
     }
 
@@ -60,9 +60,9 @@ public class SecretScannerTests
     public void TryDecodeBase64_EmptyInput_ReturnsNull()
     {
         var input = "";
-        
+
         var result = InvokeTryDecodeBase64(input);
-        
+
         Assert.Null(result);
     }
 
@@ -70,9 +70,9 @@ public class SecretScannerTests
     public void TryDecodeBase64_WhitespaceInput_ReturnsNull()
     {
         var input = "   ";
-        
+
         var result = InvokeTryDecodeBase64(input);
-        
+
         Assert.Null(result);
     }
 
@@ -80,9 +80,9 @@ public class SecretScannerTests
     public void TryDecodeUrl_ValidEncodedUrl_ReturnsDecodedUrl()
     {
         var encoded = Uri.EscapeDataString("test value");
-        
+
         var result = InvokeTryDecodeUrl(encoded);
-        
+
         Assert.Equal("test value", result);
     }
 
@@ -90,9 +90,9 @@ public class SecretScannerTests
     public void TryDecodeUrl_InvalidEncodedUrl_ReturnsNull()
     {
         var input = "not%encoded";
-        
+
         var result = InvokeTryDecodeUrl(input);
-        
+
         Assert.Null(result);
     }
 
@@ -100,9 +100,9 @@ public class SecretScannerTests
     public void Redact_StringWithSecrets_ReturnsRedactedString()
     {
         var input = "my api_key: 'secret123' and password: 'pass456'";
-        
+
         var result = SecretScanner.Redact(input);
-        
+
         Assert.Contains("***REDACTED***", result);
         Assert.DoesNotContain("secret123", result);
     }
@@ -111,9 +111,9 @@ public class SecretScannerTests
     public void Redact_StringWithNoSecrets_ReturnsOriginal()
     {
         var input = "this is a clean string without secrets";
-        
+
         var result = SecretScanner.Redact(input);
-        
+
         Assert.Equal(input, result);
     }
 
@@ -121,9 +121,9 @@ public class SecretScannerTests
     public void TryDecodeBase64_RawAwsKey_ReturnsNull()
     {
         var awsKey = "AKIA1234567890ABCDEF";
-        
+
         var result = InvokeTryDecodeBase64(awsKey);
-        
+
         Assert.Null(result);
     }
 
@@ -151,9 +151,9 @@ public class SecretScannerTests
     {
         var original = "test";
         var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(original));
-        
+
         var result = SecretScanner.DecodeBase64WithPadding(base64);
-        
+
         Assert.Equal(original, result);
     }
 
@@ -164,9 +164,9 @@ public class SecretScannerTests
         var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(original));
         // Remove padding if present
         var base64NoPadding = base64.TrimEnd('=');
-        
+
         var result = SecretScanner.DecodeBase64WithPadding(base64NoPadding);
-        
+
         Assert.Equal(original, result);
     }
 
@@ -174,9 +174,9 @@ public class SecretScannerTests
     public void DecodeBase64WithPadding_InvalidBase64_ReturnsNull()
     {
         var input = "invalid!base64";
-        
+
         var result = SecretScanner.DecodeBase64WithPadding(input);
-        
+
         Assert.Null(result);
     }
 
@@ -184,9 +184,9 @@ public class SecretScannerTests
     public void DecodeBase64WithPadding_NullInput_ReturnsNull()
     {
         string? input = null;
-        
+
         var result = SecretScanner.DecodeBase64WithPadding(input!);
-        
+
         Assert.Null(result);
     }
 
@@ -195,9 +195,9 @@ public class SecretScannerTests
     {
         // "abc" has length 3, which is not a multiple of 4
         var input = "abc";
-        
+
         var result = InvokeTryDecodeBase64(input);
-        
+
         Assert.Null(result);
     }
 
@@ -205,9 +205,9 @@ public class SecretScannerTests
     public void TryDecodeUrl_NullInput_ReturnsNull()
     {
         string? input = null;
-        
+
         var result = InvokeTryDecodeUrl(input!);
-        
+
         Assert.Null(result);
     }
 
@@ -215,9 +215,9 @@ public class SecretScannerTests
     public void TryDecodeUrl_EmptyInput_ReturnsNull()
     {
         var input = "";
-        
+
         var result = InvokeTryDecodeUrl(input);
-        
+
         Assert.Null(result);
     }
 
@@ -226,9 +226,9 @@ public class SecretScannerTests
     {
         // String without URL encoding - decoding returns the same string
         var input = "noencoding";
-        
+
         var result = InvokeTryDecodeUrl(input);
-        
+
         Assert.Null(result);
     }
 }

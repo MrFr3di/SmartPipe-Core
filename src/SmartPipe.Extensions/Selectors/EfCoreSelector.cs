@@ -9,7 +9,8 @@ namespace SmartPipe.Extensions.Selectors;
 /// Supports cancellation and logging.
 /// </summary>
 /// <typeparam name="T">Entity type from DbContext.</typeparam>
-public class EfCoreSelector<T> : ISource<T> where T : class
+public class EfCoreSelector<T> : IPipelineSource<T>
+    where T : class
 {
     private readonly DbContext _dbContext;
     private readonly ILogger<EfCoreSelector<T>>? _logger;
@@ -32,10 +33,12 @@ public class EfCoreSelector<T> : ISource<T> where T : class
     }
 
     /// <inheritdoc />
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ProcessingContext<T>> ReadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
+    )
     {
         var query = _query ?? _dbContext.Set<T>();
         var entities = query.AsAsyncEnumerable().WithCancellation(ct);
@@ -43,12 +46,12 @@ public class EfCoreSelector<T> : ISource<T> where T : class
         await foreach (var entity in entities)
         {
             ct.ThrowIfCancellationRequested();
-            yield return new ProcessingContext<T>(entity);
+            yield return ProcessingEnvelope<T>.Create(entity);
         }
 
         _logger?.LogInformation("EFCore source completed for {EntityType}", typeof(T).Name);
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

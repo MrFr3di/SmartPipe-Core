@@ -176,9 +176,13 @@ public class SecretScannerEvasionTests
         // Act
         var result = SecretScanner.Redact(base64Encoded);
 
-        // Assert - the redaction happens on the decoded content
-        // Since we can't easily map back, we verify HasSecrets returns true
-        SecretScanner.HasSecrets(base64Encoded).Should().BeTrue();
+        // Assert
+        result.Should().NotBe(secret);
+        result.Should().NotContain("api_key");
+        result.Should().NotContain("sk-1234567890abcdef");
+        var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(result));
+        decoded.Should().Be("***REDACTED***");
+        SecretScanner.HasSecrets(result).Should().BeFalse();
     }
 
     #endregion
@@ -292,8 +296,13 @@ public class SecretScannerEvasionTests
         // Act
         var result = SecretScanner.Redact(urlEncoded);
 
-        // Assert - verify HasSecrets returns true for the encoded secret
-        SecretScanner.HasSecrets(urlEncoded).Should().BeTrue();
+        // Assert
+        result.Should().NotBe(secret);
+        result.Should().NotContain("password");
+        result.Should().NotContain("MySecretPassword123");
+        result.Should().Be(Uri.EscapeDataString("***REDACTED***"));
+        Uri.UnescapeDataString(result).Should().Be("***REDACTED***");
+        SecretScanner.HasSecrets(result).Should().BeFalse();
     }
 
     #endregion

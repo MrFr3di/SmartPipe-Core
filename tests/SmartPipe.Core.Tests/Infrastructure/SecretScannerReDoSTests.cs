@@ -14,69 +14,69 @@ public class SecretScannerReDoSTests
             // Pattern 1: API Key pattern - api[_-]?key\s*[:=]\s*['\"].+?['\"]
             // Malicious: long prefix match + extremely long value without closing quote
             // Forces the lazy .+? to scan entire string before failing
-            yield return new object[] 
-            { 
-                "APIKey", 
-                "api-key = '" + new string('x', 10000) 
+            yield return new object[]
+            {
+                "APIKey",
+                "api-key = '" + new string('x', 10000)
             };
 
             // Pattern 2: Password pattern - password\s*[:=]\s*['\"].+?['\"]
             // Malicious: long prefix match + extremely long value without closing quote
-            yield return new object[] 
-            { 
-                "Password", 
-                "password = \"" + new string('p', 10000) 
+            yield return new object[]
+            {
+                "Password",
+                "password = \"" + new string('p', 10000)
             };
 
             // Pattern 3: OpenAI key - sk-[a-zA-Z0-9]{32,}
             // Malicious: prefix match with 31 chars (just below threshold) + non-matching suffix
             // Forces backtracking as engine tries different positions
-            yield return new object[] 
-            { 
-                "OpenAIKey", 
-                "sk-" + new string('a', 31) + "!" 
+            yield return new object[]
+            {
+                "OpenAIKey",
+                "sk-" + new string('a', 31) + "!"
             };
 
             // Pattern 4: Private Key PEM - -----BEGIN\s(?:RSA|OPENSSH|DSA|EC)\sPRIVATE KEY-----
             // Malicious: long sequence of dashes and BEGIN without completing the pattern
             // The Singleline option doesn't create backtracking risk here, but we test anyway
-            yield return new object[] 
-            { 
-                "PrivateKeyPEM", 
-                "-----BEGIN" + new string('-', 1000) 
+            yield return new object[]
+            {
+                "PrivateKeyPEM",
+                "-----BEGIN" + new string('-', 1000)
             };
 
             // Pattern 5: JWT - eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+
             // Malicious: valid first part, second part with many chars, no third part
             // Forces backtracking on the second and third dot-separated parts
-            yield return new object[] 
-            { 
-                "JWT", 
-                "eyJ" + new string('x', 1000) + ".eyJ" + new string('y', 1000) 
+            yield return new object[]
+            {
+                "JWT",
+                "eyJ" + new string('x', 1000) + ".eyJ" + new string('y', 1000)
             };
 
             // Pattern 6: AWS Access Key - AKIA[0-9A-Z]{16}
             // Malicious: AKIA prefix + 15 alphanumeric chars (just below threshold) + non-matching
-            yield return new object[] 
-            { 
-                "AWSAccessKey", 
-                "AKIA" + new string('A', 15) + "!" 
+            yield return new object[]
+            {
+                "AWSAccessKey",
+                "AKIA" + new string('A', 15) + "!"
             };
 
             // Pattern 7: GitHub PAT - ghp_[A-Za-z0-9]{36}
             // Malicious: ghp_ prefix + 35 alphanumeric chars (just below threshold) + non-matching
-            yield return new object[] 
-            { 
-                "GitHubPAT", 
-                "ghp_" + new string('g', 35) + "!" 
+            yield return new object[]
+            {
+                "GitHubPAT",
+                "ghp_" + new string('g', 35) + "!"
             };
 
             // Pattern 8: Google OAuth - ya29\.[A-Za-z0-9_-]+
             // Malicious: ya29. prefix + many valid chars, then non-matching to force scanning
-            yield return new object[] 
-            { 
-                "GoogleOAuth", 
-                "ya29." + new string('z', 10000) + "!" 
+            yield return new object[]
+            {
+                "GoogleOAuth",
+                "ya29." + new string('z', 10000) + "!"
             };
         }
     }
@@ -88,8 +88,8 @@ public class SecretScannerReDoSTests
         var stopwatch = Stopwatch.StartNew();
         var result = SecretScanner.HasSecrets(maliciousInput);
         stopwatch.Stop();
-        
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(100, 
+
+        stopwatch.ElapsedMilliseconds.Should().BeLessThan(100,
             $"Pattern '{patternDescription}' should not exhibit ReDoS - took {stopwatch.ElapsedMilliseconds}ms");
     }
 

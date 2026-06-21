@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using FluentAssertions;
 using SmartPipe.Core;
-using Xunit.Abstractions;
 
 namespace SmartPipe.Core.Tests.Resilience;
 
@@ -13,6 +12,66 @@ public class CircuitBreakerTests
     {
         var cb = new CircuitBreaker();
         cb.State.Should().Be(CircuitState.Closed);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-0.1)]
+    [InlineData(1.1)]
+    [InlineData(double.NaN)]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenFailureRatioIsInvalid(
+        double failureRatio)
+    {
+        var act = () => new CircuitBreaker(failureRatio: failureRatio);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("failureRatio");
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidSamplingDurations))]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenSamplingDurationIsInvalid(
+        TimeSpan samplingDuration)
+    {
+        var act = () => new CircuitBreaker(samplingDuration: samplingDuration);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("samplingDuration");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenMinimumThroughputIsInvalid(
+        int minimumThroughput)
+    {
+        var act = () => new CircuitBreaker(minimumThroughput: minimumThroughput);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("minimumThroughput");
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidBreakDurations))]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenBreakDurationIsInvalid(
+        TimeSpan breakDuration)
+    {
+        var act = () => new CircuitBreaker(breakDuration: breakDuration);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("breakDuration");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenMaxHalfOpenRequestsIsInvalid(
+        int maxHalfOpenRequests)
+    {
+        var act = () => new CircuitBreaker(maxHalfOpenRequests: maxHalfOpenRequests);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("maxHalfOpenRequests");
     }
 
     [Fact]
@@ -40,7 +99,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
-    public void HalfOpen_ShouldLimitRequests()
+    public void CircuitBreaker_PublicAllowRequest_DocumentedBehavior()
     {
         var cb = new CircuitBreaker(failureRatio: 0.5, minimumThroughput: 5, breakDuration: TimeSpan.FromMilliseconds(10), maxHalfOpenRequests: 2);
         for (int i = 0; i < 5; i++) cb.RecordFailure();
@@ -51,14 +110,77 @@ public class CircuitBreakerTests
     }
 
     [Fact]
-    public void HalfOpen_WithSuccesses_ShouldClose()
+    public void CircuitBreaker_HalfOpen_AllowsUpToMaxConcurrentProbes()
+    {
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 5,
+            breakDuration: TimeSpan.FromMilliseconds(10),
+            maxHalfOpenRequests: 2);
+        for (var i = 0; i < 5; i++)
+            cb.RecordFailure();
+        Thread.Sleep(15);
+
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void CircuitBreaker_HalfOpen_ProbeCompletionReleasesSlot()
+    {
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 5,
+            breakDuration: TimeSpan.FromMilliseconds(10),
+            maxHalfOpenRequests: 1);
+        for (var i = 0; i < 5; i++)
+            cb.RecordFailure();
+        Thread.Sleep(15);
+
+        cb.TryAcquireHalfOpenProbe(out var firstProbe).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse();
+
+        firstProbe.Dispose();
+
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CircuitBreaker_HalfOpen_FailureReopensBreaker()
+    {
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 5,
+            breakDuration: TimeSpan.FromMilliseconds(10),
+            maxHalfOpenRequests: 1);
+        for (var i = 0; i < 5; i++)
+            cb.RecordFailure();
+        Thread.Sleep(15);
+
+        cb.TryAcquireHalfOpenProbe(out var probe).Should().BeTrue();
+        cb.RecordFailure();
+        probe.Dispose();
+
+        cb.State.Should().Be(CircuitState.Open);
+        cb.AllowRequest().Should().BeFalse();
+    }
+
+    [Fact]
+    public void CircuitBreaker_HalfOpen_SuccessThresholdClosesBreaker()
     {
         var cb = new CircuitBreaker(failureRatio: 0.5, minimumThroughput: 5, breakDuration: TimeSpan.FromMilliseconds(10), maxHalfOpenRequests: 3);
         for (int i = 0; i < 5; i++) cb.RecordFailure();
         Thread.Sleep(15);
-        cb.AllowRequest();
+
+        cb.TryAcquireHalfOpenProbe(out var firstProbe).Should().BeTrue();
         cb.RecordSuccess();
+        firstProbe.Dispose();
+
+        cb.TryAcquireHalfOpenProbe(out var secondProbe).Should().BeTrue();
         cb.RecordSuccess();
+        secondProbe.Dispose();
+
         cb.State.Should().Be(CircuitState.Closed);
     }
 
@@ -92,6 +214,61 @@ public class CircuitBreakerTests
         metrics.Should().ContainKey("cb_ewma_failure_rate");
     }
 
+    [Fact]
+    public void CircuitBreaker_RatioMode_CleanupWindow_ShouldNotReorderSamples()
+    {
+        var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
+        var clock = new ManualClock(now);
+        var cb = new CircuitBreaker(samplingDuration: TimeSpan.FromMinutes(1), clock: clock);
+        var window = GetWindow(cb);
+        var first = (now.AddSeconds(-10), true);
+        var second = (now.AddSeconds(-5), false);
+        window.Enqueue(first);
+        window.Enqueue(second);
+
+        InvokeCleanupWindow(cb);
+
+        window.ToArray().Should().Equal(first, second);
+    }
+
+    [Fact]
+    public void CircuitBreaker_RatioMode_ShouldRemoveExpiredSamples()
+    {
+        var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
+        var clock = new ManualClock(now);
+        var cb = new CircuitBreaker(samplingDuration: TimeSpan.FromMinutes(1), clock: clock);
+        var window = GetWindow(cb);
+        var expired = (now.AddMinutes(-2), false);
+        var current = (now.AddSeconds(-5), true);
+        window.Enqueue(expired);
+        window.Enqueue(current);
+
+        InvokeCleanupWindow(cb);
+
+        window.ToArray().Should().Equal(current);
+    }
+
+    [Fact]
+    public void CircuitBreaker_RatioMode_ShouldNotKeepExpiredSamplesBehindNewerItems()
+    {
+        var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
+        var clock = new ManualClock(now);
+        var cb = new CircuitBreaker(samplingDuration: TimeSpan.FromMinutes(1), clock: clock);
+        var window = GetWindow(cb);
+        var expired1 = (now.AddMinutes(-2), false);
+        var expired2 = (now.AddMinutes(-3), false);
+        var current1 = (now.AddSeconds(-10), true);
+        var current2 = (now.AddSeconds(-5), true);
+        window.Enqueue(expired1);
+        window.Enqueue(expired2);
+        window.Enqueue(current1);
+        window.Enqueue(current2);
+
+        InvokeCleanupWindow(cb);
+
+        window.ToArray().Should().Equal(current1, current2);
+    }
+
     private readonly ITestOutputHelper _output;
 
     public CircuitBreakerTests(ITestOutputHelper output)
@@ -100,7 +277,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
-    public void StressTest_CleanupWindow_RaceCondition()
+    public async Task StressTest_CleanupWindow_RaceCondition()
     {
         // Arrange
         var samplingDuration = TimeSpan.FromMilliseconds(100); // Short window to trigger frequent cleanup
@@ -123,9 +300,7 @@ public class CircuitBreakerTests
         int cleanupThreads = 5;
         int testDurationSeconds = 10;
         int itemsEnqueued = 0;
-        int itemsDequeued = 0;
         var enqueueLock = new object();
-        var dequeueLock = new object();
 
         // Track operations for verification
         var exceptions = new ConcurrentQueue<Exception>();
@@ -181,7 +356,7 @@ public class CircuitBreakerTests
         cts.Cancel();
 
         // Wait for all tasks to complete
-        Task.WaitAll(recordTasks.Concat(cleanupTasks).ToArray(), TimeSpan.FromSeconds(5));
+        await Task.WhenAll(recordTasks.Concat(cleanupTasks)).WaitAsync(TimeSpan.FromSeconds(5));
 
         // Assert: Check for exceptions
         if (!exceptions.IsEmpty)
@@ -227,5 +402,49 @@ public class CircuitBreakerTests
         _output.WriteLine("Race condition test completed. If the TryPeek+TryDequeue pattern has a race,");
         _output.WriteLine("it could cause items to be incorrectly removed from the queue.");
         _output.WriteLine("The fix is to replace TryPeek+TryDequeue with TryDequeue+check pattern.");
+    }
+
+    private static ConcurrentQueue<(DateTime Timestamp, bool IsSuccess)> GetWindow(CircuitBreaker cb)
+    {
+        var windowField = typeof(CircuitBreaker).GetField(
+            "_window",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
+
+        windowField.Should().NotBeNull();
+        return (ConcurrentQueue<(DateTime Timestamp, bool IsSuccess)>)windowField!.GetValue(cb)!;
+    }
+
+    private static void InvokeCleanupWindow(CircuitBreaker cb)
+    {
+        var cleanupMethod = typeof(CircuitBreaker).GetMethod(
+            "CleanupWindow",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
+
+        cleanupMethod.Should().NotBeNull();
+        cleanupMethod!.Invoke(cb, null);
+    }
+
+    public static IEnumerable<object[]> InvalidSamplingDurations()
+    {
+        yield return [TimeSpan.Zero];
+        yield return [TimeSpan.FromTicks(-1)];
+    }
+
+    public static IEnumerable<object[]> InvalidBreakDurations()
+    {
+        yield return [TimeSpan.Zero];
+        yield return [TimeSpan.FromTicks(-1)];
+    }
+
+    private sealed class ManualClock : IClock
+    {
+        public ManualClock(DateTime utcNow)
+        {
+            UtcNow = utcNow;
+        }
+
+        public DateTime UtcNow { get; }
     }
 }

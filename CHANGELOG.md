@@ -1,5 +1,109 @@
 # Changelog
 
+## [2.0.0] — 2026-06-20
+
+### Breaking Changes
+
+- **Typed-only runtime** — removed the legacy `SmartPipeChannel<TInput,TOutput>` runtime model and the old `ISource<T>`, `ITransformer<TInput,TOutput>`, `ISink<T>`, `ProcessingContext<T>`, `ProcessingResult<T>`, retry queue, channel pool, middleware transformer, and legacy cancellation surfaces.
+- **New pipeline API** — the public runtime surface is now `PipelineBuilder`, `PipelineRun<T>`, `IPipelineSource<T>`, `IPipelineTransformer<TInput,TOutput>`, `IPipelineSink<T>`, `ProcessingEnvelope<T>`, `StageResult<T>`, and `PipelineResult<T>`.
+- **Runtime output contract changed** — sink-backed pipelines now default to `PipelineOutputPolicy.SuppressSuccessWhenSinkAttached`. Successful sink writes are not published to `PipelineRun<T>.Outputs` unless the caller explicitly opts into `EmitAll`.
+- **Single logical output reader** — `PipelineRun<T>.Outputs` is a single-reader output channel by contract. Callers that need fan-out must build it explicitly in application code.
+- **Lifecycle semantics changed** — `DrainAsync`, `TryDrainAsync`, `CancelAsync`, `AbortAsync`, and `DisposeAsync` now have distinct typed-runtime meanings and observable states.
+- **Compatibility aliases are transitional only** — `OutputMode`, `PipelineOutputMode`, and `MaxDegreeOfParallelism` remain as obsolete typed-runtime aliases for migration, but new code should use `OutputPolicy` and `MaxConcurrency`.
+- **Legacy docs moved out of the primary path** — migration notes now live under `docs/migration/legacy-to-typed.md`; current docs describe the typed runtime only.
+
+### New Features
+
+- **PipelineRun\<T\>** — typed runtime handle with completion task, output reader, lifecycle state, metrics snapshot, drain, cancel, abort, and async disposal.
+- **ProcessingEnvelope\<T\>** — strongly typed payload envelope with pipeline id, run id, trace id, metadata, lineage, attempt count, and creation timestamp.
+- **StageResult\<T\>** — explicit stage result model for success, failure, filtered, skipped, cancelled, and timed-out stage outcomes.
+- **PipelineResult\<T\>** — typed terminal output result with success, failure, filtered, and skipped classifications.
+- **PipelineRuntimeOptions** — typed options for `MaxConcurrency`, input/output capacity, bounded channel full modes, output policy, ordering mode, observer dispatch, and runtime clock.
+- **TryDrainAsync** — structured non-throwing drain API returning `PipelineDrainResult` with `Completed`, `TimedOutStillRunning`, `CancelledByCaller`, `Faulted`, and `AlreadyCompleted` statuses.
+- **DeadLetterEnvelope\<T\>** — replay-safe typed dead-letter payload containing original payload, pipeline/run ids, trace id, stage id/name, metadata, error, attempt, and failure timestamp.
+- **JsonLinesDeadLetterSerializer\<T\>** — JSONL dead-letter serializer with source-generated `JsonTypeInfo` support for trim/AOT-sensitive consumers.
+- **ObserverDispatchOptions** — inline and bounded buffered observer dispatch with best-effort drop accounting, failure modes, and completion flush behavior.
+- **CircuitBreaker.TryAcquireHalfOpenProbe()** — lease-based half-open probe API for concurrent half-open limits.
+- **Pipeline health snapshots** — typed health monitor snapshots include state, metrics, input/output capacity, and capture timestamp.
+
+### Core Runtime
+
+- **StageExecutor** — centralizes retry, timeout, circuit breaker, dead-letter routing, filtered results, and terminal failure actions.
+- **Bounded channel runtime** — input, output, and buffered observer paths use bounded channels with explicit backpressure or lossy modes.
+- **Sink-safe output default** — sink-backed runs suppress unread success outputs by default, preventing output-channel backpressure from blocking sink-only workloads.
+- **Post-sink success output** — when success outputs are enabled for a sink-backed run, success is emitted only after the sink write succeeds.
+- **Filtered terminal state** — `StageResult.Filtered()` does not call the sink, does not write dead letters, and does not increment failed metrics.
+- **Drain source/processing split** — drain cancels source reads while allowing already accepted work to finish; cancel and abort cancel both source and processing.
+- **Idempotent disposal** — runtime disposal is safe for repeated and racing callers, and disposes runtime-owned components once.
+- **Factory/instance separation** — instance pipelines are single-use; factory pipelines create fresh source/stage/sink components per run.
+- **Compatibility validation** — conflicting explicit `OutputMode`/`OutputPolicy` and `MaxConcurrency`/`MaxDegreeOfParallelism` combinations fail validation instead of silently choosing one.
+
+### Resilience
+
+- **Retry budget enforcement** — retry delay, cancellation, and whole-stage timeout budgets are enforced together.
+- **Circuit-breaker rejection terminality** — open-breaker rejection is terminal for the current item and is not retried back into the open breaker.
+- **Failure action routing** — permanent failures and retry exhaustion can emit failure results, skip, stop, fault, or dead-letter according to `StageFailureOptions`.
+- **Dead-letter write failures** — dead-letter persistence errors are observable and can fail the run when the configured failure action depends on them.
+- **Half-open probe leases** — runtime execution uses probe leases so only the configured number of half-open attempts can run concurrently.
+
+### Observability
+
+- **SmartPipeMetricsRecorder** — mutable per-run recorder with immutable `SmartPipeMetricsSnapshot` capture.
+- **New metric counters** — typed runtime records processed, failed, filtered, dropped, output-dropped, observer-dropped, retried, dead-lettered, and duplicate-filtered item counts.
+- **Runtime histograms** — stage and sink durations are exported through the `SmartPipe.Core` meter.
+- **ActivitySource tracing** — `Pipeline.Run` and `Transform` activities include pipeline id, run id, trace id, stage id, and parallelism tags.
+- **Observer event matrix** — lifecycle, stage, sink, retry, dead-letter, drop, circuit-breaker, and observer failure events are covered by typed tests.
+- **Drop observability** — lossy input, output, and observer modes emit best-effort drop events and reliable drop metrics.
+
+### Dependency Injection, Hosting, And Health Checks
+
+- **ISmartPipeDefinition\<TInput,TOutput\>** — immutable typed pipeline definition registered in DI.
+- **ISmartPipeFactory\<TInput,TOutput\>** — per-run factory that creates fresh runtime components and supports `StartAsync`.
+- **Scoped component ownership** — factory-created runs own a DI scope and dispose scoped source/stage/sink components when the run completes or is manually disposed.
+- **ValidateScopes compatibility** — DI factory and hosted-service paths work under `ValidateScopes=true`.
+- **SmartPipeHostedServiceOptions** — hosted-service failure behavior can stop the host, rethrow, mark unhealthy and keep running, or ignore.
+- **Hosted-service fault behavior** — background pipeline faults are no longer silently swallowed; default behavior requests application shutdown.
+- **Typed health checks** — health checks read typed run state and immutable metrics without registering a runtime singleton.
+
+### Extensions
+
+- **Typed selectors and sinks** — CSV, JSON, HTTP, EF Core, Dapper, logger, database, and dead-letter components now implement typed envelope interfaces.
+- **HTTP client factory support** — `HttpClientFactorySelector<T>` and `HttpClientFactorySink<T>` support named clients and resilience pipelines.
+- **Streaming HTTP selector modes** — HTTP selectors can consume JSON arrays or NDJSON using source-generated `JsonTypeInfo<T>`.
+- **AOT-safe JSON overloads** — JSON file sources, sinks, transforms, dead-letter sources, and dead-letter sinks provide source-generated serializer overloads where required.
+- **FilterTransform terminal filtering** — filtering is represented as a typed non-failure terminal result rather than an exception or failed item.
+- **SQLite audit fix** — test dependencies were updated so vulnerable SQLite native packages no longer appear in NuGet vulnerability audit output.
+- **Deterministic generated fixtures** — CSV/JSON golden and pipeline tests now use generated tiny fixtures and temporary files instead of tracked real data.
+
+### Packaging, CI, And Release Validation
+
+- **Version 2.0.0** — package metadata and release line are aligned on `2.0.0`.
+- **Package validation** — `SmartPipe.Core` and `SmartPipe.Extensions` pack with `EnablePackageValidation=true`.
+- **Symbols packages** — packages include `.snupkg` symbols.
+- **NuGet audit policy** — repository-level `NuGetAudit`, `NuGetAuditMode=all`, and `NuGetAuditLevel=moderate` are enabled.
+- **Central build policy** — deterministic build, CI build, analyzer, code-style, nullable, implicit usings, and Release warning policies are centralized.
+- **xUnit v3 / Microsoft.Testing.Platform** — test projects run as executable xUnit v3 MTP projects under the .NET 10 test runner.
+- **CI release gate** — CI runs locked restore, format verification, Release build with warnings as errors, full tests, package validation, consumer smoke, trim smoke, NativeAOT smoke, JSON/dead-letter AOT smoke, vulnerability scan, deprecated package scan, and docs link check.
+- **Consumer smoke from packages** — smoke tests install `SmartPipe.Core` and `SmartPipe.Extensions` from local `.nupkg` packages, not project references.
+- **Security workflows** — CodeQL, Dependency Review, Dependabot, and tag-gated NuGet publish workflows were added or hardened.
+
+### Documentation
+
+- **Typed runtime docs** — README and docs now describe the typed-only runtime, current public API, sink-safe output defaults, lifecycle semantics, DI, hosting, health checks, AOT, and runtime contracts.
+- **Migration guide** — removed legacy APIs and transitional aliases are documented in `docs/migration/legacy-to-typed.md`.
+- **Runtime contracts** — docs now define output, filtered, drain, cancel, abort, retry, circuit breaker, dead-letter, observer, and metric contracts.
+- **Recipes** — bounded output, graceful shutdown, retry/timeout/dead-letter, and testing recipes were updated for the typed runtime.
+- **Release docs cleanup** — temporary progress and release-evidence docs were removed from the final release surface.
+
+### Testing & Quality
+
+- **894 tests passed, 1 skipped** in the final full solution test run for the RC gate.
+- **Package validation passed** for `SmartPipe.Core.2.0.0` and `SmartPipe.Extensions.2.0.0`.
+- **NuGet vulnerability audit passed** for Core, Extensions, benchmarks, and test projects.
+- **Format verification passed** with `dotnet format --verify-no-changes`.
+- **Release build passed** with warnings as errors.
+- **Release search guards passed** for local workbench leakage, fixture gates, tracked real fixture manifests, local absolute paths, and temporary progress references.
+
 ## [1.0.6] — 2026-05-15
 
 ### Thread Safety (Critical Fixes)
@@ -194,9 +298,9 @@
 
 ### Performance
 - **Lock-free CircuitBreaker** — `lock()` → `Interlocked.CompareExchange` + `ConcurrentQueue`
-  - `AllowRequest()`: 49.30ns → 27.76ns 
+  - `AllowRequest()`: 49.30ns → 27.76ns
 - **Lock-free RetryQueue** — `Task.Delay(50)` polling → `WaitToReadAsync` + timeout
-  - `EnqueueAsync()`: 86.58ns → 69.16ns 
+  - `EnqueueAsync()`: 86.58ns → 69.16ns
 - **Adaptive EMA** — dynamic α (0.2 stable, 0.8 spike)
 - **Dynamic Watermark** — throughput-based backpressure thresholds
 - **TryRead in DrainAsync** — instant drain without 10ms delays

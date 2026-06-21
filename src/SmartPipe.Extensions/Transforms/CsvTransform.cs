@@ -9,11 +9,11 @@ namespace SmartPipe.Extensions.Transforms;
 /// CSV serialization/deserialization transformer using CsvHelper.
 /// Converts <typeparamref name="TInput"/> to CSV string, then deserializes to <typeparamref name="TOutput"/>.
 /// Supports custom delimiter, culture, and mapping configuration via <see cref="CsvConfiguration"/>.
-/// Implements <see cref="ITransformer{TInput, TOutput}"/> for pipeline integration.
+/// Implements <see cref="IPipelineTransformer{TInput, TOutput}"/> for pipeline integration.
 /// </summary>
 /// <typeparam name="TInput">The input type to serialize to CSV.</typeparam>
 /// <typeparam name="TOutput">The output type to deserialize from CSV.</typeparam>
-public class CsvTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
+public class CsvTransform<TInput, TOutput> : IPipelineTransformer<TInput, TOutput>
 {
     private readonly CsvConfiguration _readConfig;
     private readonly CsvConfiguration _writeConfig;
@@ -27,37 +27,42 @@ public class CsvTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
     public CsvTransform(
         string delimiter = ",",
         CultureInfo? culture = null,
-        Action<CsvConfiguration>? configure = null)
+        Action<CsvConfiguration>? configure = null
+    )
     {
         var baseConfig = new CsvConfiguration(culture ?? CultureInfo.InvariantCulture)
         {
             Delimiter = delimiter,
             HasHeaderRecord = true,
             MissingFieldFound = null,
-            BadDataFound = null
+            BadDataFound = null,
         };
 
-        if (configure != null) configure(baseConfig);
+        if (configure != null)
+            configure(baseConfig);
 
         _readConfig = baseConfig;
         _writeConfig = new CsvConfiguration(culture ?? CultureInfo.InvariantCulture)
         {
             Delimiter = delimiter,
-            HasHeaderRecord = true
+            HasHeaderRecord = true,
         };
     }
 
     /// <inheritdoc/>
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
     /// <inheritdoc/>
-    public ValueTask<ProcessingResult<TOutput>> TransformAsync(ProcessingContext<TInput> ctx, CancellationToken ct = default)
+    public ValueTask<StageResult<TOutput>> TransformAsync(
+        ProcessingEnvelope<TInput> envelope,
+        CancellationToken ct = default
+    )
     {
         try
         {
             using var writer = new StringWriter();
             using var csvWriter = new CsvWriter(writer, _writeConfig);
-            csvWriter.WriteRecords(new[] { ctx.Payload });
+            csvWriter.WriteRecords(new[] { envelope.Payload });
             var csv = writer.ToString();
 
             using var reader = new StringReader(csv);
@@ -65,24 +70,37 @@ public class CsvTransform<TInput, TOutput> : ITransformer<TInput, TOutput>
             var firstRecord = csvReader.GetRecords<TOutput>().First();
 
             return ValueTask.FromResult(
-                ProcessingResult<TOutput>.Success(firstRecord, ctx.TraceId));
+                StageResult<TOutput>.Success(firstRecord)
+            );
         }
         catch (CsvHelperException ex)
         {
             return ValueTask.FromResult(
-                ProcessingResult<TOutput>.Failure(
-                    new SmartPipeError($"CSV parsing error: {ex.Message}", ErrorType.Permanent, "Serialization", ex),
-                    ctx.TraceId));
+                StageResult<TOutput>.Failure(
+                    new SmartPipeError(
+                        $"CSV parsing error: {ex.Message}",
+                        ErrorType.Permanent,
+                        "Serialization",
+                        ex
+                    )
+                )
+            );
         }
         catch (IOException ex)
         {
             return ValueTask.FromResult(
-                ProcessingResult<TOutput>.Failure(
-                    new SmartPipeError($"CSV IO error: {ex.Message}", ErrorType.Transient, "Serialization", ex),
-                    ctx.TraceId));
+                StageResult<TOutput>.Failure(
+                    new SmartPipeError(
+                        $"CSV IO error: {ex.Message}",
+                        ErrorType.Transient,
+                        "Serialization",
+                        ex
+                    )
+                )
+            );
         }
     }
 
     /// <inheritdoc/>
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
