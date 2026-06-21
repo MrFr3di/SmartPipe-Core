@@ -252,6 +252,9 @@ public sealed class PipelineRuntimeOptions
     /// <summary>Gets observer dispatch options. Inline dispatch is the default.</summary>
     public ObserverDispatchOptions ObserverDispatch { get; init; } = ObserverDispatchOptions.Inline;
 
+    /// <summary>Gets opt-in adaptive parallelism options. Disabled by default.</summary>
+    public AdaptiveParallelismOptions AdaptiveParallelism { get; init; } = new();
+
     /// <summary>Gets the runtime clock. The system clock is the default.</summary>
     public IPipelineClock Clock { get; init; } = SystemPipelineClock.Instance;
 
@@ -318,6 +321,8 @@ public sealed class PipelineRuntimeOptions
 
         ArgumentNullException.ThrowIfNull(ObserverDispatch);
         ObserverDispatch.Validate();
+        ArgumentNullException.ThrowIfNull(AdaptiveParallelism);
+        AdaptiveParallelism.Validate();
         ArgumentNullException.ThrowIfNull(Clock);
     }
 

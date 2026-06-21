@@ -1,4 +1,22 @@
 #nullable enable
+SmartPipe.Core.AdaptiveParallelismOptions
+SmartPipe.Core.AdaptiveParallelismOptions.AdaptiveParallelismOptions() -> void
+SmartPipe.Core.AdaptiveParallelismOptions.Cooldown.get -> System.TimeSpan
+SmartPipe.Core.AdaptiveParallelismOptions.Cooldown.init -> void
+SmartPipe.Core.AdaptiveParallelismOptions.DeadZone.get -> System.TimeSpan
+SmartPipe.Core.AdaptiveParallelismOptions.DeadZone.init -> void
+SmartPipe.Core.AdaptiveParallelismOptions.Enabled.get -> bool
+SmartPipe.Core.AdaptiveParallelismOptions.Enabled.init -> void
+SmartPipe.Core.AdaptiveParallelismOptions.InitialConcurrency.get -> int
+SmartPipe.Core.AdaptiveParallelismOptions.InitialConcurrency.init -> void
+SmartPipe.Core.AdaptiveParallelismOptions.MaxConcurrency.get -> int
+SmartPipe.Core.AdaptiveParallelismOptions.MaxConcurrency.init -> void
+SmartPipe.Core.AdaptiveParallelismOptions.MinConcurrency.get -> int
+SmartPipe.Core.AdaptiveParallelismOptions.MinConcurrency.init -> void
+SmartPipe.Core.AdaptiveParallelismOptions.SampleInterval.get -> System.TimeSpan
+SmartPipe.Core.AdaptiveParallelismOptions.SampleInterval.init -> void
+SmartPipe.Core.AdaptiveParallelismOptions.TargetLatency.get -> System.TimeSpan
+SmartPipe.Core.AdaptiveParallelismOptions.TargetLatency.init -> void
 SmartPipe.Core.InputDroppedEvent
 SmartPipe.Core.InputDroppedEvent.InputDroppedEvent(string! PipelineId, string! RunId, ulong TraceId, System.DateTimeOffset TimestampUtc) -> void
 SmartPipe.Core.ItemFilteredEvent
@@ -39,6 +57,8 @@ SmartPipe.Core.PipelineDrainStatus.CancelledByCaller = 2 -> SmartPipe.Core.Pipel
 SmartPipe.Core.PipelineDrainStatus.Completed = 0 -> SmartPipe.Core.PipelineDrainStatus
 SmartPipe.Core.PipelineDrainStatus.Faulted = 3 -> SmartPipe.Core.PipelineDrainStatus
 SmartPipe.Core.PipelineDrainStatus.TimedOutStillRunning = 1 -> SmartPipe.Core.PipelineDrainStatus
+SmartPipe.Core.PipelineRuntimeOptions.AdaptiveParallelism.get -> SmartPipe.Core.AdaptiveParallelismOptions!
+SmartPipe.Core.PipelineRuntimeOptions.AdaptiveParallelism.init -> void
 SmartPipe.Core.PipelineResultKind
 SmartPipe.Core.PipelineResultKind.Failure = 1 -> SmartPipe.Core.PipelineResultKind
 SmartPipe.Core.PipelineResultKind.Filtered = 2 -> SmartPipe.Core.PipelineResultKind
