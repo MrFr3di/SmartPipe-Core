@@ -8,6 +8,24 @@ namespace SmartPipe.Core.Tests.Engine;
 public sealed class AdaptiveConcurrencyLimiterTests
 {
     [Fact]
+    public void Constructor_RejectsInitialLimitLessThanOne()
+    {
+        var act = () => new AdaptiveConcurrencyLimiter(initialLimit: 0, maxLimit: 1);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .Which.ParamName.Should().Be("initialLimit");
+    }
+
+    [Fact]
+    public void Constructor_RejectsMaxLimitLessThanInitial()
+    {
+        var act = () => new AdaptiveConcurrencyLimiter(initialLimit: 2, maxLimit: 1);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .Which.ParamName.Should().Be("maxLimit");
+    }
+
+    [Fact]
     public async Task AcquireAsync_InitialLimitAllowsOnlyInitialConcurrency()
     {
         using var limiter = new AdaptiveConcurrencyLimiter(initialLimit: 2, maxLimit: 4);
@@ -122,6 +140,49 @@ public sealed class AdaptiveConcurrencyLimiterTests
     }
 
     [Fact]
+    public async Task AcquireAsync_PreCancelledToken_ReturnsCanceledTask()
+    {
+        using var limiter = new AdaptiveConcurrencyLimiter(initialLimit: 1, maxLimit: 1);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var task = limiter.AcquireAsync(cts.Token).AsTask();
+
+        task.IsCanceled.Should().BeTrue();
+        await FluentActions.Awaiting(() => task)
+            .Should().ThrowAsync<OperationCanceledException>();
+        limiter.InFlight.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ManyCancelledWaiters_AreSkippedOnNextRelease_AndDoNotLeakPermit()
+    {
+        using var limiter = new AdaptiveConcurrencyLimiter(initialLimit: 1, maxLimit: 1);
+        using var cts = new CancellationTokenSource();
+        var active = await limiter.AcquireAsync();
+        var cancelledWaiters = Enumerable.Range(0, 32)
+            .Select(_ => limiter.AcquireAsync(cts.Token).AsTask())
+            .ToArray();
+        var liveWaiter = limiter.AcquireAsync().AsTask();
+
+        await cts.CancelAsync();
+        await Task.WhenAll(cancelledWaiters.Select(async waiter =>
+        {
+            await FluentActions.Awaiting(() => waiter)
+                .Should().ThrowAsync<OperationCanceledException>();
+        }));
+
+        limiter.InFlight.Should().Be(1);
+        active.Dispose();
+
+        var liveLease = await liveWaiter;
+        limiter.InFlight.Should().Be(1);
+
+        liveLease.Dispose();
+        limiter.InFlight.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Dispose_UnblocksQueuedWaiters()
     {
         var limiter = new AdaptiveConcurrencyLimiter(initialLimit: 1, maxLimit: 1);
@@ -137,6 +198,73 @@ public sealed class AdaptiveConcurrencyLimiterTests
 
         lease.Dispose();
         limiter.InFlight.Should().Be(0);
+    }
+
+    [Fact]
+    public void Dispose_IsIdempotent()
+    {
+        var limiter = new AdaptiveConcurrencyLimiter(initialLimit: 1, maxLimit: 1);
+
+        limiter.Dispose();
+        var act = () => limiter.Dispose();
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task DisposeAsync_IsIdempotent()
+    {
+        var limiter = new AdaptiveConcurrencyLimiter(initialLimit: 1, maxLimit: 1);
+
+        await limiter.DisposeAsync();
+        var act = async () => await limiter.DisposeAsync();
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public void Complete_IsIdempotent()
+    {
+        using var limiter = new AdaptiveConcurrencyLimiter(initialLimit: 1, maxLimit: 1);
+
+        limiter.Complete();
+        var act = () => limiter.Complete();
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void UpdateLimit_RejectsLimitLessThanOne()
+    {
+        using var limiter = new AdaptiveConcurrencyLimiter(initialLimit: 1, maxLimit: 2);
+
+        var act = () => limiter.UpdateLimit(0);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .Which.ParamName.Should().Be("newLimit");
+    }
+
+    [Fact]
+    public void UpdateLimit_RejectsLimitGreaterThanMax()
+    {
+        using var limiter = new AdaptiveConcurrencyLimiter(initialLimit: 1, maxLimit: 2);
+
+        var act = () => limiter.UpdateLimit(3);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .Which.ParamName.Should().Be("newLimit");
+    }
+
+    [Fact]
+    public void UpdateLimit_AfterDispose_ThrowsObjectDisposedException()
+    {
+        var limiter = new AdaptiveConcurrencyLimiter(initialLimit: 1, maxLimit: 2);
+        limiter.Dispose();
+
+        var act = () => limiter.UpdateLimit(1);
+
+        act.Should().Throw<ObjectDisposedException>()
+            .Which.ObjectName.Should().Be(nameof(AdaptiveConcurrencyLimiter));
     }
 
     [Fact]
