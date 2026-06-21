@@ -4,7 +4,6 @@ namespace SmartPipe.Core;
 
 internal sealed class AdaptiveParallelismController
 {
-    private const double FailureOrRetryPressureThreshold = 0.10;
     private readonly AdaptiveParallelismOptions _options;
     private double? _smoothedLatencyMs;
 
@@ -37,7 +36,7 @@ internal sealed class AdaptiveParallelismController
         {
             return new AdaptiveParallelismDecision(
                 current,
-                Math.Max(_options.MinConcurrency, current - 1),
+                DecreaseConcurrencyLimit(current),
                 smoothed.Latency,
                 AdaptiveParallelismDecisionReason.FailureOrRetryPressure);
         }
@@ -65,7 +64,7 @@ internal sealed class AdaptiveParallelismController
 
             return new AdaptiveParallelismDecision(
                 current,
-                current - 1,
+                DecreaseConcurrencyLimit(current),
                 smoothed.Latency,
                 AdaptiveParallelismDecisionReason.HighLatency);
         }
@@ -81,7 +80,7 @@ internal sealed class AdaptiveParallelismController
 
         return new AdaptiveParallelismDecision(
             current,
-            current + 1,
+            IncreaseConcurrencyLimit(current),
             smoothed.Latency,
             AdaptiveParallelismDecisionReason.LowLatency);
     }
@@ -97,20 +96,37 @@ internal sealed class AdaptiveParallelismController
 
         var previous = _smoothedLatencyMs.Value;
         var targetMs = Math.Max(1, _options.TargetLatency.TotalMilliseconds);
-        var alpha = Math.Clamp(Math.Abs(sampleMs - previous) / targetMs, 0.2, 1.0);
+        var alpha = Math.Clamp(Math.Abs(sampleMs - previous) / targetMs, _options.MinSmoothingFactor, 1.0);
         var next = alpha * sampleMs + (1.0 - alpha) * previous;
         _smoothedLatencyMs = next;
         return new SmoothedLatency(TimeSpan.FromMilliseconds(next));
     }
 
-    private static bool HasFailureOrRetryPressure(AdaptiveParallelismSnapshot snapshot)
+    private bool HasFailureOrRetryPressure(AdaptiveParallelismSnapshot snapshot)
     {
         var denominator = Math.Max(1, snapshot.ProcessedDelta);
-        return (double)snapshot.FailedDelta / denominator >= FailureOrRetryPressureThreshold
-            || (double)snapshot.RetriedDelta / denominator >= FailureOrRetryPressureThreshold;
+        return (double)snapshot.FailedDelta / denominator >= _options.FailurePressureThreshold
+            || (double)snapshot.RetriedDelta / denominator >= _options.FailurePressureThreshold;
     }
 
     private static int Clamp(int value, int min, int max) => Math.Min(max, Math.Max(min, value));
+
+    private static int Clamp(long value, int min, int max)
+    {
+        if (value < min)
+            return min;
+
+        if (value > max)
+            return max;
+
+        return (int)value;
+    }
+
+    private int DecreaseConcurrencyLimit(int current) =>
+        Clamp((long)current - _options.MaxAdjustmentStep, _options.MinConcurrency, _options.MaxConcurrency);
+
+    private int IncreaseConcurrencyLimit(int current) =>
+        Clamp((long)current + _options.MaxAdjustmentStep, _options.MinConcurrency, _options.MaxConcurrency);
 
     private readonly record struct SmoothedLatency(TimeSpan Latency);
 }

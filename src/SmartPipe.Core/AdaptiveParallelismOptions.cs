@@ -29,6 +29,15 @@ public sealed class AdaptiveParallelismOptions
     /// <summary>Gets the controller sampling interval used by future runtime integration.</summary>
     public TimeSpan SampleInterval { get; init; } = TimeSpan.FromSeconds(1);
 
+    /// <summary>Gets the maximum concurrency limit change allowed per controller decision.</summary>
+    public int MaxAdjustmentStep { get; init; } = 1;
+
+    /// <summary>Gets the failure or retry ratio that prevents growth and reduces concurrency.</summary>
+    public double FailurePressureThreshold { get; init; } = 0.10;
+
+    /// <summary>Gets the minimum smoothing factor used for latency samples.</summary>
+    public double MinSmoothingFactor { get; init; } = 0.2;
+
     internal void Validate()
     {
         if (MinConcurrency < 1)
@@ -72,5 +81,23 @@ public sealed class AdaptiveParallelismOptions
                 nameof(SampleInterval),
                 SampleInterval,
                 "Adaptive sample interval must be greater than zero.");
+
+        if (MaxAdjustmentStep < 1)
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxAdjustmentStep),
+                MaxAdjustmentStep,
+                "Adaptive maximum adjustment step must be greater than or equal to one.");
+
+        if (!(FailurePressureThreshold > 0 && FailurePressureThreshold <= 1))
+            throw new ArgumentOutOfRangeException(
+                nameof(FailurePressureThreshold),
+                FailurePressureThreshold,
+                "Adaptive failure pressure threshold must be greater than zero and less than or equal to one.");
+
+        if (!(MinSmoothingFactor > 0 && MinSmoothingFactor <= 1))
+            throw new ArgumentOutOfRangeException(
+                nameof(MinSmoothingFactor),
+                MinSmoothingFactor,
+                "Adaptive minimum smoothing factor must be greater than zero and less than or equal to one.");
     }
 }

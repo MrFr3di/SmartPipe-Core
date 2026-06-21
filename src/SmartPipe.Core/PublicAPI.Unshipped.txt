@@ -7,10 +7,16 @@ SmartPipe.Core.AdaptiveParallelismOptions.DeadZone.get -> System.TimeSpan
 SmartPipe.Core.AdaptiveParallelismOptions.DeadZone.init -> void
 SmartPipe.Core.AdaptiveParallelismOptions.Enabled.get -> bool
 SmartPipe.Core.AdaptiveParallelismOptions.Enabled.init -> void
+SmartPipe.Core.AdaptiveParallelismOptions.FailurePressureThreshold.get -> double
+SmartPipe.Core.AdaptiveParallelismOptions.FailurePressureThreshold.init -> void
 SmartPipe.Core.AdaptiveParallelismOptions.InitialConcurrency.get -> int
 SmartPipe.Core.AdaptiveParallelismOptions.InitialConcurrency.init -> void
+SmartPipe.Core.AdaptiveParallelismOptions.MaxAdjustmentStep.get -> int
+SmartPipe.Core.AdaptiveParallelismOptions.MaxAdjustmentStep.init -> void
 SmartPipe.Core.AdaptiveParallelismOptions.MaxConcurrency.get -> int
 SmartPipe.Core.AdaptiveParallelismOptions.MaxConcurrency.init -> void
+SmartPipe.Core.AdaptiveParallelismOptions.MinSmoothingFactor.get -> double
+SmartPipe.Core.AdaptiveParallelismOptions.MinSmoothingFactor.init -> void
 SmartPipe.Core.AdaptiveParallelismOptions.MinConcurrency.get -> int
 SmartPipe.Core.AdaptiveParallelismOptions.MinConcurrency.init -> void
 SmartPipe.Core.AdaptiveParallelismOptions.SampleInterval.get -> System.TimeSpan
