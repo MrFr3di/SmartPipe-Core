@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 #pragma warning disable CS0618 // These tests cover compatibility aliases.
 using System.Globalization;
 using System.Threading.Channels;
@@ -832,10 +833,13 @@ public class RuntimeOptionsPassTests
             .WithObserver(observer)
             .Run();
 
-        _ = await ReadOutputsAsync(run.Outputs);
+        var stopwatch = Stopwatch.StartNew();
+        var outputs = await ReadOutputsAsync(run.Outputs);
         await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        stopwatch.Stop();
 
-        observer.EventsSeen.Should().BeGreaterThan(0);
+        outputs.Should().HaveCount(30);
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
     }
 
     [Fact]
