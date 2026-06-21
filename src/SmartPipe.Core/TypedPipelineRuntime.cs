@@ -653,6 +653,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private int _disposed;
     private int _componentsDisposed;
     private Task? _runTask;
+    private int _started;
     private int _drainRequested;
     private int _stopAcceptingRequested;
 
@@ -726,6 +727,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     public PipelineRun<TOutput> Start()
     {
+        if (Interlocked.Exchange(ref _started, 1) != 0)
+        {
+            throw new InvalidOperationException(
+                "This pipeline runtime instance has already been started. Create a new runtime instance per run.");
+        }
+
         _runTask = Task.Run(RunAsync, CancellationToken.None);
         return new PipelineRun<TOutput>(
             _outputs.Reader,

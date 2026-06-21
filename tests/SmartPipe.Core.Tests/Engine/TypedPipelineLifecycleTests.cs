@@ -9,6 +9,138 @@ namespace SmartPipe.Core.Tests.Engine;
 public sealed class TypedPipelineLifecycleTests
 {
     [Fact]
+    public async Task Start_ThrowsOnSecondCall()
+    {
+        var transformer = new BlockingLifecycleTransformer<int>();
+        await using var executor = CreateLifecycleExecutor(
+            new CountingLifecycleSource<int>(1),
+            transformer);
+
+        var run = executor.Start();
+
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var act = () => executor.Start();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*already been started*");
+
+        await run.CancelAsync();
+        await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<OperationCanceledException>();
+        await run.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Start_ThrowsAfterCompletion()
+    {
+        await using var executor = CreateLifecycleExecutor(
+            new CountingLifecycleSource<int>(1, 2, 3),
+            new PassThroughLifecycleTransformer<int>());
+
+        var run = executor.Start();
+
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        run.State.Should().Be(PipelineRunState.Completed);
+
+        var act = () => executor.Start();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*already been started*");
+        await run.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Start_ThrowsAfterDispose()
+    {
+        var transformer = new BlockingLifecycleTransformer<int>();
+        await using var executor = CreateLifecycleExecutor(
+            new CountingLifecycleSource<int>(1),
+            transformer);
+
+        var run = executor.Start();
+
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var disposeTask = run.DisposeAsync().AsTask();
+        await transformer.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var act = () => executor.Start();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*already been started*");
+    }
+
+    [Fact]
+    public async Task Start_AllowsOnlyOneConcurrentCaller()
+    {
+        var transformer = new BlockingLifecycleTransformer<int>();
+        await using var executor = CreateLifecycleExecutor(
+            new CountingLifecycleSource<int>(1),
+            transformer);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var attempts = Enumerable.Range(0, 64)
+            .Select(_ => Task.Run(async () =>
+            {
+                await gate.Task.ConfigureAwait(false);
+                try
+                {
+                    return (Run: executor.Start(), Exception: (Exception?)null);
+                }
+                catch (Exception ex)
+                {
+                    return (Run: (PipelineRun<int>?)null, Exception: ex);
+                }
+            }))
+            .ToArray();
+
+        gate.SetResult();
+
+        var results = await Task.WhenAll(attempts);
+        var successfulRuns = results
+            .Where(result => result.Run is not null)
+            .Select(result => result.Run!)
+            .ToArray();
+
+        try
+        {
+            successfulRuns.Should().ContainSingle();
+            results.Count(result => result.Exception is InvalidOperationException).Should().Be(63);
+            results.Count(result => result.Exception is not null
+                && result.Exception is not InvalidOperationException).Should().Be(0);
+
+            var run = successfulRuns.Single();
+            await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await run.CancelAsync();
+            await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+                .Should().ThrowAsync<OperationCanceledException>();
+            await run.DisposeAsync();
+        }
+        finally
+        {
+            foreach (var run in successfulRuns)
+                await run.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Start_SingleRunLifecycleStillCompletes()
+    {
+        await using var executor = CreateLifecycleExecutor(
+            new CountingLifecycleSource<int>(1, 2, 3),
+            new PassThroughLifecycleTransformer<int>());
+
+        var run = executor.Start();
+
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        run.State.Should().Be(PipelineRunState.Completed);
+        await run.DisposeAsync();
+    }
+
+    [Fact]
     public async Task TypedPipeline_Drain_StopsReadingNewSourceItems()
     {
         var transformer = new BlockingLifecycleTransformer<int>();
@@ -212,6 +344,27 @@ public sealed class TypedPipelineLifecycleTests
         transformer.DisposeCount.Should().Be(1);
         sink.DisposeCount.Should().Be(1);
     }
+
+    private static TypedPipelineExecutor<int, int> CreateLifecycleExecutor(
+        IPipelineSource<int>? source = null,
+        IPipelineTransformer<int, int>? transformer = null)
+    {
+        source ??= new CountingLifecycleSource<int>(1);
+        transformer ??= new PassThroughLifecycleTransformer<int>();
+
+        var spec = new TypedPipelineSpec<int, int>(
+            "double-start-test-pipeline",
+            source,
+            [new TypedPipelineStage<int, int>(transformer, 1)]);
+        var definition = spec.CreateDefinition(sink: null);
+        var runtime = new PipelineRuntime(PipelineExecutionPlan.Compile(definition));
+
+        return new TypedPipelineExecutor<int, int>(
+            runtime,
+            spec,
+            sink: null,
+            CancellationToken.None);
+    }
 }
 
 internal sealed class CountingLifecycleSource<T> : IPipelineSource<T>
@@ -343,6 +496,18 @@ internal sealed class BlockingLifecycleTransformer<T> : IPipelineTransformer<T, 
         Interlocked.Increment(ref _disposeCount);
         return ValueTask.CompletedTask;
     }
+}
+
+internal sealed class PassThroughLifecycleTransformer<T> : IPipelineTransformer<T, T>
+{
+    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+    public ValueTask<StageResult<T>> TransformAsync(
+        ProcessingEnvelope<T> envelope,
+        CancellationToken ct = default) =>
+        ValueTask.FromResult(StageResult<T>.Success(envelope.Payload));
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
 internal sealed class TrackingLifecycleSink<T> : IPipelineSink<T>
