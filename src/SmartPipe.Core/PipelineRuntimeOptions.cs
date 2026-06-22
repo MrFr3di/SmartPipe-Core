@@ -340,5 +340,11 @@ public sealed class PipelineRuntimeOptions
     }
 
     private static bool AreEquivalent(PipelineOutputMode mode, PipelineOutputPolicy policy) =>
-        mode == PipelineOutputMode.EmitAll && policy == PipelineOutputPolicy.EmitAll;
+        (mode, policy) switch
+        {
+            (PipelineOutputMode.EmitAll, PipelineOutputPolicy.EmitAll) => true,
+            (PipelineOutputMode.SuppressWhenSinkAttached,
+                PipelineOutputPolicy.SuppressAllWhenSinkAttached) => true,
+            _ => false,
+        };
 }
