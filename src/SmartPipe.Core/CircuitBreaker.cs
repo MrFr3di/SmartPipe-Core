@@ -128,16 +128,11 @@ public class CircuitBreaker
 
         if (currentState == (int)CircuitState.Open)
         {
-            if (_clock.UtcNow.Ticks - Interlocked.Read(ref _openedAtTicks) >= _breakDuration.Ticks)
-            {
-                Interlocked.Exchange(ref _state, (int)CircuitState.HalfOpen);
-                Interlocked.Exchange(ref _halfOpenCount, 0);
-                Interlocked.Exchange(ref _halfOpenSuccesses, 0);
-                Interlocked.Exchange(ref _halfOpenAtTicks, _clock.UtcNow.Ticks);
-                Interlocked.Increment(ref _halfOpenCount);
-                return true;
-            }
-            return false;
+            var nowTicks = _clock.UtcNow.Ticks;
+            if (!TryTransitionOpenToHalfOpen(nowTicks))
+                return false;
+
+            currentState = Volatile.Read(ref _state);
         }
 
         if (currentState == (int)CircuitState.HalfOpen)
@@ -167,15 +162,11 @@ public class CircuitBreaker
         var currentState = Volatile.Read(ref _state);
         if (currentState == (int)CircuitState.Open)
         {
-            if (_clock.UtcNow.Ticks - Interlocked.Read(ref _openedAtTicks) < _breakDuration.Ticks)
+            var nowTicks = _clock.UtcNow.Ticks;
+            if (!TryTransitionOpenToHalfOpen(nowTicks))
                 return false;
 
-            Interlocked.Exchange(ref _state, (int)CircuitState.HalfOpen);
-            Interlocked.Exchange(ref _halfOpenCount, 0);
-            Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
-            Interlocked.Exchange(ref _halfOpenSuccesses, 0);
-            Interlocked.Exchange(ref _halfOpenAtTicks, _clock.UtcNow.Ticks);
-            currentState = (int)CircuitState.HalfOpen;
+            currentState = Volatile.Read(ref _state);
         }
 
         if (currentState != (int)CircuitState.HalfOpen)
@@ -190,6 +181,28 @@ public class CircuitBreaker
         Interlocked.Increment(ref _halfOpenCount);
         probe = new CircuitBreakerProbe(this);
         return true;
+    }
+
+    private bool TryTransitionOpenToHalfOpen(long nowTicks)
+    {
+        if (nowTicks - Interlocked.Read(ref _openedAtTicks) < _breakDuration.Ticks)
+            return false;
+
+        var previous = Interlocked.CompareExchange(
+            ref _state,
+            (int)CircuitState.HalfOpen,
+            (int)CircuitState.Open);
+
+        if (previous == (int)CircuitState.Open)
+        {
+            Interlocked.Exchange(ref _halfOpenCount, 0);
+            Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
+            Interlocked.Exchange(ref _halfOpenSuccesses, 0);
+            Interlocked.Exchange(ref _halfOpenAtTicks, nowTicks);
+            return true;
+        }
+
+        return Volatile.Read(ref _state) == (int)CircuitState.HalfOpen;
     }
 
     /// <summary>Records a successful request and updates state.</summary>
