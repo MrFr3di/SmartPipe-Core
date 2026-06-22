@@ -11,6 +11,7 @@ public class RetryPolicyTests
         var policy = new RetryPolicy();
         policy.MaxRetries.Should().Be(3);
         policy.Delay.Should().Be(TimeSpan.FromSeconds(1));
+        policy.MaxDelay.Should().Be(TimeSpan.FromSeconds(30));
         policy.Strategy.Should().Be(BackoffStrategy.Exponential);
         policy.OnRetry.Should().BeNull();
     }
@@ -18,16 +19,104 @@ public class RetryPolicyTests
     [Fact]
     public void Constructor_WithCustomValues_ShouldSetProperties()
     {
-        var policy = new RetryPolicy(maxRetries: 5, delay: TimeSpan.FromMilliseconds(500));
+        var policy = new RetryPolicy(
+            maxRetries: 5,
+            delay: TimeSpan.FromMilliseconds(500),
+            maxDelay: TimeSpan.FromSeconds(10),
+            strategy: BackoffStrategy.Linear);
+
         policy.MaxRetries.Should().Be(5);
         policy.Delay.Should().Be(TimeSpan.FromMilliseconds(500));
+        policy.MaxDelay.Should().Be(TimeSpan.FromSeconds(10));
+        policy.Strategy.Should().Be(BackoffStrategy.Linear);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_WithNonPositiveMaxRetries_ShouldThrow(int maxRetries)
+    {
+        var act = () => new RetryPolicy(maxRetries: maxRetries);
+
+        var assertion = act.Should().Throw<ArgumentOutOfRangeException>();
+        assertion.Which.ParamName.Should().Be("maxRetries");
+        assertion.Which.ActualValue.Should().Be(maxRetries);
+    }
+
+    public static TheoryData<TimeSpan> NonPositiveDelays() =>
+        new()
+        {
+            TimeSpan.Zero,
+            TimeSpan.FromMilliseconds(-1),
+        };
+
+    [Theory]
+    [MemberData(nameof(NonPositiveDelays))]
+    public void Constructor_WithNonPositiveDelay_ShouldThrow(TimeSpan delay)
+    {
+        var act = () => new RetryPolicy(delay: delay);
+
+        var assertion = act.Should().Throw<ArgumentOutOfRangeException>();
+        assertion.Which.ParamName.Should().Be("delay");
+        assertion.Which.ActualValue.Should().Be(delay);
+    }
+
+    [Theory]
+    [MemberData(nameof(NonPositiveDelays))]
+    public void Constructor_WithNonPositiveMaxDelay_ShouldThrow(TimeSpan maxDelay)
+    {
+        var act = () => new RetryPolicy(maxDelay: maxDelay);
+
+        var assertion = act.Should().Throw<ArgumentOutOfRangeException>();
+        assertion.Which.ParamName.Should().Be("maxDelay");
+        assertion.Which.ActualValue.Should().Be(maxDelay);
     }
 
     [Fact]
-    public void Constructor_WithZeroMaxRetries_ShouldThrow()
+    public void Constructor_WithMaxDelayLessThanDelay_ShouldThrow()
     {
-        Action act = () => new RetryPolicy(maxRetries: 0);
-        act.Should().Throw<ArgumentOutOfRangeException>();
+        var maxDelay = TimeSpan.FromSeconds(1);
+
+        var act = () => new RetryPolicy(
+            delay: TimeSpan.FromSeconds(10),
+            maxDelay: maxDelay);
+
+        var assertion = act.Should().Throw<ArgumentOutOfRangeException>();
+        assertion.Which.ParamName.Should().Be("maxDelay");
+        assertion.Which.ActualValue.Should().Be(maxDelay);
+    }
+
+    [Fact]
+    public void Constructor_WithDelayGreaterThanDefaultMaxDelay_ShouldThrow()
+    {
+        var act = () => new RetryPolicy(delay: TimeSpan.FromMinutes(1));
+
+        var assertion = act.Should().Throw<ArgumentOutOfRangeException>();
+        assertion.Which.ParamName.Should().Be("maxDelay");
+        assertion.Which.ActualValue.Should().Be(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public void Constructor_WithMaxDelayEqualToDelay_ShouldBeAllowed()
+    {
+        var policy = new RetryPolicy(
+            delay: TimeSpan.FromSeconds(5),
+            maxDelay: TimeSpan.FromSeconds(5));
+
+        policy.Delay.Should().Be(TimeSpan.FromSeconds(5));
+        policy.MaxDelay.Should().Be(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void Constructor_WithInvalidBackoffStrategy_ShouldThrow()
+    {
+        var invalidStrategy = (BackoffStrategy)999;
+
+        var act = () => new RetryPolicy(strategy: invalidStrategy);
+
+        var assertion = act.Should().Throw<ArgumentOutOfRangeException>();
+        assertion.Which.ParamName.Should().Be("strategy");
+        assertion.Which.ActualValue.Should().Be(invalidStrategy);
     }
 
     [Fact]
@@ -84,6 +173,27 @@ public class RetryPolicyTests
     {
         var policy = new RetryPolicy(delay: TimeSpan.FromSeconds(1), maxDelay: TimeSpan.FromSeconds(5), strategy: BackoffStrategy.Exponential);
         policy.GetDelay(10).Should().Be(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void GetDelay_WithVeryLargeRetryCount_ShouldCapAtMaxDelay()
+    {
+        var policy = new RetryPolicy(
+            delay: TimeSpan.FromSeconds(1),
+            maxDelay: TimeSpan.FromSeconds(30),
+            strategy: BackoffStrategy.Exponential);
+
+        policy.GetDelay(int.MaxValue).Should().Be(TimeSpan.FromSeconds(30));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void GetDelay_WithNonPositiveRetryCount_ShouldReturnZero(int retryCount)
+    {
+        var policy = new RetryPolicy();
+
+        policy.GetDelay(retryCount).Should().Be(TimeSpan.Zero);
     }
 
     [Fact]
