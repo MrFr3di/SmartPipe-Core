@@ -14,19 +14,44 @@ namespace SmartPipe.Extensions.Tests.Extensions;
 public sealed class SmartPipeTypedDiTests
 {
     [Fact]
-    public async Task DI_FactoryCreatesNewRuntimePerStart()
+    public async Task DI_Factory_StartAsyncCreatesNewRuntimePerStart()
     {
         var services = CreateTypedPipelineServices();
         using var provider = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
 
-        var first = factory.Start();
-        var second = factory.Start();
+        var first = await factory.StartAsync();
+        var second = await factory.StartAsync();
 
         first.Should().NotBeSameAs(second);
         await first.Completion.WaitAsync(TimeSpan.FromSeconds(5));
         await second.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task DI_Factory_Start_CompatibilityPath_CreatesRuntime()
+    {
+        var services = CreateTypedPipelineServices();
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
+
+        var run = factory.Start();
+
+        run.Should().NotBeNull();
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ISmartPipeFactory_DefaultStartAsync_DoesNotBridgeToStart()
+    {
+        ISmartPipeFactory<int, int> factory = new SyncOnlyTypedFactory();
+
+        var act = async () => await factory.StartAsync();
+
+        await act.Should().ThrowAsync<NotSupportedException>()
+            .WithMessage("*StartAsync*");
     }
 
     [Fact]
@@ -38,8 +63,10 @@ public sealed class SmartPipeTypedDiTests
         var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
         var recorder = provider.GetRequiredService<TypedDiRecorder>();
 
-        await factory.Start().Completion.WaitAsync(TimeSpan.FromSeconds(5));
-        await factory.Start().Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        var first = await factory.StartAsync();
+        await first.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = await factory.StartAsync();
+        await second.Completion.WaitAsync(TimeSpan.FromSeconds(5));
 
         recorder.StageScopeIds.Should().HaveCount(2);
         recorder.StageScopeIds.Should().OnlyHaveUniqueItems();
@@ -55,7 +82,8 @@ public sealed class SmartPipeTypedDiTests
         var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
         var recorder = provider.GetRequiredService<TypedDiRecorder>();
 
-        await factory.Start().Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        var run = await factory.StartAsync();
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
 
         recorder.DisposedSinkScopeIds.Should().HaveCount(1);
         recorder.DisposedMarkerScopeIds.Should().HaveCount(1);
@@ -71,7 +99,7 @@ public sealed class SmartPipeTypedDiTests
         var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
         var recorder = provider.GetRequiredService<TypedDiRecorder>();
 
-        var run = factory.Start();
+        var run = await factory.StartAsync();
         await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
         await run.DisposeAsync();
 
@@ -88,7 +116,7 @@ public sealed class SmartPipeTypedDiTests
         var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
         var recorder = provider.GetRequiredService<TypedDiRecorder>();
 
-        var run = factory.Start();
+        var run = await factory.StartAsync();
         await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
         // No manual dispose: completion alone must dispose the scope exactly once.
         recorder.DisposedSinkScopeIds.Should().HaveCount(1);
@@ -108,7 +136,7 @@ public sealed class SmartPipeTypedDiTests
         var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
         var recorder = provider.GetRequiredService<TypedDiRecorder>();
 
-        var run = factory.Start();
+        var run = await factory.StartAsync();
         // Dispose while the source is still blocked on the gate.
         await run.DisposeAsync();
 
@@ -130,7 +158,7 @@ public sealed class SmartPipeTypedDiTests
         var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
         var recorder = provider.GetRequiredService<TypedDiRecorder>();
 
-        var run = factory.Start();
+        var run = await factory.StartAsync();
 
         // 8 concurrent disposes race the completion path; exactly one must win.
         var disposeTasks = Enumerable.Range(0, 8).Select(_ => run.DisposeAsync().AsTask()).ToArray();
@@ -184,7 +212,7 @@ public sealed class SmartPipeTypedDiTests
     }
 
     [Fact]
-    public void DI_Factory_ValidateScopes_RemainsGreen()
+    public async Task DI_Factory_ValidateScopes_RemainsGreen()
     {
         var services = CreateTypedPipelineServices();
 
@@ -192,7 +220,7 @@ public sealed class SmartPipeTypedDiTests
             new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
 
         var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
-        var run = factory.Start();
+        var run = await factory.StartAsync();
         run.Should().NotBeNull();
     }
 
@@ -318,6 +346,17 @@ public sealed class SmartPipeTypedDiTests
                     OutputPolicy = PipelineOutputPolicy.SuppressSuccessWhenSinkAttached,
                 }));
         return services;
+    }
+
+    private static PipelineRun<int> CreateCompletedRun()
+    {
+        var outputs = Channel.CreateUnbounded<PipelineOutput<int>>();
+        outputs.Writer.TryComplete();
+
+        return new PipelineRun<int>(
+            outputs.Reader,
+            Task.CompletedTask,
+            () => PipelineRunState.Completed);
     }
 
     private static ServiceCollection CreateControllablePipelineServices(
@@ -524,6 +563,17 @@ public sealed class SmartPipeTypedDiTests
         public List<Guid> DisposedMarkerScopeIds { get; } = [];
     }
 
+    private sealed class SyncOnlyTypedFactory : ISmartPipeFactory<int, int>
+    {
+        public int StartCalls { get; private set; }
+
+        public PipelineRun<int> Start(CancellationToken ct = default)
+        {
+            StartCalls++;
+            return CreateCompletedRun();
+        }
+    }
+
     private sealed class RecordingTypedFactory : ISmartPipeFactory<int, int>
     {
         private readonly Channel<PipelineOutput<int>> _outputs = Channel.CreateUnbounded<PipelineOutput<int>>();
@@ -543,6 +593,16 @@ public sealed class SmartPipeTypedDiTests
         public TimeSpan? LastDrainTimeout { get; private set; }
 
         public PipelineRun<int> Start(CancellationToken ct = default)
+        {
+            return StartCore();
+        }
+
+        public Task<PipelineRun<int>> StartAsync(CancellationToken ct = default)
+        {
+            return Task.FromResult(StartCore());
+        }
+
+        private PipelineRun<int> StartCore()
         {
             StartCalls++;
             _started.SetResult();
@@ -577,6 +637,16 @@ public sealed class SmartPipeTypedDiTests
         }
 
         public PipelineRun<int> Start(CancellationToken ct = default)
+        {
+            return StartCore();
+        }
+
+        public Task<PipelineRun<int>> StartAsync(CancellationToken ct = default)
+        {
+            return Task.FromResult(StartCore());
+        }
+
+        private PipelineRun<int> StartCore()
         {
             _outputs.Writer.TryComplete(_exception);
             return new PipelineRun<int>(
