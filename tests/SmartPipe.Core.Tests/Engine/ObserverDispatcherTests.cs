@@ -137,6 +137,76 @@ public sealed class ObserverDispatcherTests
         await dispatcher.DisposeAsync();
     }
 
+    [Fact]
+    public async Task InputDroppedEvent_BestEffortEmissionFailure_RecordsObserverDropAndDoesNotFaultRun()
+    {
+        var observer = new ThrowingOnEventTypeObserver(typeof(InputDroppedEvent));
+        var transformer = new BlockingTransformer<int>(expectedConcurrentCalls: 2);
+
+        var run = PipelineBuilder
+            .From(new EnumerableSource<int>(Enumerable.Range(0, 64).ToArray()))
+            .Transform(transformer)
+            .WithObserver(
+                observer,
+                ObserverReliability.BestEffort,
+                ObserverFailurePolicy.FaultPipeline)
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxConcurrency = 2,
+                InputCapacity = 1,
+                InputFullMode = BoundedChannelFullMode.DropWrite,
+                ObserverDispatch = new ObserverDispatchOptions
+                {
+                    Mode = ObserverDispatchMode.Inline,
+                    FailureMode = ObserverFailureMode.UseRegistrationPolicy,
+                },
+            })
+            .Run();
+
+        await transformer.ExpectedConcurrentCallsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        transformer.Release();
+
+        _ = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        run.State.Should().Be(PipelineRunState.Completed);
+        run.Metrics.ItemsDropped.Should().BeGreaterThan(0);
+        run.Metrics.ObserverEventsDropped.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task OutputDroppedEvent_BestEffortEmissionFailure_RecordsObserverDropAndDoesNotFaultRun()
+    {
+        var observer = new ThrowingOnEventTypeObserver(typeof(OutputDroppedEvent));
+
+        var run = PipelineBuilder
+            .From(new EnumerableSource<int>([1, 2, 3]))
+            .Transform(new PassThroughTransformer<int>())
+            .WithObserver(
+                observer,
+                ObserverReliability.BestEffort,
+                ObserverFailurePolicy.FaultPipeline)
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                OutputCapacity = 1,
+                OutputFullMode = BoundedChannelFullMode.DropOldest,
+                ObserverDispatch = new ObserverDispatchOptions
+                {
+                    Mode = ObserverDispatchMode.Inline,
+                    FailureMode = ObserverFailureMode.UseRegistrationPolicy,
+                },
+            })
+            .Run();
+
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        var outputs = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromSeconds(5));
+
+        run.State.Should().Be(PipelineRunState.Completed);
+        outputs.Should().ContainSingle();
+        run.Metrics.OutputItemsDropped.Should().BeGreaterThan(0);
+        run.Metrics.ObserverEventsDropped.Should().BeGreaterThan(0);
+    }
+
     private static PipelineRun<int> CreateObservedRun(
         IPipelineObserver observer,
         ObserverReliability reliability,
@@ -219,6 +289,47 @@ public sealed class ObserverDispatcherTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
+    private sealed class BlockingTransformer<T> : IPipelineTransformer<T, T>
+    {
+        private readonly int _expectedConcurrentCalls;
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _activeCalls;
+
+        public BlockingTransformer(int expectedConcurrentCalls)
+        {
+            _expectedConcurrentCalls = expectedConcurrentCalls;
+        }
+
+        public TaskCompletionSource ExpectedConcurrentCallsEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public async ValueTask<StageResult<T>> TransformAsync(
+            ProcessingEnvelope<T> envelope,
+            CancellationToken ct = default)
+        {
+            var active = Interlocked.Increment(ref _activeCalls);
+            if (active >= _expectedConcurrentCalls)
+                ExpectedConcurrentCallsEntered.TrySetResult();
+
+            try
+            {
+                await _release.Task.WaitAsync(ct).ConfigureAwait(false);
+                return StageResult<T>.Success(envelope.Payload);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeCalls);
+            }
+        }
+
+        public void Release() => _release.TrySetResult();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class ThrowingObserver : IPipelineObserver
     {
         private int _calls;
@@ -229,6 +340,24 @@ public sealed class ObserverDispatcherTests
         {
             Interlocked.Increment(ref _calls);
             throw new InvalidOperationException("observer failure");
+        }
+    }
+
+    private sealed class ThrowingOnEventTypeObserver : IPipelineObserver
+    {
+        private readonly Type _eventType;
+
+        public ThrowingOnEventTypeObserver(Type eventType)
+        {
+            _eventType = eventType;
+        }
+
+        public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            if (pipelineEvent.GetType() == _eventType)
+                throw new InvalidOperationException("observer failure");
+
+            return ValueTask.CompletedTask;
         }
     }
 

@@ -1087,21 +1087,21 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private void OnInputDropped(ProcessingEnvelope<TInput> envelope)
     {
         _metrics.RecordItemDropped();
-        _ = TryEmitAsync(new InputDroppedEvent(
+        EmitEventFireAndForget(new InputDroppedEvent(
             _spec.PipelineId,
             _runtime.RunId,
             envelope.TraceId,
-            _clock.GetUtcNow())).AsTask();
+            _clock.GetUtcNow()));
     }
 
     private void OnOutputDropped(PipelineOutput<TOutput> output)
     {
         _metrics.RecordOutputDropped();
-        _ = TryEmitAsync(new OutputDroppedEvent(
+        EmitEventFireAndForget(new OutputDroppedEvent(
             _spec.PipelineId,
             _runtime.RunId,
             output.Result.TraceId,
-            _clock.GetUtcNow())).AsTask();
+            _clock.GetUtcNow()));
     }
 
     private void OnObserverEventDropped(PipelineEvent pipelineEvent)
@@ -1505,15 +1505,34 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         await _observerDispatcher.EmitAsync(pipelineEvent, ct).ConfigureAwait(false);
     }
 
+    private void EmitEventFireAndForget(PipelineEvent pipelineEvent)
+    {
+        _ = ObserveBestEffortEmitAsync(pipelineEvent);
+    }
+
+    private async Task ObserveBestEffortEmitAsync(PipelineEvent pipelineEvent)
+    {
+        await TryEmitAsync(pipelineEvent).ConfigureAwait(false);
+    }
+
     private async ValueTask TryEmitAsync(PipelineEvent pipelineEvent)
     {
         try
         {
             await EmitAsync(pipelineEvent, CancellationToken.None).ConfigureAwait(false);
         }
-        catch
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        {
+            _metrics.RecordObserverEventDropped();
+        }
+        catch (ChannelClosedException)
+        {
+            _metrics.RecordObserverEventDropped();
+        }
+        catch (Exception)
         {
             // Terminal notifications are best-effort and must not hide the primary run outcome.
+            _metrics.RecordObserverEventDropped();
         }
     }
 
