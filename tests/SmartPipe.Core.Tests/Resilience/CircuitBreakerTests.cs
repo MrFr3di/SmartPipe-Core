@@ -147,6 +147,82 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    public void CircuitBreakerProbe_CopyDispose_DoesNotReleaseAnotherActiveProbeSlot()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 2,
+            clock: clock);
+
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        clock.Advance(TimeSpan.FromSeconds(11));
+
+        cb.TryAcquireHalfOpenProbe(out var firstProbe).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out var secondProbe).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse();
+
+        var firstCopy = firstProbe;
+
+        firstProbe.Dispose();
+        firstCopy.Dispose();
+
+        cb.TryAcquireHalfOpenProbe(out var thirdProbe).Should().BeTrue(
+            "disposing the first probe should release exactly one replacement slot");
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse(
+            "disposing a copy of the first probe must not release the second probe's active slot");
+
+        thirdProbe.Dispose();
+        secondProbe.Dispose();
+    }
+
+    [Fact]
+    public void CircuitBreakerProbe_DoubleDispose_DoesNotReleaseAnotherActiveProbeSlot()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 2,
+            clock: clock);
+
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        clock.Advance(TimeSpan.FromSeconds(11));
+
+        cb.TryAcquireHalfOpenProbe(out var firstProbe).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out var secondProbe).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse();
+
+        firstProbe.Dispose();
+        firstProbe.Dispose();
+
+        cb.TryAcquireHalfOpenProbe(out var thirdProbe).Should().BeTrue(
+            "disposing the first probe should release exactly one replacement slot");
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse(
+            "disposing a probe twice must not release another active probe's slot");
+
+        thirdProbe.Dispose();
+        secondProbe.Dispose();
+    }
+
+    [Fact]
+    public void CircuitBreakerProbe_DefaultDispose_IsNoOp()
+    {
+        var probe = default(CircuitBreakerProbe);
+
+        var act = () => probe.Dispose();
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void CircuitBreaker_HalfOpen_FailureReopensBreaker()
     {
         var cb = new CircuitBreaker(

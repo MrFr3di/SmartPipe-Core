@@ -363,16 +363,33 @@ public class CircuitBreaker
 /// <summary>Lease for a circuit breaker half-open probe slot.</summary>
 public readonly struct CircuitBreakerProbe : IDisposable
 {
-    private readonly CircuitBreaker? _owner;
+    private readonly LeaseState? _lease;
 
     internal CircuitBreakerProbe(CircuitBreaker owner)
     {
-        _owner = owner;
+        _lease = new LeaseState(owner);
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
-        _owner?.ReleaseHalfOpenProbe();
+        _lease?.Release();
+    }
+
+    private sealed class LeaseState
+    {
+        private readonly CircuitBreaker _owner;
+        private int _released;
+
+        internal LeaseState(CircuitBreaker owner)
+        {
+            _owner = owner;
+        }
+
+        internal void Release()
+        {
+            if (Interlocked.Exchange(ref _released, 1) == 0)
+                _owner.ReleaseHalfOpenProbe();
+        }
     }
 }
