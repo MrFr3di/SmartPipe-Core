@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -145,7 +146,8 @@ public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
                     "Hosted SmartPipe pipeline faulted and no IHostApplicationLifetime was available to stop the host.",
                     exception);
             case SmartPipeHostedFailureBehavior.Rethrow:
-                throw exception;
+                ExceptionDispatchInfo.Capture(exception).Throw();
+                return;
             case SmartPipeHostedFailureBehavior.MarkUnhealthyAndKeepHostAlive:
             case SmartPipeHostedFailureBehavior.Ignore:
                 return;

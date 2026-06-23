@@ -232,9 +232,11 @@ public sealed class SmartPipeTypedDiTests
     }
 
     [Fact]
-    public async Task HostedService_FaultBehaviorRethrow_Rethrows()
+    public async Task HostedService_FaultBehaviorRethrow_RethrowsWithOriginalStackTrace()
     {
-        var exception = new InvalidOperationException("pipeline failed");
+        var exception = CreateExceptionWithOriginalStackTrace();
+        exception.StackTrace.Should().Contain(nameof(ThrowOriginalHostedServiceFailure));
+
         var hostedService = new ExposedHostedService(
             new FaultingTypedFactory(exception),
             new SmartPipeHostedServiceOptions
@@ -244,8 +246,10 @@ public sealed class SmartPipeTypedDiTests
 
         var act = () => hostedService.ExecuteForTestAsync(CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("pipeline failed");
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
+        thrown.Which.Message.Should().Be("pipeline failed");
+        thrown.Which.Should().BeSameAs(exception);
+        thrown.Which.StackTrace.Should().Contain(nameof(ThrowOriginalHostedServiceFailure));
     }
 
     [Fact]
@@ -352,6 +356,25 @@ public sealed class SmartPipeTypedDiTests
         {
             // Completion may not reach a terminal state after the run is already disposed.
         }
+    }
+
+    private static Exception CreateExceptionWithOriginalStackTrace()
+    {
+        try
+        {
+            ThrowOriginalHostedServiceFailure();
+        }
+        catch (Exception ex)
+        {
+            return ex;
+        }
+
+        throw new InvalidOperationException("Unreachable.");
+    }
+
+    private static void ThrowOriginalHostedServiceFailure()
+    {
+        throw new InvalidOperationException("pipeline failed");
     }
 
     private sealed class SingleItemSource : IPipelineSource<int>
