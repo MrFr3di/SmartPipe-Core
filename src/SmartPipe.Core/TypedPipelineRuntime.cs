@@ -625,6 +625,22 @@ internal readonly record struct DeadLetterWriteResult(
 
 internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 {
+    private enum SourceStopReason
+    {
+        None = 0,
+        Drain = 1,
+        RuntimeCancellation = 2,
+    }
+
+    private readonly record struct SourceStopClassificationSnapshot(
+        bool SourceCancellationRequested,
+        SourceStopReason Reason)
+    {
+        public bool IsGraceful =>
+            SourceCancellationRequested
+            && Reason == SourceStopReason.Drain;
+    }
+
     // Prevents scheduling retries when the remaining StageTimeout budget is too small
     // to execute a meaningful next attempt after retry delay.
     private static readonly TimeSpan MinimumRetryAttemptBudget = TimeSpan.FromMilliseconds(5);
@@ -648,6 +664,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly CancellationTokenSource _cts;
     private readonly CancellationTokenSource _sourceCts;
     private readonly CancellationTokenSource _processingCts;
+    private readonly CancellationTokenRegistration _sourceCancellationRegistration;
     private readonly Dictionary<string, CircuitBreaker> _breakers = [];
     private readonly object _breakersGate = new();
     private int _disposed;
@@ -656,6 +673,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private int _started;
     private int _drainRequested;
     private int _stopAcceptingRequested;
+    private int _sourceStopReason;
 
     public TypedPipelineExecutor(
         PipelineRuntime runtime,
@@ -706,8 +724,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             OnObserverEventDropped
         );
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        _sourceCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        _sourceCts = new CancellationTokenSource();
         _processingCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        _sourceCancellationRegistration = _cts.Token.Register(
+            static state =>
+                ((TypedPipelineExecutor<TInput, TOutput>)state!).RequestRuntimeSourceCancellation(),
+            this);
         _adaptiveParallelism = ShouldUseAdaptiveAdmission(_options)
             ? new AdaptiveParallelismRuntimeState(_options)
             : null;
@@ -863,6 +885,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
         await DisposeComponentsAsync(CancellationToken.None).ConfigureAwait(false);
         await _observerDispatcher.DisposeAsync().ConfigureAwait(false);
+        _sourceCancellationRegistration.Dispose();
         _sourceCts.Dispose();
         _processingCts.Dispose();
         _cts.Dispose();
@@ -986,10 +1009,25 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     internal void RequestDrain()
     {
         Volatile.Write(ref _drainRequested, 1);
+        RecordSourceStopReason(SourceStopReason.Drain);
         _sourceCts.Cancel();
     }
 
     private void RequestStopAccepting() => Volatile.Write(ref _stopAcceptingRequested, 1);
+
+    private void RequestRuntimeSourceCancellation()
+    {
+        RecordSourceStopReason(SourceStopReason.RuntimeCancellation);
+        _sourceCts.Cancel();
+    }
+
+    private void RecordSourceStopReason(SourceStopReason reason)
+    {
+        Interlocked.CompareExchange(
+            ref _sourceStopReason,
+            (int)reason,
+            (int)SourceStopReason.None);
+    }
 
     private bool ShouldStopAccepting()
     {
@@ -1020,8 +1058,13 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 }
             }
         }
-        catch (OperationCanceledException) when (IsGracefulSourceStop())
+        catch (OperationCanceledException)
         {
+            var classification = CaptureSourceStopClassificationSnapshot();
+            if (!classification.IsGraceful)
+                throw;
+
+            _cts.Token.ThrowIfCancellationRequested();
         }
         finally
         {
@@ -1065,8 +1108,13 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         {
             await _producer.ProduceAsync(input.Writer, sourceToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (IsGracefulSourceStop())
+        catch (OperationCanceledException)
         {
+            var classification = CaptureSourceStopClassificationSnapshot();
+            if (!classification.IsGraceful)
+                throw;
+
+            _cts.Token.ThrowIfCancellationRequested();
         }
         catch (ChannelClosedException) when (HasWorkerFailure())
         {
@@ -1079,10 +1127,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         await Task.WhenAll(workers).ConfigureAwait(false);
     }
 
-    private bool IsGracefulSourceStop() =>
-        !_cts.IsCancellationRequested
-        && _sourceCts.IsCancellationRequested
-        && ShouldStopAccepting();
+    private SourceStopClassificationSnapshot CaptureSourceStopClassificationSnapshot()
+    {
+        return new SourceStopClassificationSnapshot(
+            SourceCancellationRequested: _sourceCts.IsCancellationRequested,
+            Reason: (SourceStopReason)Volatile.Read(ref _sourceStopReason));
+    }
 
     private void OnInputDropped(ProcessingEnvelope<TInput> envelope)
     {
