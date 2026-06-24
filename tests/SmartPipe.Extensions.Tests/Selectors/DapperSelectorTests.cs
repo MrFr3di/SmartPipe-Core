@@ -1,5 +1,8 @@
 #nullable enable
+using System.Collections;
 using System.Data;
+using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -78,6 +81,47 @@ public class DapperSelectorTests
         await selector.InitializeAsync();
 
         mockConn.Verify(c => c.Open(), Times.Once);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WithDbConnection_UsesOpenAsyncWithCancellationToken()
+    {
+        var connection = new TrackingDbConnection();
+        using var cts = new CancellationTokenSource();
+        var selector = new DapperSelector<TestEntity>(connection, "SELECT 1");
+
+        await selector.InitializeAsync(cts.Token);
+
+        Assert.Equal(1, connection.AsyncOpenCount);
+        Assert.Equal(0, connection.SyncOpenCount);
+        Assert.Equal(cts.Token, connection.OpenCancellationToken);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WithCancelledToken_DoesNotOpenConnection()
+    {
+        var connection = new TrackingDbConnection();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var selector = new DapperSelector<TestEntity>(connection, "SELECT 1");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await selector.InitializeAsync(cts.Token));
+
+        Assert.Equal(0, connection.AsyncOpenCount);
+        Assert.Equal(0, connection.SyncOpenCount);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WithOpenConnection_DoesNotOpenAgain()
+    {
+        var connection = new TrackingDbConnection(ConnectionState.Open);
+        var selector = new DapperSelector<TestEntity>(connection, "SELECT 1");
+
+        await selector.InitializeAsync();
+
+        Assert.Equal(0, connection.AsyncOpenCount);
+        Assert.Equal(0, connection.SyncOpenCount);
     }
 
     [Fact]
@@ -234,14 +278,105 @@ public class DapperSelectorTests
     }
 
     [Fact]
-    public async Task DisposeAsync_CompletesWithoutError()
+    public async Task ReadAsync_WithDbConnection_UsesAsyncCommandAndReadWithCancellationToken()
+    {
+        var reader = TrackingDbDataReader.Create(
+            ("Id", typeof(long), 1L),
+            ("Name", typeof(string), "Async"));
+        var connection = new TrackingDbConnection(ConnectionState.Open, reader);
+        using var cts = new CancellationTokenSource();
+        var selector = new DapperSelector<TestEntity>(connection, "SELECT 1");
+
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var envelope in selector.ReadEnvelopesAsync(cts.Token))
+            results.Add(envelope);
+
+        Assert.Single(results);
+        Assert.Equal("Async", results[0].Payload.Name);
+        Assert.NotNull(connection.LastCommand);
+        Assert.Equal(cts.Token, connection.LastCommand.ExecuteCancellationToken);
+        Assert.Equal(cts.Token, reader.ReadCancellationToken);
+        Assert.Equal(0, connection.LastCommand.SyncExecuteCount);
+        Assert.Equal(0, reader.SyncReadCount);
+        Assert.Equal(1, reader.AsyncDisposeCount);
+    }
+
+    [Fact]
+    public async Task ReadAsync_WhenCancelledDuringPendingRead_ThrowsOperationCanceledException()
+    {
+        var reader = TrackingDbDataReader.CreateBlocking();
+        var connection = new TrackingDbConnection(ConnectionState.Open, reader);
+        using var cts = new CancellationTokenSource();
+        var selector = new DapperSelector<TestEntity>(connection, "SELECT 1");
+        await using var enumerator = selector.ReadEnvelopesAsync(cts.Token).GetAsyncEnumerator();
+
+        var moveNextTask = enumerator.MoveNextAsync().AsTask();
+        await reader.ReadStarted.Task;
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => moveNextTask);
+        Assert.Equal(cts.Token, reader.ReadCancellationToken);
+        Assert.Equal(0, reader.SyncReadCount);
+    }
+
+    [Fact]
+    public async Task ReadAsync_WhenEnumerationStopsEarly_DisposesReader()
+    {
+        var reader = TrackingDbDataReader.Create(
+            ("Id", typeof(long), 1L),
+            ("Name", typeof(string), "First"));
+        var connection = new TrackingDbConnection(ConnectionState.Open, reader);
+        var selector = new DapperSelector<TestEntity>(connection, "SELECT 1");
+
+        await foreach (var _ in selector.ReadEnvelopesAsync())
+            break;
+
+        Assert.Equal(1, reader.AsyncDisposeCount);
+    }
+
+    [Fact]
+    public async Task ReadAsync_WithLegacyConnection_UsesSynchronousCompatibilityFallback()
+    {
+        var reader = new Mock<IDataReader>();
+        reader.SetupGet(value => value.IsClosed).Returns(false);
+        reader.SetupGet(value => value.FieldCount).Returns(1);
+        reader.Setup(value => value.GetName(0)).Returns("Id");
+        reader.Setup(value => value.IsDBNull(0)).Returns(false);
+        reader.Setup(value => value.GetValue(0)).Returns(1L);
+        reader.SetupSequence(value => value.Read()).Returns(true).Returns(false);
+
+        var command = new Mock<IDbCommand>();
+        command.SetupProperty(value => value.CommandText);
+        command.SetupProperty(value => value.CommandTimeout);
+        command.Setup(value => value.ExecuteReader()).Returns(reader.Object);
+        command
+            .Setup(value => value.ExecuteReader(It.IsAny<CommandBehavior>()))
+            .Returns(reader.Object);
+
+        var connection = new Mock<IDbConnection>();
+        connection.SetupGet(value => value.State).Returns(ConnectionState.Open);
+        connection.Setup(value => value.CreateCommand()).Returns(command.Object);
+        var selector = new DapperSelector<TestEntity>(connection.Object, "SELECT 1");
+
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var envelope in selector.ReadEnvelopesAsync())
+            results.Add(envelope);
+
+        Assert.Single(results);
+        Assert.Equal(1L, results[0].Payload.Id);
+        reader.Verify(value => value.Read(), Times.Exactly(2));
+        reader.Verify(value => value.Dispose(), Times.Once);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_DefaultLeaveOpen_DoesNotDisposeConnection()
     {
         var mockConn = new Mock<IDbConnection>();
         var selector = new DapperSelector<TestEntity>(mockConn.Object, "SELECT 1");
 
         await selector.DisposeAsync();
 
-        mockConn.Verify(c => c.Dispose(), Times.Once);
+        mockConn.Verify(c => c.Dispose(), Times.Never);
     }
 
     [Fact]
@@ -308,14 +443,54 @@ public class DapperSelectorTests
     }
 
     [Fact]
-    public void Dispose_DisposesConnection()
+    public void Dispose_DefaultLeaveOpen_DoesNotDisposeConnection()
     {
         var mockConn = new Mock<IDbConnection>();
         var selector = new DapperSelector<TestEntity>(mockConn.Object, "SELECT 1");
 
         selector.Dispose();
 
-        mockConn.Verify(c => c.Dispose(), Times.Once);
+        mockConn.Verify(c => c.Dispose(), Times.Never);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_WhenLeaveOpenIsFalse_DisposesDbConnectionOnce()
+    {
+        var connection = new TrackingDbConnection(ConnectionState.Open);
+        var selector = new DapperSelector<TestEntity>(
+            connection,
+            "SELECT 1",
+            parameters: null,
+            leaveOpen: false,
+            commandTimeout: 30,
+            logger: null);
+
+        await selector.DisposeAsync();
+        await selector.DisposeAsync();
+        selector.Dispose();
+
+        Assert.Equal(1, connection.AsyncDisposeCount);
+        Assert.Equal(0, connection.SyncDisposeCount);
+    }
+
+    [Fact]
+    public async Task Dispose_WhenLeaveOpenIsFalse_DisposesDbConnectionOnce()
+    {
+        var connection = new TrackingDbConnection(ConnectionState.Open);
+        var selector = new DapperSelector<TestEntity>(
+            connection,
+            "SELECT 1",
+            parameters: null,
+            leaveOpen: false,
+            commandTimeout: 30,
+            logger: null);
+
+        selector.Dispose();
+        selector.Dispose();
+        await selector.DisposeAsync();
+
+        Assert.Equal(0, connection.AsyncDisposeCount);
+        Assert.Equal(1, connection.SyncDisposeCount);
     }
 
     [Fact]
@@ -509,4 +684,291 @@ public class AllTypesEntity
     public string? Name { get; set; }
     public double Value { get; set; }
     public long Active { get; set; } // SQLite returns INTEGER as Int64
+}
+
+internal sealed class TrackingDbConnection : DbConnection
+{
+    private ConnectionState _state;
+    private readonly DbDataReader? _reader;
+
+    public TrackingDbConnection(
+        ConnectionState state = ConnectionState.Closed,
+        DbDataReader? reader = null)
+    {
+        _state = state;
+        _reader = reader;
+    }
+
+    public int AsyncOpenCount { get; private set; }
+    public int SyncOpenCount { get; private set; }
+    public int AsyncDisposeCount { get; private set; }
+    public int SyncDisposeCount { get; private set; }
+    public CancellationToken OpenCancellationToken { get; private set; }
+    public TrackingDbCommand? LastCommand { get; private set; }
+
+    [AllowNull]
+    public override string ConnectionString { get; set; } = string.Empty;
+    public override string Database => "Test";
+    public override string DataSource => "Test";
+    public override string ServerVersion => "1.0";
+    public override ConnectionState State => _state;
+
+    public override void ChangeDatabase(string databaseName) { }
+
+    public override void Close()
+    {
+        _state = ConnectionState.Closed;
+    }
+
+    public override void Open()
+    {
+        SyncOpenCount++;
+        _state = ConnectionState.Open;
+    }
+
+    public override Task OpenAsync(CancellationToken cancellationToken)
+    {
+        AsyncOpenCount++;
+        OpenCancellationToken = cancellationToken;
+        cancellationToken.ThrowIfCancellationRequested();
+        _state = ConnectionState.Open;
+        return Task.CompletedTask;
+    }
+
+    public override ValueTask DisposeAsync()
+    {
+        AsyncDisposeCount++;
+        _state = ConnectionState.Closed;
+        return ValueTask.CompletedTask;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            SyncDisposeCount++;
+            _state = ConnectionState.Closed;
+        }
+
+        base.Dispose(disposing);
+    }
+
+    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
+        throw new NotSupportedException();
+
+    protected override DbCommand CreateDbCommand()
+    {
+        LastCommand = new TrackingDbCommand(this, _reader ?? throw new NotSupportedException());
+        return LastCommand;
+    }
+}
+
+internal sealed class TrackingDbCommand : DbCommand
+{
+    private readonly DbDataReader _reader;
+    private readonly TrackingDbParameterCollection _parameters = new();
+
+    public TrackingDbCommand(DbConnection connection, DbDataReader reader)
+    {
+        DbConnection = connection;
+        _reader = reader;
+    }
+
+    public CancellationToken ExecuteCancellationToken { get; private set; }
+    public int SyncExecuteCount { get; private set; }
+
+    [AllowNull]
+    public override string CommandText { get; set; } = string.Empty;
+    public override int CommandTimeout { get; set; }
+    public override CommandType CommandType { get; set; }
+    public override bool DesignTimeVisible { get; set; }
+    public override UpdateRowSource UpdatedRowSource { get; set; }
+    protected override DbConnection? DbConnection { get; set; }
+    protected override DbParameterCollection DbParameterCollection => _parameters;
+    protected override DbTransaction? DbTransaction { get; set; }
+
+    public override void Cancel() { }
+    public override int ExecuteNonQuery() => throw new NotSupportedException();
+    public override object? ExecuteScalar() => throw new NotSupportedException();
+    public override void Prepare() { }
+
+    protected override DbParameter CreateDbParameter() => new TrackingDbParameter();
+
+    protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
+    {
+        SyncExecuteCount++;
+        throw new InvalidOperationException("Synchronous ExecuteReader must not be used.");
+    }
+
+    protected override Task<DbDataReader> ExecuteDbDataReaderAsync(
+        CommandBehavior behavior,
+        CancellationToken cancellationToken)
+    {
+        ExecuteCancellationToken = cancellationToken;
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(_reader);
+    }
+}
+
+internal sealed class TrackingDbDataReader : DbDataReader
+{
+    private readonly DataTableReader? _inner;
+    private readonly TaskCompletionSource<bool>? _readGate;
+
+    private TrackingDbDataReader(DataTableReader inner)
+    {
+        _inner = inner;
+    }
+
+    private TrackingDbDataReader()
+    {
+        _readGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    public int SyncReadCount { get; private set; }
+    public int AsyncDisposeCount { get; private set; }
+    public CancellationToken ReadCancellationToken { get; private set; }
+    public TaskCompletionSource ReadStarted { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public static TrackingDbDataReader Create(params (string Name, Type Type, object Value)[] columns)
+    {
+        var table = new DataTable();
+        foreach (var column in columns)
+            table.Columns.Add(column.Name, column.Type);
+        table.Rows.Add(columns.Select(column => column.Value).ToArray());
+        return new TrackingDbDataReader(table.CreateDataReader());
+    }
+
+    public static TrackingDbDataReader CreateBlocking() => new();
+
+    public override int Depth => _inner?.Depth ?? 0;
+    public override int FieldCount => _inner?.FieldCount ?? 0;
+    public override bool HasRows => _inner?.HasRows ?? false;
+    public override bool IsClosed => _inner?.IsClosed ?? false;
+    public override int RecordsAffected => _inner?.RecordsAffected ?? 0;
+    public override object this[int ordinal] => GetValue(ordinal);
+    public override object this[string name] => GetValue(GetOrdinal(name));
+
+    public override bool Read()
+    {
+        SyncReadCount++;
+        throw new InvalidOperationException("Synchronous Read must not be used.");
+    }
+
+    public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
+    {
+        ReadCancellationToken = cancellationToken;
+        ReadStarted.TrySetResult();
+
+        if (_readGate is not null)
+            return await _readGate.Task.WaitAsync(cancellationToken);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return _inner!.Read();
+    }
+
+    public override ValueTask DisposeAsync()
+    {
+        AsyncDisposeCount++;
+        _inner?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            _inner?.Dispose();
+        base.Dispose(disposing);
+    }
+
+    public override bool NextResult() => _inner?.NextResult() ?? false;
+    public override string GetName(int ordinal) => _inner!.GetName(ordinal);
+    public override string GetDataTypeName(int ordinal) => _inner!.GetDataTypeName(ordinal);
+    public override Type GetFieldType(int ordinal) => _inner!.GetFieldType(ordinal);
+    public override object GetValue(int ordinal) => _inner!.GetValue(ordinal);
+    public override int GetValues(object[] values) => _inner!.GetValues(values);
+    public override int GetOrdinal(string name) => _inner!.GetOrdinal(name);
+    public override bool GetBoolean(int ordinal) => _inner!.GetBoolean(ordinal);
+    public override byte GetByte(int ordinal) => _inner!.GetByte(ordinal);
+    public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length) =>
+        _inner!.GetBytes(ordinal, dataOffset, buffer, bufferOffset, length);
+    public override char GetChar(int ordinal) => _inner!.GetChar(ordinal);
+    public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length) =>
+        _inner!.GetChars(ordinal, dataOffset, buffer, bufferOffset, length);
+    public override Guid GetGuid(int ordinal) => _inner!.GetGuid(ordinal);
+    public override short GetInt16(int ordinal) => _inner!.GetInt16(ordinal);
+    public override int GetInt32(int ordinal) => _inner!.GetInt32(ordinal);
+    public override long GetInt64(int ordinal) => _inner!.GetInt64(ordinal);
+    public override float GetFloat(int ordinal) => _inner!.GetFloat(ordinal);
+    public override double GetDouble(int ordinal) => _inner!.GetDouble(ordinal);
+    public override string GetString(int ordinal) => _inner!.GetString(ordinal);
+    public override decimal GetDecimal(int ordinal) => _inner!.GetDecimal(ordinal);
+    public override DateTime GetDateTime(int ordinal) => _inner!.GetDateTime(ordinal);
+    public override bool IsDBNull(int ordinal) => _inner!.IsDBNull(ordinal);
+    public override IEnumerator GetEnumerator() => (_inner ?? throw new NotSupportedException()).GetEnumerator();
+}
+
+internal sealed class TrackingDbParameter : DbParameter
+{
+    public override DbType DbType { get; set; }
+    public override ParameterDirection Direction { get; set; } = ParameterDirection.Input;
+    public override bool IsNullable { get; set; }
+    [AllowNull]
+    public override string ParameterName { get; set; } = string.Empty;
+    [AllowNull]
+    public override string SourceColumn { get; set; } = string.Empty;
+    public override object? Value { get; set; }
+    public override bool SourceColumnNullMapping { get; set; }
+    public override int Size { get; set; }
+    public override void ResetDbType() { }
+}
+
+internal sealed class TrackingDbParameterCollection : DbParameterCollection
+{
+    private readonly List<DbParameter> _items = [];
+
+    public override int Count => _items.Count;
+    public override object SyncRoot => ((ICollection)_items).SyncRoot;
+    public override int Add(object value)
+    {
+        _items.Add((DbParameter)value);
+        return _items.Count - 1;
+    }
+
+    public override void AddRange(Array values)
+    {
+        foreach (var value in values)
+            Add(value!);
+    }
+
+    public override void Clear() => _items.Clear();
+    public override bool Contains(object value) => _items.Contains((DbParameter)value);
+    public override bool Contains(string value) => _items.Any(item => item.ParameterName == value);
+    public override void CopyTo(Array array, int index) => ((ICollection)_items).CopyTo(array, index);
+    public override IEnumerator GetEnumerator() => _items.GetEnumerator();
+    public override int IndexOf(object value) => _items.IndexOf((DbParameter)value);
+    public override int IndexOf(string parameterName) =>
+        _items.FindIndex(item => item.ParameterName == parameterName);
+    public override void Insert(int index, object value) => _items.Insert(index, (DbParameter)value);
+    public override void Remove(object value) => _items.Remove((DbParameter)value);
+    public override void RemoveAt(int index) => _items.RemoveAt(index);
+    public override void RemoveAt(string parameterName)
+    {
+        var index = IndexOf(parameterName);
+        if (index >= 0)
+            RemoveAt(index);
+    }
+
+    protected override DbParameter GetParameter(int index) => _items[index];
+    protected override DbParameter GetParameter(string parameterName) => _items[IndexOf(parameterName)];
+    protected override void SetParameter(int index, DbParameter value) => _items[index] = value;
+    protected override void SetParameter(string parameterName, DbParameter value)
+    {
+        var index = IndexOf(parameterName);
+        if (index >= 0)
+            _items[index] = value;
+        else
+            _items.Add(value);
+    }
 }

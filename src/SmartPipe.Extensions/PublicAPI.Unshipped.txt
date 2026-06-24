@@ -1,4 +1,5 @@
 #nullable enable
+SmartPipe.Extensions.Selectors.DapperSelector<T>.DapperSelector(System.Data.Common.DbConnection! connection, string! sql, object? parameters, bool leaveOpen, int commandTimeout, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.DapperSelector<T>!>? logger) -> void
 SmartPipe.Extensions.SmartPipeHostedFailureBehavior
 SmartPipe.Extensions.SmartPipeHostedFailureBehavior.Ignore = 3 -> SmartPipe.Extensions.SmartPipeHostedFailureBehavior
 SmartPipe.Extensions.SmartPipeHostedFailureBehavior.MarkUnhealthyAndKeepHostAlive = 2 -> SmartPipe.Extensions.SmartPipeHostedFailureBehavior
