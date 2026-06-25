@@ -1557,12 +1557,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     private void EmitEventFireAndForget(PipelineEvent pipelineEvent)
     {
-        _ = ObserveBestEffortEmitAsync(pipelineEvent);
-    }
-
-    private async Task ObserveBestEffortEmitAsync(PipelineEvent pipelineEvent)
-    {
-        await TryEmitAsync(pipelineEvent).ConfigureAwait(false);
+        _ = TryEmitAsync(pipelineEvent).AsTask();
     }
 
     private async ValueTask TryEmitAsync(PipelineEvent pipelineEvent)
@@ -1581,7 +1576,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
         catch (Exception)
         {
-            // Terminal notifications are best-effort and must not hide the primary run outcome.
+            // Best-effort notifications must not hide the primary run outcome.
             _metrics.RecordObserverEventDropped();
         }
     }
