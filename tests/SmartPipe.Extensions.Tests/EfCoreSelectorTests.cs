@@ -55,6 +55,109 @@ public class EfCoreSelectorTests
     }
 
     [Fact]
+    public async Task ReadAsync_DefaultNoTracking_DoesNotTrackReturnedEntities()
+    {
+        await using var db = new TestDbContext();
+        db.TestEntities.AddRange(
+            new TestEntity { Id = 1, Name = "One" },
+            new TestEntity { Id = 2, Name = "Two" });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var selector = new EfCoreSelector<TestEntity>(db);
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+
+        await foreach (var item in selector.ReadEnvelopesAsync())
+            results.Add(item);
+
+        results.Should().HaveCount(2);
+        db.ChangeTracker.Entries<TestEntity>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ReadAsync_WithTracking_TracksReturnedEntities()
+    {
+        await using var db = new TestDbContext();
+        db.TestEntities.AddRange(
+            new TestEntity { Id = 1, Name = "One" },
+            new TestEntity { Id = 2, Name = "Two" });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var selector = new EfCoreSelector<TestEntity>(db).WithTracking();
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+
+        await foreach (var item in selector.ReadEnvelopesAsync())
+            results.Add(item);
+
+        results.Should().HaveCount(2);
+        db.ChangeTracker.Entries<TestEntity>().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task WithTracking_FalseAfterTrue_DisablesTrackingAndReturnsSameSelector()
+    {
+        await using var db = new TestDbContext();
+        db.TestEntities.Add(new TestEntity { Id = 1, Name = "One" });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var selector = new EfCoreSelector<TestEntity>(db);
+
+        selector.WithTracking().Should().BeSameAs(selector);
+        selector.WithTracking(false).Should().BeSameAs(selector);
+
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
+            results.Add(item);
+
+        results.Should().ContainSingle();
+        db.ChangeTracker.Entries<TestEntity>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ReadAsync_WithQuery_DefaultNoTracking_DoesNotTrackFilteredEntities()
+    {
+        await using var db = new TestDbContext();
+        db.TestEntities.AddRange(
+            new TestEntity { Id = 1, Name = "One" },
+            new TestEntity { Id = 2, Name = "Two" });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var selector = new EfCoreSelector<TestEntity>(db)
+            .WithQuery(set => set.Where(entity => entity.Id > 1));
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+
+        await foreach (var item in selector.ReadEnvelopesAsync())
+            results.Add(item);
+
+        results.Should().ContainSingle();
+        results[0].Payload.Id.Should().Be(2);
+        db.ChangeTracker.Entries<TestEntity>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ReadAsync_WithQueryAsNoTracking_WithTracking_SelectorPolicyWins()
+    {
+        await using var db = new TestDbContext();
+        db.TestEntities.Add(new TestEntity { Id = 1, Name = "One" });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var selector = new EfCoreSelector<TestEntity>(db)
+            .WithQuery(set => set.AsNoTracking())
+            .WithTracking();
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+
+        await foreach (var item in selector.ReadEnvelopesAsync())
+            results.Add(item);
+
+        results.Should().ContainSingle();
+        db.ChangeTracker.Entries<TestEntity>().Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task ReadAsync_EmptyTable_ShouldReturnEmpty()
     {
         await using var db = new TestDbContext();
