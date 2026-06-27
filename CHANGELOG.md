@@ -12,6 +12,15 @@
 - **Compatibility aliases are transitional only** — `OutputMode`, `PipelineOutputMode`, and `MaxDegreeOfParallelism` remain as obsolete typed-runtime aliases for migration, but new code should use `OutputPolicy` and `MaxConcurrency`.
 - **Legacy docs moved out of the primary path** — migration notes now live under `docs/migration/legacy-to-typed.md`; current docs describe the typed runtime only.
 
+### Stabilization Behavior Changes
+
+- **Typed factory async startup** — `ISmartPipeFactory<TInput,TOutput>.StartAsync` no longer bridges through the synchronous `Start` method by default. The default interface implementation throws `NotSupportedException` unless an implementation explicitly supports async startup, avoiding sync-over-async and Start/StartAsync recursion traps.
+- **DapperSelector connection ownership** — externally supplied connections are left open by default. Use the explicit `DbConnection` overload with `leaveOpen: false` when the selector should own and dispose the connection.
+- **DapperSelector async reads** — the `DbConnection` path uses asynchronous open and reader operations. Non-`DbConnection` `IDbConnection` implementations remain a synchronous compatibility fallback.
+- **EfCoreSelector tracking policy** — read queries use no-tracking by default for pipeline source scenarios. Use `.WithTracking()` to opt into EF Core change tracking when returned entities should remain tracked by the supplied `DbContext`.
+- **ChannelMerge cancellation** — `ChannelMerge.Merge(first, second, options, cancellationToken)` is available for bounded or backpressure-sensitive merges. The merge pump passes cancellation into source reads and output writes, handles completed output writers, and completes the merged output with cancellation or fault information when an input pump fails or cancellation is requested.
+- **Observer drop emission** — best-effort observer event emission is now handled through the shared `TryEmitAsync` path, preserving drop metrics without the older helper layering.
+
 ### New Features
 
 - **PipelineRun\<T\>** — typed runtime handle with completion task, output reader, lifecycle state, metrics snapshot, drain, cancel, abort, and async disposal.
