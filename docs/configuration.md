@@ -48,6 +48,42 @@ retry, circuit breaker, and dead-letter behavior are independent.
 For sink-backed pipelines, success output is emitted only after the sink write
 succeeds. If the sink throws, no success output is published for that item.
 
+### Output Filtering API Deprecation
+
+`PipelineOutputPolicy` is the canonical output filtering API for new code.
+
+`PipelineOutputMode` and `PipelineRuntimeOptions.OutputMode` are compatibility
+APIs retained for existing callers. They remain supported in the current major
+version, but new code should use `PipelineRuntimeOptions.OutputPolicy`.
+
+#### Migration Map
+
+| Old `PipelineOutputMode` | New `PipelineOutputPolicy` | Notes |
+|---|---|---|
+| `EmitAll` | `EmitAll` | Emits all processing results to the output channel. |
+| `FailuresOnlyWhenSinkAttached` | `EmitFailuresOnly` when failures-only behavior is desired | The old value had sink-aware fallback semantics. Verify behavior before migrating. |
+| `SuppressWhenSinkAttached` | `SuppressAllWhenSinkAttached` | Suppresses output channel results when a sink is attached. |
+| `SuppressAll` | No exact `OutputPolicy` equivalent | Keep compatibility mode until a canonical replacement is introduced. |
+
+#### Conflict Rule
+
+If both `OutputMode` and `OutputPolicy` are configured, they must describe
+equivalent output behavior. Non-equivalent combinations are rejected by runtime
+option validation. Today, only `EmitAll`/`EmitAll` and
+`SuppressWhenSinkAttached`/`SuppressAllWhenSinkAttached` are treated as exact
+equivalents.
+
+#### Deprecation Timeline
+
+- Current minor/stabilization releases: `OutputMode` remains available as an
+  obsolete compatibility API.
+- Next major release candidate: the project may consider promoting obsolete
+  usage to an error after a documented migration window.
+- Future major release only: the project may remove `OutputMode` and the
+  compatibility runtime branch.
+
+No removal is planned in a patch or minor stabilization release.
+
 ## Stage Failure Options
 
 `StageFailureOptions` is configured per transform stage:

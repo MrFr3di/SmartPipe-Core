@@ -51,6 +51,8 @@ Default `OutputPolicy` is `SuppressSuccessWhenSinkAttached`.
 This is the safe default for sink-backed pipelines because successful outputs are not written to `PipelineRun<T>.Outputs` unless the caller explicitly opts into `EmitAll`.
 
 Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
+For the `OutputMode` compatibility deprecation policy and migration map, see
+[Configuration](docs/configuration.md#output-filtering-api-deprecation).
 
 ### Failure Semantics
 

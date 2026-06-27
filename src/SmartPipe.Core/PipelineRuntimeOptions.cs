@@ -145,10 +145,11 @@ public sealed class ObserverDispatchOptions
 
 /// <summary>Controls which processing results are emitted to the typed pipeline output channel.</summary>
 /// <remarks>
-/// Output mode filtering applies only at the output channel write boundary.
-/// Sink writes, observer events, retry, and failure routing are independent of output mode.
+/// Compatibility API retained for existing callers. New code should use
+/// <see cref="PipelineOutputPolicy"/> through <see cref="PipelineRuntimeOptions.OutputPolicy"/>.
 /// </remarks>
-[Obsolete("Use PipelineOutputPolicy. PipelineOutputMode is a compatibility surface and will be removed in a future major version.")]
+[Obsolete(
+    "Use PipelineRuntimeOptions.OutputPolicy. PipelineOutputMode is a compatibility API retained for existing callers and may be removed in a future major version.")]
 public enum PipelineOutputMode
 {
     /// <summary>Emit all processing results — successful and failed — to the output channel.</summary>
@@ -216,7 +217,12 @@ public sealed class PipelineRuntimeOptions
     public BoundedChannelFullMode OutputFullMode { get; init; } = BoundedChannelFullMode.Wait;
 
     /// <summary>Gets the compatibility output filtering mode. Prefer <see cref="OutputPolicy"/>.</summary>
-    [Obsolete("Use OutputPolicy. OutputMode is a compatibility alias and will be removed in a future major version.")]
+    /// <remarks>
+    /// This property is honored only when configured and when <see cref="OutputPolicy"/> is not configured.
+    /// If both are configured, validation requires equivalent behavior.
+    /// </remarks>
+    [Obsolete(
+        "Use OutputPolicy. OutputMode is a compatibility API retained for existing callers and may be removed in a future major version.")]
     public PipelineOutputMode OutputMode
     {
         get => _outputMode;
