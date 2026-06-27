@@ -344,7 +344,11 @@ public sealed class ObserverDispatcherTests
         {
             try
             {
-                await dispatcher.EmitAsync(pipelineEvent, CancellationToken.None);
+                await dispatcher.EmitAsync(pipelineEvent, cts.Token);
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+                break;
             }
             catch (TException ex)
             {
@@ -355,7 +359,7 @@ public sealed class ObserverDispatcherTests
         }
 
         throw new TimeoutException(
-            $"Dispatcher did not throw {typeof(TException).Name} within {timeout}.");
+            $"Dispatcher did not throw {typeof(TException).Name} for {pipelineEvent.GetType().Name} within {timeout}.");
     }
 
     private sealed class EnumerableSource<T> : IPipelineSource<T>
