@@ -1,7 +1,6 @@
 #nullable enable
 
 using System.Collections.Concurrent;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using FluentAssertions;
@@ -157,14 +156,13 @@ public sealed class ObserverDispatcherTests
         await dispatcher.EmitAsync(
             new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
             CancellationToken.None);
-        await WaitForRecordedPipelineFaultAsync(dispatcher).WaitAsync(TimeSpan.FromSeconds(5));
 
-        var act = async () => await dispatcher.EmitAsync(
+        var exception = await WaitUntilEmitThrowsAsync<InvalidOperationException>(
+            dispatcher,
             new PipelineCompletedEvent("pipeline", "run", DateTimeOffset.UtcNow),
-            CancellationToken.None);
+            TimeSpan.FromSeconds(5));
 
-        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-        exception.Which.Should().BeSameAs(expected);
+        exception.Should().BeSameAs(expected);
 
         await dispatcher.DisposeAsync();
     }
@@ -202,7 +200,10 @@ public sealed class ObserverDispatcherTests
         await dispatcher.EmitAsync(
             new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
             CancellationToken.None);
-        await WaitForRecordedPipelineFaultAsync(dispatcher).WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitUntilEmitThrowsAsync<InvalidOperationException>(
+            dispatcher,
+            new PipelineCompletedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            TimeSpan.FromSeconds(5));
 
         var act = async () => await dispatcher.DisposeAsync();
 
@@ -331,16 +332,30 @@ public sealed class ObserverDispatcherTests
         return outputs;
     }
 
-    private static async Task WaitForRecordedPipelineFaultAsync(IPipelineObserverDispatcher dispatcher)
+    private static async Task<TException> WaitUntilEmitThrowsAsync<TException>(
+        IPipelineObserverDispatcher dispatcher,
+        PipelineEvent pipelineEvent,
+        TimeSpan timeout)
+        where TException : Exception
     {
-        var field = dispatcher.GetType().GetField(
-            "_pipelineFault",
-            BindingFlags.Instance | BindingFlags.NonPublic);
+        using var cts = new CancellationTokenSource(timeout);
 
-        field.Should().NotBeNull();
+        while (!cts.IsCancellationRequested)
+        {
+            try
+            {
+                await dispatcher.EmitAsync(pipelineEvent, CancellationToken.None);
+            }
+            catch (TException ex)
+            {
+                return ex;
+            }
 
-        while (field!.GetValue(dispatcher) is null)
             await Task.Yield();
+        }
+
+        throw new TimeoutException(
+            $"Dispatcher did not throw {typeof(TException).Name} within {timeout}.");
     }
 
     private sealed class EnumerableSource<T> : IPipelineSource<T>
