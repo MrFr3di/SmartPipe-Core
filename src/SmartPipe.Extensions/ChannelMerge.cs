@@ -47,6 +47,9 @@ public static class ChannelMerge
         CancellationToken cancellationToken
     )
     {
+        ArgumentNullException.ThrowIfNull(first);
+        ArgumentNullException.ThrowIfNull(second);
+
         var output =
             options != null ? Channel.CreateBounded<T>(options) : Channel.CreateUnbounded<T>();
 
@@ -62,15 +65,17 @@ public static class ChannelMerge
         CancellationToken cancellationToken
     )
     {
-        using var pumpCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken
-        );
-        var firstPump = PumpAndCancelOnFailureAsync(first, writer, pumpCancellation);
-        var secondPump = PumpAndCancelOnFailureAsync(second, writer, pumpCancellation);
         Exception? completionError = null;
+        CancellationTokenSource? pumpCancellation = null;
 
         try
         {
+            pumpCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken
+            );
+            var firstPump = PumpAndCancelOnFailureAsync(first, writer, pumpCancellation);
+            var secondPump = PumpAndCancelOnFailureAsync(second, writer, pumpCancellation);
+
             await Task.WhenAll(firstPump, secondPump).ConfigureAwait(false);
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
@@ -83,6 +88,7 @@ public static class ChannelMerge
         }
         finally
         {
+            pumpCancellation?.Dispose();
             writer.TryComplete(completionError);
         }
     }

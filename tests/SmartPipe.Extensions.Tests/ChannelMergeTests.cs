@@ -9,6 +9,58 @@ public class ChannelMergeTests
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
 
     [Fact]
+    public void Merge_NullFirst_ThrowsArgumentNullException()
+    {
+        var second = Channel.CreateUnbounded<int>();
+
+        var act = () => ChannelMerge.Merge<int>(null!, second.Reader);
+
+        act.Should().Throw<ArgumentNullException>()
+            .WithParameterName("first");
+    }
+
+    [Fact]
+    public void Merge_NullSecond_ThrowsArgumentNullException()
+    {
+        var first = Channel.CreateUnbounded<int>();
+
+        var act = () => ChannelMerge.Merge<int>(first.Reader, null!);
+
+        act.Should().Throw<ArgumentNullException>()
+            .WithParameterName("second");
+    }
+
+    [Fact]
+    public void Merge_WithCancellation_NullFirst_ThrowsArgumentNullException()
+    {
+        var second = Channel.CreateUnbounded<int>();
+
+        var act = () => ChannelMerge.Merge<int>(
+            null!,
+            second.Reader,
+            options: null,
+            CancellationToken.None);
+
+        act.Should().Throw<ArgumentNullException>()
+            .WithParameterName("first");
+    }
+
+    [Fact]
+    public void Merge_WithCancellation_NullSecond_ThrowsArgumentNullException()
+    {
+        var first = Channel.CreateUnbounded<int>();
+
+        var act = () => ChannelMerge.Merge<int>(
+            first.Reader,
+            null!,
+            options: null,
+            CancellationToken.None);
+
+        act.Should().Throw<ArgumentNullException>()
+            .WithParameterName("second");
+    }
+
+    [Fact]
     public async Task Merge_TwoChannels_ShouldCombine()
     {
         var ch1 = Channel.CreateUnbounded<int>();
