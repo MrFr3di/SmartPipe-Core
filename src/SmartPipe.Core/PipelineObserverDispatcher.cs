@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Runtime.ExceptionServices;
 using System.Threading.Channels;
 
 namespace SmartPipe.Core;
@@ -120,7 +121,6 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
     private readonly Channel<PipelineEvent> _events;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _worker;
-    private Exception? _failure;
     private Exception? _pipelineFault;
     private int _completed;
     private int _disposed;
@@ -149,8 +149,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         if (Volatile.Read(ref _completed) != 0)
             return;
 
-        if (_pipelineFault is not null)
-            throw _pipelineFault;
+        ThrowPipelineFaultIfRecorded();
 
         if (_options.Mode == ObserverDispatchMode.BufferedBestEffort)
         {
@@ -183,10 +182,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         }
         catch (ChannelClosedException)
         {
-            var pipelineFault = Volatile.Read(ref _pipelineFault);
-            if (pipelineFault is not null)
-                throw pipelineFault;
-
+            ThrowPipelineFaultIfRecorded();
             throw;
         }
     }
@@ -200,8 +196,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         if (_options.FlushOnCompletion)
             await _worker.WaitAsync(ct).ConfigureAwait(false);
 
-        if (_pipelineFault is not null)
-            throw _pipelineFault;
+        ThrowPipelineFaultIfRecorded();
     }
 
     public async ValueTask DisposeAsync()
@@ -215,11 +210,30 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         {
             await _worker.ConfigureAwait(false);
         }
-        catch
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
-            // Failure is surfaced through CompleteAsync when configured to fault.
+            // Expected during disposal; cancellation is the disposal signal.
+        }
+        catch (Exception) when (GetPipelineFault() is not null)
+        {
+            // Recorded observer failure is surfaced through EmitAsync/CompleteAsync.
         }
         _cts.Dispose();
+    }
+
+    private Exception? GetPipelineFault() => Volatile.Read(ref _pipelineFault);
+
+    private Exception RecordPipelineFault(Exception exception)
+    {
+        Interlocked.CompareExchange(ref _pipelineFault, exception, null);
+        return Volatile.Read(ref _pipelineFault)!;
+    }
+
+    private void ThrowPipelineFaultIfRecorded()
+    {
+        var pipelineFault = GetPipelineFault();
+        if (pipelineFault is not null)
+            ExceptionDispatchInfo.Capture(pipelineFault).Throw();
     }
 
     private async Task ProcessAsync()
@@ -264,11 +278,10 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
 
     private bool HandleObserverFailure(ActiveObserverRegistration registration, Exception exception)
     {
-        _failure ??= exception;
         if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
         {
-            _pipelineFault ??= exception;
-            _events.Writer.TryComplete(exception);
+            var pipelineFault = RecordPipelineFault(exception);
+            _events.Writer.TryComplete(pipelineFault);
             return true;
         }
 
