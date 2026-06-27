@@ -14,6 +14,17 @@ Ready-to-use integrations for SmartPipe.Core: file, HTTP, database, mapping, val
 | `JsonFileSource<T>` | System.Text.Json | Read JSON arrays and NDJSON |
 | `DeadLetterSource<T>` | System.Text.Json | Read persisted failed-item records |
 
+`EfCoreSelector<T>` uses no-tracking queries by default for read-only pipeline
+source scenarios. Call `.WithTracking()` when returned entities must remain
+tracked by the supplied `DbContext`.
+
+`DapperSelector<T>` uses asynchronous open and read operations when the supplied
+connection is a `DbConnection`. Non-`DbConnection` `IDbConnection`
+implementations remain a synchronous compatibility fallback. Externally
+supplied connections are left open by default; use the explicit `DbConnection`
+ownership overload with `leaveOpen: false` when the selector should dispose the
+connection.
+
 ## Transforms
 
 | Transform | Library | Description |
@@ -85,6 +96,11 @@ intentional for the host.
 |-----------|-------------|
 | `ChannelMerge` | Merge two ChannelReader streams |
 
+Use `ChannelMerge.Merge(first, second, options, cancellationToken)` for bounded
+or backpressure-sensitive merges that need cancellation to flow into source
+reads and output writes. The compatibility overload without a cancellation
+token remains available.
+
 ## Installation
 
 ```bash
@@ -94,7 +110,7 @@ dotnet add package SmartPipe.Extensions
 ## Requirements
 
 - .NET 10.0+
-- SmartPipe.Core 2.0.0 (included as dependency)
+- SmartPipe.Core 2.1.0 (included as dependency)
 - This package intentionally includes integration dependencies for the features below.
 - Individual features pull their own dependencies:
   - `HttpSelector` / `HttpSink` → Polly (via Microsoft.Extensions.Resilience)

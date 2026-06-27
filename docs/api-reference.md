@@ -68,6 +68,18 @@ and `ToFactory` throw on instance pipelines; use `.Transform(instance)` and
 `SmartPipe.Extensions` provides typed selectors, transforms, sinks, DI
 registration, hosted service integration, and health-check support.
 
+Important selector and streaming contracts:
+
+- `EfCoreSelector<T>` reads with `AsNoTracking()` by default. Use
+  `.WithTracking()` to opt into EF Core change tracking for returned entities.
+- `DapperSelector<T>` uses asynchronous `DbConnection` open/read operations and
+  leaves externally supplied connections open by default. Use the explicit
+  ownership overload with `leaveOpen: false` when the selector should dispose
+  the connection.
+- `ChannelMerge.Merge(first, second, options, cancellationToken)` is the
+  cancellation-aware overload for bounded or backpressure-sensitive merges. The
+  compatibility overload without a cancellation token remains available.
+
 ## Observability
 
 - `SmartPipeMetrics.Export()`

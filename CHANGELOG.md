@@ -1,5 +1,53 @@
 # Changelog
 
+## [2.1.0] — 2026-06-27
+
+### Stabilization Behavior Changes
+
+- **Typed factory async startup** — `ISmartPipeFactory<TInput,TOutput>.StartAsync` no longer bridges through the synchronous `Start` method by default. The default interface implementation throws `NotSupportedException` unless an implementation explicitly supports async startup, avoiding sync-over-async and Start/StartAsync recursion traps.
+- **DapperSelector connection ownership** — externally supplied connections are left open by default. Use the explicit `DbConnection` overload with `leaveOpen: false` when the selector should own and dispose the connection.
+- **DapperSelector async reads** — the `DbConnection` path uses asynchronous open and reader operations. Non-`DbConnection` `IDbConnection` implementations remain a synchronous compatibility fallback.
+- **EfCoreSelector tracking policy** — read queries use no-tracking by default for pipeline source scenarios. Use `.WithTracking()` to opt into EF Core change tracking when returned entities should remain tracked by the supplied `DbContext`.
+- **OutputMode compatibility policy** — `PipelineOutputMode` and `PipelineRuntimeOptions.OutputMode` remain available as obsolete compatibility APIs. New code should use `PipelineOutputPolicy` and `PipelineRuntimeOptions.OutputPolicy`.
+
+### New Features
+
+- **Adaptive parallelism admission** — typed runtime options can opt into adaptive admission control for bounded, backpressure-aware execution.
+- **ChannelMerge cancellation-aware overload** — `ChannelMerge.Merge(first, second, options, cancellationToken)` is available for bounded or backpressure-sensitive merges.
+- **EfCoreSelector.WithTracking** — EF Core selector callers can opt back into change tracking explicitly.
+
+### Core Runtime
+
+- **Factory sync-over-async removal** — `StartAsync` paths no longer depend on sync-over-async bridges.
+- **Hosted-service stack traces** — hosted-service failure rethrow paths preserve the original exception stack trace.
+- **Lifecycle state transitions** — drain, cancel, complete, and abort transitions are hardened against racing terminal-state updates.
+- **Source-stop classification** — graceful source-stop detection now uses a snapshot/reason model rather than live multi-flag checks.
+- **Observer event emission** — fire-and-forget observer emission is routed through the shared best-effort `TryEmitAsync` path, making observer emission failures observable through drop metrics.
+- **Buffered observer faults** — buffered observer dispatch records the first pipeline fault, preserves original exception rethrow semantics, and avoids broad worker-exception swallowing during disposal.
+- **Output policy compatibility validation** — equivalent legacy and canonical output policies can be configured together, while non-equivalent combinations remain rejected.
+
+### Extensions
+
+- **DapperSelector async provider path** — `DbConnection` providers use asynchronous open and read operations with cancellation support.
+- **DapperSelector ownership-safe construction** — externally supplied connections are preserved by default; selector-owned disposal is opt-in through explicit ownership configuration.
+- **EfCoreSelector no-tracking default** — read-only selector queries use `AsNoTracking()` by default, with `.WithTracking()` available for tracking scenarios.
+- **ChannelMerge cancellation and completion** — merge pumps pass cancellation to source reads and output writes, propagate input faults, complete the merged output with cancellation/fault information, and validate input readers synchronously.
+- **DeadLetterSink test hooks removed** — production dead-letter sink code no longer contains test-only writer/failure injection hooks.
+
+### Documentation
+
+- **Release notes** — documented stabilization behavior changes introduced after 2.0.0.
+- **Output filtering deprecation plan** — documented `OutputMode` to `OutputPolicy` migration guidance, conflict rules, and future-major-only removal policy.
+- **Selector behavior docs** — documented Dapper connection ownership and EF Core no-tracking defaults.
+- **ChannelMerge docs** — documented the cancellation-aware overload and bounded/backpressure-sensitive use cases.
+
+### Testing & Quality
+
+- **Observer dispatcher tests** — removed reflection polling of private dispatcher state and now test observable dispatcher behavior.
+- **Observer polling timeout** — async polling helpers pass timeout cancellation tokens into `EmitAsync`.
+- **ChannelMerge tests** — added null-reader validation coverage for both compatibility and cancellation-aware overloads.
+- **Regression coverage** — added coverage for bounded merge preservation, cancellation completion, pre-cancelled tokens, input fault propagation, selector ownership, and no-tracking selector reads.
+
 ## [2.0.0] — 2026-06-20
 
 ### Breaking Changes
@@ -11,15 +59,6 @@
 - **Lifecycle semantics changed** — `DrainAsync`, `TryDrainAsync`, `CancelAsync`, `AbortAsync`, and `DisposeAsync` now have distinct typed-runtime meanings and observable states.
 - **Compatibility aliases are transitional only** — `OutputMode`, `PipelineOutputMode`, and `MaxDegreeOfParallelism` remain as obsolete typed-runtime aliases for migration, but new code should use `OutputPolicy` and `MaxConcurrency`.
 - **Legacy docs moved out of the primary path** — migration notes now live under `docs/migration/legacy-to-typed.md`; current docs describe the typed runtime only.
-
-### Stabilization Behavior Changes
-
-- **Typed factory async startup** — `ISmartPipeFactory<TInput,TOutput>.StartAsync` no longer bridges through the synchronous `Start` method by default. The default interface implementation throws `NotSupportedException` unless an implementation explicitly supports async startup, avoiding sync-over-async and Start/StartAsync recursion traps.
-- **DapperSelector connection ownership** — externally supplied connections are left open by default. Use the explicit `DbConnection` overload with `leaveOpen: false` when the selector should own and dispose the connection.
-- **DapperSelector async reads** — the `DbConnection` path uses asynchronous open and reader operations. Non-`DbConnection` `IDbConnection` implementations remain a synchronous compatibility fallback.
-- **EfCoreSelector tracking policy** — read queries use no-tracking by default for pipeline source scenarios. Use `.WithTracking()` to opt into EF Core change tracking when returned entities should remain tracked by the supplied `DbContext`.
-- **ChannelMerge cancellation** — `ChannelMerge.Merge(first, second, options, cancellationToken)` is available for bounded or backpressure-sensitive merges. The merge pump passes cancellation into source reads and output writes, handles completed output writers, and completes the merged output with cancellation or fault information when an input pump fails or cancellation is requested.
-- **Observer drop emission** — best-effort observer event emission is now handled through the shared `TryEmitAsync` path, preserving drop metrics without the older helper layering.
 
 ### New Features
 
