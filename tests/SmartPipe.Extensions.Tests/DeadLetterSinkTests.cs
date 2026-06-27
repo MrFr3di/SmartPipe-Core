@@ -98,11 +98,14 @@ public class DeadLetterSinkTests
     public async Task WriteAsync_IoException_RetriesAndSkips()
     {
         var loggerMock = new Mock<ILogger<DeadLetterSink<string>>>();
-        await using var memoryStream = new MemoryStream();
-        var sink = new DeadLetterSink<string>(path: "dummy.json", logger: loggerMock.Object, stream: memoryStream);
-        sink.SetTestExceptionForTesting([true, true, true]);
+        var lineWriter = new FaultInjectingDeadLetterLineWriter(
+            new IOException("first write failed"),
+            new IOException("second write failed"),
+            new IOException("third write failed"));
+        var sink = new DeadLetterSink<string>("dummy.json", loggerMock.Object, lineWriter);
 
         await sink.WriteAsync(Envelope(CreateDeadLetter("payload", "test error", 1UL)));
+        await sink.DisposeAsync();
 
         loggerMock.Verify(
             x => x.Log(
@@ -121,16 +124,17 @@ public class DeadLetterSinkTests
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
 
-        await sink.DisposeAsync();
+        lineWriter.Lines.Should().BeEmpty();
     }
 
     [Fact]
     public async Task WriteAsync_IoException_RecoversOnRetry()
     {
         var loggerMock = new Mock<ILogger<DeadLetterSink<string>>>();
-        await using var memoryStream = new MemoryStream();
-        var sink = new DeadLetterSink<string>(path: "dummy.json", logger: loggerMock.Object, stream: memoryStream);
-        sink.SetTestExceptionForTesting([true, true, false]);
+        var lineWriter = new FaultInjectingDeadLetterLineWriter(
+            new IOException("first write failed"),
+            new IOException("second write failed"));
+        var sink = new DeadLetterSink<string>("dummy.json", loggerMock.Object, lineWriter);
 
         await sink.WriteAsync(Envelope(CreateDeadLetter("payload", "recoverable error", 99UL)));
         await sink.DisposeAsync();
@@ -144,9 +148,7 @@ public class DeadLetterSinkTests
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Exactly(2));
 
-        memoryStream.Position = 0;
-        using var reader = new StreamReader(memoryStream);
-        var writtenContent = reader.ReadToEnd();
+        var writtenContent = lineWriter.Lines.Single();
         writtenContent.Should().Contain("recoverable error");
         writtenContent.Should().Contain("\"TraceId\":99");
     }
@@ -184,6 +186,18 @@ public class DeadLetterSinkTests
         }
     }
 
+    [Fact]
+    public async Task DisposeAsync_DisposesWriterOnce()
+    {
+        var lineWriter = new FaultInjectingDeadLetterLineWriter();
+        var sink = new DeadLetterSink<string>("dummy.json", null, lineWriter);
+
+        await sink.DisposeAsync();
+        await sink.DisposeAsync();
+
+        lineWriter.DisposeCount.Should().Be(1);
+    }
+
     private static ProcessingEnvelope<DeadLetterEnvelope<T>> Envelope<T>(DeadLetterEnvelope<T> deadLetter) =>
         ProcessingEnvelope<DeadLetterEnvelope<T>>.Create(
             deadLetter,
@@ -206,6 +220,36 @@ public class DeadLetterSinkTests
             Attempt = 3,
             FailedAtUtc = new DateTimeOffset(2026, 6, 14, 0, 0, 0, TimeSpan.Zero),
         };
+
+    private sealed class FaultInjectingDeadLetterLineWriter : IDeadLetterLineWriter
+    {
+        private readonly Queue<Exception> _writeFailures;
+        private readonly List<string> _lines = [];
+
+        public FaultInjectingDeadLetterLineWriter(params Exception[] writeFailures)
+        {
+            _writeFailures = new Queue<Exception>(writeFailures);
+        }
+
+        public IReadOnlyList<string> Lines => _lines;
+
+        public int DisposeCount { get; private set; }
+
+        public ValueTask WriteLineAsync(string line, CancellationToken ct)
+        {
+            if (_writeFailures.Count > 0)
+                throw _writeFailures.Dequeue();
+
+            _lines.Add(line);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            return ValueTask.CompletedTask;
+        }
+    }
 }
 
 public sealed record AotDeadLetterItem(int Id, string Name);
