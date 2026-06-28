@@ -231,14 +231,7 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
         var completion = scopedRun.CompleteAndDisposeAsync();
         _healthMonitor?.Track(inner);
 
-        return new PipelineRun<TOutput>(
-            inner.Outputs,
-            completion,
-            () => inner.State,
-            inner.CancelAsync,
-            inner.DrainAsync,
-            inner.AbortAsync,
-            scopedRun.DisposeAsync);
+        return inner.WithLifetime(completion, scopedRun.DisposeAsync);
     }
 }
 

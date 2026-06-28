@@ -151,6 +151,11 @@ services.AddSmartPipe<Order, OrderDto>(
 Resolve `ISmartPipeFactory<Order, OrderDto>` and call `Start()`, or use
 `AddSmartPipeHostedService<TInput,TOutput>()` for background hosting.
 
+Factory-created runs preserve the underlying runtime controls: `CancelAsync`,
+`DrainAsync`, `TryDrainAsync`, `AbortAsync`, `Metrics`, `Outputs`, and `State`.
+The DI wrapper only replaces the completion/disposal lifetime so the run scope is
+disposed exactly once when the run completes or is disposed manually.
+
 ### Factory Vs Instance Builders
 
 Instance pipelines use concrete components and are single-use:

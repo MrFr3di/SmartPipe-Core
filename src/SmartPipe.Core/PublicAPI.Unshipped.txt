@@ -71,6 +71,7 @@ SmartPipe.Core.PipelineResultKind.Filtered = 2 -> SmartPipe.Core.PipelineResultK
 SmartPipe.Core.PipelineResultKind.Skipped = 3 -> SmartPipe.Core.PipelineResultKind
 SmartPipe.Core.PipelineResultKind.Success = 0 -> SmartPipe.Core.PipelineResultKind
 SmartPipe.Core.PipelineRun<TOutput>.TryDrainAsync(System.TimeSpan timeout, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.PipelineDrainResult!>
+SmartPipe.Core.PipelineRun<TOutput>.WithLifetime(System.Threading.Tasks.Task! completion, System.Func<System.Threading.Tasks.ValueTask>! dispose) -> SmartPipe.Core.PipelineRun<TOutput>!
 SmartPipe.Core.SmartPipeMetrics.ItemsDropped.get -> long
 SmartPipe.Core.SmartPipeMetrics.ItemsFiltered.get -> long
 SmartPipe.Core.SmartPipeMetrics.ObserverEventsDropped.get -> long

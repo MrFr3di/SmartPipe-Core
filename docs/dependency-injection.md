@@ -30,6 +30,21 @@ explicitly registered and intended to be reused by the container.
 Use `ValidateScopes = true` in tests and hosted applications to catch accidental
 root-scope captures.
 
+## Factory Run Lifetime
+
+`ISmartPipeFactory<TInput,TOutput>.Start()` and `StartAsync()` return a
+`PipelineRun<TOutput>` that preserves the underlying runtime controls:
+`CancelAsync`, `DrainAsync`, `TryDrainAsync`, `AbortAsync`, `Metrics`, `Outputs`,
+and `State`.
+
+The factory wrapper replaces only completion/disposal lifetime so the DI scope
+that owns scoped source/stage/sink services is disposed exactly once when the run
+completes or when the caller disposes the run manually.
+
+The built-in DI factory overrides `StartAsync()`. The default interface
+implementation throws instead of bridging through `Start()` so custom factories
+must explicitly implement asynchronous startup when they support it.
+
 ## Hosted Service
 
 ```csharp

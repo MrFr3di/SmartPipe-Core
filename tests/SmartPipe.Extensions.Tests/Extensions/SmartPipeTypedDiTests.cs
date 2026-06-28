@@ -44,6 +44,45 @@ public sealed class SmartPipeTypedDiTests
     }
 
     [Fact]
+    public async Task DI_Factory_Run_PreservesTryDrainAsync()
+    {
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var services = CreateControllablePipelineServices(gate);
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true });
+        var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
+
+        var run = await factory.StartAsync();
+
+        try
+        {
+            var result = await run.TryDrainAsync(TimeSpan.FromMilliseconds(50));
+
+            result.Status.Should().NotBe(PipelineDrainStatus.AlreadyCompleted);
+        }
+        finally
+        {
+            gate.TrySetResult();
+            await ObserveCompletionAfterManualDisposeAsync(run);
+        }
+    }
+
+    [Fact]
+    public async Task DI_Factory_Run_PreservesMetricsSnapshot()
+    {
+        var services = CreateTypedPipelineServices();
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
+
+        var run = await factory.StartAsync();
+
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        run.Metrics.ItemsProcessed.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
     public async Task ISmartPipeFactory_DefaultStartAsync_DoesNotBridgeToStart()
     {
         ISmartPipeFactory<int, int> factory = new SyncOnlyTypedFactory();

@@ -75,6 +75,35 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
         _metricsProvider = metricsProvider;
     }
 
+    /// <summary>
+    /// Creates a run handle over the same output stream and runtime controls with a replacement completion and disposal lifetime.
+    /// </summary>
+    /// <param name="completion">Replacement completion task for the returned run handle.</param>
+    /// <param name="dispose">Replacement disposal delegate for the returned run handle.</param>
+    /// <returns>
+    /// A run handle that preserves this run's outputs, state, cancellation, drain, abort,
+    /// structured drain, and metrics delegates while using the supplied completion and disposal lifetime.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="completion"/> or <paramref name="dispose"/> is null.
+    /// </exception>
+    public PipelineRun<TOutput> WithLifetime(Task completion, Func<ValueTask> dispose)
+    {
+        ArgumentNullException.ThrowIfNull(completion);
+        ArgumentNullException.ThrowIfNull(dispose);
+
+        return new PipelineRun<TOutput>(
+            Outputs,
+            completion,
+            _stateProvider,
+            _cancel,
+            _drain,
+            _tryDrain,
+            _abort,
+            dispose,
+            _metricsProvider);
+    }
+
     private readonly Func<PipelineRunState> _stateProvider;
 
     /// <summary>Gets the primary envelope-aware output stream.</summary>
