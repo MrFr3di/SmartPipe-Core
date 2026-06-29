@@ -29,7 +29,7 @@ public sealed class AdaptiveParallelismOptions
     /// <summary>Gets the maximum concurrency limit change allowed per controller decision.</summary>
     public int MaxAdjustmentStep { get; init; } = 1;
 
-    /// <summary>Gets the failure or retry ratio that prevents growth and reduces concurrency.</summary>
+    /// <summary>Gets the failure ratio that prevents growth and reduces concurrency.</summary>
     public double FailurePressureThreshold { get; init; } = 0.10;
 
     /// <summary>Gets the minimum smoothing factor used for latency samples.</summary>

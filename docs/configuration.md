@@ -54,6 +54,8 @@ target latency, dead zone, cooldown, and configured min/max concurrency bounds.
 `Cooldown` is the minimum elapsed time between adaptive limit changes. The
 current `2.1.0` model is completion-based: the runtime records each envelope
 completion and does not run a background sampling loop or periodic timer.
+Retry attempts remain observable through retry metrics and events, but retry
+counts are not adaptive admission signals in `2.1.0`.
 
 | Option | Default | Notes |
 |---|---:|---|

@@ -32,7 +32,8 @@ not the sequential stage chain inside one envelope.
 `MaxConcurrency` remains the hard cap. The adaptive limit can move within the
 configured min/max bounds based on completion latency and failure pressure. The
 current `2.1.0` model is completion-based and does not run a background sampling
-loop.
+loop. Retry attempts remain observable through metrics and events, but they do
+not affect adaptive admission decisions in `2.1.0`.
 
 ## Factory And Instance Lifetimes
 

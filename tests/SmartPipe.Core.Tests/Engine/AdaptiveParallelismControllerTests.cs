@@ -383,12 +383,8 @@ public sealed class AdaptiveParallelismControllerTests
         afterRecovery.Reason.Should().Be(AdaptiveParallelismDecisionReason.LowLatency);
     }
 
-    [Theory]
-    [InlineData(1, 0)]
-    [InlineData(0, 1)]
-    public void Decide_FailureOrRetryPressure_DoesNotIncreaseLimit(
-        long failedDelta,
-        long retriedDelta)
+    [Fact]
+    public void Decide_FailurePressure_DoesNotIncreaseLimit()
     {
         var controller = new AdaptiveParallelismController(ValidOptions());
 
@@ -397,15 +393,14 @@ public sealed class AdaptiveParallelismControllerTests
             latency: TimeSpan.FromMilliseconds(20),
             sinceLastDecision: TimeSpan.FromSeconds(10),
             processedDelta: 10,
-            failedDelta: failedDelta,
-            retriedDelta: retriedDelta));
+            failedDelta: 1));
 
         decision.TargetConcurrency.Should().Be(3);
-        decision.Reason.Should().Be(AdaptiveParallelismDecisionReason.FailureOrRetryPressure);
+        decision.Reason.Should().Be(AdaptiveParallelismDecisionReason.FailurePressure);
     }
 
     [Fact]
-    public void Decide_FailureOrRetryPressureAtMin_DoesNotGoBelowMin()
+    public void Decide_FailurePressureAtMin_DoesNotGoBelowMin()
     {
         var controller = new AdaptiveParallelismController(ValidOptions());
 
@@ -417,7 +412,7 @@ public sealed class AdaptiveParallelismControllerTests
             failedDelta: 1));
 
         decision.TargetConcurrency.Should().Be(1);
-        decision.Reason.Should().Be(AdaptiveParallelismDecisionReason.FailureOrRetryPressure);
+        decision.Reason.Should().Be(AdaptiveParallelismDecisionReason.FailurePressure);
     }
 
     [Fact]
@@ -433,7 +428,7 @@ public sealed class AdaptiveParallelismControllerTests
             failedDelta: 1));
 
         decision.TargetConcurrency.Should().Be(3);
-        decision.Reason.Should().Be(AdaptiveParallelismDecisionReason.FailureOrRetryPressure);
+        decision.Reason.Should().Be(AdaptiveParallelismDecisionReason.FailurePressure);
     }
 
     [Fact]
@@ -449,7 +444,7 @@ public sealed class AdaptiveParallelismControllerTests
             failedDelta: 1));
 
         decision.TargetConcurrency.Should().Be(3);
-        decision.Reason.Should().Be(AdaptiveParallelismDecisionReason.FailureOrRetryPressure);
+        decision.Reason.Should().Be(AdaptiveParallelismDecisionReason.FailurePressure);
     }
 
     [Fact]
@@ -512,13 +507,11 @@ public sealed class AdaptiveParallelismControllerTests
         TimeSpan latency,
         TimeSpan sinceLastDecision,
         long processedDelta = 100,
-        long failedDelta = 0,
-        long retriedDelta = 0) =>
+        long failedDelta = 0) =>
         new(
             currentLimit,
             latency,
             processedDelta,
             failedDelta,
-            retriedDelta,
             sinceLastDecision);
 }

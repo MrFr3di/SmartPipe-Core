@@ -113,7 +113,7 @@ public sealed class AdaptiveParallelismControllerStressTests
             sinceLastDecision: TimeSpan.FromSeconds(10)));
 
         underPressure.TargetConcurrency.Should().BeLessThanOrEqualTo(4);
-        underPressure.Reason.Should().Be(AdaptiveParallelismDecisionReason.FailureOrRetryPressure);
+        underPressure.Reason.Should().Be(AdaptiveParallelismDecisionReason.FailurePressure);
         afterRecovery.TargetConcurrency.Should().BeGreaterThan(underPressure.TargetConcurrency);
         afterRecovery.Reason.Should().Be(AdaptiveParallelismDecisionReason.LowLatency);
     }
@@ -139,7 +139,6 @@ public sealed class AdaptiveParallelismControllerStressTests
                 : TimeSpan.FromMilliseconds(500);
             var processed = random.Next(0, 50);
             var failed = random.Next(0, 6) == 0 ? random.Next(0, 3) : 0;
-            var retried = random.Next(0, 6) == 0 ? random.Next(0, 3) : 0;
             var snapshotCurrent = step % 149 == 0
                 ? int.MaxValue
                 : step % 137 == 0
@@ -151,11 +150,10 @@ public sealed class AdaptiveParallelismControllerStressTests
                 sample,
                 sinceLastDecision,
                 processed,
-                failed,
-                retried));
+                failed));
             var because = string.Create(
                 CultureInfo.InvariantCulture,
-                $"step={step}, sample={sample}, current={snapshotCurrent}, processed={processed}, failed={failed}, retried={retried}, since={sinceLastDecision}, previous={decision.PreviousConcurrency}, target={decision.TargetConcurrency}, smoothed={decision.SmoothedLatency}, reason={decision.Reason}");
+                $"step={step}, sample={sample}, current={snapshotCurrent}, processed={processed}, failed={failed}, since={sinceLastDecision}, previous={decision.PreviousConcurrency}, target={decision.TargetConcurrency}, smoothed={decision.SmoothedLatency}, reason={decision.Reason}");
 
             decision.PreviousConcurrency.Should().BeInRange(
                 options.MinConcurrency,
@@ -208,13 +206,11 @@ public sealed class AdaptiveParallelismControllerStressTests
         TimeSpan latency,
         TimeSpan sinceLastDecision,
         long processedDelta = 100,
-        long failedDelta = 0,
-        long retriedDelta = 0) =>
+        long failedDelta = 0) =>
         new(
             currentLimit,
             latency,
             processedDelta,
             failedDelta,
-            retriedDelta,
             sinceLastDecision);
 }

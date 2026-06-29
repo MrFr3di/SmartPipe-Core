@@ -62,7 +62,6 @@ internal sealed class AdaptiveParallelismRuntimeState : IDisposable, IAsyncDispo
                 latency,
                 ProcessedDelta: 1,
                 FailedDelta: failed ? 1 : 0,
-                RetriedDelta: 0,
                 _clock.GetElapsedTime(_lastLimitChangeTimestamp, now)));
 
             if (decision.TargetConcurrency == decision.PreviousConcurrency)

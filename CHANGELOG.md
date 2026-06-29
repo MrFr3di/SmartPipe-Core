@@ -12,7 +12,7 @@
 
 ### New Features
 
-- **Adaptive parallelism admission** — typed runtime options can opt into completion-based adaptive admission control for bounded, backpressure-aware parallel execution.
+- **Adaptive parallelism admission** — typed runtime options can opt into completion-based adaptive admission control driven by latency and failure pressure for bounded, backpressure-aware parallel execution.
 - **ChannelMerge cancellation-aware overload** — `ChannelMerge.Merge(first, second, options, cancellationToken)` is available for bounded or backpressure-sensitive merges.
 - **EfCoreSelector.WithTracking** — EF Core selector callers can opt back into change tracking explicitly.
 

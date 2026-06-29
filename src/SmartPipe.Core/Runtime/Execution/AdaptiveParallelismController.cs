@@ -32,13 +32,13 @@ internal sealed class AdaptiveParallelismController
 
         var smoothed = GetSmoothedLatency(snapshot.LatencySample);
 
-        if (HasFailureOrRetryPressure(snapshot))
+        if (HasFailurePressure(snapshot))
         {
             return new AdaptiveParallelismDecision(
                 current,
                 DecreaseConcurrencyLimit(current),
                 smoothed.Latency,
-                AdaptiveParallelismDecisionReason.FailureOrRetryPressure);
+                AdaptiveParallelismDecisionReason.FailurePressure);
         }
 
         var error = _options.TargetLatency - smoothed.Latency;
@@ -102,11 +102,10 @@ internal sealed class AdaptiveParallelismController
         return new SmoothedLatency(TimeSpan.FromMilliseconds(next));
     }
 
-    private bool HasFailureOrRetryPressure(AdaptiveParallelismSnapshot snapshot)
+    private bool HasFailurePressure(AdaptiveParallelismSnapshot snapshot)
     {
         var denominator = Math.Max(1, snapshot.ProcessedDelta);
-        return (double)snapshot.FailedDelta / denominator >= _options.FailurePressureThreshold
-            || (double)snapshot.RetriedDelta / denominator >= _options.FailurePressureThreshold;
+        return (double)snapshot.FailedDelta / denominator >= _options.FailurePressureThreshold;
     }
 
     private static int Clamp(int value, int min, int max) => Math.Min(max, Math.Max(min, value));
@@ -136,7 +135,6 @@ internal readonly record struct AdaptiveParallelismSnapshot(
     TimeSpan LatencySample,
     long ProcessedDelta,
     long FailedDelta,
-    long RetriedDelta,
     TimeSpan TimeSinceLastDecision);
 
 internal readonly record struct AdaptiveParallelismDecision(
@@ -153,5 +151,5 @@ internal enum AdaptiveParallelismDecisionReason
     LowLatency,
     AtMin,
     AtMax,
-    FailureOrRetryPressure,
+    FailurePressure,
 }
