@@ -19,8 +19,6 @@ SmartPipe.Core.AdaptiveParallelismOptions.MinSmoothingFactor.get -> double
 SmartPipe.Core.AdaptiveParallelismOptions.MinSmoothingFactor.init -> void
 SmartPipe.Core.AdaptiveParallelismOptions.MinConcurrency.get -> int
 SmartPipe.Core.AdaptiveParallelismOptions.MinConcurrency.init -> void
-SmartPipe.Core.AdaptiveParallelismOptions.SampleInterval.get -> System.TimeSpan
-SmartPipe.Core.AdaptiveParallelismOptions.SampleInterval.init -> void
 SmartPipe.Core.AdaptiveParallelismOptions.TargetLatency.get -> System.TimeSpan
 SmartPipe.Core.AdaptiveParallelismOptions.TargetLatency.init -> void
 SmartPipe.Core.InputDroppedEvent

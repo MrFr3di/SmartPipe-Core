@@ -21,7 +21,6 @@ public sealed class AdaptiveParallelismControllerTests
         options.AdaptiveParallelism.TargetLatency.Should().BeGreaterThan(TimeSpan.Zero);
         options.AdaptiveParallelism.DeadZone.Should().BeGreaterThan(TimeSpan.Zero);
         options.AdaptiveParallelism.Cooldown.Should().BeGreaterThan(TimeSpan.Zero);
-        options.AdaptiveParallelism.SampleInterval.Should().BeGreaterThan(TimeSpan.Zero);
         options.AdaptiveParallelism.MaxAdjustmentStep.Should().Be(1);
         options.AdaptiveParallelism.FailurePressureThreshold.Should().Be(0.10);
         options.AdaptiveParallelism.MinSmoothingFactor.Should().Be(0.2);
@@ -53,15 +52,13 @@ public sealed class AdaptiveParallelismControllerTests
     }
 
     [Theory]
-    [InlineData(0, 5, 100, 1000, "TargetLatency")]
-    [InlineData(100, 0, 100, 1000, "DeadZone")]
-    [InlineData(100, 5, 0, 1000, "Cooldown")]
-    [InlineData(100, 5, 100, 0, "SampleInterval")]
+    [InlineData(0, 5, 100, "TargetLatency")]
+    [InlineData(100, 0, 100, "DeadZone")]
+    [InlineData(100, 5, 0, "Cooldown")]
     public void PipelineRuntimeOptions_Validate_RejectsInvalidAdaptiveTiming(
         int targetLatencyMs,
         int deadZoneMs,
         int cooldownMs,
-        int sampleIntervalMs,
         string paramName)
     {
         var options = new PipelineRuntimeOptions
@@ -69,8 +66,7 @@ public sealed class AdaptiveParallelismControllerTests
             AdaptiveParallelism = ValidOptions(
                 targetLatency: TimeSpan.FromMilliseconds(targetLatencyMs),
                 deadZone: TimeSpan.FromMilliseconds(deadZoneMs),
-                cooldown: TimeSpan.FromMilliseconds(cooldownMs),
-                sampleInterval: TimeSpan.FromMilliseconds(sampleIntervalMs)),
+                cooldown: TimeSpan.FromMilliseconds(cooldownMs)),
         };
 
         var act = () => options.Validate();
@@ -494,7 +490,6 @@ public sealed class AdaptiveParallelismControllerTests
         TimeSpan? targetLatency = null,
         TimeSpan? deadZone = null,
         TimeSpan? cooldown = null,
-        TimeSpan? sampleInterval = null,
         int maxAdjustmentStep = 1,
         double failurePressureThreshold = 0.10,
         double minSmoothingFactor = 0.2) =>
@@ -507,7 +502,6 @@ public sealed class AdaptiveParallelismControllerTests
             TargetLatency = targetLatency ?? TimeSpan.FromMilliseconds(100),
             DeadZone = deadZone ?? TimeSpan.FromMilliseconds(5),
             Cooldown = cooldown ?? TimeSpan.FromMilliseconds(100),
-            SampleInterval = sampleInterval ?? TimeSpan.FromSeconds(1),
             MaxAdjustmentStep = maxAdjustmentStep,
             FailurePressureThreshold = failurePressureThreshold,
             MinSmoothingFactor = minSmoothingFactor,

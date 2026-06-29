@@ -186,7 +186,6 @@ public sealed class AdaptiveParallelismControllerStressTests
         TimeSpan? targetLatency = null,
         TimeSpan? deadZone = null,
         TimeSpan? cooldown = null,
-        TimeSpan? sampleInterval = null,
         int maxAdjustmentStep = 1,
         double failurePressureThreshold = 0.10,
         double minSmoothingFactor = 0.2) =>
@@ -199,7 +198,6 @@ public sealed class AdaptiveParallelismControllerStressTests
             TargetLatency = targetLatency ?? TimeSpan.FromMilliseconds(100),
             DeadZone = deadZone ?? TimeSpan.FromMilliseconds(5),
             Cooldown = cooldown ?? TimeSpan.FromMilliseconds(100),
-            SampleInterval = sampleInterval ?? TimeSpan.FromSeconds(1),
             MaxAdjustmentStep = maxAdjustmentStep,
             FailurePressureThreshold = failurePressureThreshold,
             MinSmoothingFactor = minSmoothingFactor,

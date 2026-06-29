@@ -21,6 +21,7 @@ or exactly-once delivery system.
 |---|---|
 | In-process processing only | Pipelines run inside the caller's process. No cross-process hops. |
 | Bounded channels | Input, output, and buffered observer channels are bounded. |
+| Adaptive admission | Adaptive parallelism is opt-in; see [Configuration](docs/configuration.md#adaptive-parallelism). |
 | Envelope metadata | `ProcessingEnvelope<T>` carries `PipelineId`, `RunId`, `TraceId`, `Metadata`, `Lineage`, `Attempt`, `CreatedAtUtc`. |
 | Typed source/transform/sink | `IPipelineSource<T>`, `IPipelineTransformer<TInput,TOutput>`, `IPipelineSink<T>`. |
 | Configured retry/timeout/circuit breaker | Per-stage `StageFailureOptions`; circuit breaker uses half-open probe leases. |

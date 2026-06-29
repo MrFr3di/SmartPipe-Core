@@ -33,7 +33,6 @@ internal sealed class AdaptiveParallelismRuntimeState : IDisposable, IAsyncDispo
             TargetLatency = adaptive.TargetLatency,
             DeadZone = adaptive.DeadZone,
             Cooldown = adaptive.Cooldown,
-            SampleInterval = adaptive.SampleInterval,
             MaxAdjustmentStep = adaptive.MaxAdjustmentStep,
             FailurePressureThreshold = adaptive.FailurePressureThreshold,
             MinSmoothingFactor = adaptive.MinSmoothingFactor,

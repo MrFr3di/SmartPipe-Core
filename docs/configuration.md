@@ -22,12 +22,72 @@ Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
 | `OutputPolicy` | `SuppressSuccessWhenSinkAttached` | Typed output policy. |
 | `OrderingMode` | `Unordered` | Cross-item output ordering is not guaranteed. |
 | `ObserverDispatch` | `Inline` | Inline or bounded buffered observer dispatch. |
+| `AdaptiveParallelism` | `disabled` | Opt-in adaptive admission control for parallel envelope processing; requires `InputFullMode = Wait`. |
 | `Clock` | `SystemPipelineClock.Instance` | Timestamps and timeout budgets. |
 
 All runtime channels are bounded. `BoundedChannelFullMode.Wait` is the safe
 default because it applies backpressure instead of dropping accepted work.
 When lossy input, output, or observer full modes are configured, the runtime
 records drop metrics and emits best-effort drop events.
+
+## Adaptive Parallelism
+
+Adaptive parallelism is disabled by default. Enable it with
+`PipelineRuntimeOptions.AdaptiveParallelism.Enabled = true`.
+
+Adaptive parallelism applies only when the effective `MaxConcurrency` is greater
+than `1`, and it requires `InputFullMode = BoundedChannelFullMode.Wait` so input
+backpressure remains lossless. Runtime `MaxConcurrency` remains the hard cap.
+`AdaptiveParallelism.MaxConcurrency` is an additional adaptive cap, so the
+effective adaptive maximum is:
+
+```text
+min(runtime effective MaxConcurrency, AdaptiveParallelism.MaxConcurrency)
+```
+
+Adaptive admission changes how many envelopes are admitted to processing at the
+same time. The stage chain inside one envelope remains sequential. With parallel
+processing, cross-envelope output order is still not guaranteed.
+
+The controller reacts to per-envelope completion latency, failure pressure,
+target latency, dead zone, cooldown, and configured min/max concurrency bounds.
+`Cooldown` is the minimum elapsed time between adaptive limit changes. The
+current `2.1.0` model is completion-based: the runtime records each envelope
+completion and does not run a background sampling loop or periodic timer.
+
+| Option | Default | Notes |
+|---|---:|---|
+| `Enabled` | `false` | Enables adaptive admission. |
+| `MinConcurrency` | `1` | Lower bound for adaptive admission limit. |
+| `MaxConcurrency` | `Environment.ProcessorCount` | Adaptive upper bound, still capped by runtime `MaxConcurrency`. |
+| `InitialConcurrency` | `1` | Initial adaptive admission limit. |
+| `TargetLatency` | `100 ms` | Desired per-envelope processing latency. |
+| `DeadZone` | `5 ms` | Latency band around target where no limit change is made. |
+| `Cooldown` | `1 second` | Minimum elapsed time between adaptive limit changes. |
+| `MaxAdjustmentStep` | `1` | Maximum limit change per controller decision. |
+| `FailurePressureThreshold` | `0.10` | Failure pressure threshold that prevents growth and reduces concurrency. |
+| `MinSmoothingFactor` | `0.2` | Lower bound for latency smoothing factor. |
+
+```csharp
+var options = new PipelineRuntimeOptions
+{
+    MaxConcurrency = 8,
+    InputFullMode = BoundedChannelFullMode.Wait,
+    AdaptiveParallelism = new AdaptiveParallelismOptions
+    {
+        Enabled = true,
+        MinConcurrency = 1,
+        MaxConcurrency = 8,
+        InitialConcurrency = 2,
+        TargetLatency = TimeSpan.FromMilliseconds(100),
+        DeadZone = TimeSpan.FromMilliseconds(10),
+        Cooldown = TimeSpan.FromSeconds(1),
+        MaxAdjustmentStep = 1,
+        FailurePressureThreshold = 0.10,
+        MinSmoothingFactor = 0.2,
+    },
+};
+```
 
 ## Output Policy
 

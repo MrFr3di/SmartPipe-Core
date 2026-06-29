@@ -26,9 +26,6 @@ public sealed class AdaptiveParallelismOptions
     /// <summary>Gets the minimum elapsed time between adaptive limit changes.</summary>
     public TimeSpan Cooldown { get; init; } = TimeSpan.FromSeconds(1);
 
-    /// <summary>Gets the controller sampling interval used by future runtime integration.</summary>
-    public TimeSpan SampleInterval { get; init; } = TimeSpan.FromSeconds(1);
-
     /// <summary>Gets the maximum concurrency limit change allowed per controller decision.</summary>
     public int MaxAdjustmentStep { get; init; } = 1;
 
@@ -75,12 +72,6 @@ public sealed class AdaptiveParallelismOptions
                 nameof(Cooldown),
                 Cooldown,
                 "Adaptive cooldown must be greater than zero.");
-
-        if (SampleInterval <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(
-                nameof(SampleInterval),
-                SampleInterval,
-                "Adaptive sample interval must be greater than zero.");
 
         if (MaxAdjustmentStep < 1)
             throw new ArgumentOutOfRangeException(

@@ -370,7 +370,6 @@ public sealed class TypedPipelineAdaptiveParallelismTests
                 TargetLatency = TimeSpan.FromMilliseconds(100),
                 DeadZone = TimeSpan.FromMilliseconds(5),
                 Cooldown = TimeSpan.FromTicks(1),
-                SampleInterval = TimeSpan.FromSeconds(1),
                 MaxAdjustmentStep = 1,
                 FailurePressureThreshold = 0.10,
                 MinSmoothingFactor = 1,
