@@ -29,6 +29,13 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
     /// <param name="sql">SQL query to execute.</param>
     /// <param name="parameters">Optional query parameters.</param>
     /// <param name="commandTimeout">Command timeout in seconds (default: 30).</param>
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DapperSelector{T}"/> class.
+    /// </summary>
+    /// <param name="connection">The database connection used to execute the query.</param>
+    /// <param name="sql">The SQL statement to execute.</param>
+    /// <param name="parameters">The parameters passed to the SQL statement.</param>
+    /// <param name="commandTimeout">The command timeout, in seconds.</param>
     /// <param name="logger">Optional logger.</param>
     [SuppressMessage(
         "ApiDesign",
@@ -52,6 +59,14 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
     /// <param name="parameters">Optional query parameters.</param>
     /// <param name="leaveOpen">Whether to leave the injected connection open when disposing the source.</param>
     /// <param name="commandTimeout">Command timeout in seconds (default: 30).</param>
+    /// <summary>
+    /// Initializes a selector that executes a SQL statement against a database connection.
+    /// </summary>
+    /// <param name="connection">The connection to use for executing the query.</param>
+    /// <param name="sql">The SQL statement to execute.</param>
+    /// <param name="parameters">The parameters passed to the SQL statement.</param>
+    /// <param name="leaveOpen">Whether to leave the connection open when the selector is disposed.</param>
+    /// <param name="commandTimeout">The command timeout, in seconds.</param>
     /// <param name="logger">Optional logger.</param>
     public DapperSelector(
         DbConnection connection,
@@ -65,6 +80,15 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of the Dapper selector.
+    /// </summary>
+    /// <param name="connection">The database connection to use.</param>
+    /// <param name="sql">The SQL statement to execute.</param>
+    /// <param name="parameters">The parameters to pass to the command.</param>
+    /// <param name="commandTimeout">The command timeout, in seconds.</param>
+    /// <param name="logger">The logger used to report selector activity.</param>
+    /// <param name="leaveOpen">Whether to leave the connection open when the selector is disposed.</param>
     private DapperSelector(
         IDbConnection connection,
         string sql,
@@ -82,7 +106,10 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
         _leaveOpen = leaveOpen;
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Opens the underlying connection if needed.
+    /// </summary>
+    /// <param name="ct">A token that cancels the operation before or during opening.</param>
     public async ValueTask InitializeAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -99,7 +126,11 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
         _connection.Open();
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Streams envelopes for each row returned by the configured SQL query.
+    /// </summary>
+    /// <param name="ct">A cancellation token used to stop reading rows.</param>
+    /// <returns>The sequence of envelopes produced from the query results.</returns>
     public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
     )
@@ -127,6 +158,13 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
         _logger?.LogInformation("Dapper source completed. SQL: {Sql}", _sql);
     }
 
+    /// <summary>
+    /// Reads rows from a database connection and maps them to processing envelopes.
+    /// </summary>
+    /// <param name="connection">The database connection to read from.</param>
+    /// <param name="command">The Dapper command to execute.</param>
+    /// <param name="ct">The cancellation token to observe while reading rows.</param>
+    /// <returns>The mapped processing envelopes for each returned row.</returns>
     private async IAsyncEnumerable<ProcessingEnvelope<T>> ReadDbConnectionAsync(
         DbConnection connection,
         CommandDefinition command,
@@ -153,6 +191,12 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
         }
     }
 
+    /// <summary>
+    /// Reads result rows from a legacy database connection.
+    /// </summary>
+    /// <param name="command">The Dapper command to execute.</param>
+    /// <param name="ct">The cancellation token to observe while reading rows.</param>
+    /// <returns>An enumerable of envelopes containing the mapped rows.</returns>
     private IEnumerable<ProcessingEnvelope<T>> ReadLegacyConnection(
         CommandDefinition command,
         CancellationToken ct
@@ -182,7 +226,9 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Asynchronously disposes the active reader and, optionally, the connection.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -203,7 +249,9 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
         }
     }
 
-    /// <summary>Dispose reader and optionally the connection (synchronous).</summary>
+    /// <summary>
+    /// Releases the active reader and, when configured, the underlying connection.
+    /// </summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -219,11 +267,20 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
     {
         private readonly PropertyBinding[] _bindings;
 
+        /// <summary>
+        /// Creates a row mapper from the supplied property bindings.
+        /// </summary>
+        /// <param name="bindings">The property bindings to apply when mapping a row.</param>
         private RowMapper(PropertyBinding[] bindings)
         {
             _bindings = bindings;
         }
 
+        /// <summary>
+        /// Creates a row mapper for the current record schema.
+        /// </summary>
+        /// <param name="record">The record whose column names are used to match writable properties on <typeparamref name="T"/>.</param>
+        /// <returns>A mapper configured to populate <typeparamref name="T"/> from matching columns.</returns>
         public static RowMapper Create(IDataRecord record)
         {
             var writableProperties = typeof(T)
@@ -241,6 +298,11 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
             return new RowMapper(bindings.ToArray());
         }
 
+        /// <summary>
+        /// Maps the current record to a new <typeparamref name="T"/> instance.
+        /// </summary>
+        /// <param name="record">The data record to map.</param>
+        /// <returns>A new <typeparamref name="T"/> populated from the record values.</returns>
         public T Map(IDataRecord record)
         {
             var instance = Activator.CreateInstance<T>();

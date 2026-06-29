@@ -31,7 +31,11 @@ public interface ISmartPipeFactory<TInput, TOutput>
     /// Production implementations should override this method. The default throws
     /// instead of bridging through <see cref="Start"/> to avoid sync-over-async
     /// and Start/StartAsync recursion traps.
-    /// </remarks>
+    /// <summary>
+            /// Starts a pipeline runtime asynchronously.
+            /// </summary>
+            /// <returns>The started pipeline run.</returns>
+            /// <exception cref="NotSupportedException">Thrown when the factory does not provide an asynchronous startup implementation.</exception>
     Task<PipelineRun<TOutput>> StartAsync(CancellationToken ct = default) =>
         throw new NotSupportedException(
             "Asynchronous pipeline startup is not supported by this factory. Override StartAsync.");
@@ -194,7 +198,11 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
         _healthMonitor = healthMonitor;
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Starts a pipeline run by creating a new dependency injection scope.
+    /// </summary>
+    /// <param name="ct">A token that can be used to cancel pipeline execution.</param>
+    /// <returns>A pipeline run instance.</returns>
     public async Task<PipelineRun<TOutput>> StartAsync(CancellationToken ct = default)
     {
         var scope = _scopeFactory.CreateAsyncScope();
@@ -209,7 +217,11 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Starts a new pipeline run using a fresh dependency injection scope.
+    /// </summary>
+    /// <param name="ct">A token that can be used to cancel pipeline startup and execution.</param>
+    /// <returns>A pipeline run tied to the created scope.</returns>
     public PipelineRun<TOutput> Start(CancellationToken ct = default)
     {
         var scope = _scopeFactory.CreateAsyncScope();
@@ -224,6 +236,12 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
         }
     }
 
+    /// <summary>
+    /// Creates a pipeline run from the provided service scope.
+    /// </summary>
+    /// <param name="scope">The service scope used to resolve pipeline components.</param>
+    /// <param name="ct">A token that cancels pipeline startup.</param>
+    /// <returns>The pipeline run tied to the scope and its completion lifecycle.</returns>
     private PipelineRun<TOutput> StartCore(AsyncServiceScope scope, CancellationToken ct)
     {
         var inner = _definition.Start(scope.ServiceProvider, ct);

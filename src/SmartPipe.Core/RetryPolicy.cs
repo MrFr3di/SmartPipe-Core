@@ -54,6 +54,17 @@ public class RetryPolicy
     /// <paramref name="delay"/> is not positive,
     /// <paramref name="maxDelay"/> is not positive or less than <paramref name="delay"/>,
     /// or <paramref name="strategy"/> is not a defined value.
+    /// <summary>
+    /// Initializes a retry policy with delay and backoff settings.
+    /// </summary>
+    /// <param name="maxRetries">The maximum number of retry attempts.</param>
+    /// <param name="delay">The base delay used to compute retry intervals.</param>
+    /// <param name="maxDelay">The maximum delay allowed for a retry interval.</param>
+    /// <param name="strategy">The backoff strategy used to compute retry delays.</param>
+    /// <param name="retryOn">The predicate that determines whether an error is retryable.</param>
+    /// <param name="onRetry">The callback invoked before each retry attempt.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="maxRetries"/> is less than or equal to zero, <paramref name="delay"/> or <paramref name="maxDelay"/> is less than or equal to zero, <paramref name="maxDelay"/> is less than <paramref name="delay"/>, or <paramref name="strategy"/> is not a defined <see cref="BackoffStrategy"/> value.
     /// </exception>
     public RetryPolicy(
         int maxRetries = 3,

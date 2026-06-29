@@ -675,6 +675,13 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private int _stopAcceptingRequested;
     private int _sourceStopReason;
 
+    /// <summary>
+    /// Initializes a new typed pipeline executor for a single pipeline run.
+    /// </summary>
+    /// <param name="runtime">The pipeline runtime.</param>
+    /// <param name="spec">The pipeline specification to execute.</param>
+    /// <param name="sink">The optional sink that receives pipeline results.</param>
+    /// <param name="ct">A token that cancels the run.</param>
     public TypedPipelineExecutor(
         PipelineRuntime runtime,
         TypedPipelineSpec<TInput, TOutput> spec,
@@ -735,6 +742,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             : null;
     }
 
+    /// <summary>
+    /// Creates the output channel for pipeline results.
+    /// </summary>
+    /// <param name="options">The pipeline runtime options that control output buffering and overflow behavior.</param>
+    /// <param name="itemDropped">The callback invoked when an output item cannot be accepted.</param>
+    /// <returns>The configured output channel.</returns>
     private static Channel<PipelineOutput<TOutput>> CreateOutputChannel(
         PipelineRuntimeOptions options,
         Action<PipelineOutput<TOutput>> itemDropped)
@@ -747,6 +760,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             itemDropped);
     }
 
+    /// <summary>
+    /// Starts the pipeline runtime and returns a handle for controlling the run.
+    /// </summary>
+    /// <returns>A <see cref="PipelineRun{TOutput}"/> for reading outputs and controlling the run lifecycle.</returns>
     public PipelineRun<TOutput> Start()
     {
         if (Interlocked.Exchange(ref _started, 1) != 0)
@@ -769,6 +786,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         );
     }
 
+    /// <summary>
+    /// Cancels the pipeline run.
+    /// </summary>
+    /// <param name="ct">A token that cancels waiting for the cancellation request to complete.</param>
     public async ValueTask CancelAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -848,6 +869,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         return new PipelineDrainResult(status, _lifecycle.State, elapsed, exception);
     }
 
+    /// <summary>
+    /// Aborts the current pipeline run.
+    /// </summary>
+    /// <param name="ct">A cancellation token for the abort request.</param>
     public ValueTask AbortAsync(CancellationToken ct = default)
     {
         _lifecycle.MarkAborted();
@@ -857,6 +882,13 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
+    /// <summary>
+    /// Disposes the executor and releases pipeline resources.
+    /// </summary>
+    /// <remarks>
+    /// Cancels any active run, waits for an in-flight run to finish, and then disposes the pipeline components,
+    /// observer dispatcher, and internal cancellation resources.
+    /// </remarks>
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
@@ -891,6 +923,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _cts.Dispose();
     }
 
+    /// <summary>
+    /// Runs the pipeline lifecycle and processing loop.
+    /// </summary>
+    /// <remarks>
+    /// Emits lifecycle events, initializes components, processes input sequentially or in parallel, and completes or tears down runtime resources when the run ends, is cancelled, or faults.
+    /// </remarks>
     private async Task RunAsync()
     {
         using var activity = SmartPipeActivitySource.Source.StartActivity("Pipeline.Run", ActivityKind.Internal);
@@ -1006,6 +1044,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Requests a graceful drain of the current pipeline run.
+    /// </summary>
     internal void RequestDrain()
     {
         Volatile.Write(ref _drainRequested, 1);
@@ -1013,14 +1054,24 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _sourceCts.Cancel();
     }
 
-    private void RequestStopAccepting() => Volatile.Write(ref _stopAcceptingRequested, 1);
+    /// <summary>
+/// Requests that the pipeline stop accepting new input.
+/// </summary>
+private void RequestStopAccepting() => Volatile.Write(ref _stopAcceptingRequested, 1);
 
+    /// <summary>
+    /// Stops the source due to runtime cancellation.
+    /// </summary>
     private void RequestRuntimeSourceCancellation()
     {
         RecordSourceStopReason(SourceStopReason.RuntimeCancellation);
         _sourceCts.Cancel();
     }
 
+    /// <summary>
+    /// Records the source stop reason once.
+    /// </summary>
+    /// <param name="reason">The reason to store.</param>
     private void RecordSourceStopReason(SourceStopReason reason)
     {
         Interlocked.CompareExchange(
@@ -1029,15 +1080,31 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             (int)SourceStopReason.None);
     }
 
+    /// <summary>
+    /// Determines whether the pipeline should stop accepting new inputs.
+    /// </summary>
+    /// <returns>
+    /// <c>true</c> if draining has been requested or stop-accepting has been requested; otherwise, <c>false</c>.
+    /// </returns>
     private bool ShouldStopAccepting()
     {
         return Volatile.Read(ref _drainRequested) != 0
             || Volatile.Read(ref _stopAcceptingRequested) != 0;
     }
 
-    private static bool ShouldUseAdaptiveAdmission(PipelineRuntimeOptions options) =>
+    /// <summary>
+        /// Determines whether adaptive admission should be enabled for the runtime.
+        /// </summary>
+        /// <param name="options">The pipeline runtime options.</param>
+        /// <returns><c>true</c> if adaptive parallelism is enabled and the effective maximum concurrency is greater than 1, <c>false</c> otherwise.</returns>
+        private static bool ShouldUseAdaptiveAdmission(PipelineRuntimeOptions options) =>
         options.AdaptiveParallelism.Enabled && options.EffectiveMaxConcurrency > 1;
 
+    /// <summary>
+    /// Processes source envelopes sequentially until the source is exhausted or the pipeline stops accepting input.
+    /// </summary>
+    /// <param name="sourceToken">The token used to read envelopes from the source.</param>
+    /// <param name="processingToken">The token used for envelope processing.</param>
     private async ValueTask RunSequentialProcessingAsync(
         CancellationToken sourceToken,
         CancellationToken processingToken)
@@ -1072,6 +1139,14 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Processes queued input in parallel workers.
+    /// </summary>
+    /// <param name="sourceToken">The token used to stop reading from the source.</param>
+    /// <param name="processingToken">The token used to cancel worker processing.</param>
+    /// <remarks>
+    /// Graceful source cancellation is treated as drain-related cancellation and is allowed to complete without failing the run.
+    /// </remarks>
     private async ValueTask RunParallelProcessingAsync(
         CancellationToken sourceToken,
         CancellationToken processingToken)
@@ -1127,6 +1202,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         await Task.WhenAll(workers).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Captures the current source cancellation state.
+    /// </summary>
+    /// <returns>A snapshot indicating whether source cancellation was requested and the recorded stop reason.</returns>
     private SourceStopClassificationSnapshot CaptureSourceStopClassificationSnapshot()
     {
         return new SourceStopClassificationSnapshot(
@@ -1134,6 +1213,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             Reason: (SourceStopReason)Volatile.Read(ref _sourceStopReason));
     }
 
+    /// <summary>
+    /// Records a dropped input item and emits an input-dropped event.
+    /// </summary>
+    /// <param name="envelope">The dropped input envelope.</param>
     private void OnInputDropped(ProcessingEnvelope<TInput> envelope)
     {
         _metrics.RecordItemDropped();
@@ -1144,6 +1227,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _clock.GetUtcNow()));
     }
 
+    /// <summary>
+    /// Records a dropped output and emits an output-dropped event.
+    /// </summary>
+    /// <param name="output">The dropped pipeline output.</param>
     private void OnOutputDropped(PipelineOutput<TOutput> output)
     {
         _metrics.RecordOutputDropped();
@@ -1154,6 +1241,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _clock.GetUtcNow()));
     }
 
+    /// <summary>
+    /// Records that an observer event was dropped.
+    /// </summary>
+    /// <param name="pipelineEvent">The dropped pipeline event.</param>
     private void OnObserverEventDropped(PipelineEvent pipelineEvent)
     {
         _metrics.RecordObserverEventDropped();
@@ -1169,6 +1260,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             await _sink.InitializeAsync(ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Processes a source envelope through all stages and writes the resulting output.
+    /// </summary>
+    /// <param name="sourceEnvelope">The input envelope to process.</param>
+    /// <param name="ct">The cancellation token to monitor.</param>
+    /// <returns>The failure action that stopped processing, or <c>null</c> when the envelope completes successfully.</returns>
     private async ValueTask<FailureAction?> ProcessEnvelopeAsync(
         ProcessingEnvelope<TInput> sourceEnvelope,
         CancellationToken ct
@@ -1204,6 +1301,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         return null;
     }
 
+    /// <summary>
+    /// Processes an envelope under adaptive concurrency admission.
+    /// </summary>
+    /// <param name="sourceEnvelope">The input envelope to process.</param>
+    /// <param name="ct">The cancellation token for the operation.</param>
+    /// <returns>The failure action produced by processing, or <c>null</c> when processing completes successfully.</returns>
     private async ValueTask<FailureAction?> ProcessEnvelopeWithAdaptiveAdmissionAsync(
         ProcessingEnvelope<TInput> sourceEnvelope,
         CancellationToken ct
@@ -1250,11 +1353,24 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
     }
 
-    private bool IsAdaptiveAdmissionShutdownInProgress() =>
+    /// <summary>
+        /// Determines whether adaptive admission should stop accepting work.
+        /// </summary>
+        /// <returns><c>true</c> if the run is cancelled, aborted, or disposed, <c>false</c> otherwise.</returns>
+        private bool IsAdaptiveAdmissionShutdownInProgress() =>
         _cts.IsCancellationRequested
         || Volatile.Read(ref _disposed) != 0
         || _lifecycle.State is PipelineRunState.Cancelled or PipelineRunState.Aborted;
 
+    /// <summary>
+    /// Records a retry and emits a retry scheduled event.
+    /// </summary>
+    /// <param name="stage">The stage being retried.</param>
+    /// <param name="outcome">The execution result that triggered the retry.</param>
+    /// <param name="retryAttempt">The next retry attempt number.</param>
+    /// <param name="delay">The delay before the retry is attempted.</param>
+    /// <param name="error">The error associated with the retry.</param>
+    /// <param name="ct">The cancellation token.</param>
     private async ValueTask EmitRetryScheduledAsync(
         ITypedPipelineStage stage,
         TypedStageExecutionResult outcome,
@@ -1550,16 +1666,28 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             await _spec.Source.DisposeAsync().ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Emits a pipeline event to registered observers.
+    /// </summary>
+    /// <param name="pipelineEvent">The event to emit.</param>
+    /// <param name="ct">A token that cancels the emission.</param>
     private async ValueTask EmitAsync(PipelineEvent pipelineEvent, CancellationToken ct)
     {
         await _observerDispatcher.EmitAsync(pipelineEvent, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Queues a pipeline event for best-effort emission.
+    /// </summary>
+    /// <param name="pipelineEvent">The event to emit.</param>
     private void EmitEventFireAndForget(PipelineEvent pipelineEvent)
     {
         _ = TryEmitAsync(pipelineEvent).AsTask();
     }
 
+    /// <summary>
+    /// Emits a pipeline event without affecting the main run outcome if notification fails.
+    /// </summary>
     private async ValueTask TryEmitAsync(PipelineEvent pipelineEvent)
     {
         try

@@ -117,7 +117,12 @@ public class CircuitBreaker
     /// half-open and allow up to the configured total half-open request count.
     /// It does not return a lease and does not release half-open slots after completion.
     /// Runtime half-open execution uses <see cref="TryAcquireHalfOpenProbe(out CircuitBreakerProbe)" />.
-    /// </remarks>
+    /// <summary>
+    /// Determines whether a request is allowed by the circuit breaker.
+    /// </summary>
+    /// <returns>
+    /// <c>true</c> if the circuit is closed or an available half-open probe slot can be acquired; <c>false</c> if the circuit is open or isolated.
+    /// </returns>
     public bool AllowRequest()
     {
         CleanupWindow();
@@ -153,7 +158,13 @@ public class CircuitBreaker
     /// <remarks>
     /// This is the authoritative half-open probe API for runtime execution.
     /// Dispose the returned probe when the attempted operation completes.
-    /// </remarks>
+    /// <summary>
+    /// Acquires a lease for a HalfOpen probe.
+    /// </summary>
+    /// <param name="probe">The acquired probe lease.</param>
+    /// <returns>
+    /// <see langword="true" /> if a probe lease was acquired; otherwise, <see langword="false" />.
+    /// </returns>
     public bool TryAcquireHalfOpenProbe(out CircuitBreakerProbe probe)
     {
         CleanupWindow();
@@ -183,6 +194,11 @@ public class CircuitBreaker
         return true;
     }
 
+    /// <summary>
+    /// Attempts to transition the circuit from Open to HalfOpen after the break duration elapses.
+    /// </summary>
+    /// <param name="nowTicks">The current UTC time in ticks.</param>
+    /// <returns><c>true</c> if the circuit is HalfOpen or transitions to HalfOpen; otherwise, <c>false</c>.</returns>
     private bool TryTransitionOpenToHalfOpen(long nowTicks)
     {
         if (nowTicks - Interlocked.Read(ref _openedAtTicks) < _breakDuration.Ticks)
@@ -206,7 +222,12 @@ public class CircuitBreaker
     }
 
     /// <summary>Records a successful request and updates state.</summary>
-    /// <remarks>May transition from HalfOpen to Closed on enough successes.</remarks>
+    /// <summary>
+    /// Records a successful request and updates the circuit breaker state.
+    /// </summary>
+    /// <remarks>
+    /// When the circuit is half-open, enough successful requests close the circuit and reset recovery counters.
+    /// </remarks>
     public void RecordSuccess()
     {
         _window.Enqueue((_clock.UtcNow, true));
@@ -365,12 +386,18 @@ public readonly struct CircuitBreakerProbe : IDisposable
 {
     private readonly LeaseState? _lease;
 
+    /// <summary>
+    /// Creates a half-open probe lease for the specified circuit breaker.
+    /// </summary>
+    /// <param name="owner">The circuit breaker that owns the probe slot.</param>
     internal CircuitBreakerProbe(CircuitBreaker owner)
     {
         _lease = new LeaseState(owner);
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Releases the half-open probe lease.
+    /// </summary>
     public void Dispose()
     {
         _lease?.Release();
@@ -381,11 +408,18 @@ public readonly struct CircuitBreakerProbe : IDisposable
         private readonly CircuitBreaker _owner;
         private int _released;
 
+        /// <summary>
+        /// Creates a lease state for a circuit breaker probe.
+        /// </summary>
+        /// <param name="owner">The circuit breaker that owns the probe lease.</param>
         internal LeaseState(CircuitBreaker owner)
         {
             _owner = owner;
         }
 
+        /// <summary>
+        /// Releases the associated half-open probe slot once.
+        /// </summary>
         internal void Release()
         {
             if (Interlocked.Exchange(ref _released, 1) == 0)

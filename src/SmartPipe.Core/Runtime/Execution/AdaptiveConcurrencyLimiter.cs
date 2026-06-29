@@ -11,6 +11,14 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
     private int _inFlight;
     private bool _completed;
 
+    /// <summary>
+    /// Initializes a new concurrency limiter with the specified limits.
+    /// </summary>
+    /// <param name="initialLimit">The initial concurrency limit.</param>
+    /// <param name="maxLimit">The maximum concurrency limit.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="initialLimit" /> is less than 1 or when <paramref name="maxLimit" /> is less than <paramref name="initialLimit" />.
+    /// </exception>
     public AdaptiveConcurrencyLimiter(int initialLimit, int maxLimit)
     {
         if (initialLimit < 1)
@@ -51,6 +59,11 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Acquires a concurrency lease.
+    /// </summary>
+    /// <param name="ct">A token that cancels the acquisition request.</param>
+    /// <returns>A lease for an available slot, or a canceled or faulted value task if the request is canceled or the limiter has been completed.</returns>
     public ValueTask<Lease> AcquireAsync(CancellationToken ct = default)
     {
         if (ct.IsCancellationRequested)
@@ -76,6 +89,12 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
         return new ValueTask<Lease>(waiter.Task);
     }
 
+    /// <summary>
+    /// Updates the current concurrency limit.
+    /// </summary>
+    /// <param name="newLimit">The new limit to apply.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="newLimit"/> is less than one or greater than the configured maximum limit.</exception>
+    /// <exception cref="ObjectDisposedException">Thrown when the limiter has been completed or disposed.</exception>
     public void UpdateLimit(int newLimit)
     {
         if (newLimit < 1 || newLimit > _maxLimit)
@@ -94,6 +113,12 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Marks the limiter as completed and releases any queued acquisitions.
+    /// </summary>
+    /// <remarks>
+    /// Pending acquisition requests are completed with an <see cref="ObjectDisposedException"/>.
+    /// </remarks>
     public void Complete()
     {
         Waiter[] waiters;
@@ -110,17 +135,27 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
             waiter.TryComplete(CreateDisposedException());
     }
 
+    /// <summary>
+    /// Completes the limiter and releases pending waiters.
+    /// </summary>
     public void Dispose()
     {
         Complete();
     }
 
+    /// <summary>
+    /// Completes the limiter and releases pending waiters.
+    /// </summary>
+    /// <returns>A completed task.</returns>
     public ValueTask DisposeAsync()
     {
         Complete();
         return ValueTask.CompletedTask;
     }
 
+    /// <summary>
+    /// Releases one acquired concurrency slot.
+    /// </summary>
     private void ReleaseLease()
     {
         lock (_gate)
@@ -133,8 +168,15 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
         }
     }
 
-    private Lease CreateLease() => new(this, new LeaseState());
+    /// <summary>
+/// Creates a new lease linked to this limiter.
+/// </summary>
+/// <returns>A lease that releases one granted concurrency slot.</returns>
+private Lease CreateLease() => new(this, new LeaseState());
 
+    /// <summary>
+    /// Grants queued waiters while capacity is available.
+    /// </summary>
     private void DrainWaitersLocked()
     {
         if (_completed)
@@ -155,6 +197,10 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Dequeues all pending waiters from the queue.
+    /// </summary>
+    /// <returns>An array containing the queued waiters in FIFO order.</returns>
     private Waiter[] DequeueAllWaitersLocked()
     {
         if (_waiters.Count == 0)
@@ -168,7 +214,11 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
         return waiters;
     }
 
-    private static ObjectDisposedException CreateDisposedException() =>
+    /// <summary>
+        /// Creates an exception that indicates the limiter has been completed.
+        /// </summary>
+        /// <returns>An <see cref="ObjectDisposedException"/> for <see cref="AdaptiveConcurrencyLimiter"/>.</returns>
+        private static ObjectDisposedException CreateDisposedException() =>
         new(nameof(AdaptiveConcurrencyLimiter));
 
     public readonly struct Lease : IDisposable, IAsyncDisposable
@@ -176,17 +226,29 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
         private readonly AdaptiveConcurrencyLimiter? _owner;
         private readonly LeaseState? _state;
 
+        /// <summary>
+        /// Creates a lease associated with the specified limiter.
+        /// </summary>
+        /// <param name="owner">The limiter that owns the lease.</param>
+        /// <param name="state">The lease state used to track release.</param>
         internal Lease(AdaptiveConcurrencyLimiter owner, LeaseState state)
         {
             _owner = owner;
             _state = state;
         }
 
+        /// <summary>
+        /// Releases the leased concurrency slot.
+        /// </summary>
         public void Release()
         {
             Dispose();
         }
 
+        /// <summary>
+        /// Releases the lease and returns its concurrency slot to the limiter.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">Thrown when the lease was not acquired or has already been released.</exception>
         public void Dispose()
         {
             if (_owner is null || _state is null)
@@ -198,6 +260,10 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
             _owner.ReleaseLease();
         }
 
+        /// <summary>
+        /// Completes the limiter and releases its resources.
+        /// </summary>
+        /// <returns>A task that has completed.</returns>
         public ValueTask DisposeAsync()
         {
             Dispose();
@@ -225,6 +291,10 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
 
         public bool IsPending => Volatile.Read(ref _state) == Pending;
 
+        /// <summary>
+        /// Registers cancellation for a pending acquisition request.
+        /// </summary>
+        /// <param name="ct">The cancellation token that cancels the request.</param>
         public void RegisterCancellation(CancellationToken ct)
         {
             if (!ct.CanBeCanceled)
@@ -236,6 +306,11 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
                 registration.Dispose();
         }
 
+        /// <summary>
+                /// Completes the waiter with a lease.
+                /// </summary>
+                /// <param name="lease">The lease to deliver.</param>
+                /// <returns><c>true</c> if the lease was delivered, <c>false</c> otherwise.</returns>
         public bool TryGrant(Lease lease)
         {
             if (Interlocked.CompareExchange(ref _state, Completed, Pending) != Pending)
@@ -245,6 +320,10 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
             return _completion.TrySetResult(lease);
         }
 
+        /// <summary>
+        /// Completes the waiting acquisition with an exception.
+        /// </summary>
+        /// <param name="exception">The exception to set on the waiting acquisition.</param>
         public void TryComplete(Exception exception)
         {
             if (Interlocked.CompareExchange(ref _state, Completed, Pending) == Pending)
@@ -258,6 +337,10 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
             _registration.Dispose();
         }
 
+        /// <summary>
+        /// Cancels the waiting acquisition if it is still pending.
+        /// </summary>
+        /// <param name="ct">The cancellation token associated with the acquisition request.</param>
         private void TryCancel(CancellationToken ct)
         {
             if (Interlocked.CompareExchange(ref _state, Completed, Pending) == Pending)

@@ -8,6 +8,13 @@ internal sealed class PipelineLifecycleController
 
     public PipelineRunState State => (PipelineRunState)Volatile.Read(ref _state);
 
+    /// <summary>
+    /// Marks the pipeline as running.
+    /// </summary>
+    /// <remarks>
+    /// The state changes from <see cref="PipelineRunState.NotStarted"/> only if it has not
+    /// already transitioned to another state.
+    /// </remarks>
     public void MarkRunning()
     {
         Interlocked.CompareExchange(
@@ -16,6 +23,13 @@ internal sealed class PipelineLifecycleController
             (int)PipelineRunState.NotStarted);
     }
 
+    /// <summary>
+    /// Marks the pipeline run as completed.
+    /// </summary>
+    /// <remarks>
+    /// Sets the state to <see cref="PipelineRunState.Completed"/> when the current state is
+    /// <see cref="PipelineRunState.Running"/> or <see cref="PipelineRunState.Draining"/>.
+    /// </remarks>
     public void MarkCompleted()
     {
         while (true)
@@ -34,6 +48,9 @@ internal sealed class PipelineLifecycleController
         }
     }
 
+    /// <summary>
+    /// Marks the pipeline run as draining when it is running.
+    /// </summary>
     public void MarkDrainingIfRunning()
     {
         Interlocked.CompareExchange(
@@ -42,6 +59,9 @@ internal sealed class PipelineLifecycleController
             (int)PipelineRunState.Running);
     }
 
+    /// <summary>
+    /// Marks the pipeline run as completed when it is draining.
+    /// </summary>
     public void MarkCompletedIfDraining()
     {
         Interlocked.CompareExchange(
@@ -50,11 +70,17 @@ internal sealed class PipelineLifecycleController
             (int)PipelineRunState.Draining);
     }
 
+    /// <summary>
+    /// Marks the pipeline run as cancelled.
+    /// </summary>
     public void MarkCancelled()
     {
         Volatile.Write(ref _state, (int)PipelineRunState.Cancelled);
     }
 
+    /// <summary>
+    /// Marks the pipeline run as cancelled unless it has already reached a terminal state.
+    /// </summary>
     public void MarkCancelledUnlessAborted()
     {
         while (true)
@@ -78,6 +104,9 @@ internal sealed class PipelineLifecycleController
         }
     }
 
+    /// <summary>
+    /// Marks the pipeline run as aborted.
+    /// </summary>
     public void MarkAborted()
     {
         Volatile.Write(ref _state, (int)PipelineRunState.Aborted);

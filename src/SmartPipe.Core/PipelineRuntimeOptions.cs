@@ -274,6 +274,13 @@ public sealed class PipelineRuntimeOptions
     internal int EffectiveMaxConcurrency =>
         MaxConcurrency != 1 ? MaxConcurrency : MaxDegreeOfParallelism;
 
+    /// <summary>
+    /// Validates the runtime configuration.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when a numeric, enum, or capacity setting is invalid.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the configured options are incompatible.</exception>
+    /// <exception cref="NotSupportedException">Thrown when the configured ordering and concurrency settings are not supported together.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when a required option instance is null.</exception>
     internal void Validate()
     {
         if (MaxConcurrency <= 0)
@@ -345,7 +352,15 @@ public sealed class PipelineRuntimeOptions
         ArgumentNullException.ThrowIfNull(Clock);
     }
 
-    private static bool AreEquivalent(PipelineOutputMode mode, PipelineOutputPolicy policy) =>
+    /// <summary>
+        /// Determines whether a legacy output mode matches an output policy.
+        /// </summary>
+        /// <param name="mode">The legacy output mode.</param>
+        /// <param name="policy">The output policy to compare.</param>
+        /// <returns>
+        /// <c>true</c> if the mode and policy describe equivalent output behavior, <c>false</c> otherwise.
+        /// </returns>
+        private static bool AreEquivalent(PipelineOutputMode mode, PipelineOutputPolicy policy) =>
         (mode, policy) switch
         {
             (PipelineOutputMode.EmitAll, PipelineOutputPolicy.EmitAll) => true,

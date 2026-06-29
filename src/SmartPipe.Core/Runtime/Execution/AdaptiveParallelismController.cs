@@ -7,6 +7,11 @@ internal sealed class AdaptiveParallelismController
     private readonly AdaptiveParallelismOptions _options;
     private double? _smoothedLatencyMs;
 
+    /// <summary>
+    /// Initializes a new adaptive parallelism controller.
+    /// </summary>
+    /// <param name="options">The validated configuration used to control concurrency decisions.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="options" /> is null.</exception>
     public AdaptiveParallelismController(AdaptiveParallelismOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -14,6 +19,11 @@ internal sealed class AdaptiveParallelismController
         _options = options;
     }
 
+    /// <summary>
+    /// Chooses the next concurrency level from the current telemetry snapshot.
+    /// </summary>
+    /// <param name="snapshot">The current concurrency, latency, failure, and elapsed-time measurements.</param>
+    /// <returns>The decision containing the previous concurrency, target concurrency, smoothed latency, and reason.</returns>
     public AdaptiveParallelismDecision Decide(AdaptiveParallelismSnapshot snapshot)
     {
         var current = Clamp(
@@ -85,6 +95,11 @@ internal sealed class AdaptiveParallelismController
             AdaptiveParallelismDecisionReason.LowLatency);
     }
 
+    /// <summary>
+    /// Computes the next smoothed latency sample.
+    /// </summary>
+    /// <param name="sample">The latest latency measurement.</param>
+    /// <returns>The updated smoothed latency value.</returns>
     private SmoothedLatency GetSmoothedLatency(TimeSpan sample)
     {
         var sampleMs = Math.Max(0, sample.TotalMilliseconds);
@@ -102,14 +117,33 @@ internal sealed class AdaptiveParallelismController
         return new SmoothedLatency(TimeSpan.FromMilliseconds(next));
     }
 
+    /// <summary>
+    /// Determines whether recent failures exceed the configured failure pressure threshold.
+    /// </summary>
+    /// <param name="snapshot">The current metrics snapshot.</param>
+    /// <returns><c>true</c> if the ratio of failed items to processed items meets or exceeds the failure pressure threshold, <c>false</c> otherwise.</returns>
     private bool HasFailurePressure(AdaptiveParallelismSnapshot snapshot)
     {
         var denominator = Math.Max(1, snapshot.ProcessedDelta);
         return (double)snapshot.FailedDelta / denominator >= _options.FailurePressureThreshold;
     }
 
-    private static int Clamp(int value, int min, int max) => Math.Min(max, Math.Max(min, value));
+    /// <summary>
+/// Clamps a value to the specified range.
+/// </summary>
+/// <param name="value">The value to clamp.</param>
+/// <param name="min">The lower bound of the range.</param>
+/// <param name="max">The upper bound of the range.</param>
+/// <returns>The value constrained to the range from <paramref name="min"/> to <paramref name="max"/>.</returns>
+private static int Clamp(int value, int min, int max) => Math.Min(max, Math.Max(min, value));
 
+    /// <summary>
+    /// Clamps a 64-bit value to the specified integer range.
+    /// </summary>
+    /// <param name="value">The value to clamp.</param>
+    /// <param name="min">The lower bound of the range.</param>
+    /// <param name="max">The upper bound of the range.</param>
+    /// <returns>The clamped value.</returns>
     private static int Clamp(long value, int min, int max)
     {
         if (value < min)
@@ -121,10 +155,20 @@ internal sealed class AdaptiveParallelismController
         return (int)value;
     }
 
-    private int DecreaseConcurrencyLimit(int current) =>
+    /// <summary>
+        /// Lowers the concurrency limit by the configured adjustment step.
+        /// </summary>
+        /// <param name="current">The current concurrency limit.</param>
+        /// <returns>The adjusted concurrency limit, clamped to the configured bounds.</returns>
+        private int DecreaseConcurrencyLimit(int current) =>
         Clamp((long)current - _options.MaxAdjustmentStep, _options.MinConcurrency, _options.MaxConcurrency);
 
-    private int IncreaseConcurrencyLimit(int current) =>
+    /// <summary>
+        /// Raises the current concurrency by the configured adjustment step.
+        /// </summary>
+        /// <param name="current">The current concurrency limit.</param>
+        /// <returns>The adjusted concurrency limit, clamped to the configured bounds.</returns>
+        private int IncreaseConcurrencyLimit(int current) =>
         Clamp((long)current + _options.MaxAdjustmentStep, _options.MinConcurrency, _options.MaxConcurrency);
 
     private readonly record struct SmoothedLatency(TimeSpan Latency);

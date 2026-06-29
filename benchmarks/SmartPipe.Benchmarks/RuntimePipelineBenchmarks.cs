@@ -159,6 +159,10 @@ public class RuntimePipelineBenchmarks
             .ToFactory(_ => new TypedCountingSink());
     }
 
+    /// <summary>
+    /// Drains all outputs from a pipeline run.
+    /// </summary>
+    /// <param name="reader">The output reader to consume until completion.</param>
     private static async Task DrainOutputsAsync<T>(ChannelReader<PipelineOutput<T>> reader)
     {
         await foreach (var _ in reader.ReadAllAsync().ConfigureAwait(false))

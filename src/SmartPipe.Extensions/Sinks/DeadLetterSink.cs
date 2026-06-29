@@ -55,7 +55,11 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     /// <summary>Create dead letter sink with given file path.</summary>
     /// <param name="path">Output JSON file path (default: "dead_letter.json").</param>
     /// <param name="logger">Logger instance via DI.</param>
-    /// <param name="stream">Optional output stream. If provided, the sink writes to this stream instead of opening a file.</param>
+    /// <summary>
+    /// Creates a dead-letter sink that writes JSON Lines to a file or stream.
+    /// </summary>
+    /// <param name="path">The output file path used when no stream is provided.</param>
+    /// <param name="stream">The output stream to write to.</param>
     [RequiresUnreferencedCode("Reflection-based dead-letter JSON serialization is not trimming-safe. Use the JsonTypeInfo constructor for trimming and NativeAOT.")]
     [RequiresDynamicCode("Reflection-based dead-letter JSON serialization may require runtime code generation. Use the JsonTypeInfo constructor for NativeAOT.")]
 #pragma warning disable RS0027 // Existing 1.x optional constructor preserved for source compatibility.
@@ -90,7 +94,14 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     /// <param name="resultTypeInfo">Source-generated type information for dead-letter envelopes.</param>
     /// <param name="logger">Logger instance via DI.</param>
     /// <param name="stream">Optional output stream. If provided, the sink writes to this stream instead of opening a file.</param>
-    /// <exception cref="ArgumentNullException">Thrown when path or type information is null.</exception>
+    /// <summary>
+    /// Creates a dead-letter sink that serializes envelopes using the specified JSON type information.
+    /// </summary>
+    /// <param name="path">The output file path used when the sink opens its own stream.</param>
+    /// <param name="resultTypeInfo">The JSON metadata used to serialize dead-letter envelopes.</param>
+    /// <param name="logger">The logger used to report warnings and errors.</param>
+    /// <param name="stream">The stream to write to when one is provided.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> or <paramref name="resultTypeInfo"/> is null.</exception>
     public DeadLetterSink(
         string path,
         JsonTypeInfo<DeadLetterEnvelope<T>> resultTypeInfo,
@@ -109,6 +120,12 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         }
     }
 
+    /// <summary>
+    /// Creates a dead-letter sink that writes through the specified line writer.
+    /// </summary>
+    /// <param name="path">The output file path used for logging and retry messages.</param>
+    /// <param name="lineWriter">The line writer used to persist dead-letter entries.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="lineWriter"/> is null.</exception>
     internal DeadLetterSink(
         string path,
         ILogger<DeadLetterSink<T>>? logger,
@@ -121,7 +138,12 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         _lineWriter = lineWriter ?? throw new ArgumentNullException(nameof(lineWriter));
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Opens the dead-letter output file when no line writer has been created yet.
+    /// </summary>
+    /// <remarks>
+    /// If a line writer already exists, this method leaves it unchanged.
+    /// </remarks>
     public ValueTask InitializeAsync(CancellationToken ct = default)
     {
         if (_lineWriter == null)
@@ -138,7 +160,12 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         return ValueTask.CompletedTask;
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Writes a dead-letter envelope to the sink.
+    /// </summary>
+    /// <param name="envelope">The envelope containing the dead-letter payload to persist.</param>
+    /// <param name="ct">A token to cancel the write operation.</param>
+    /// <exception cref="InvalidOperationException">Thrown when the sink has not been initialized.</exception>
     public async ValueTask WriteAsync(ProcessingEnvelope<DeadLetterEnvelope<T>> envelope, CancellationToken ct = default)
     {
         if (envelope.Payload is null)
@@ -164,7 +191,11 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     /// <summary>
     /// Write JSON line with IOException retry logic.
     /// Uses exponential backoff: 100ms, 200ms, 400ms.
+    /// <summary>
+    /// Writes a dead-letter entry and retries on I/O failures.
     /// </summary>
+    /// <param name="json">The JSON line to write.</param>
+    /// <param name="ct">The cancellation token used for the write and retry delays.</param>
     private async Task WriteWithRetryAsync(string json, CancellationToken ct)
     {
         var delays = new[] { 100, 200, 400 };
@@ -209,7 +240,9 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Disposes the sink and its underlying line writer.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
@@ -236,23 +269,42 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
 
 internal interface IDeadLetterLineWriter : IAsyncDisposable
 {
-    ValueTask WriteLineAsync(string line, CancellationToken ct);
+    /// <summary>
+/// Writes a line to the underlying stream.
+/// </summary>
+/// <param name="line">The line to write.</param>
+/// <param name="ct">The cancellation token to monitor.</param>
+/// <returns>A value task that completes when the line has been written.</returns>
+ValueTask WriteLineAsync(string line, CancellationToken ct);
 }
 
 internal sealed class StreamDeadLetterLineWriter : IDeadLetterLineWriter
 {
     private readonly StreamWriter _writer;
 
+    /// <summary>
+    /// Creates a line writer for the specified stream.
+    /// </summary>
+    /// <param name="stream">The stream to write dead-letter lines to.</param>
+    /// <param name="leaveOpen">Whether to leave the stream open after the writer is disposed.</param>
     public StreamDeadLetterLineWriter(Stream stream, bool leaveOpen)
     {
         _writer = new StreamWriter(stream, Encoding.UTF8, 1024, leaveOpen);
     }
 
+    /// <summary>
+    /// Writes a line to the underlying stream.
+    /// </summary>
+    /// <param name="line">The text to write.</param>
+    /// <param name="ct">A token to cancel the write operation.</param>
     public async ValueTask WriteLineAsync(string line, CancellationToken ct)
     {
         await _writer.WriteLineAsync(line.AsMemory(), ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Disposes the underlying stream writer.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         await _writer.DisposeAsync().ConfigureAwait(false);

@@ -144,6 +144,12 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         _worker = Task.Run(ProcessAsync, CancellationToken.None);
     }
 
+    /// <summary>
+    /// Emits an event to registered observers.
+    /// </summary>
+    /// <param name="pipelineEvent">The event to deliver.</param>
+    /// <param name="ct">A token that cancels the emit operation.</param>
+    /// <returns>A task that completes when the event has been accepted for dispatch.</returns>
     public async ValueTask EmitAsync(PipelineEvent pipelineEvent, CancellationToken ct)
     {
         if (Volatile.Read(ref _completed) != 0)
@@ -187,6 +193,10 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         }
     }
 
+    /// <summary>
+    /// Completes event dispatch and optionally waits for buffered work to finish.
+    /// </summary>
+    /// <param name="ct">A token that cancels waiting for buffered work to finish.</param>
     public async ValueTask CompleteAsync(CancellationToken ct)
     {
         if (Interlocked.Exchange(ref _completed, 1) != 0)
@@ -199,6 +209,9 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         ThrowPipelineFaultIfRecorded();
     }
 
+    /// <summary>
+    /// Stops the dispatcher and releases its internal resources.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -221,14 +234,27 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         _cts.Dispose();
     }
 
-    private Exception? GetPipelineFault() => Volatile.Read(ref _pipelineFault);
+    /// <summary>
+/// Gets the recorded pipeline fault.
+/// </summary>
+/// <returns>The first exception recorded as a pipeline fault, or null if no fault has been recorded.</returns>
+private Exception? GetPipelineFault() => Volatile.Read(ref _pipelineFault);
 
+    /// <summary>
+    /// Records the first pipeline fault exception.
+    /// </summary>
+    /// <param name="exception">The exception to store if no fault has been recorded yet.</param>
+    /// <returns>The recorded pipeline fault exception.</returns>
     private Exception RecordPipelineFault(Exception exception)
     {
         Interlocked.CompareExchange(ref _pipelineFault, exception, null);
         return Volatile.Read(ref _pipelineFault)!;
     }
 
+    /// <summary>
+    /// Rethrows the recorded pipeline fault.
+    /// </summary>
+    /// <exception cref="Exception">The recorded pipeline fault, when one has been captured.</exception>
     private void ThrowPipelineFaultIfRecorded()
     {
         var pipelineFault = GetPipelineFault();
@@ -236,6 +262,9 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
             ExceptionDispatchInfo.Capture(pipelineFault).Throw();
     }
 
+    /// <summary>
+    /// Processes buffered pipeline events on the worker task.
+    /// </summary>
     private async Task ProcessAsync()
     {
         await foreach (var pipelineEvent in _events.Reader.ReadAllAsync(_cts.Token).ConfigureAwait(false))
@@ -245,6 +274,11 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         }
     }
 
+    /// <summary>
+    /// Dispatches a pipeline event to each active observer.
+    /// </summary>
+    /// <param name="pipelineEvent">The event to deliver.</param>
+    /// <returns><c>true</c> if dispatch should stop because an observer faulted the pipeline, <c>false</c> otherwise.</returns>
     private async ValueTask<bool> DispatchEventAsync(PipelineEvent pipelineEvent)
     {
         foreach (var registration in _observers)
@@ -259,6 +293,12 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         return false;
     }
 
+    /// <summary>
+    /// Dispatches an event to a single observer.
+    /// </summary>
+    /// <param name="pipelineEvent">The event to deliver.</param>
+    /// <param name="registration">The observer registration to invoke.</param>
+    /// <returns><c>true</c> if observer failure should stop buffered processing, <c>false</c> otherwise.</returns>
     private async ValueTask<bool> DispatchObserverAsync(
         PipelineEvent pipelineEvent,
         ActiveObserverRegistration registration)
@@ -276,6 +316,12 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         return false;
     }
 
+    /// <summary>
+    /// Handles a failure reported by an observer.
+    /// </summary>
+    /// <param name="registration">The observer registration that failed.</param>
+    /// <param name="exception">The exception raised by the observer.</param>
+    /// <returns><c>true</c> if the failure should stop buffered processing, <c>false</c> otherwise.</returns>
     private bool HandleObserverFailure(ActiveObserverRegistration registration, Exception exception)
     {
         if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
@@ -291,6 +337,10 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         return false;
     }
 
+    /// <summary>
+    /// Records a dropped observer event and optionally emits a dropped-event notification.
+    /// </summary>
+    /// <param name="droppedEvent">The event that was dropped.</param>
     private void RecordDroppedEvent(PipelineEvent droppedEvent)
     {
         _onObserverEventDropped?.Invoke(droppedEvent);

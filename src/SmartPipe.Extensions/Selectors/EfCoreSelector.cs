@@ -27,7 +27,11 @@ public class EfCoreSelector<T> : IPipelineSource<T>
         _logger = logger;
     }
 
-    /// <summary>Configure query before reading (filtering, ordering, etc.).</summary>
+    /// <summary>
+    /// Configures the query used to read entities.
+    /// </summary>
+    /// <param name="configure">A function that creates the query from the entity set.</param>
+    /// <returns>The current selector instance.</returns>
     public EfCoreSelector<T> WithQuery(Func<DbSet<T>, IQueryable<T>> configure)
     {
         _query = configure(_dbContext.Set<T>());
@@ -37,17 +41,28 @@ public class EfCoreSelector<T> : IPipelineSource<T>
     /// <summary>
     /// Configures whether entities returned by this selector are tracked by EF Core.
     /// Tracking is disabled by default.
+    /// <summary>
+    /// Configures whether entities are read with EF Core tracking enabled.
     /// </summary>
+    /// <param name="enabled">`true` to read tracked entities; `false` to read entities without tracking.</param>
+    /// <returns>The current selector instance.</returns>
     public EfCoreSelector<T> WithTracking(bool enabled = true)
     {
         _trackingEnabled = enabled;
         return this;
     }
 
-    /// <inheritdoc />
+    /// <summary>
+/// Completes the selector initialization step.
+/// </summary>
+/// <returns>A completed value task.</returns>
     public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Streams entities from the configured EF Core query as processing envelopes.
+    /// </summary>
+    /// <param name="ct">A token that can be used to cancel enumeration.</param>
+    /// <returns>An asynchronous sequence of processing envelopes for the selected entities.</returns>
     public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
     )

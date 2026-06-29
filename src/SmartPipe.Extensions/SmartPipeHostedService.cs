@@ -131,6 +131,12 @@ public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
             await _typedRun.DisposeAsync().ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Handles a pipeline fault according to the configured failure behavior.
+    /// </summary>
+    /// <param name="exception">The fault that occurred while running the pipeline.</param>
+    /// <exception cref="InvalidOperationException">Thrown when the failure behavior is set to stop the application but no host lifetime is available.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the configured failure behavior is invalid.</exception>
     private void HandlePipelineFault(Exception exception)
     {
         switch (_options.FailureBehavior)

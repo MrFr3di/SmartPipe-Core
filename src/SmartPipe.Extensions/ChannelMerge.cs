@@ -19,6 +19,13 @@ public static class ChannelMerge
     /// <param name="options">Optional bounded channel options. If null, an unbounded channel is created.</param>
     /// <returns>A <see cref="ChannelReader{T}"/> that receives items from both input readers.</returns>
 #pragma warning disable RS0027 // Existing optional overload preserved for source compatibility.
+    /// <summary>
+    /// Merges two channel readers into a single reader.
+    /// </summary>
+    /// <param name="first">The first input reader.</param>
+    /// <param name="second">The second input reader.</param>
+    /// <param name="options">The bounded channel options to use for the output channel, or <see langword="null" /> for an unbounded channel.</param>
+    /// <returns>A reader that yields items from both inputs as they become available.</returns>
     public static ChannelReader<T> Merge<T>(
         ChannelReader<T> first,
         ChannelReader<T> second,
@@ -39,7 +46,14 @@ public static class ChannelMerge
     /// <param name="second">The second channel reader.</param>
     /// <param name="options">Optional bounded channel options. If null, an unbounded channel is created.</param>
     /// <param name="cancellationToken">A token that cancels both input pumps.</param>
-    /// <returns>A <see cref="ChannelReader{T}"/> that receives items from both input readers.</returns>
+    /// <summary>
+    /// Merges items from two channel readers into a single channel reader.
+    /// </summary>
+    /// <param name="first">The first source reader.</param>
+    /// <param name="second">The second source reader.</param>
+    /// <param name="options">The options used to create a bounded output channel, or <see langword="null" /> to create an unbounded channel.</param>
+    /// <param name="cancellationToken">A token that cancels the merge operation.</param>
+    /// <returns>A channel reader that yields items from both input readers.</returns>
     public static ChannelReader<T> Merge<T>(
         ChannelReader<T> first,
         ChannelReader<T> second,
@@ -58,6 +72,13 @@ public static class ChannelMerge
         return output.Reader;
     }
 
+    /// <summary>
+    /// Pumps both input readers into the output writer and completes the channel.
+    /// </summary>
+    /// <param name="first">The first source reader.</param>
+    /// <param name="second">The second source reader.</param>
+    /// <param name="writer">The output channel writer.</param>
+    /// <param name="cancellationToken">The token used to cancel the merge operation.</param>
     private static async Task CompleteMergeAsync<T>(
         ChannelReader<T> first,
         ChannelReader<T> second,
@@ -93,6 +114,12 @@ public static class ChannelMerge
         }
     }
 
+    /// <summary>
+    /// Pumps items from a reader into a shared writer and cancels on failure.
+    /// </summary>
+    /// <param name="reader">The source of items to forward.</param>
+    /// <param name="writer">The destination that receives the forwarded items.</param>
+    /// <param name="cancellationSource">The cancellation source to cancel if pumping fails.</param>
     private static async Task PumpAndCancelOnFailureAsync<T>(
         ChannelReader<T> reader,
         ChannelWriter<T> writer,
@@ -116,6 +143,11 @@ public static class ChannelMerge
     /// <typeparam name="T">The type of items.</typeparam>
     /// <param name="reader">The source channel reader.</param>
     /// <param name="writer">The target channel writer.</param>
+    /// <summary>
+    /// Pumps items from a channel reader into a channel writer.
+    /// </summary>
+    /// <param name="reader">The source of items to transfer.</param>
+    /// <param name="writer">The destination for transferred items.</param>
     /// <param name="cancellationToken">A token that cancels pending reads and writes.</param>
     private static async Task PumpAsync<T>(
         ChannelReader<T> reader,

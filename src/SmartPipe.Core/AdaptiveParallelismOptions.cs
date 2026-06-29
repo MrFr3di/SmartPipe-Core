@@ -35,6 +35,12 @@ public sealed class AdaptiveParallelismOptions
     /// <summary>Gets the minimum smoothing factor used for latency samples.</summary>
     public double MinSmoothingFactor { get; init; } = 0.2;
 
+    /// <summary>
+    /// Validates the adaptive parallelism configuration.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when any option value falls outside its supported range.
+    /// </exception>
     internal void Validate()
     {
         if (MinConcurrency < 1)

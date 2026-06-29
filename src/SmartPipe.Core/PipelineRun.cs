@@ -52,6 +52,18 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
     {
     }
 
+    /// <summary>
+    /// Initializes a new pipeline run with its output stream, completion task, state provider, and control delegates.
+    /// </summary>
+    /// <param name="outputs">The primary output stream for the run.</param>
+    /// <param name="completion">The task that completes when the run ends.</param>
+    /// <param name="stateProvider">A function that provides the current run state.</param>
+    /// <param name="cancel">A delegate that cancels the run.</param>
+    /// <param name="drain">A delegate that drains the run within a timeout.</param>
+    /// <param name="tryDrain">A delegate that attempts a structured drain operation.</param>
+    /// <param name="abort">A delegate that aborts the run.</param>
+    /// <param name="dispose">A delegate that disposes run resources.</param>
+    /// <param name="metricsProvider">A function that provides the current metrics snapshot.</param>
     internal PipelineRun(
         ChannelReader<PipelineOutput<TOutput>> outputs,
         Task completion,
@@ -86,7 +98,12 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
     /// </returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="completion"/> or <paramref name="dispose"/> is null.
-    /// </exception>
+    /// <summary>
+    /// Creates a new pipeline run that shares the current controls and output stream.
+    /// </summary>
+    /// <param name="completion">The task that tracks the new run's lifetime.</param>
+    /// <param name="dispose">The disposal callback for the new run.</param>
+    /// <returns>A new pipeline run with the same outputs, state provider, and control delegates, but the specified completion task and disposal callback.</returns>
     public PipelineRun<TOutput> WithLifetime(Task completion, Func<ValueTask> dispose)
     {
         ArgumentNullException.ThrowIfNull(completion);
