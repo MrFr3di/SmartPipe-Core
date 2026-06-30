@@ -12,6 +12,7 @@ public sealed class PipelineRuntimeOptionsCompatibilityTests
         new()
         {
             { PipelineOutputMode.EmitAll, PipelineOutputPolicy.EmitAll },
+            { PipelineOutputMode.FailuresOnlyWhenSinkAttached, PipelineOutputPolicy.SuppressSuccessWhenSinkAttached },
             { PipelineOutputMode.SuppressWhenSinkAttached, PipelineOutputPolicy.SuppressAllWhenSinkAttached },
         };
 
@@ -23,7 +24,6 @@ public sealed class PipelineRuntimeOptionsCompatibilityTests
             { PipelineOutputMode.EmitAll, PipelineOutputPolicy.SuppressAllWhenSinkAttached },
             { PipelineOutputMode.FailuresOnlyWhenSinkAttached, PipelineOutputPolicy.EmitAll },
             { PipelineOutputMode.FailuresOnlyWhenSinkAttached, PipelineOutputPolicy.EmitFailuresOnly },
-            { PipelineOutputMode.FailuresOnlyWhenSinkAttached, PipelineOutputPolicy.SuppressSuccessWhenSinkAttached },
             { PipelineOutputMode.FailuresOnlyWhenSinkAttached, PipelineOutputPolicy.SuppressAllWhenSinkAttached },
             { PipelineOutputMode.SuppressWhenSinkAttached, PipelineOutputPolicy.EmitAll },
             { PipelineOutputMode.SuppressWhenSinkAttached, PipelineOutputPolicy.EmitFailuresOnly },

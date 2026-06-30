@@ -349,6 +349,8 @@ public sealed class PipelineRuntimeOptions
         (mode, policy) switch
         {
             (PipelineOutputMode.EmitAll, PipelineOutputPolicy.EmitAll) => true,
+            (PipelineOutputMode.FailuresOnlyWhenSinkAttached,
+                PipelineOutputPolicy.SuppressSuccessWhenSinkAttached) => true,
             (PipelineOutputMode.SuppressWhenSinkAttached,
                 PipelineOutputPolicy.SuppressAllWhenSinkAttached) => true,
             _ => false,

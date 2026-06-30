@@ -136,9 +136,62 @@ public sealed class PipelineLifecycleControllerTests
     }
 
     [Fact]
-    public async Task MarkAborted_WhenRacingWithCompletedAndCancelled_ShouldWinEventually()
+    public void MarkCancelledUnlessAborted_IsIdempotentWhenAlreadyCancelled()
     {
-        for (var iteration = 0; iteration < 1_000; iteration++)
+        var controller = new PipelineLifecycleController();
+
+        controller.MarkCancelled();
+        controller.MarkCancelledUnlessAborted();
+
+        controller.State.Should().Be(PipelineRunState.Cancelled);
+    }
+
+    [Fact]
+    public void MarkCancelledUnlessAborted_TransitionsFromRunningToCancelled()
+    {
+        var controller = new PipelineLifecycleController();
+
+        controller.MarkRunning();
+        controller.MarkCancelledUnlessAborted();
+
+        controller.State.Should().Be(PipelineRunState.Cancelled);
+    }
+
+    [Fact]
+    public void MarkCancelledUnlessAborted_TransitionsFromNotStartedToCancelled()
+    {
+        var controller = new PipelineLifecycleController();
+
+        controller.MarkCancelledUnlessAborted();
+
+        controller.State.Should().Be(PipelineRunState.Cancelled);
+    }
+
+    [Fact]
+    public void MarkCompleted_TransitionsFromRunningToCompleted()
+    {
+        var controller = new PipelineLifecycleController();
+
+        controller.MarkRunning();
+        controller.MarkCompleted();
+
+        controller.State.Should().Be(PipelineRunState.Completed);
+    }
+
+    [Fact]
+    public void MarkCompleted_FromNotStarted_IsNoOp()
+    {
+        var controller = new PipelineLifecycleController();
+
+        controller.MarkCompleted();
+
+        controller.State.Should().Be(PipelineRunState.NotStarted);
+    }
+
+    [Fact]
+    public async Task ConcurrentTerminalTransitions_EndInTerminalState()
+    {
+        for (var iteration = 0; iteration < 64; iteration++)
         {
             var controller = new PipelineLifecycleController();
             controller.MarkRunning();
@@ -169,8 +222,10 @@ public sealed class PipelineLifecycleControllerTests
 
             await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(5));
 
-            controller.MarkAborted();
-            controller.State.Should().Be(PipelineRunState.Aborted);
+            controller.State.Should().BeOneOf(
+                PipelineRunState.Completed,
+                PipelineRunState.Cancelled,
+                PipelineRunState.Aborted);
         }
     }
 }

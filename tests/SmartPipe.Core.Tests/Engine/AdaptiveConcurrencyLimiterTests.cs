@@ -304,7 +304,7 @@ public sealed class AdaptiveConcurrencyLimiterTests
     }
 
     [Fact]
-    public async Task Lease_ReleaseTwice_FailsFast()
+    public async Task Lease_DisposeTwice_IsNoOpAfterFirstRelease()
     {
         using var limiter = new AdaptiveConcurrencyLimiter(initialLimit: 1, maxLimit: 1);
         var lease = await limiter.AcquireAsync();
@@ -312,20 +312,31 @@ public sealed class AdaptiveConcurrencyLimiterTests
         lease.Dispose();
         var act = () => lease.Dispose();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*already*released*");
+        act.Should().NotThrow();
         limiter.InFlight.Should().Be(0);
     }
 
     [Fact]
-    public void Lease_ReleaseWithoutAcquire_FailsFast()
+    public void Lease_DefaultDispose_IsNoOp()
     {
         var lease = default(AdaptiveConcurrencyLimiter.Lease);
 
         var act = () => lease.Dispose();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*not*acquired*");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task Lease_DisposeAsyncTwice_IsNoOpAfterFirstRelease()
+    {
+        using var limiter = new AdaptiveConcurrencyLimiter(initialLimit: 1, maxLimit: 1);
+        var lease = await limiter.AcquireAsync();
+
+        await lease.DisposeAsync();
+        var act = async () => await lease.DisposeAsync();
+
+        await act.Should().NotThrowAsync();
+        limiter.InFlight.Should().Be(0);
     }
 
     [Fact]

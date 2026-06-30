@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.DependencyInjection;
 using SmartPipe.Core;
 
@@ -217,9 +218,21 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
         {
             return StartCore(scope, ct);
         }
-        catch
+        catch (Exception startException)
         {
-            scope.Dispose();
+            try
+            {
+                scope.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+            catch (Exception disposeException)
+            {
+                throw new AggregateException(
+                    "Pipeline start failed and scope disposal also failed.",
+                    startException,
+                    disposeException);
+            }
+
+            ExceptionDispatchInfo.Capture(startException).Throw();
             throw;
         }
     }

@@ -494,10 +494,10 @@ public sealed class TypedPipelineAdaptiveParallelismTests
         }
 
         public Task WaitForActiveAsync(int threshold) =>
-            WaitForThresholdAsync(_activeThresholds, threshold, MaxObservedConcurrency);
+            WaitForThresholdAsync(_activeThresholds, threshold, () => MaxObservedConcurrency);
 
         public Task WaitForCompletedAsync(int threshold) =>
-            WaitForThresholdAsync(_completedThresholds, threshold, CompletedCalls);
+            WaitForThresholdAsync(_completedThresholds, threshold, () => CompletedCalls);
 
         public void Release() => _release.TrySetResult();
 
@@ -506,14 +506,19 @@ public sealed class TypedPipelineAdaptiveParallelismTests
         private static Task WaitForThresholdAsync(
             ConcurrentDictionary<int, TaskCompletionSource> thresholds,
             int threshold,
-            int current)
+            Func<int> getCurrent)
         {
-            if (current >= threshold)
+            if (getCurrent() >= threshold)
                 return Task.CompletedTask;
 
-            return thresholds.GetOrAdd(
+            var waiter = thresholds.GetOrAdd(
                 threshold,
-                _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+                _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+
+            if (getCurrent() >= threshold)
+                waiter.TrySetResult();
+
+            return waiter.Task;
         }
 
         private static void CompleteThresholds(
@@ -599,7 +604,7 @@ public sealed class TypedPipelineAdaptiveParallelismTests
         }
 
         public Task WaitForActiveAsync(int threshold) =>
-            WaitForThresholdAsync(_activeThresholds, threshold, MaxObservedConcurrency);
+            WaitForThresholdAsync(_activeThresholds, threshold, () => MaxObservedConcurrency);
 
         public void ReleaseFirstGate() => _firstGate.TrySetResult();
 
@@ -620,14 +625,19 @@ public sealed class TypedPipelineAdaptiveParallelismTests
         private static Task WaitForThresholdAsync(
             ConcurrentDictionary<int, TaskCompletionSource> thresholds,
             int threshold,
-            int current)
+            Func<int> getCurrent)
         {
-            if (current >= threshold)
+            if (getCurrent() >= threshold)
                 return Task.CompletedTask;
 
-            return thresholds.GetOrAdd(
+            var waiter = thresholds.GetOrAdd(
                 threshold,
-                _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+                _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+
+            if (getCurrent() >= threshold)
+                waiter.TrySetResult();
+
+            return waiter.Task;
         }
 
         private static void CompleteThresholds(

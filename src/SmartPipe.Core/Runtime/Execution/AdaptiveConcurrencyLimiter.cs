@@ -190,10 +190,10 @@ internal sealed class AdaptiveConcurrencyLimiter : IDisposable, IAsyncDisposable
         public void Dispose()
         {
             if (_owner is null || _state is null)
-                throw new InvalidOperationException("Cannot release a lease that was not acquired.");
+                return;
 
             if (Interlocked.Exchange(ref _state.Released, 1) != 0)
-                throw new InvalidOperationException("Lease has already been released.");
+                return;
 
             _owner.ReleaseLease();
         }

@@ -251,6 +251,39 @@ public sealed class SmartPipeTypedDiTests
     }
 
     [Fact]
+    public void DI_Factory_StartFailure_DisposesAsyncScope()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<TypedDiRecorder>();
+        services.AddScoped<AsyncOnlyScopedMarker>();
+        services.AddScoped<TypedScopedMarker>();
+        services.AddScoped<ThrowingSourceWithAsyncOnlyMarker>();
+        services.AddScoped<ScopedMarkerStage>();
+        services.AddScoped<ScopedRecordingSink>();
+        services.AddSmartPipe<int, Guid>(
+            "typed-di-sync-start-fail",
+            builder => builder
+                .UseSource<ThrowingSourceWithAsyncOnlyMarker>()
+                .UseStage<ScopedMarkerStage>()
+                .UseSink<ScopedRecordingSink>()
+                .WithRuntimeOptions(new PipelineRuntimeOptions
+                {
+                    OutputPolicy = PipelineOutputPolicy.SuppressSuccessWhenSinkAttached,
+                }));
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true });
+        var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
+        var recorder = provider.GetRequiredService<TypedDiRecorder>();
+
+        var act = () => factory.Start();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("sync init boom");
+        recorder.DisposedMarkerScopeIds.Should().HaveCount(1);
+    }
+
+    [Fact]
     public async Task DI_Factory_ValidateScopes_RemainsGreen()
     {
         var services = CreateTypedPipelineServices();
@@ -527,6 +560,19 @@ public sealed class SmartPipeTypedDiTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
+    private sealed class ThrowingSourceWithAsyncOnlyMarker : IPipelineSource<int>
+    {
+        public ThrowingSourceWithAsyncOnlyMarker(AsyncOnlyScopedMarker marker) =>
+            throw new InvalidOperationException("sync init boom");
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
+            CancellationToken ct = default) => throw new NotSupportedException();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class ScopedMarkerStage : IPipelineTransformer<int, Guid>
     {
         private readonly TypedScopedMarker _marker;
@@ -589,6 +635,24 @@ public sealed class SmartPipeTypedDiTests
         public Guid Id { get; } = Guid.NewGuid();
 
         public void Dispose() => _recorder.DisposedMarkerScopeIds.Add(Id);
+    }
+
+    private sealed class AsyncOnlyScopedMarker : IAsyncDisposable
+    {
+        private readonly TypedDiRecorder _recorder;
+
+        public AsyncOnlyScopedMarker(TypedDiRecorder recorder)
+        {
+            _recorder = recorder;
+        }
+
+        public Guid Id { get; } = Guid.NewGuid();
+
+        public ValueTask DisposeAsync()
+        {
+            _recorder.DisposedMarkerScopeIds.Add(Id);
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class TypedDiRecorder

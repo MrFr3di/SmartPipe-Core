@@ -45,6 +45,7 @@ public class CircuitBreaker
     private int _halfOpenSuccesses;
     private long _openedAtTicks;
     private long _halfOpenAtTicks;
+    private readonly object _halfOpenTransitionGate = new();
 
     // Hybrid: EWMA for early warning + Sliding window for decisions
     private double _ewmaFailureRate;
@@ -188,21 +189,25 @@ public class CircuitBreaker
         if (nowTicks - Interlocked.Read(ref _openedAtTicks) < _breakDuration.Ticks)
             return false;
 
-        var previous = Interlocked.CompareExchange(
-            ref _state,
-            (int)CircuitState.HalfOpen,
-            (int)CircuitState.Open);
-
-        if (previous == (int)CircuitState.Open)
+        lock (_halfOpenTransitionGate)
         {
+            var currentState = Volatile.Read(ref _state);
+            if (currentState == (int)CircuitState.HalfOpen)
+                return true;
+
+            if (currentState != (int)CircuitState.Open)
+                return false;
+
+            if (nowTicks - Interlocked.Read(ref _openedAtTicks) < _breakDuration.Ticks)
+                return false;
+
             Interlocked.Exchange(ref _halfOpenCount, 0);
             Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
             Interlocked.Exchange(ref _halfOpenSuccesses, 0);
             Interlocked.Exchange(ref _halfOpenAtTicks, nowTicks);
+            Volatile.Write(ref _state, (int)CircuitState.HalfOpen);
             return true;
         }
-
-        return Volatile.Read(ref _state) == (int)CircuitState.HalfOpen;
     }
 
     /// <summary>Records a successful request and updates state.</summary>
