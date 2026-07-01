@@ -32,7 +32,7 @@ public enum ObserverFailurePolicy
 }
 
 /// <summary>
-/// Domain-level policy for a full observer event queue. In 2.0.0 buffered observer queues are
+/// Domain-level policy for a full observer event queue. Buffered observer queues are
 /// configured through <see cref="ObserverDispatchOptions.FullMode"/>.
 /// </summary>
 public enum ObserverQueueOverflowPolicy

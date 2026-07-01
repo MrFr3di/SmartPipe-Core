@@ -49,7 +49,12 @@ public class RetryPolicy
     /// <param name="strategy">Backoff strategy.</param>
     /// <param name="retryOn">Predicate for retryable errors (default: transient only).</param>
     /// <param name="onRetry">Callback before retry.</param>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when maxRetries ≤ 0.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="maxRetries"/> is not positive,
+    /// <paramref name="delay"/> is not positive,
+    /// <paramref name="maxDelay"/> is not positive or less than <paramref name="delay"/>,
+    /// or <paramref name="strategy"/> is not a defined value.
+    /// </exception>
     public RetryPolicy(
         int maxRetries = 3,
         TimeSpan? delay = null,
@@ -59,10 +64,51 @@ public class RetryPolicy
         Action<ProcessingEnvelope<object>, SmartPipeError, int>? onRetry = null
     )
     {
-        MaxRetries =
-            maxRetries > 0 ? maxRetries : throw new ArgumentOutOfRangeException(nameof(maxRetries));
-        Delay = delay ?? TimeSpan.FromSeconds(1);
-        MaxDelay = maxDelay ?? TimeSpan.FromSeconds(30);
+        if (maxRetries <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxRetries),
+                maxRetries,
+                "Maximum retry attempts must be greater than zero.");
+        }
+
+        var effectiveDelay = delay ?? TimeSpan.FromSeconds(1);
+        if (effectiveDelay <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(delay),
+                effectiveDelay,
+                "Retry delay must be greater than zero.");
+        }
+
+        var effectiveMaxDelay = maxDelay ?? TimeSpan.FromSeconds(30);
+        if (effectiveMaxDelay <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxDelay),
+                effectiveMaxDelay,
+                "Retry maximum delay must be greater than zero.");
+        }
+
+        if (effectiveMaxDelay < effectiveDelay)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxDelay),
+                effectiveMaxDelay,
+                "Retry maximum delay must be greater than or equal to retry delay.");
+        }
+
+        if (!Enum.IsDefined(strategy))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(strategy),
+                strategy,
+                "Backoff strategy is invalid.");
+        }
+
+        MaxRetries = maxRetries;
+        Delay = effectiveDelay;
+        MaxDelay = effectiveMaxDelay;
         Strategy = strategy;
         RetryOn = retryOn ?? (error => error.Type == ErrorType.Transient);
         OnRetry = onRetry;

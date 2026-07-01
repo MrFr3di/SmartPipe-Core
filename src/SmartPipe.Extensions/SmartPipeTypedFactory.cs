@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.DependencyInjection;
 using SmartPipe.Core;
 
@@ -28,10 +29,13 @@ public interface ISmartPipeFactory<TInput, TOutput>
     /// <param name="ct">Cancellation token linked to the run.</param>
     /// <returns>A task that completes with a started pipeline run.</returns>
     /// <remarks>
-    /// Default interface method (DIM) so existing implementors are not source-broken.
-    /// The default bridges to <see cref="Start"/>; production implementations should override.
+    /// Production implementations should override this method. The default throws
+    /// instead of bridging through <see cref="Start"/> to avoid sync-over-async
+    /// and Start/StartAsync recursion traps.
     /// </remarks>
-    Task<PipelineRun<TOutput>> StartAsync(CancellationToken ct = default) => Task.FromResult(Start(ct));
+    Task<PipelineRun<TOutput>> StartAsync(CancellationToken ct = default) =>
+        throw new NotSupportedException(
+            "Asynchronous pipeline startup is not supported by this factory. Override StartAsync.");
 }
 
 /// <summary>Builder used to configure a typed SmartPipe DI definition.</summary>
@@ -197,19 +201,7 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
         var scope = _scopeFactory.CreateAsyncScope();
         try
         {
-            var inner = _definition.Start(scope.ServiceProvider, ct);
-            var scopedRun = new ScopedPipelineRun<TOutput>(inner, scope);
-            var completion = scopedRun.CompleteAndDisposeAsync();
-            _healthMonitor?.Track(inner);
-            var run = new PipelineRun<TOutput>(
-                inner.Outputs,
-                completion,
-                () => inner.State,
-                inner.CancelAsync,
-                inner.DrainAsync,
-                inner.AbortAsync,
-                scopedRun.DisposeAsync);
-            return run;
+            return StartCore(scope, ct);
         }
         catch
         {
@@ -219,8 +211,41 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
     }
 
     /// <inheritdoc />
-    public PipelineRun<TOutput> Start(CancellationToken ct = default) =>
-        StartAsync(ct).GetAwaiter().GetResult();
+    public PipelineRun<TOutput> Start(CancellationToken ct = default)
+    {
+        var scope = _scopeFactory.CreateAsyncScope();
+        try
+        {
+            return StartCore(scope, ct);
+        }
+        catch (Exception startException)
+        {
+            try
+            {
+                scope.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+            catch (Exception disposeException)
+            {
+                throw new AggregateException(
+                    "Pipeline start failed and scope disposal also failed.",
+                    startException,
+                    disposeException);
+            }
+
+            ExceptionDispatchInfo.Capture(startException).Throw();
+            throw new InvalidOperationException("Unreachable code after ExceptionDispatchInfo.Throw.");
+        }
+    }
+
+    private PipelineRun<TOutput> StartCore(AsyncServiceScope scope, CancellationToken ct)
+    {
+        var inner = _definition.Start(scope.ServiceProvider, ct);
+        var scopedRun = new ScopedPipelineRun<TOutput>(inner, scope);
+        var completion = scopedRun.CompleteAndDisposeAsync();
+        _healthMonitor?.Track(inner);
+
+        return inner.WithLifetime(completion, scopedRun.DisposeAsync);
+    }
 }
 
 internal sealed class ScopedPipelineRun<T> : IAsyncDisposable

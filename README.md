@@ -21,6 +21,7 @@ or exactly-once delivery system.
 |---|---|
 | In-process processing only | Pipelines run inside the caller's process. No cross-process hops. |
 | Bounded channels | Input, output, and buffered observer channels are bounded. |
+| Adaptive admission | Adaptive parallelism is opt-in; see [Configuration](docs/configuration.md#adaptive-parallelism). |
 | Envelope metadata | `ProcessingEnvelope<T>` carries `PipelineId`, `RunId`, `TraceId`, `Metadata`, `Lineage`, `Attempt`, `CreatedAtUtc`. |
 | Typed source/transform/sink | `IPipelineSource<T>`, `IPipelineTransformer<TInput,TOutput>`, `IPipelineSink<T>`. |
 | Configured retry/timeout/circuit breaker | Per-stage `StageFailureOptions`; circuit breaker uses half-open probe leases. |
@@ -51,6 +52,8 @@ Default `OutputPolicy` is `SuppressSuccessWhenSinkAttached`.
 This is the safe default for sink-backed pipelines because successful outputs are not written to `PipelineRun<T>.Outputs` unless the caller explicitly opts into `EmitAll`.
 
 Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
+For the `OutputMode` compatibility deprecation policy and migration map, see
+[Configuration](docs/configuration.md#output-filtering-api-deprecation).
 
 ### Failure Semantics
 
@@ -148,6 +151,11 @@ services.AddSmartPipe<Order, OrderDto>(
 
 Resolve `ISmartPipeFactory<Order, OrderDto>` and call `Start()`, or use
 `AddSmartPipeHostedService<TInput,TOutput>()` for background hosting.
+
+Factory-created runs preserve the underlying runtime controls: `CancelAsync`,
+`DrainAsync`, `TryDrainAsync`, `AbortAsync`, `Metrics`, `Outputs`, and `State`.
+The DI wrapper only replaces the completion/disposal lifetime so the run scope is
+disposed exactly once when the run completes or is disposed manually.
 
 ### Factory Vs Instance Builders
 

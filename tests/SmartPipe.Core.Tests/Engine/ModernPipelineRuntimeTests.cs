@@ -7,6 +7,8 @@ namespace SmartPipe.Core.Tests.Engine;
 
 public class ModernPipelineRuntimeTests
 {
+    private static readonly TimeSpan MinimalRetryDelay = TimeSpan.FromTicks(1);
+
     [Fact]
     public async Task PipelineBuilder_ModernApi_ShouldRunTypedStagesThroughSingleOutput()
     {
@@ -779,7 +781,7 @@ public class ModernPipelineRuntimeTests
                 transformer,
                 new StageFailureOptions
                 {
-                    Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero),
+                    Retry = new RetryPolicy(maxRetries: 1, delay: MinimalRetryDelay),
                 }
             )
             .WithObserver(observer)
@@ -810,7 +812,7 @@ public class ModernPipelineRuntimeTests
                 transformer,
                 new StageFailureOptions
                 {
-                    Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero),
+                    Retry = new RetryPolicy(maxRetries: 1, delay: MinimalRetryDelay),
                     OnRetryExhausted = FailureAction.Skip,
                 }
             )
@@ -1086,7 +1088,7 @@ public class ModernPipelineRuntimeTests
                 stage1Transformer,
                 new StageFailureOptions
                 {
-                    Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero),
+                    Retry = new RetryPolicy(maxRetries: 1, delay: MinimalRetryDelay),
                 }
             )
             .Transform(stage2Transformer)
@@ -1124,7 +1126,7 @@ public class ModernPipelineRuntimeTests
                 stage1,
                 new StageFailureOptions
                 {
-                    Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero),
+                    Retry = new RetryPolicy(maxRetries: 1, delay: MinimalRetryDelay),
                     OnRetryExhausted = FailureAction.Skip,
                 }
             )
@@ -1132,7 +1134,7 @@ public class ModernPipelineRuntimeTests
                 stage2,
                 new StageFailureOptions
                 {
-                    Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero),
+                    Retry = new RetryPolicy(maxRetries: 1, delay: MinimalRetryDelay),
                 }
             )
             .WithObserver(observer)
@@ -1166,7 +1168,7 @@ public class ModernPipelineRuntimeTests
                 new SlowStageTransformer<int, string>(),
                 new StageFailureOptions
                 {
-                    Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero),
+                    Retry = new RetryPolicy(maxRetries: 1, delay: MinimalRetryDelay),
                     Timeout = new TimeoutPolicy { StageTimeout = TimeSpan.FromMilliseconds(30) },
                     OnRetryExhausted = FailureAction.EmitFailureResult,
                 }
@@ -1859,7 +1861,7 @@ public class ModernPipelineRuntimeTests
                         FailureThreshold = 1,
                         BreakDuration = TimeSpan.FromMinutes(5),
                     },
-                    Retry = new RetryPolicy(1, TimeSpan.Zero),
+                    Retry = new RetryPolicy(1, MinimalRetryDelay),
                     OnPermanentFailure = FailureAction.FaultPipeline,
                     OnRetryExhausted = FailureAction.EmitFailureResult,
                 }
@@ -1950,7 +1952,7 @@ public class ModernPipelineRuntimeTests
                         FailureThreshold = 1,
                         BreakDuration = TimeSpan.FromMinutes(5),
                     },
-                    Retry = new RetryPolicy(1, TimeSpan.Zero),
+                    Retry = new RetryPolicy(1, MinimalRetryDelay),
                     OnPermanentFailure = FailureAction.Skip,
                     OnRetryExhausted = FailureAction.DeadLetter,
                 },
@@ -1999,7 +2001,7 @@ public class ModernPipelineRuntimeTests
                         FailureThreshold = 1,
                         BreakDuration = TimeSpan.FromMinutes(5),
                     },
-                    Retry = new RetryPolicy(1, TimeSpan.Zero),
+                    Retry = new RetryPolicy(1, MinimalRetryDelay),
                     OnPermanentFailure = FailureAction.Skip,
                     OnRetryExhausted = FailureAction.EmitFailureResult,
                 }
@@ -2035,7 +2037,7 @@ public class ModernPipelineRuntimeTests
                         FailureThreshold = 1,
                         BreakDuration = TimeSpan.FromMinutes(5),
                     },
-                    Retry = new RetryPolicy(2, TimeSpan.Zero),
+                    Retry = new RetryPolicy(2, MinimalRetryDelay),
                     OnPermanentFailure = FailureAction.Skip,
                     OnRetryExhausted = FailureAction.Skip,
                 }
@@ -2139,7 +2141,7 @@ public class ModernPipelineRuntimeTests
                         FailureThreshold = 3, // 3 failed attempts open the breaker
                         BreakDuration = TimeSpan.FromMinutes(5),
                     },
-                    Retry = new RetryPolicy(maxRetries: 2, delay: TimeSpan.Zero),
+                    Retry = new RetryPolicy(maxRetries: 2, delay: MinimalRetryDelay),
                     OnPermanentFailure = FailureAction.Skip,
                     OnRetryExhausted = FailureAction.Skip,
                 }
@@ -2180,7 +2182,7 @@ public class ModernPipelineRuntimeTests
                         FailureThreshold = 2, // Open after 2 failures
                         BreakDuration = TimeSpan.FromMinutes(5),
                     },
-                    Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero),
+                    Retry = new RetryPolicy(maxRetries: 1, delay: MinimalRetryDelay),
                     OnRetryExhausted = FailureAction.Skip,
                 }
             )

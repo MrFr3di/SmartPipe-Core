@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Runtime.ExceptionServices;
 using System.Threading.Channels;
 
 namespace SmartPipe.Core;
@@ -120,7 +121,6 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
     private readonly Channel<PipelineEvent> _events;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _worker;
-    private Exception? _failure;
     private Exception? _pipelineFault;
     private int _completed;
     private int _disposed;
@@ -149,8 +149,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         if (Volatile.Read(ref _completed) != 0)
             return;
 
-        if (_pipelineFault is not null)
-            throw _pipelineFault;
+        ThrowPipelineFaultIfRecorded();
 
         if (_options.Mode == ObserverDispatchMode.BufferedBestEffort)
         {
@@ -181,9 +180,10 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         {
             await _events.Writer.WriteAsync(pipelineEvent, ct).ConfigureAwait(false);
         }
-        catch (ChannelClosedException) when (_pipelineFault is not null)
+        catch (ChannelClosedException)
         {
-            throw _pipelineFault;
+            ThrowPipelineFaultIfRecorded();
+            throw;
         }
     }
 
@@ -196,8 +196,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         if (_options.FlushOnCompletion)
             await _worker.WaitAsync(ct).ConfigureAwait(false);
 
-        if (_pipelineFault is not null)
-            throw _pipelineFault;
+        ThrowPipelineFaultIfRecorded();
     }
 
     public async ValueTask DisposeAsync()
@@ -211,42 +210,88 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         {
             await _worker.ConfigureAwait(false);
         }
-        catch
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
-            // Failure is surfaced through CompleteAsync when configured to fault.
+            // Expected during disposal; cancellation is the disposal signal.
         }
-        _cts.Dispose();
+        catch (Exception) when (GetPipelineFault() is not null)
+        {
+            // Recorded observer failure is surfaced through EmitAsync/CompleteAsync.
+        }
+        finally
+        {
+            _cts.Dispose();
+        }
+    }
+
+    private Exception? GetPipelineFault() => Volatile.Read(ref _pipelineFault);
+
+    private Exception RecordPipelineFault(Exception exception)
+    {
+        Interlocked.CompareExchange(ref _pipelineFault, exception, null);
+        return Volatile.Read(ref _pipelineFault)!;
+    }
+
+    private void ThrowPipelineFaultIfRecorded()
+    {
+        var pipelineFault = GetPipelineFault();
+        if (pipelineFault is not null)
+            ExceptionDispatchInfo.Capture(pipelineFault).Throw();
     }
 
     private async Task ProcessAsync()
     {
         await foreach (var pipelineEvent in _events.Reader.ReadAllAsync(_cts.Token).ConfigureAwait(false))
         {
-            foreach (var registration in _observers)
-            {
-                if (registration.IsRemoved)
-                    continue;
-
-                try
-                {
-                    await registration.Registration.Observer.OnEventAsync(pipelineEvent, _cts.Token)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _failure ??= ex;
-                    if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
-                    {
-                        _pipelineFault ??= ex;
-                        _events.Writer.TryComplete(ex);
-                        return;
-                    }
-
-                    if (registration.Registration.FailurePolicy == ObserverFailurePolicy.RemoveObserver)
-                        registration.Remove();
-                }
-            }
+            if (await DispatchEventAsync(pipelineEvent).ConfigureAwait(false))
+                return;
         }
+    }
+
+    private async ValueTask<bool> DispatchEventAsync(PipelineEvent pipelineEvent)
+    {
+        foreach (var registration in _observers)
+        {
+            if (registration.IsRemoved)
+                continue;
+
+            if (await DispatchObserverAsync(pipelineEvent, registration).ConfigureAwait(false))
+                return true;
+        }
+
+        return false;
+    }
+
+    private async ValueTask<bool> DispatchObserverAsync(
+        PipelineEvent pipelineEvent,
+        ActiveObserverRegistration registration)
+    {
+        try
+        {
+            await registration.Registration.Observer.OnEventAsync(pipelineEvent, _cts.Token)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return HandleObserverFailure(registration, ex);
+        }
+
+        return false;
+    }
+
+    private bool HandleObserverFailure(ActiveObserverRegistration registration, Exception exception)
+    {
+        if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
+        {
+            var pipelineFault = RecordPipelineFault(exception);
+            _events.Writer.TryComplete(pipelineFault);
+            return true;
+        }
+
+        if (registration.Registration.FailurePolicy == ObserverFailurePolicy.RemoveObserver)
+            registration.Remove();
+
+        return false;
     }
 
     private void RecordDroppedEvent(PipelineEvent droppedEvent)

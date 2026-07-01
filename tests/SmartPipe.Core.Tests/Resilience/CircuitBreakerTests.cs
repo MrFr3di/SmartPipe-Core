@@ -101,9 +101,10 @@ public class CircuitBreakerTests
     [Fact]
     public void CircuitBreaker_PublicAllowRequest_DocumentedBehavior()
     {
-        var cb = new CircuitBreaker(failureRatio: 0.5, minimumThroughput: 5, breakDuration: TimeSpan.FromMilliseconds(10), maxHalfOpenRequests: 2);
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(failureRatio: 0.5, minimumThroughput: 5, breakDuration: TimeSpan.FromMilliseconds(10), maxHalfOpenRequests: 2, clock: clock);
         for (int i = 0; i < 5; i++) cb.RecordFailure();
-        Thread.Sleep(15);
+        clock.Advance(TimeSpan.FromMilliseconds(15));
         cb.AllowRequest().Should().BeTrue();
         cb.AllowRequest().Should().BeTrue();
         cb.AllowRequest().Should().BeFalse();
@@ -112,14 +113,16 @@ public class CircuitBreakerTests
     [Fact]
     public void CircuitBreaker_HalfOpen_AllowsUpToMaxConcurrentProbes()
     {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
         var cb = new CircuitBreaker(
             failureRatio: 0.5,
             minimumThroughput: 5,
             breakDuration: TimeSpan.FromMilliseconds(10),
-            maxHalfOpenRequests: 2);
+            maxHalfOpenRequests: 2,
+            clock: clock);
         for (var i = 0; i < 5; i++)
             cb.RecordFailure();
-        Thread.Sleep(15);
+        clock.Advance(TimeSpan.FromMilliseconds(15));
 
         cb.TryAcquireHalfOpenProbe(out _).Should().BeTrue();
         cb.TryAcquireHalfOpenProbe(out _).Should().BeTrue();
@@ -129,14 +132,16 @@ public class CircuitBreakerTests
     [Fact]
     public void CircuitBreaker_HalfOpen_ProbeCompletionReleasesSlot()
     {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
         var cb = new CircuitBreaker(
             failureRatio: 0.5,
             minimumThroughput: 5,
             breakDuration: TimeSpan.FromMilliseconds(10),
-            maxHalfOpenRequests: 1);
+            maxHalfOpenRequests: 1,
+            clock: clock);
         for (var i = 0; i < 5; i++)
             cb.RecordFailure();
-        Thread.Sleep(15);
+        clock.Advance(TimeSpan.FromMilliseconds(15));
 
         cb.TryAcquireHalfOpenProbe(out var firstProbe).Should().BeTrue();
         cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse();
@@ -147,16 +152,94 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    public void CircuitBreakerProbe_CopyDispose_DoesNotReleaseAnotherActiveProbeSlot()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 2,
+            clock: clock);
+
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        clock.Advance(TimeSpan.FromSeconds(11));
+
+        cb.TryAcquireHalfOpenProbe(out var firstProbe).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out var secondProbe).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse();
+
+        var firstCopy = firstProbe;
+
+        firstProbe.Dispose();
+        firstCopy.Dispose();
+
+        cb.TryAcquireHalfOpenProbe(out var thirdProbe).Should().BeTrue(
+            "disposing the first probe should release exactly one replacement slot");
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse(
+            "disposing a copy of the first probe must not release the second probe's active slot");
+
+        thirdProbe.Dispose();
+        secondProbe.Dispose();
+    }
+
+    [Fact]
+    public void CircuitBreakerProbe_DoubleDispose_DoesNotReleaseAnotherActiveProbeSlot()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 2,
+            clock: clock);
+
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        clock.Advance(TimeSpan.FromSeconds(11));
+
+        cb.TryAcquireHalfOpenProbe(out var firstProbe).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out var secondProbe).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse();
+
+        firstProbe.Dispose();
+        firstProbe.Dispose();
+
+        cb.TryAcquireHalfOpenProbe(out var thirdProbe).Should().BeTrue(
+            "disposing the first probe should release exactly one replacement slot");
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse(
+            "disposing a probe twice must not release another active probe's slot");
+
+        thirdProbe.Dispose();
+        secondProbe.Dispose();
+    }
+
+    [Fact]
+    public void CircuitBreakerProbe_DefaultDispose_IsNoOp()
+    {
+        var probe = default(CircuitBreakerProbe);
+
+        var act = () => probe.Dispose();
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void CircuitBreaker_HalfOpen_FailureReopensBreaker()
     {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
         var cb = new CircuitBreaker(
             failureRatio: 0.5,
             minimumThroughput: 5,
             breakDuration: TimeSpan.FromMilliseconds(10),
-            maxHalfOpenRequests: 1);
+            maxHalfOpenRequests: 1,
+            clock: clock);
         for (var i = 0; i < 5; i++)
             cb.RecordFailure();
-        Thread.Sleep(15);
+        clock.Advance(TimeSpan.FromMilliseconds(15));
 
         cb.TryAcquireHalfOpenProbe(out var probe).Should().BeTrue();
         cb.RecordFailure();
@@ -169,9 +252,10 @@ public class CircuitBreakerTests
     [Fact]
     public void CircuitBreaker_HalfOpen_SuccessThresholdClosesBreaker()
     {
-        var cb = new CircuitBreaker(failureRatio: 0.5, minimumThroughput: 5, breakDuration: TimeSpan.FromMilliseconds(10), maxHalfOpenRequests: 3);
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(failureRatio: 0.5, minimumThroughput: 5, breakDuration: TimeSpan.FromMilliseconds(10), maxHalfOpenRequests: 3, clock: clock);
         for (int i = 0; i < 5; i++) cb.RecordFailure();
-        Thread.Sleep(15);
+        clock.Advance(TimeSpan.FromMilliseconds(15));
 
         cb.TryAcquireHalfOpenProbe(out var firstProbe).Should().BeTrue();
         cb.RecordSuccess();
@@ -182,6 +266,164 @@ public class CircuitBreakerTests
         secondProbe.Dispose();
 
         cb.State.Should().Be(CircuitState.Closed);
+    }
+
+    [Fact]
+    public async Task TryAcquireHalfOpenProbe_ConcurrentExpiredOpen_AllowsAtMostConfiguredProbes()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            samplingDuration: TimeSpan.FromMinutes(1),
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 2,
+            clock: clock);
+
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        clock.Advance(TimeSpan.FromSeconds(11));
+
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attempts = Enumerable.Range(0, 64)
+            .Select(_ => Task.Run(async () =>
+            {
+                await gate.Task.ConfigureAwait(false);
+                var allowed = cb.TryAcquireHalfOpenProbe(out var probe);
+                return (allowed, probe);
+            }))
+            .ToArray();
+
+        gate.SetResult();
+
+        var results = await Task.WhenAll(attempts).WaitAsync(TimeSpan.FromSeconds(5));
+        var granted = results.Where(result => result.allowed).ToArray();
+
+        granted.Should().HaveCount(2);
+        cb.State.Should().Be(CircuitState.HalfOpen);
+
+        foreach (var result in granted)
+            result.probe.Dispose();
+    }
+
+    [Fact]
+    public async Task TryAcquireHalfOpenProbe_RacingExpiredOpenTransition_DoesNotResetActiveProbeCount()
+    {
+        var clock = new GatedManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            samplingDuration: TimeSpan.FromMinutes(1),
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 1,
+            clock: clock);
+
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        clock.Advance(TimeSpan.FromSeconds(11));
+        clock.GateReadsAfterPassThrough(passThroughReads: 2, gatedReads: 2);
+
+        var firstAttempt = Task.Run(() =>
+        {
+            var allowed = cb.TryAcquireHalfOpenProbe(out var probe);
+            return (allowed, probe);
+        });
+        var secondAttempt = Task.Run(() =>
+        {
+            var allowed = cb.TryAcquireHalfOpenProbe(out var probe);
+            return (allowed, probe);
+        });
+
+        clock.WaitForGatedReads(2).Should().BeTrue();
+        clock.ReleaseNextGatedRead();
+
+        var winner = await Task.WhenAny(firstAttempt, secondAttempt).WaitAsync(TimeSpan.FromSeconds(5));
+        var winnerResult = await winner;
+        winnerResult.allowed.Should().BeTrue();
+
+        clock.ReleaseNextGatedRead();
+
+        var results = await Task.WhenAll(firstAttempt, secondAttempt).WaitAsync(TimeSpan.FromSeconds(5));
+
+        results.Count(result => result.allowed).Should().Be(1);
+
+        foreach (var result in results.Where(result => result.allowed))
+            result.probe.Dispose();
+    }
+
+    [Fact]
+    public void TryAcquireHalfOpenProbe_WhenBreakDurationHasNotElapsed_ReturnsFalseAndStaysOpen()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 1,
+            clock: clock);
+
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        clock.Advance(TimeSpan.FromSeconds(9));
+
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse();
+        cb.State.Should().Be(CircuitState.Open);
+    }
+
+    [Fact]
+    public async Task AllowRequest_ConcurrentExpiredOpen_AllowsAtMostConfiguredHalfOpenRequests()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 2,
+            clock: clock);
+
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        clock.Advance(TimeSpan.FromSeconds(11));
+
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attempts = Enumerable.Range(0, 64)
+            .Select(_ => Task.Run(async () =>
+            {
+                await gate.Task.ConfigureAwait(false);
+                return cb.AllowRequest();
+            }))
+            .ToArray();
+
+        gate.SetResult();
+
+        var results = await Task.WhenAll(attempts).WaitAsync(TimeSpan.FromSeconds(5));
+
+        results.Count(allowed => allowed).Should().Be(2);
+        cb.State.Should().Be(CircuitState.HalfOpen);
+    }
+
+    [Fact]
+    public void TryAcquireHalfOpenProbe_DoesNotResetCountersAfterHalfOpenInitialized()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 1,
+            clock: clock);
+
+        cb.RecordFailure();
+        clock.Advance(TimeSpan.FromSeconds(11));
+
+        cb.TryAcquireHalfOpenProbe(out var firstProbe).Should().BeTrue();
+        cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse();
+
+        firstProbe.Dispose();
     }
 
     [Fact]
@@ -446,5 +688,99 @@ public class CircuitBreakerTests
         }
 
         public DateTime UtcNow { get; }
+    }
+
+    private sealed class MutableManualClock : IClock
+    {
+        private long _ticks;
+
+        public MutableManualClock(DateTime utcNow)
+        {
+            _ticks = utcNow.Ticks;
+        }
+
+        public DateTime UtcNow => new(Interlocked.Read(ref _ticks), DateTimeKind.Utc);
+
+        public void Advance(TimeSpan duration)
+        {
+            Interlocked.Add(ref _ticks, duration.Ticks);
+        }
+    }
+
+    private sealed class GatedManualClock : IClock
+    {
+        private readonly ConcurrentQueue<TaskCompletionSource> _gatedReads = new();
+        private long _ticks;
+        private int _arrivedGatedReads;
+        private int _arrivedPassThroughReads;
+        private int _remainingGatedReads;
+        private int _remainingPassThroughReads = -1;
+        private int _passThroughReadTarget;
+        private TaskCompletionSource _passThroughReadsReleased =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public GatedManualClock(DateTime utcNow)
+        {
+            _ticks = utcNow.Ticks;
+            _passThroughReadsReleased.SetResult();
+        }
+
+        public DateTime UtcNow
+        {
+            get
+            {
+                if (Interlocked.Decrement(ref _remainingPassThroughReads) >= 0)
+                {
+                    if (Interlocked.Increment(ref _arrivedPassThroughReads) == Volatile.Read(ref _passThroughReadTarget))
+                        _passThroughReadsReleased.SetResult();
+
+                    _passThroughReadsReleased.Task.GetAwaiter().GetResult();
+                    return CurrentUtcNow;
+                }
+
+                if (Interlocked.Decrement(ref _remainingGatedReads) >= 0)
+                {
+                    var read = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _gatedReads.Enqueue(read);
+                    Interlocked.Increment(ref _arrivedGatedReads);
+                    read.Task.GetAwaiter().GetResult();
+                }
+
+                return CurrentUtcNow;
+            }
+        }
+
+        public void Advance(TimeSpan duration)
+        {
+            Interlocked.Add(ref _ticks, duration.Ticks);
+        }
+
+        public void GateReadsAfterPassThrough(int passThroughReads, int gatedReads)
+        {
+            _passThroughReadsReleased = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Interlocked.Exchange(ref _passThroughReadTarget, passThroughReads);
+            Interlocked.Exchange(ref _arrivedPassThroughReads, 0);
+            Interlocked.Exchange(ref _arrivedGatedReads, 0);
+            Interlocked.Exchange(ref _remainingPassThroughReads, passThroughReads);
+            Interlocked.Exchange(ref _remainingGatedReads, gatedReads);
+
+            if (passThroughReads == 0)
+                _passThroughReadsReleased.SetResult();
+        }
+
+        public void ReleaseNextGatedRead()
+        {
+            _gatedReads.TryDequeue(out var read).Should().BeTrue();
+            read!.SetResult();
+        }
+
+        public bool WaitForGatedReads(int count)
+        {
+            return SpinWait.SpinUntil(
+                () => Volatile.Read(ref _arrivedGatedReads) >= count,
+                TimeSpan.FromSeconds(5));
+        }
+
+        private DateTime CurrentUtcNow => new(Interlocked.Read(ref _ticks), DateTimeKind.Utc);
     }
 }

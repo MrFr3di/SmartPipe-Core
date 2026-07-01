@@ -22,12 +22,74 @@ Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
 | `OutputPolicy` | `SuppressSuccessWhenSinkAttached` | Typed output policy. |
 | `OrderingMode` | `Unordered` | Cross-item output ordering is not guaranteed. |
 | `ObserverDispatch` | `Inline` | Inline or bounded buffered observer dispatch. |
+| `AdaptiveParallelism` | `disabled` | Opt-in adaptive admission control for parallel envelope processing; requires `InputFullMode = Wait`. |
 | `Clock` | `SystemPipelineClock.Instance` | Timestamps and timeout budgets. |
 
 All runtime channels are bounded. `BoundedChannelFullMode.Wait` is the safe
 default because it applies backpressure instead of dropping accepted work.
 When lossy input, output, or observer full modes are configured, the runtime
 records drop metrics and emits best-effort drop events.
+
+## Adaptive Parallelism
+
+Adaptive parallelism is disabled by default. Enable it with
+`PipelineRuntimeOptions.AdaptiveParallelism.Enabled = true`.
+
+Adaptive parallelism applies only when the effective `MaxConcurrency` is greater
+than `1`, and it requires `InputFullMode = BoundedChannelFullMode.Wait` so input
+backpressure remains lossless. Runtime `MaxConcurrency` remains the hard cap.
+`AdaptiveParallelism.MaxConcurrency` is an additional adaptive cap, so the
+effective adaptive maximum is:
+
+```text
+min(runtime effective MaxConcurrency, AdaptiveParallelism.MaxConcurrency)
+```
+
+Adaptive admission changes how many envelopes are admitted to processing at the
+same time. The stage chain inside one envelope remains sequential. With parallel
+processing, cross-envelope output order is still not guaranteed.
+
+The controller reacts to per-envelope completion latency, failure pressure,
+target latency, dead zone, cooldown, and configured min/max concurrency bounds.
+`Cooldown` is the minimum elapsed time between adaptive limit changes. The
+current `2.1.0` model is completion-based: the runtime records each envelope
+completion and does not run a background sampling loop or periodic timer.
+Retry attempts remain observable through retry metrics and events, but retry
+counts are not adaptive admission signals in `2.1.0`.
+
+| Option | Default | Notes |
+|---|---:|---|
+| `Enabled` | `false` | Enables adaptive admission. |
+| `MinConcurrency` | `1` | Lower bound for adaptive admission limit. |
+| `MaxConcurrency` | `Environment.ProcessorCount` | Adaptive upper bound, still capped by runtime `MaxConcurrency`. |
+| `InitialConcurrency` | `1` | Initial adaptive admission limit. |
+| `TargetLatency` | `100 ms` | Desired per-envelope processing latency. |
+| `DeadZone` | `5 ms` | Latency band around target where no limit change is made. |
+| `Cooldown` | `1 second` | Minimum elapsed time between adaptive limit changes. |
+| `MaxAdjustmentStep` | `1` | Maximum limit change per controller decision. |
+| `FailurePressureThreshold` | `0.10` | Failure pressure threshold that prevents growth and reduces concurrency. |
+| `MinSmoothingFactor` | `0.2` | Lower bound for latency smoothing factor. |
+
+```csharp
+var options = new PipelineRuntimeOptions
+{
+    MaxConcurrency = 8,
+    InputFullMode = BoundedChannelFullMode.Wait,
+    AdaptiveParallelism = new AdaptiveParallelismOptions
+    {
+        Enabled = true,
+        MinConcurrency = 1,
+        MaxConcurrency = 8,
+        InitialConcurrency = 2,
+        TargetLatency = TimeSpan.FromMilliseconds(100),
+        DeadZone = TimeSpan.FromMilliseconds(10),
+        Cooldown = TimeSpan.FromSeconds(1),
+        MaxAdjustmentStep = 1,
+        FailurePressureThreshold = 0.10,
+        MinSmoothingFactor = 0.2,
+    },
+};
+```
 
 ## Output Policy
 
@@ -47,6 +109,42 @@ retry, circuit breaker, and dead-letter behavior are independent.
 
 For sink-backed pipelines, success output is emitted only after the sink write
 succeeds. If the sink throws, no success output is published for that item.
+
+### Output Filtering API Deprecation
+
+`PipelineOutputPolicy` is the canonical output filtering API for new code.
+
+`PipelineOutputMode` and `PipelineRuntimeOptions.OutputMode` are compatibility
+APIs retained for existing callers. They remain supported in the current major
+version, but new code should use `PipelineRuntimeOptions.OutputPolicy`.
+
+#### Migration Map
+
+| Old `PipelineOutputMode` | New `PipelineOutputPolicy` | Notes |
+|---|---|---|
+| `EmitAll` | `EmitAll` | Emits all processing results to the output channel. |
+| `FailuresOnlyWhenSinkAttached` | `EmitFailuresOnly` when failures-only behavior is desired | The old value had sink-aware fallback semantics. Verify behavior before migrating. |
+| `SuppressWhenSinkAttached` | `SuppressAllWhenSinkAttached` | Suppresses output channel results when a sink is attached. |
+| `SuppressAll` | No exact `OutputPolicy` equivalent | Keep compatibility mode until a canonical replacement is introduced. |
+
+#### Conflict Rule
+
+If both `OutputMode` and `OutputPolicy` are configured, they must describe
+equivalent output behavior. Non-equivalent combinations are rejected by runtime
+option validation. Today, only `EmitAll`/`EmitAll` and
+`SuppressWhenSinkAttached`/`SuppressAllWhenSinkAttached` are treated as exact
+equivalents.
+
+#### Deprecation Timeline
+
+- Current minor/stabilization releases: `OutputMode` remains available as an
+  obsolete compatibility API.
+- Next major release candidate: the project may consider promoting obsolete
+  usage to an error after a documented migration window.
+- Future major release only: the project may remove `OutputMode` and the
+  compatibility runtime branch.
+
+No removal is planned in a patch or minor stabilization release.
 
 ## Stage Failure Options
 

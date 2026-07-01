@@ -6,7 +6,8 @@ namespace SmartPipe.Extensions.Selectors;
 
 /// <summary>
 /// Entity Framework Core data source that streams entities via IAsyncEnumerable.
-/// Supports cancellation and logging.
+/// Uses no-tracking queries by default for read-only pipeline source scenarios.
+/// Supports query customization, cancellation, and logging.
 /// </summary>
 /// <typeparam name="T">Entity type from DbContext.</typeparam>
 public class EfCoreSelector<T> : IPipelineSource<T>
@@ -15,6 +16,7 @@ public class EfCoreSelector<T> : IPipelineSource<T>
     private readonly DbContext _dbContext;
     private readonly ILogger<EfCoreSelector<T>>? _logger;
     private IQueryable<T>? _query;
+    private bool _trackingEnabled;
 
     /// <summary>Create EF Core source for given DbContext.</summary>
     /// <param name="dbContext">EF Core database context.</param>
@@ -32,6 +34,16 @@ public class EfCoreSelector<T> : IPipelineSource<T>
         return this;
     }
 
+    /// <summary>
+    /// Configures whether entities returned by this selector are tracked by EF Core.
+    /// Tracking is disabled by default.
+    /// </summary>
+    public EfCoreSelector<T> WithTracking(bool enabled = true)
+    {
+        _trackingEnabled = enabled;
+        return this;
+    }
+
     /// <inheritdoc />
     public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
@@ -41,6 +53,7 @@ public class EfCoreSelector<T> : IPipelineSource<T>
     )
     {
         var query = _query ?? _dbContext.Set<T>();
+        query = _trackingEnabled ? query.AsTracking() : query.AsNoTracking();
         var entities = query.AsAsyncEnumerable().WithCancellation(ct);
 
         await foreach (var entity in entities)

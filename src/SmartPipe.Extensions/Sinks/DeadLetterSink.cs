@@ -22,8 +22,7 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     private readonly ILogger<DeadLetterSink<T>> _logger;
     private readonly Func<DeadLetterEnvelope<T>, string> _serialize;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
-    private readonly Stream? _testStream;
-    private StreamWriter? _writer;
+    private IDeadLetterLineWriter? _lineWriter;
     private bool _disposed;
 
     /// <summary>Create dead letter sink with default file path.</summary>
@@ -56,7 +55,7 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     /// <summary>Create dead letter sink with given file path.</summary>
     /// <param name="path">Output JSON file path (default: "dead_letter.json").</param>
     /// <param name="logger">Logger instance via DI.</param>
-    /// <param name="stream">Optional test stream. If provided, writer is created immediately.</param>
+    /// <param name="stream">Optional output stream. If provided, the sink writes to this stream instead of opening a file.</param>
     [RequiresUnreferencedCode("Reflection-based dead-letter JSON serialization is not trimming-safe. Use the JsonTypeInfo constructor for trimming and NativeAOT.")]
     [RequiresDynamicCode("Reflection-based dead-letter JSON serialization may require runtime code generation. Use the JsonTypeInfo constructor for NativeAOT.")]
 #pragma warning disable RS0027 // Existing 1.x optional constructor preserved for source compatibility.
@@ -68,12 +67,11 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     {
         _path = path;
         _logger = logger ?? NullLogger<DeadLetterSink<T>>.Instance;
-        _testStream = stream;
         _serialize = static result => JsonSerializer.Serialize(result);
 
-        if (_testStream != null)
+        if (stream != null)
         {
-            _writer = new StreamWriter(_testStream, Encoding.UTF8, 1024, leaveOpen: true);
+            _lineWriter = new StreamDeadLetterLineWriter(stream, leaveOpen: true);
         }
     }
 #pragma warning restore RS0027
@@ -91,7 +89,7 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     /// <param name="path">Output JSON file path.</param>
     /// <param name="resultTypeInfo">Source-generated type information for dead-letter envelopes.</param>
     /// <param name="logger">Logger instance via DI.</param>
-    /// <param name="stream">Optional test stream. If provided, writer is created immediately.</param>
+    /// <param name="stream">Optional output stream. If provided, the sink writes to this stream instead of opening a file.</param>
     /// <exception cref="ArgumentNullException">Thrown when path or type information is null.</exception>
     public DeadLetterSink(
         string path,
@@ -103,19 +101,30 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         _path = path ?? throw new ArgumentNullException(nameof(path));
         ArgumentNullException.ThrowIfNull(resultTypeInfo);
         _logger = logger ?? NullLogger<DeadLetterSink<T>>.Instance;
-        _testStream = stream;
         _serialize = result => JsonSerializer.Serialize(result, resultTypeInfo);
 
-        if (_testStream != null)
+        if (stream != null)
         {
-            _writer = new StreamWriter(_testStream, Encoding.UTF8, 1024, leaveOpen: true);
+            _lineWriter = new StreamDeadLetterLineWriter(stream, leaveOpen: true);
         }
+    }
+
+    internal DeadLetterSink(
+        string path,
+        ILogger<DeadLetterSink<T>>? logger,
+        IDeadLetterLineWriter lineWriter
+    )
+    {
+        _path = path;
+        _logger = logger ?? NullLogger<DeadLetterSink<T>>.Instance;
+        _serialize = static result => JsonSerializer.Serialize(result);
+        _lineWriter = lineWriter ?? throw new ArgumentNullException(nameof(lineWriter));
     }
 
     /// <inheritdoc />
     public ValueTask InitializeAsync(CancellationToken ct = default)
     {
-        if (_writer == null)
+        if (_lineWriter == null)
         {
             // Open file in create mode - overwrite existing file on initialization
             var fileStream = new FileStream(
@@ -124,7 +133,7 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
                 FileAccess.Write,
                 FileShare.None
             );
-            _writer = new StreamWriter(fileStream);
+            _lineWriter = new StreamDeadLetterLineWriter(fileStream, leaveOpen: false);
         }
         return ValueTask.CompletedTask;
     }
@@ -138,7 +147,7 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         await _semaphore.WaitAsync(ct);
         try
         {
-            if (_writer == null)
+            if (_lineWriter == null)
                 throw new InvalidOperationException(
                     "Sink not initialized. Call InitializeAsync first."
                 );
@@ -165,20 +174,10 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         {
             try
             {
-                if (_writer == null)
+                if (_lineWriter == null)
                     return;
 
-                // For testing: check if we should throw IOException
-                if (
-                    _testException != null
-                    && attempt < _testException.Length
-                    && _testException[attempt]
-                )
-                {
-                    throw new IOException($"Simulated IOException (attempt {attempt + 1})");
-                }
-
-                await _writer.WriteLineAsync(json.AsMemory(), ct);
+                await _lineWriter.WriteLineAsync(json, ct);
                 return; // Success
             }
             catch (IOException ex)
@@ -210,24 +209,6 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         }
     }
 
-    /// <summary>
-    /// For testing purposes: set which attempts should throw IOException.
-    /// </summary>
-    internal void SetTestExceptionForTesting(bool[] throwOnAttempt)
-    {
-        _testException = throwOnAttempt;
-    }
-
-    private bool[]? _testException;
-
-    /// <summary>
-    /// For testing purposes: set the writer directly.
-    /// </summary>
-    internal void SetWriterForTesting(StreamWriter writer)
-    {
-        _writer = writer;
-    }
-
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
@@ -239,10 +220,10 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         await _semaphore.WaitAsync();
         try
         {
-            if (_writer != null)
+            if (_lineWriter != null)
             {
-                await _writer.DisposeAsync();
-                _writer = null;
+                await _lineWriter.DisposeAsync();
+                _lineWriter = null;
             }
         }
         finally
@@ -250,5 +231,30 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
             _semaphore.Release();
             _semaphore.Dispose();
         }
+    }
+}
+
+internal interface IDeadLetterLineWriter : IAsyncDisposable
+{
+    ValueTask WriteLineAsync(string line, CancellationToken ct);
+}
+
+internal sealed class StreamDeadLetterLineWriter : IDeadLetterLineWriter
+{
+    private readonly StreamWriter _writer;
+
+    public StreamDeadLetterLineWriter(Stream stream, bool leaveOpen)
+    {
+        _writer = new StreamWriter(stream, Encoding.UTF8, 1024, leaveOpen);
+    }
+
+    public async ValueTask WriteLineAsync(string line, CancellationToken ct)
+    {
+        await _writer.WriteLineAsync(line.AsMemory(), ct).ConfigureAwait(false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _writer.DisposeAsync().ConfigureAwait(false);
     }
 }

@@ -10,6 +10,8 @@ namespace SmartPipe.Core.Tests.Engine;
 
 public sealed class StageExecutorTests
 {
+    private static readonly TimeSpan MinimalRetryDelay = TimeSpan.FromTicks(1);
+
     [Fact]
     public async Task StageExecutor_Retry_RetriesConfiguredAttempts()
     {
@@ -22,7 +24,7 @@ public sealed class StageExecutorTests
                 transformer,
                 new StageFailureOptions
                 {
-                    Retry = new RetryPolicy(2, TimeSpan.Zero),
+                    Retry = new RetryPolicy(2, MinimalRetryDelay),
                 })
             .WithObserver(observer)
             .Run();
@@ -50,7 +52,7 @@ public sealed class StageExecutorTests
                 transformer,
                 new StageFailureOptions
                 {
-                    Retry = new RetryPolicy(2, TimeSpan.Zero),
+                    Retry = new RetryPolicy(2, MinimalRetryDelay),
                     OnRetryExhausted = FailureAction.EmitFailureResult,
                 })
             .WithObserver(observer)
@@ -181,7 +183,7 @@ public sealed class StageExecutorTests
                         FailureThreshold = 1,
                         BreakDuration = TimeSpan.FromMinutes(1),
                     },
-                    Retry = new RetryPolicy(5, TimeSpan.Zero),
+                    Retry = new RetryPolicy(5, MinimalRetryDelay),
                     OnRetryExhausted = FailureAction.EmitFailureResult,
                 })
             .WithObserver(observer)
@@ -238,7 +240,7 @@ public sealed class StageExecutorTests
                 transformer,
                 new StageFailureOptions
                 {
-                    Retry = new RetryPolicy(1, TimeSpan.Zero, retryOn: _ => true),
+                    Retry = new RetryPolicy(1, MinimalRetryDelay, retryOn: _ => true),
                 })
             .Run();
 

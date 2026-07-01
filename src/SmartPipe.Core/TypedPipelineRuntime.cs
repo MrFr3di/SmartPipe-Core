@@ -625,6 +625,22 @@ internal readonly record struct DeadLetterWriteResult(
 
 internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 {
+    private enum SourceStopReason
+    {
+        None = 0,
+        Drain = 1,
+        RuntimeCancellation = 2,
+    }
+
+    private readonly record struct SourceStopClassificationSnapshot(
+        bool SourceCancellationRequested,
+        SourceStopReason Reason)
+    {
+        public bool IsGraceful =>
+            SourceCancellationRequested
+            && Reason == SourceStopReason.Drain;
+    }
+
     // Prevents scheduling retries when the remaining StageTimeout budget is too small
     // to execute a meaningful next attempt after retry delay.
     private static readonly TimeSpan MinimumRetryAttemptBudget = TimeSpan.FromMilliseconds(5);
@@ -639,6 +655,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly PipelineOutputEmitter<TOutput> _outputEmitter;
     private readonly PipelineProducer<TInput> _producer;
     private readonly PipelineWorker<TInput> _worker;
+    private readonly AdaptiveParallelismRuntimeState? _adaptiveParallelism;
     private readonly StageExecutor _stageExecutor;
     private readonly SinkExecutor<TOutput> _sinkExecutor;
     private readonly SmartPipeMetricsRecorder _metrics;
@@ -647,13 +664,16 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly CancellationTokenSource _cts;
     private readonly CancellationTokenSource _sourceCts;
     private readonly CancellationTokenSource _processingCts;
+    private readonly CancellationTokenRegistration _sourceCancellationRegistration;
     private readonly Dictionary<string, CircuitBreaker> _breakers = [];
     private readonly object _breakersGate = new();
     private int _disposed;
     private int _componentsDisposed;
     private Task? _runTask;
+    private int _started;
     private int _drainRequested;
     private int _stopAcceptingRequested;
+    private int _sourceStopReason;
 
     public TypedPipelineExecutor(
         PipelineRuntime runtime,
@@ -674,7 +694,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _options,
             _sink is not null);
         _producer = new PipelineProducer<TInput>(_spec.Source, ShouldStopAccepting);
-        _worker = new PipelineWorker<TInput>(ProcessEnvelopeAsync, RequestStopAccepting);
+        _worker = new PipelineWorker<TInput>(
+            ProcessEnvelopeWithAdaptiveAdmissionAsync,
+            RequestStopAccepting);
         _stageExecutor = new StageExecutor(
             _spec.PipelineId,
             _runtime.RunId,
@@ -702,8 +724,15 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             OnObserverEventDropped
         );
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        _sourceCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        _sourceCts = new CancellationTokenSource();
         _processingCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        _sourceCancellationRegistration = _cts.Token.Register(
+            static state =>
+                ((TypedPipelineExecutor<TInput, TOutput>)state!).RequestRuntimeSourceCancellation(),
+            this);
+        _adaptiveParallelism = ShouldUseAdaptiveAdmission(_options)
+            ? new AdaptiveParallelismRuntimeState(_options)
+            : null;
     }
 
     private static Channel<PipelineOutput<TOutput>> CreateOutputChannel(
@@ -720,6 +749,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     public PipelineRun<TOutput> Start()
     {
+        if (Interlocked.Exchange(ref _started, 1) != 0)
+        {
+            throw new InvalidOperationException(
+                "This pipeline runtime instance has already been started. Create a new runtime instance per run.");
+        }
+
         _runTask = Task.Run(RunAsync, CancellationToken.None);
         return new PipelineRun<TOutput>(
             _outputs.Reader,
@@ -741,6 +776,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _lifecycle.MarkCancelledUnlessAborted();
         var cancellation = new OperationCanceledException("Pipeline run cancelled.");
         var cancelTask = _cts.CancelAsync();
+        _adaptiveParallelism?.Complete();
         _outputs.Writer.TryComplete(cancellation);
 
         await cancelTask.WaitAsync(ct).ConfigureAwait(false);
@@ -816,6 +852,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     {
         _lifecycle.MarkAborted();
         _cts.Cancel();
+        _adaptiveParallelism?.Complete();
         _outputs.Writer.TryComplete(new OperationCanceledException("Pipeline run aborted."));
         return ValueTask.CompletedTask;
     }
@@ -828,6 +865,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _cts.Cancel();
         _sourceCts.Cancel();
         _processingCts.Cancel();
+        _adaptiveParallelism?.Complete();
 
         // Wait for the in-flight run task to drain before disposing the linked
         // CTSs, otherwise RunAsync may observe ObjectDisposedException when
@@ -847,6 +885,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
         await DisposeComponentsAsync(CancellationToken.None).ConfigureAwait(false);
         await _observerDispatcher.DisposeAsync().ConfigureAwait(false);
+        _sourceCancellationRegistration.Dispose();
         _sourceCts.Dispose();
         _processingCts.Dispose();
         _cts.Dispose();
@@ -948,6 +987,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
         finally
         {
+            _adaptiveParallelism?.Complete();
             await DisposeComponentsAsync(CancellationToken.None).ConfigureAwait(false);
             await _observerDispatcher.DisposeAsync().ConfigureAwait(false);
             _sinkExecutor.Dispose();
@@ -969,16 +1009,34 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     internal void RequestDrain()
     {
         Volatile.Write(ref _drainRequested, 1);
+        RecordSourceStopReason(SourceStopReason.Drain);
         _sourceCts.Cancel();
     }
 
     private void RequestStopAccepting() => Volatile.Write(ref _stopAcceptingRequested, 1);
+
+    private void RequestRuntimeSourceCancellation()
+    {
+        RecordSourceStopReason(SourceStopReason.RuntimeCancellation);
+        _sourceCts.Cancel();
+    }
+
+    private void RecordSourceStopReason(SourceStopReason reason)
+    {
+        Interlocked.CompareExchange(
+            ref _sourceStopReason,
+            (int)reason,
+            (int)SourceStopReason.None);
+    }
 
     private bool ShouldStopAccepting()
     {
         return Volatile.Read(ref _drainRequested) != 0
             || Volatile.Read(ref _stopAcceptingRequested) != 0;
     }
+
+    private static bool ShouldUseAdaptiveAdmission(PipelineRuntimeOptions options) =>
+        options.AdaptiveParallelism.Enabled && options.EffectiveMaxConcurrency > 1;
 
     private async ValueTask RunSequentialProcessingAsync(
         CancellationToken sourceToken,
@@ -1000,8 +1058,13 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 }
             }
         }
-        catch (OperationCanceledException) when (IsGracefulSourceStop())
+        catch (OperationCanceledException)
         {
+            var classification = CaptureSourceStopClassificationSnapshot();
+            if (!classification.IsGraceful)
+                throw;
+
+            _cts.Token.ThrowIfCancellationRequested();
         }
         finally
         {
@@ -1045,8 +1108,13 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         {
             await _producer.ProduceAsync(input.Writer, sourceToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (IsGracefulSourceStop())
+        catch (OperationCanceledException)
         {
+            var classification = CaptureSourceStopClassificationSnapshot();
+            if (!classification.IsGraceful)
+                throw;
+
+            _cts.Token.ThrowIfCancellationRequested();
         }
         catch (ChannelClosedException) when (HasWorkerFailure())
         {
@@ -1059,29 +1127,31 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         await Task.WhenAll(workers).ConfigureAwait(false);
     }
 
-    private bool IsGracefulSourceStop() =>
-        !_cts.IsCancellationRequested
-        && _sourceCts.IsCancellationRequested
-        && ShouldStopAccepting();
+    private SourceStopClassificationSnapshot CaptureSourceStopClassificationSnapshot()
+    {
+        return new SourceStopClassificationSnapshot(
+            SourceCancellationRequested: _sourceCts.IsCancellationRequested,
+            Reason: (SourceStopReason)Volatile.Read(ref _sourceStopReason));
+    }
 
     private void OnInputDropped(ProcessingEnvelope<TInput> envelope)
     {
         _metrics.RecordItemDropped();
-        _ = TryEmitAsync(new InputDroppedEvent(
+        EmitEventFireAndForget(new InputDroppedEvent(
             _spec.PipelineId,
             _runtime.RunId,
             envelope.TraceId,
-            _clock.GetUtcNow())).AsTask();
+            _clock.GetUtcNow()));
     }
 
     private void OnOutputDropped(PipelineOutput<TOutput> output)
     {
         _metrics.RecordOutputDropped();
-        _ = TryEmitAsync(new OutputDroppedEvent(
+        EmitEventFireAndForget(new OutputDroppedEvent(
             _spec.PipelineId,
             _runtime.RunId,
             output.Result.TraceId,
-            _clock.GetUtcNow())).AsTask();
+            _clock.GetUtcNow()));
     }
 
     private void OnObserverEventDropped(PipelineEvent pipelineEvent)
@@ -1133,6 +1203,57 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
         return null;
     }
+
+    private async ValueTask<FailureAction?> ProcessEnvelopeWithAdaptiveAdmissionAsync(
+        ProcessingEnvelope<TInput> sourceEnvelope,
+        CancellationToken ct
+    )
+    {
+        var adaptiveParallelism = _adaptiveParallelism;
+        if (adaptiveParallelism is null)
+            return await ProcessEnvelopeAsync(sourceEnvelope, ct).ConfigureAwait(false);
+
+        AdaptiveConcurrencyLimiter.Lease lease;
+        try
+        {
+            lease = await adaptiveParallelism.AcquireAsync(ct).ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException ex) when (IsAdaptiveAdmissionShutdownInProgress())
+        {
+            throw new OperationCanceledException("Pipeline run cancelled.", ex, ct);
+        }
+
+        var started = _clock.GetTimestamp();
+        var failed = false;
+        try
+        {
+            var action = await ProcessEnvelopeAsync(sourceEnvelope, ct).ConfigureAwait(false);
+            failed = action is not null;
+            return action;
+        }
+        catch
+        {
+            failed = true;
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                var elapsed = _clock.GetElapsedTime(started, _clock.GetTimestamp());
+                adaptiveParallelism.RecordCompletion(elapsed, failed);
+            }
+            finally
+            {
+                lease.Dispose();
+            }
+        }
+    }
+
+    private bool IsAdaptiveAdmissionShutdownInProgress() =>
+        _cts.IsCancellationRequested
+        || Volatile.Read(ref _disposed) != 0
+        || _lifecycle.State is PipelineRunState.Cancelled or PipelineRunState.Aborted;
 
     private async ValueTask EmitRetryScheduledAsync(
         ITypedPipelineStage stage,
@@ -1434,15 +1555,29 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         await _observerDispatcher.EmitAsync(pipelineEvent, ct).ConfigureAwait(false);
     }
 
+    private void EmitEventFireAndForget(PipelineEvent pipelineEvent)
+    {
+        _ = TryEmitAsync(pipelineEvent).AsTask();
+    }
+
     private async ValueTask TryEmitAsync(PipelineEvent pipelineEvent)
     {
         try
         {
             await EmitAsync(pipelineEvent, CancellationToken.None).ConfigureAwait(false);
         }
-        catch
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
-            // Terminal notifications are best-effort and must not hide the primary run outcome.
+            _metrics.RecordObserverEventDropped();
+        }
+        catch (ChannelClosedException)
+        {
+            _metrics.RecordObserverEventDropped();
+        }
+        catch (Exception)
+        {
+            // Best-effort notifications must not hide the primary run outcome.
+            _metrics.RecordObserverEventDropped();
         }
     }
 

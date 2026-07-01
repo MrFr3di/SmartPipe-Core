@@ -616,7 +616,7 @@ public class RuntimeOptionsPassTests
                 {
                     Retry = new RetryPolicy(
                         maxRetries: 2,
-                        delay: TimeSpan.Zero,
+                        delay: TimeSpan.FromTicks(1),
                         strategy: BackoffStrategy.Fixed
                     ),
                     Timeout = new TimeoutPolicy { StageTimeout = TimeSpan.FromMilliseconds(10) },

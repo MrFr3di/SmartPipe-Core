@@ -24,6 +24,10 @@ The hosted service:
 - drains the run during stop;
 - disposes runtime-owned components.
 
+Hosted services receive the same factory-created run contract as direct factory
+callers. Health checks and hosted shutdown observe the underlying run state and
+metrics while the factory wrapper owns DI scope disposal.
+
 Hosted pipeline faults are not log-only by default. Configure
 `SmartPipeHostedServiceOptions`:
 

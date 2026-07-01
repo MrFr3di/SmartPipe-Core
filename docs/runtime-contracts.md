@@ -23,6 +23,18 @@ The stage chain inside one envelope is sequential. `MaxConcurrency > 1` permits
 multiple envelopes to be processed at the same time. Cross-envelope output order
 is not guaranteed.
 
+## Adaptive Admission
+
+Adaptive parallelism is opt-in. It is an admission-control layer for parallel
+envelope processing: it changes the active concurrent envelope admission limit,
+not the sequential stage chain inside one envelope.
+
+`MaxConcurrency` remains the hard cap. The adaptive limit can move within the
+configured min/max bounds based on completion latency and failure pressure. The
+current `2.1.0` model is completion-based and does not run a background sampling
+loop. Retry attempts remain observable through metrics and events, but they do
+not affect adaptive admission decisions in `2.1.0`.
+
 ## Factory And Instance Lifetimes
 
 Instance pipelines use concrete components and are single-use:
