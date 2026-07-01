@@ -250,6 +250,7 @@ public sealed class ObserverDispatcherTests
             .Run();
 
         await transformer.ExpectedConcurrentCallsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await observer.EventObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
         transformer.Release();
 
         _ = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromSeconds(5));
@@ -479,10 +480,16 @@ public sealed class ObserverDispatcherTests
             _eventType = eventType;
         }
 
+        public TaskCompletionSource EventObserved { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
         {
             if (pipelineEvent.GetType() == _eventType)
+            {
+                EventObserved.TrySetResult();
                 throw new InvalidOperationException("observer failure");
+            }
 
             return ValueTask.CompletedTask;
         }
