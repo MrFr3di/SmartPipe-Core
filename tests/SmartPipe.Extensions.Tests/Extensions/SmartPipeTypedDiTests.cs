@@ -278,8 +278,9 @@ public sealed class SmartPipeTypedDiTests
 
         var act = () => factory.Start();
 
-        act.Should().Throw<InvalidOperationException>()
+        var thrown = act.Should().Throw<InvalidOperationException>()
             .WithMessage("sync init boom");
+        thrown.Which.StackTrace.Should().Contain(nameof(ThrowingSourceWithAsyncOnlyMarker));
         recorder.DisposedMarkerScopeIds.Should().HaveCount(1);
     }
 

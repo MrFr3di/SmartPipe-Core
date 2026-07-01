@@ -85,7 +85,7 @@ public class RuntimePipelineBenchmarks
                 new RetryOnceTransformer(),
                 new StageFailureOptions
                 {
-                    Retry = new RetryPolicy(1, TimeSpan.FromMilliseconds(1)),
+                    Retry = new RetryPolicy(1, TimeSpan.FromTicks(1)),
                 })
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {

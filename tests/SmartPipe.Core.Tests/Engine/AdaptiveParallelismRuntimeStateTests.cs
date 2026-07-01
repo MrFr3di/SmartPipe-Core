@@ -48,11 +48,11 @@ public sealed class AdaptiveParallelismRuntimeStateTests
     public void CurrentLimit_ClampedToEffectiveMaxConcurrency()
     {
         // When adaptive max > runtime max, effective adaptive max = runtime max.
-        var options = ValidOptions(initialConcurrency: 2, maxConcurrency: 8, runtimeMaxConcurrency: 4);
+        var options = ValidOptions(initialConcurrency: 8, maxConcurrency: 8, runtimeMaxConcurrency: 4);
 
         using var state = new AdaptiveParallelismRuntimeState(options);
 
-        state.CurrentLimit.Should().Be(2);
+        state.CurrentLimit.Should().Be(4);
     }
 
     [Fact]

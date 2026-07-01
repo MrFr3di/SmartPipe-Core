@@ -105,7 +105,7 @@ public static class ChannelMerge
         }
         catch
         {
-            cancellationSource.Cancel();
+            await cancellationSource.CancelAsync().ConfigureAwait(false);
             throw;
         }
     }

@@ -68,8 +68,7 @@ and `ToFactory` throw on instance pipelines; use `.Transform(instance)` and
 `SmartPipe.Extensions` provides typed selectors, transforms, sinks, DI
 registration, hosted service integration, and health-check support.
 
-- Factory-created `PipelineRun<TOutput>` handles preserve runtime controls,
-  structured drain, and metrics while adding DI scope lifetime management.
+- Factory-created `PipelineRun<TOutput>` instances preserve runtime controls, structured drain, and metrics while adding DI scope lifetime management.
 
 Important selector and streaming contracts:
 

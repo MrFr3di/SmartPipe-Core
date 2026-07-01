@@ -92,16 +92,21 @@ public class DeduplicationFilterTests
     [Fact]
     public void TtlCleanup_ShouldNotCreateFalseNegativeForNonExpiredItemSharingBits()
     {
+        var clock = new MutableClock(new DateTime(2026, 6, 5, 12, 0, 0, DateTimeKind.Utc));
         var ttl = TimeSpan.FromMilliseconds(120);
         var first = 1UL;
         var second = FindValueSharingSomeButNotAllBits(first, expectedItems: 10, falsePositiveRate: 0.01);
-        var filter = new DeduplicationFilter(expectedItems: 10, falsePositiveRate: 0.01, ttl: ttl);
+        var filter = new DeduplicationFilter(
+            expectedItems: 10,
+            falsePositiveRate: 0.01,
+            ttl: ttl,
+            clock: clock);
 
         filter.ContainsAndAdd(first).Should().BeFalse();
-        Thread.Sleep(70);
+        clock.UtcNow = clock.UtcNow.AddMilliseconds(70);
         filter.ContainsAndAdd(second).Should().BeFalse();
 
-        Thread.Sleep(70);
+        clock.UtcNow = clock.UtcNow.AddMilliseconds(70);
 
         filter.ContainsAndAdd(second).Should().BeTrue();
     }

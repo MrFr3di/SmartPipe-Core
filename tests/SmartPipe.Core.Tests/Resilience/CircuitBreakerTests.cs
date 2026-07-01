@@ -101,9 +101,10 @@ public class CircuitBreakerTests
     [Fact]
     public void CircuitBreaker_PublicAllowRequest_DocumentedBehavior()
     {
-        var cb = new CircuitBreaker(failureRatio: 0.5, minimumThroughput: 5, breakDuration: TimeSpan.FromMilliseconds(10), maxHalfOpenRequests: 2);
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(failureRatio: 0.5, minimumThroughput: 5, breakDuration: TimeSpan.FromMilliseconds(10), maxHalfOpenRequests: 2, clock: clock);
         for (int i = 0; i < 5; i++) cb.RecordFailure();
-        Thread.Sleep(15);
+        clock.Advance(TimeSpan.FromMilliseconds(15));
         cb.AllowRequest().Should().BeTrue();
         cb.AllowRequest().Should().BeTrue();
         cb.AllowRequest().Should().BeFalse();
@@ -112,14 +113,16 @@ public class CircuitBreakerTests
     [Fact]
     public void CircuitBreaker_HalfOpen_AllowsUpToMaxConcurrentProbes()
     {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
         var cb = new CircuitBreaker(
             failureRatio: 0.5,
             minimumThroughput: 5,
             breakDuration: TimeSpan.FromMilliseconds(10),
-            maxHalfOpenRequests: 2);
+            maxHalfOpenRequests: 2,
+            clock: clock);
         for (var i = 0; i < 5; i++)
             cb.RecordFailure();
-        Thread.Sleep(15);
+        clock.Advance(TimeSpan.FromMilliseconds(15));
 
         cb.TryAcquireHalfOpenProbe(out _).Should().BeTrue();
         cb.TryAcquireHalfOpenProbe(out _).Should().BeTrue();
@@ -129,14 +132,16 @@ public class CircuitBreakerTests
     [Fact]
     public void CircuitBreaker_HalfOpen_ProbeCompletionReleasesSlot()
     {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
         var cb = new CircuitBreaker(
             failureRatio: 0.5,
             minimumThroughput: 5,
             breakDuration: TimeSpan.FromMilliseconds(10),
-            maxHalfOpenRequests: 1);
+            maxHalfOpenRequests: 1,
+            clock: clock);
         for (var i = 0; i < 5; i++)
             cb.RecordFailure();
-        Thread.Sleep(15);
+        clock.Advance(TimeSpan.FromMilliseconds(15));
 
         cb.TryAcquireHalfOpenProbe(out var firstProbe).Should().BeTrue();
         cb.TryAcquireHalfOpenProbe(out _).Should().BeFalse();
@@ -225,14 +230,16 @@ public class CircuitBreakerTests
     [Fact]
     public void CircuitBreaker_HalfOpen_FailureReopensBreaker()
     {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
         var cb = new CircuitBreaker(
             failureRatio: 0.5,
             minimumThroughput: 5,
             breakDuration: TimeSpan.FromMilliseconds(10),
-            maxHalfOpenRequests: 1);
+            maxHalfOpenRequests: 1,
+            clock: clock);
         for (var i = 0; i < 5; i++)
             cb.RecordFailure();
-        Thread.Sleep(15);
+        clock.Advance(TimeSpan.FromMilliseconds(15));
 
         cb.TryAcquireHalfOpenProbe(out var probe).Should().BeTrue();
         cb.RecordFailure();
@@ -245,9 +252,10 @@ public class CircuitBreakerTests
     [Fact]
     public void CircuitBreaker_HalfOpen_SuccessThresholdClosesBreaker()
     {
-        var cb = new CircuitBreaker(failureRatio: 0.5, minimumThroughput: 5, breakDuration: TimeSpan.FromMilliseconds(10), maxHalfOpenRequests: 3);
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(failureRatio: 0.5, minimumThroughput: 5, breakDuration: TimeSpan.FromMilliseconds(10), maxHalfOpenRequests: 3, clock: clock);
         for (int i = 0; i < 5; i++) cb.RecordFailure();
-        Thread.Sleep(15);
+        clock.Advance(TimeSpan.FromMilliseconds(15));
 
         cb.TryAcquireHalfOpenProbe(out var firstProbe).Should().BeTrue();
         cb.RecordSuccess();

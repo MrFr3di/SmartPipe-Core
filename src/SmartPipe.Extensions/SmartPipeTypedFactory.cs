@@ -233,7 +233,7 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
             }
 
             ExceptionDispatchInfo.Capture(startException).Throw();
-            throw;
+            throw new InvalidOperationException("Unreachable code after ExceptionDispatchInfo.Throw.");
         }
     }
 

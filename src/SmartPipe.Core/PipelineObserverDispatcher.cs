@@ -218,7 +218,10 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         {
             // Recorded observer failure is surfaced through EmitAsync/CompleteAsync.
         }
-        _cts.Dispose();
+        finally
+        {
+            _cts.Dispose();
+        }
     }
 
     private Exception? GetPipelineFault() => Volatile.Read(ref _pipelineFault);
