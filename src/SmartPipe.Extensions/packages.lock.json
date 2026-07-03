@@ -16,11 +16,11 @@
       },
       "Mapster": {
         "type": "Direct",
-        "requested": "[7.4.0, )",
-        "resolved": "7.4.0",
-        "contentHash": "RYGoDqvS4WTKIq0HDyPBBVIj6N0mluOCXQ1Vk95JKseMHEsbCXSEGKSlP95oL+s42IXAXbqvHj7p0YaRBUcfqg==",
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "kAMFaMKi13GxNXmpd9JiTYXjZD5B1+UN5eCke3E4hrCZLwNPyMCOF7CGyZvuiEJHfq2/ZWsXnqUR9PIZ1viB1A==",
         "dependencies": {
-          "Mapster.Core": "1.2.1"
+          "Mapster.Core": "10.0.10"
         }
       },
       "Microsoft.CodeAnalysis.PublicApiAnalyzers": {
@@ -105,8 +105,8 @@
       },
       "Mapster.Core": {
         "type": "Transitive",
-        "resolved": "1.2.1",
-        "contentHash": "11lokmfliBEMMmjeqxFGNpqGXq6tN96zFqpBmfYeahr4Ybk63oDmeJmOflsATjobYkX248g5Y62oQ2NNnZaeww=="
+        "resolved": "10.0.10",
+        "contentHash": "EsBABlsVcE/25SJQx4pi+6LB6jwih3mTpedWD9X8aybvunpDIRS5tQErdJLY7tfpDTA2xTmnCre/qwcAxNcbmw=="
       },
       "Microsoft.EntityFrameworkCore.Abstractions": {
         "type": "Transitive",
