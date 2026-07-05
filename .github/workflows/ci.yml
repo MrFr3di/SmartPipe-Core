@@ -33,6 +33,41 @@ jobs:
     
     - name: Build
       run: dotnet build SmartPipe.Core.slnx --no-restore -c Release -warnaserror
+
+    - name: Core correctness regressions
+      run: |
+        dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Core.Tests.Math.CuckooFilterTests
+        dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Core.Tests.Math.ExponentialHistogramTests
+        dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Core.Tests.Math.ObjectPoolTests
+        dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Core.Tests.Math.HyperLogLogEstimatorTests
+        dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Core.Tests.Engine.TypedPipelineLifecycleTests
+        dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Core.Tests.Resilience.CircuitBreakerTests
+        dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Core.Tests.Engine.StageExecutorTests
+
+    - name: Extensions correctness regressions
+      run: |
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.HealthCheckTests
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.ChannelMergeTests
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.DeadLetterSinkTests
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.Sinks.DbSinkTests
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.Selectors.DapperSelectorTests
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.Sources.HttpSelectorTests
+
+    - name: PR concurrency regression repeat
+      if: github.event_name == 'pull_request'
+      shell: bash
+      run: |
+        for pass in {1..10}; do
+          echo "Concurrency regression pass $pass"
+          dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Core.Tests.Math.CuckooFilterTests
+          dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Core.Tests.Math.ObjectPoolTests
+          dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Core.Tests.Engine.TypedPipelineLifecycleTests
+          dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Core.Tests.Resilience.CircuitBreakerTests
+          dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Core.Tests.Engine.StageExecutorTests
+          dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.ChannelMergeTests
+          dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests
+        done
     
     - name: Core tests with coverage
       run: dotnet run --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml

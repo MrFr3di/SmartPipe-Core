@@ -49,11 +49,13 @@ Adaptive admission changes how many envelopes are admitted to processing at the
 same time. The stage chain inside one envelope remains sequential. With parallel
 processing, cross-envelope output order is still not guaranteed.
 
-The controller reacts to per-envelope completion latency, failure pressure,
-target latency, dead zone, cooldown, and configured min/max concurrency bounds.
-`Cooldown` is the minimum elapsed time between adaptive limit changes. The
-current `2.1.0` model is completion-based: the runtime records each envelope
-completion and does not run a background sampling loop or periodic timer.
+The controller reacts to per-envelope completion latency, interval failure
+ratio, target latency, dead zone, adjustment cooldown, and configured min/max
+concurrency bounds. `EvaluationInterval` controls how often completion samples
+are evaluated. `AdjustmentCooldown` is the minimum elapsed time between
+adaptive limit changes; `Cooldown` remains as a compatibility alias. The current
+model is completion-based: the runtime records each envelope completion and
+does not run a background sampling loop or periodic timer.
 Retry attempts remain observable through retry metrics and events, but retry
 counts are not adaptive admission signals in `2.1.0`.
 
@@ -65,9 +67,12 @@ counts are not adaptive admission signals in `2.1.0`.
 | `InitialConcurrency` | `1` | Initial adaptive admission limit. |
 | `TargetLatency` | `100 ms` | Desired per-envelope processing latency. |
 | `DeadZone` | `5 ms` | Latency band around target where no limit change is made. |
-| `Cooldown` | `1 second` | Minimum elapsed time between adaptive limit changes. |
+| `EvaluationInterval` | `1 second` | Completion-sample interval used for adaptive decisions. |
+| `AdjustmentCooldown` | `1 second` | Minimum elapsed time between adaptive limit changes. |
+| `Cooldown` | `1 second` | Obsolete compatibility alias for `AdjustmentCooldown`. |
 | `MaxAdjustmentStep` | `1` | Maximum limit change per controller decision. |
-| `FailurePressureThreshold` | `0.10` | Failure pressure threshold that prevents growth and reduces concurrency. |
+| `FailurePressureThreshold` | `0.10` | Interval failure ratio threshold that prevents growth and reduces concurrency. |
+| `MinimumFailureSamples` | `10` | Minimum processed samples before interval failure ratio can reduce concurrency. |
 | `MinSmoothingFactor` | `0.2` | Lower bound for latency smoothing factor. |
 
 ```csharp
@@ -83,9 +88,11 @@ var options = new PipelineRuntimeOptions
         InitialConcurrency = 2,
         TargetLatency = TimeSpan.FromMilliseconds(100),
         DeadZone = TimeSpan.FromMilliseconds(10),
-        Cooldown = TimeSpan.FromSeconds(1),
+        EvaluationInterval = TimeSpan.FromSeconds(1),
+        AdjustmentCooldown = TimeSpan.FromSeconds(1),
         MaxAdjustmentStep = 1,
         FailurePressureThreshold = 0.10,
+        MinimumFailureSamples = 10,
         MinSmoothingFactor = 0.2,
     },
 };

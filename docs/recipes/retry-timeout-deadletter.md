@@ -24,6 +24,9 @@ var run = PipelineBuilder
             {
                 AttemptTimeout = TimeSpan.FromSeconds(2),
                 StageTimeout = TimeSpan.FromSeconds(10),
+                RetryMode = TimeoutRetryMode.CooperativeOnly,
+                CancellationGracePeriod = TimeSpan.FromSeconds(1),
+                LateAttemptFinalizationTimeout = TimeSpan.FromSeconds(30),
             },
             OnRetryExhausted = FailureAction.DeadLetter,
             OnPermanentFailure = FailureAction.DeadLetter,
@@ -42,9 +45,23 @@ await run.Completion;
 ```
 
 `AttemptTimeout` limits one stage attempt. `StageTimeout` limits the stage
-including retries. If retry delay plus another meaningful attempt cannot fit
+including attempt execution, cancellation grace, retry delay, and the next
+attempt budget. If retry delay plus another meaningful attempt cannot fit
 inside the stage budget, the runtime exhausts retry instead of waiting for a
 delay that cannot be used.
+
+The default timeout retry mode is `CooperativeOnly`: the runtime cancels the
+attempt, waits `CancellationGracePeriod`, and retries only after the timed-out
+attempt has completed. This prevents overlapping attempts for the same item by
+default.
+
+Use `DetachWithoutRetry` when a timed-out attempt should be observed in the
+background but must not be retried. Use `DetachAndRetryIdempotent` only when
+the transformer is idempotent and safe to overlap with a retry for the same
+input. Detached late attempts are observed until they finish, and owned stage
+disposal waits up to `LateAttemptFinalizationTimeout`. Non-cooperative user
+code cannot be forcibly stopped in-process; if it outlives the finalization
+timeout, pipeline completion reports a cleanup failure.
 
 ## Dead-Letter Boundaries
 
