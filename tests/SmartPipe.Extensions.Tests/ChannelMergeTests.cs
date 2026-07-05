@@ -4,6 +4,8 @@ using SmartPipe.Extensions;
 
 namespace SmartPipe.Extensions.Tests;
 
+[Trait("Category", "CorrectnessRegression")]
+[Trait("Category", "ConcurrencyRegression")]
 public class ChannelMergeTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
@@ -161,6 +163,76 @@ public class ChannelMergeTests
         exception.Should().BeSameAs(expected);
     }
 
+    [Fact]
+    public async Task InputFailure_ShouldRemainPrimary_WhenSiblingIsCancelled()
+    {
+        var first = Channel.CreateUnbounded<int>();
+        var second = Channel.CreateUnbounded<int>();
+        var expected = new InvalidOperationException("primary input failed");
+        var merged = ChannelMerge.Merge(first.Reader, second.Reader);
+
+        first.Writer.TryComplete(expected);
+
+        var readTask = ReadAllAsync(merged);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => readTask.WaitAsync(Timeout));
+
+        exception.Should().BeSameAs(expected);
+    }
+
+    [Fact]
+    public async Task TwoInputFailures_ShouldUseFirstObservedFailureDeterministically()
+    {
+        var first = new ControlledFaultReader<int>();
+        var secondFailure = new InvalidOperationException("second input failed");
+        var second = new FaultOnCancellationReader<int>(secondFailure);
+        var expected = new InvalidOperationException("first input failed");
+        var merged = ChannelMerge.Merge(first, second);
+
+        await Task.WhenAll(first.WaitStarted, second.WaitStarted).WaitAsync(Timeout);
+        first.Fail(expected);
+
+        var readTask = ReadAllAsync(merged);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => readTask.WaitAsync(Timeout));
+
+        exception.Should().BeSameAs(expected);
+    }
+
+    [Fact]
+    public async Task ExternalCancellation_ShouldCompleteAsCancellation()
+    {
+        var first = Channel.CreateUnbounded<int>();
+        var second = Channel.CreateUnbounded<int>();
+        using var cts = new CancellationTokenSource();
+        var merged = ChannelMerge.Merge(first.Reader, second.Reader, options: null, cts.Token);
+
+        await cts.CancelAsync();
+
+        var readTask = ReadAllAsync(merged);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => readTask.WaitAsync(Timeout));
+    }
+
+    [Fact]
+    public async Task CancellationCallbackFailure_ShouldNotReplaceInputFailure()
+    {
+        var first = Channel.CreateUnbounded<int>();
+        var second = new CancellationCallbackFailureReader<int>(
+            new InvalidOperationException("cancellation callback failed"));
+        var expected = new InvalidOperationException("primary input failed");
+        var merged = ChannelMerge.Merge(first.Reader, second);
+
+        await second.WaitStarted.WaitAsync(Timeout);
+        first.Writer.TryComplete(expected);
+
+        var readTask = ReadAllAsync(merged);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => readTask.WaitAsync(Timeout));
+
+        exception.Should().BeSameAs(expected);
+    }
+
     private static async Task<List<T>> ReadAllAsync<T>(ChannelReader<T> reader)
     {
         var results = new List<T>();
@@ -169,5 +241,114 @@ public class ChannelMergeTests
             results.Add(item);
 
         return results;
+    }
+
+    private sealed class ControlledFaultReader<T> : ChannelReader<T>
+    {
+        private readonly TaskCompletionSource<Exception> _failure =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _waitStarted =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task WaitStarted => _waitStarted.Task;
+
+        public override bool TryRead(out T item)
+        {
+            item = default!;
+            return false;
+        }
+
+        public override async ValueTask<bool> WaitToReadAsync(
+            CancellationToken cancellationToken = default)
+        {
+            _waitStarted.TrySetResult();
+            throw await _failure.Task.ConfigureAwait(false);
+        }
+
+        public void Fail(Exception exception)
+        {
+            _failure.TrySetResult(exception);
+        }
+    }
+
+    private sealed class FaultOnCancellationReader<T> : ChannelReader<T>
+    {
+        private readonly Exception _failure;
+        private readonly TaskCompletionSource<Exception> _completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _waitStarted =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public FaultOnCancellationReader(Exception failure)
+        {
+            _failure = failure;
+        }
+
+        public Task WaitStarted => _waitStarted.Task;
+
+        public override bool TryRead(out T item)
+        {
+            item = default!;
+            return false;
+        }
+
+        public override async ValueTask<bool> WaitToReadAsync(
+            CancellationToken cancellationToken = default)
+        {
+            _waitStarted.TrySetResult();
+            await using var registration = cancellationToken.UnsafeRegister(
+                static state =>
+                {
+                    var reader = (FaultOnCancellationReader<T>)state!;
+                    reader._completion.TrySetResult(reader._failure);
+                },
+                this);
+
+            throw await _completion.Task.ConfigureAwait(false);
+        }
+    }
+
+    private sealed class CancellationCallbackFailureReader<T> : ChannelReader<T>
+    {
+        private readonly Exception _callbackFailure;
+        private readonly TaskCompletionSource<bool> _completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _waitStarted =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public CancellationCallbackFailureReader(Exception callbackFailure)
+        {
+            _callbackFailure = callbackFailure;
+        }
+
+        public Task WaitStarted => _waitStarted.Task;
+
+        public override bool TryRead(out T item)
+        {
+            item = default!;
+            return false;
+        }
+
+        public override async ValueTask<bool> WaitToReadAsync(
+            CancellationToken cancellationToken = default)
+        {
+            _waitStarted.TrySetResult();
+            await using var completeRegistration = cancellationToken.UnsafeRegister(
+                static state =>
+                {
+                    var reader = (CancellationCallbackFailureReader<T>)state!;
+                    reader._completion.TrySetCanceled();
+                },
+                this);
+            await using var throwingRegistration = cancellationToken.UnsafeRegister(
+                static state =>
+                {
+                    var reader = (CancellationCallbackFailureReader<T>)state!;
+                    throw reader._callbackFailure;
+                },
+                this);
+
+            return await _completion.Task.ConfigureAwait(false);
+        }
     }
 }

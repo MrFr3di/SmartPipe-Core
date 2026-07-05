@@ -13,6 +13,7 @@ using SmartPipe.Extensions.Sinks;
 
 namespace SmartPipe.Extensions.Tests;
 
+[Trait("Category", "CorrectnessRegression")]
 public class DeadLetterSinkTests
 {
     [Fact]
@@ -95,18 +96,22 @@ public class DeadLetterSinkTests
     }
 
     [Fact]
-    public async Task WriteAsync_IoException_RetriesAndSkips()
+    public async Task WriteAsync_IoException_ThrowsAfterExhaustedAttemptsByDefault()
     {
         var loggerMock = new Mock<ILogger<DeadLetterSink<string>>>();
         var lineWriter = new FaultInjectingDeadLetterLineWriter(
             new IOException("first write failed"),
             new IOException("second write failed"),
-            new IOException("third write failed"));
+            new IOException("third write failed"),
+            new IOException("fourth write failed"));
         var sink = new DeadLetterSink<string>("dummy.json", loggerMock.Object, lineWriter);
 
-        await sink.WriteAsync(Envelope(CreateDeadLetter("payload", "test error", 1UL)));
+        var exception = await Assert.ThrowsAsync<DeadLetterWriteException>(async () =>
+            await sink.WriteAsync(Envelope(CreateDeadLetter("payload", "test error", 1UL))));
         await sink.DisposeAsync();
 
+        exception.Path.Should().Be("dummy.json");
+        exception.Attempts.Should().Be(DeadLetterSink<string>.MaxAttempts);
         loggerMock.Verify(
             x => x.Log(
                 LogLevel.Warning,
@@ -114,7 +119,36 @@ public class DeadLetterSinkTests
                 It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("attempt")),
                 It.IsAny<IOException>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.Exactly(2));
+            Times.Exactly(3));
+        loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to write")),
+                It.IsAny<IOException>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+
+        lineWriter.Lines.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task WriteAsync_IoException_LogAndDropSkipsAfterExhaustedAttempts()
+    {
+        var loggerMock = new Mock<ILogger<DeadLetterSink<string>>>();
+        var lineWriter = new FaultInjectingDeadLetterLineWriter(
+            new IOException("first write failed"),
+            new IOException("second write failed"),
+            new IOException("third write failed"),
+            new IOException("fourth write failed"));
+        var sink = new DeadLetterSink<string>("dummy.json", loggerMock.Object, lineWriter)
+        {
+            FailureMode = DeadLetterWriteFailureMode.LogAndDrop,
+        };
+
+        await sink.WriteAsync(Envelope(CreateDeadLetter("payload", "test error", 1UL)));
+        await sink.DisposeAsync();
+
         loggerMock.Verify(
             x => x.Log(
                 LogLevel.Error,
@@ -151,6 +185,61 @@ public class DeadLetterSinkTests
         var writtenContent = lineWriter.Lines.Single();
         writtenContent.Should().Contain("recoverable error");
         writtenContent.Should().Contain("\"TraceId\":99");
+    }
+
+    [Fact]
+    public async Task InitializeAsync_PathBackedWriter_AppendsWithoutTruncatingExistingFile()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, "existing\n");
+            var sink = new DeadLetterSink<string>(tempFile);
+            await sink.InitializeAsync();
+
+            await sink.WriteAsync(Envelope(CreateDeadLetter("payload", "append error", 123UL)));
+            await sink.DisposeAsync();
+
+            var lines = (await File.ReadAllLinesAsync(tempFile))
+                .Where(line => line.Length > 0)
+                .ToArray();
+            lines.Should().HaveCount(2);
+            lines[0].Should().Be("existing");
+            lines[1].Should().Contain("\"TraceId\":123");
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task WriteAsync_DefaultFlushEachWrite_FlushesSuccessfulWrite()
+    {
+        await using var stream = new FlushCountingStream();
+        var sink = new DeadLetterSink<string>("dummy.json", logger: null, stream: stream);
+
+        await sink.WriteAsync(Envelope(CreateDeadLetter("payload", "flush error", 124UL)));
+        await sink.DisposeAsync();
+
+        stream.FlushCount.Should().BePositive();
+    }
+
+    [Fact]
+    public async Task WriteAsync_SeekableStreamFailure_TruncatesCheckpointBeforeRetry()
+    {
+        await using var stream = new FailFirstWriteAfterPartialStream();
+        var sink = new DeadLetterSink<string>("dummy.json", logger: null, stream: stream);
+
+        await sink.WriteAsync(Envelope(CreateDeadLetter("payload", "rollback error", 125UL)));
+        await sink.DisposeAsync();
+
+        stream.Position = 0;
+        var content = Encoding.UTF8.GetString(stream.ToArray());
+        var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        lines.Should().ContainSingle();
+        using var document = JsonDocument.Parse(lines[0]);
+        document.RootElement.GetProperty("TraceId").GetUInt64().Should().Be(125UL);
     }
 
     [Fact]
@@ -235,7 +324,7 @@ public class DeadLetterSinkTests
 
         public int DisposeCount { get; private set; }
 
-        public ValueTask WriteLineAsync(string line, CancellationToken ct)
+        public ValueTask WriteLineAsync(string line, bool flushEachWrite, CancellationToken ct)
         {
             if (_writeFailures.Count > 0)
                 throw _writeFailures.Dequeue();
@@ -248,6 +337,34 @@ public class DeadLetterSinkTests
         {
             DisposeCount++;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FlushCountingStream : MemoryStream
+    {
+        public int FlushCount { get; private set; }
+
+        public override Task FlushAsync(CancellationToken cancellationToken)
+        {
+            FlushCount++;
+            return base.FlushAsync(cancellationToken);
+        }
+    }
+
+    private sealed class FailFirstWriteAfterPartialStream : MemoryStream
+    {
+        private bool _failed;
+
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (!_failed)
+            {
+                _failed = true;
+                base.Write(buffer.Span[..Math.Min(3, buffer.Length)]);
+                throw new IOException("partial write failed");
+            }
+
+            return base.WriteAsync(buffer, cancellationToken);
         }
     }
 }

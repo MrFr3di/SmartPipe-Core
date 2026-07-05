@@ -1,4 +1,6 @@
 using System.Data;
+using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Dapper;
 using SmartPipe.Core;
@@ -12,34 +14,87 @@ public class DbSink<T> : IPipelineSink<T>
 {
     private readonly IDbConnection _connection;
     private readonly string _sql;
+    private readonly bool _leaveOpen;
+    private bool _openedBySink;
+    private int _disposed;
 
     /// <summary>Create DB sink with optional SQL override.</summary>
     /// <param name="connection">Database connection.</param>
     /// <param name="sql">Optional INSERT SQL (auto-generated if null).</param>
+    [SuppressMessage(
+        "ApiDesign",
+        "RS0027:Public API with optional parameter(s) should have the most parameters amongst its public overloads",
+        Justification = "The shipped constructor is preserved for binary compatibility; explicit DbConnection ownership overloads do not use optional parameters."
+    )]
+    [RequiresUnreferencedCode("Reflection-based DbSink SQL generation is not trimming-safe. Provide explicit SQL for trimming and NativeAOT.")]
     public DbSink(IDbConnection connection, string? sql = null)
+        : this(connection, sql, leaveOpen: false)
+    {
+    }
+
+    /// <summary>Create DB sink with explicit connection ownership.</summary>
+    /// <param name="connection">Database connection.</param>
+    /// <param name="leaveOpen">Whether to leave an already-open external connection open when disposing the sink.</param>
+    [RequiresUnreferencedCode("Reflection-based DbSink SQL generation is not trimming-safe. Provide explicit SQL for trimming and NativeAOT.")]
+    public DbSink(DbConnection connection, bool leaveOpen)
+        : this((IDbConnection)connection, sql: null, leaveOpen)
+    {
+    }
+
+    /// <summary>Create DB sink with explicit SQL and connection ownership.</summary>
+    /// <param name="connection">Database connection.</param>
+    /// <param name="sql">INSERT SQL.</param>
+    /// <param name="leaveOpen">Whether to leave an already-open external connection open when disposing the sink.</param>
+    public DbSink(DbConnection connection, string sql, bool leaveOpen)
+        : this((IDbConnection)connection, sql ?? throw new ArgumentNullException(nameof(sql)), leaveOpen)
+    {
+    }
+
+    private DbSink(IDbConnection connection, string? sql, bool leaveOpen)
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
         _sql = sql ?? GenerateInsertSql();
+        _leaveOpen = leaveOpen;
     }
 
     /// <inheritdoc />
-    public ValueTask InitializeAsync(CancellationToken ct = default)
+    public async ValueTask InitializeAsync(CancellationToken ct = default)
     {
-        _connection.Open();
-        return ValueTask.CompletedTask;
+        ct.ThrowIfCancellationRequested();
+
+        if (_connection.State == ConnectionState.Open)
+            return;
+
+        if (_connection is DbConnection dbConnection)
+            await dbConnection.OpenAsync(ct).ConfigureAwait(false);
+        else
+            _connection.Open();
+
+        _openedBySink = true;
     }
 
     /// <inheritdoc />
     public async ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
     {
         if (envelope.Payload != null)
-            await _connection.ExecuteAsync(_sql, envelope.Payload);
+        {
+            var command = new CommandDefinition(
+                _sql,
+                envelope.Payload,
+                cancellationToken: ct);
+            await _connection.ExecuteAsync(command).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
-        _connection.Close();
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return ValueTask.CompletedTask;
+
+        if (!_leaveOpen || _openedBySink)
+            _connection.Close();
+
         return ValueTask.CompletedTask;
     }
 

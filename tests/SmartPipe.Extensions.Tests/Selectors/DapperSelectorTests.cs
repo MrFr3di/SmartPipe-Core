@@ -19,6 +19,7 @@ public class TestEntity
     public string? Name { get; set; }
 }
 
+[Trait("Category", "CorrectnessRegression")]
 public class DapperSelectorTests
 {
     [Fact]
@@ -652,6 +653,90 @@ public class DapperSelectorTests
     }
 
     [Fact]
+    public async Task ReadAsync_WithExplicitDbDataReaderMapper_UsesMapper()
+    {
+        var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        await connection.ExecuteAsync("CREATE TABLE TestMapper (Id INTEGER PRIMARY KEY, Name TEXT)");
+        await connection.ExecuteAsync("INSERT INTO TestMapper (Id, Name) VALUES (5, 'mapped')");
+
+        var selector = new DapperSelector<TestEntity>(
+            connection,
+            "SELECT Id, Name FROM TestMapper",
+            static reader => new TestEntity
+            {
+                Id = reader.GetInt64(0),
+                Name = $"{reader.GetString(1)}!",
+            });
+        await selector.InitializeAsync();
+
+        var results = new List<ProcessingEnvelope<TestEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
+            results.Add(item);
+
+        Assert.Single(results);
+        Assert.Equal(5L, results[0].Payload.Id);
+        Assert.Equal("mapped!", results[0].Payload.Name);
+
+        await selector.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task MapRow_DefaultMapper_HandlesNullableEnumNumericAndBoolConversions()
+    {
+        var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        await connection.ExecuteAsync(
+            "CREATE TABLE TestConversions (Count INTEGER, Status TEXT, Optional INTEGER NULL, Enabled INTEGER)");
+        await connection.ExecuteAsync(
+            "INSERT INTO TestConversions (Count, Status, Optional, Enabled) VALUES (7, 'Active', NULL, 1)");
+
+        var selector = new DapperSelector<ConversionEntity>(
+            connection,
+            "SELECT Count, Status, Optional, Enabled FROM TestConversions");
+        await selector.InitializeAsync();
+
+        var results = new List<ProcessingEnvelope<ConversionEntity>>();
+        await foreach (var item in selector.ReadEnvelopesAsync())
+            results.Add(item);
+
+        Assert.Single(results);
+        Assert.Equal(7, results[0].Payload.Count);
+        Assert.Equal(ConversionStatus.Active, results[0].Payload.Status);
+        Assert.Null(results[0].Payload.Optional);
+        Assert.True(results[0].Payload.Enabled);
+
+        await selector.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task MapRow_DefaultMapper_FailsWithClearMessageForUnsupportedConversion()
+    {
+        var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        await connection.ExecuteAsync("CREATE TABLE TestBadConversion (Id TEXT)");
+        await connection.ExecuteAsync("INSERT INTO TestBadConversion (Id) VALUES ('not-an-int')");
+
+        var selector = new DapperSelector<IntEntity>(
+            connection,
+            "SELECT Id FROM TestBadConversion");
+        await selector.InitializeAsync();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await foreach (var item in selector.ReadEnvelopesAsync()) { }
+        });
+
+        Assert.Contains("Column 'Id'", exception.Message);
+        Assert.Contains(nameof(IntEntity.Id), exception.Message);
+
+        await selector.DisposeAsync();
+    }
+
+    [Fact]
     public async Task MapRow_WithMissingColumns_SetsDefaultValues()
     {
         var connection = new SqliteConnection("DataSource=:memory:");
@@ -684,6 +769,25 @@ public class AllTypesEntity
     public string? Name { get; set; }
     public double Value { get; set; }
     public long Active { get; set; } // SQLite returns INTEGER as Int64
+}
+
+public enum ConversionStatus
+{
+    Unknown,
+    Active,
+}
+
+public class ConversionEntity
+{
+    public int Count { get; set; }
+    public ConversionStatus Status { get; set; }
+    public int? Optional { get; set; }
+    public bool Enabled { get; set; }
+}
+
+public class IntEntity
+{
+    public int Id { get; set; }
 }
 
 internal sealed class TrackingDbConnection : DbConnection

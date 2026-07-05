@@ -10,6 +10,7 @@ using SmartPipe.Core;
 
 namespace SmartPipe.Extensions.Tests;
 
+[Trait("Category", "CorrectnessRegression")]
 public sealed class HealthCheckTests
 {
     [Fact]
@@ -93,6 +94,55 @@ public sealed class HealthCheckTests
     }
 
     [Fact]
+    public async Task HealthCheck_RunningWithoutActivity_DefaultPolicyRemainsHealthy()
+    {
+        var now = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
+        var timeProvider = new ManualTimeProvider(now);
+        var monitor = CreateMonitor(new PipelineRuntimeOptions
+        {
+            Clock = new TimeProviderPipelineClock(timeProvider),
+        });
+        monitor.Track(() => PipelineRunState.Running, () => SmartPipeMetricsSnapshot.Empty);
+        timeProvider.Advance(TimeSpan.FromMinutes(5));
+        var healthCheck = CreateHealthCheck(monitor, new SmartPipeHealthCheckOptions
+        {
+            TimeProvider = timeProvider,
+            StaleAfter = TimeSpan.FromSeconds(30),
+        });
+
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Healthy);
+        result.Data["started_at_utc"].Should().NotBe(string.Empty);
+        result.Data["last_activity_at_utc"].Should().Be(string.Empty);
+    }
+
+    [Fact]
+    public async Task HealthCheck_RequireInitialActivity_DegradedAfterGraceWithoutActivity()
+    {
+        var now = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
+        var timeProvider = new ManualTimeProvider(now);
+        var monitor = CreateMonitor(new PipelineRuntimeOptions
+        {
+            Clock = new TimeProviderPipelineClock(timeProvider),
+        });
+        monitor.Track(() => PipelineRunState.Running, () => SmartPipeMetricsSnapshot.Empty);
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+        var healthCheck = CreateHealthCheck(monitor, new SmartPipeHealthCheckOptions
+        {
+            RequireInitialActivity = true,
+            InitialActivityGracePeriod = TimeSpan.FromMinutes(1),
+            TimeProvider = timeProvider,
+            StaleAfter = TimeSpan.FromMinutes(10),
+        });
+
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Degraded);
+        result.Description.Should().Contain("initial activity");
+    }
+
+    [Fact]
     public async Task DI_FactoryStart_UpdatesHealthMonitorWithTypedRunState()
     {
         var services = new ServiceCollection();
@@ -116,6 +166,8 @@ public sealed class HealthCheckTests
         var snapshot = monitor.CaptureSnapshot();
         snapshot.State.Should().Be(PipelineRunState.Completed);
         snapshot.Metrics.ItemsProcessed.Should().Be(1);
+        snapshot.StartedAtUtc.Should().NotBeNull();
+        snapshot.LastActivityAtUtc.Should().NotBeNull();
         snapshot.PipelineId.Should().Be("health-di");
     }
 
@@ -167,7 +219,8 @@ public sealed class HealthCheckTests
     private static SmartPipeMetricsSnapshot CreateMetrics(
         int inputQueueDepth = 0,
         int outputQueueDepth = 0,
-        DateTimeOffset? lastProcessedAtUtc = null) =>
+        DateTimeOffset? lastProcessedAtUtc = null,
+        DateTimeOffset? lastActivityAtUtc = null) =>
         new(
             itemsProcessed: lastProcessedAtUtc is null ? 0 : 1,
             itemsFailed: 0,
@@ -181,6 +234,7 @@ public sealed class HealthCheckTests
             outputQueueDepth,
             lastStageLatencyMs: 1,
             lastProcessedAtUtc,
+            lastActivityAtUtc ?? lastProcessedAtUtc,
             duplicatesFiltered: 0,
             avgLatencyMs: 1,
             smoothLatencyMs: 1,
@@ -255,5 +309,22 @@ public sealed class HealthCheckTests
         }
 
         public Task ExecuteForTestAsync(CancellationToken ct) => ExecuteAsync(ct);
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _utcNow;
+
+        public ManualTimeProvider(DateTimeOffset utcNow)
+        {
+            _utcNow = utcNow;
+        }
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan elapsed)
+        {
+            _utcNow += elapsed;
+        }
     }
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -19,13 +20,15 @@ public class HttpSelector<T> : IPipelineSource<T>
     private readonly string _requestUri;
     private readonly ResiliencePipeline? _pipeline;
     private readonly ILogger<HttpSelector<T>>? _logger;
-    private readonly JsonTypeInfo<List<T>>? _listTypeInfo;
+    private readonly Func<HttpContent, CancellationToken, Task<List<T>?>>? _readItemsAsync;
     private readonly JsonTypeInfo<T>? _itemTypeInfo;
     private readonly HttpSelectorStreamingMode? _streamingMode;
 
     /// <summary>Create HTTP source for given endpoint.</summary>
     /// <param name="httpClient">HTTP client instance.</param>
     /// <param name="requestUri">Request URI to fetch data from.</param>
+    [RequiresUnreferencedCode("Reflection-based HTTP JSON deserialization may require metadata. Use the JsonTypeInfo constructors for trimming and NativeAOT.")]
+    [RequiresDynamicCode("Reflection-based HTTP JSON deserialization may require runtime code generation. Use the JsonTypeInfo constructors for NativeAOT.")]
     public HttpSelector(HttpClient httpClient, string requestUri)
         : this(httpClient, requestUri, pipeline: null, logger: null)
     {
@@ -35,6 +38,8 @@ public class HttpSelector<T> : IPipelineSource<T>
     /// <param name="httpClient">HTTP client instance.</param>
     /// <param name="requestUri">Request URI to fetch data from.</param>
     /// <param name="pipeline">Resilience pipeline (retry/circuit-breaker).</param>
+    [RequiresUnreferencedCode("Reflection-based HTTP JSON deserialization may require metadata. Use the JsonTypeInfo constructors for trimming and NativeAOT.")]
+    [RequiresDynamicCode("Reflection-based HTTP JSON deserialization may require runtime code generation. Use the JsonTypeInfo constructors for NativeAOT.")]
     public HttpSelector(HttpClient httpClient, string requestUri, ResiliencePipeline pipeline)
         : this(httpClient, requestUri, pipeline, logger: null)
     {
@@ -44,6 +49,8 @@ public class HttpSelector<T> : IPipelineSource<T>
     /// <param name="httpClient">HTTP client instance.</param>
     /// <param name="requestUri">Request URI to fetch data from.</param>
     /// <param name="logger">Logger.</param>
+    [RequiresUnreferencedCode("Reflection-based HTTP JSON deserialization may require metadata. Use the JsonTypeInfo constructors for trimming and NativeAOT.")]
+    [RequiresDynamicCode("Reflection-based HTTP JSON deserialization may require runtime code generation. Use the JsonTypeInfo constructors for NativeAOT.")]
     public HttpSelector(
         HttpClient httpClient,
         string requestUri,
@@ -57,13 +64,15 @@ public class HttpSelector<T> : IPipelineSource<T>
     /// <param name="requestUri">Request URI to fetch data from.</param>
     /// <param name="pipeline">Optional resilience pipeline (retry/circuit-breaker).</param>
     /// <param name="logger">Optional logger.</param>
+    [RequiresUnreferencedCode("Reflection-based HTTP JSON deserialization may require metadata. Use the JsonTypeInfo constructors for trimming and NativeAOT.")]
+    [RequiresDynamicCode("Reflection-based HTTP JSON deserialization may require runtime code generation. Use the JsonTypeInfo constructors for NativeAOT.")]
     public HttpSelector(
         HttpClient httpClient,
         string requestUri,
         ResiliencePipeline? pipeline,
         ILogger<HttpSelector<T>>? logger
     )
-        : this(httpClient, requestUri, pipeline, logger, listTypeInfo: null)
+        : this(httpClient, requestUri, pipeline, logger, ReadItemsWithReflectionAsync)
     {
     }
 
@@ -89,7 +98,7 @@ public class HttpSelector<T> : IPipelineSource<T>
         string requestUri,
         JsonTypeInfo<T> itemTypeInfo,
         HttpSelectorStreamingMode streamingMode)
-        : this(httpClient, requestUri, pipeline: null, logger: null, listTypeInfo: null, itemTypeInfo, streamingMode)
+        : this(httpClient, requestUri, pipeline: null, logger: null, readItemsAsync: null, itemTypeInfo, streamingMode)
     {
     }
 
@@ -105,7 +114,7 @@ public class HttpSelector<T> : IPipelineSource<T>
         JsonTypeInfo<List<T>> listTypeInfo,
         ResiliencePipeline? pipeline,
         ILogger<HttpSelector<T>>? logger)
-        : this(httpClient, requestUri, pipeline, logger, listTypeInfo)
+        : this(httpClient, requestUri, pipeline, logger, CreateListReader(listTypeInfo))
     {
     }
 
@@ -123,7 +132,7 @@ public class HttpSelector<T> : IPipelineSource<T>
         HttpSelectorStreamingMode streamingMode,
         ResiliencePipeline? pipeline,
         ILogger<HttpSelector<T>>? logger)
-        : this(httpClient, requestUri, pipeline, logger, listTypeInfo: null, itemTypeInfo, streamingMode)
+        : this(httpClient, requestUri, pipeline, logger, readItemsAsync: null, itemTypeInfo, streamingMode)
     {
     }
 
@@ -132,7 +141,7 @@ public class HttpSelector<T> : IPipelineSource<T>
         string requestUri,
         ResiliencePipeline? pipeline,
         ILogger<HttpSelector<T>>? logger,
-        JsonTypeInfo<List<T>>? listTypeInfo,
+        Func<HttpContent, CancellationToken, Task<List<T>?>>? readItemsAsync,
         JsonTypeInfo<T>? itemTypeInfo = null,
         HttpSelectorStreamingMode? streamingMode = null)
     {
@@ -142,10 +151,12 @@ public class HttpSelector<T> : IPipelineSource<T>
             throw new ArgumentOutOfRangeException(nameof(streamingMode), streamingMode, "Streaming mode is invalid.");
         if (streamingMode is not null)
             ArgumentNullException.ThrowIfNull(itemTypeInfo);
+        if (streamingMode is null && readItemsAsync is null)
+            throw new ArgumentNullException(nameof(readItemsAsync));
 
         _pipeline = pipeline;
         _logger = logger;
-        _listTypeInfo = listTypeInfo;
+        _readItemsAsync = readItemsAsync;
         _itemTypeInfo = itemTypeInfo;
         _streamingMode = streamingMode;
     }
@@ -158,7 +169,8 @@ public class HttpSelector<T> : IPipelineSource<T>
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
     )
     {
-        _logger?.LogInformation("Fetching data from {Uri}", _requestUri);
+        var logUri = RedactRequestUriForLogging(_requestUri);
+        _logger?.LogInformation("Fetching data from {Uri}", logUri);
 
         using var response = await SendAsync(ct).ConfigureAwait(false);
 
@@ -171,9 +183,9 @@ public class HttpSelector<T> : IPipelineSource<T>
             yield break;
         }
 
-        var items = _listTypeInfo is null
-            ? await response.Content.ReadFromJsonAsync<List<T>>(cancellationToken: ct)
-            : await response.Content.ReadFromJsonAsync(_listTypeInfo, ct);
+        var readItemsAsync = _readItemsAsync
+            ?? throw new InvalidOperationException("Buffered HTTP selector requires a JSON item reader.");
+        var items = await readItemsAsync(response.Content, ct).ConfigureAwait(false);
 
         if (items != null)
         {
@@ -184,7 +196,73 @@ public class HttpSelector<T> : IPipelineSource<T>
             }
         }
 
-        _logger?.LogInformation("Fetched {Count} items from {Uri}", items?.Count ?? 0, _requestUri);
+        _logger?.LogInformation("Fetched {Count} items from {Uri}", items?.Count ?? 0, logUri);
+    }
+
+    internal static string RedactRequestUriForLogging(string requestUri)
+    {
+        if (string.IsNullOrWhiteSpace(requestUri))
+            return "[unparseable-uri]";
+
+        if (Uri.TryCreate(requestUri, UriKind.Absolute, out var absoluteUri))
+            return RedactAbsoluteUriForLogging(absoluteUri);
+
+        if (LooksLikeAbsoluteUri(requestUri))
+            return "[unparseable-uri]";
+
+        return RedactRelativeUriForLogging(requestUri);
+    }
+
+    private static string RedactAbsoluteUriForLogging(Uri uri)
+    {
+        try
+        {
+            var redacted = uri.GetComponents(
+                UriComponents.SchemeAndServer | UriComponents.Path,
+                UriFormat.UriEscaped);
+            return string.IsNullOrEmpty(redacted) ? "[unparseable-uri]" : redacted;
+        }
+        catch (UriFormatException)
+        {
+            return "[unparseable-uri]";
+        }
+    }
+
+    private static string RedactRelativeUriForLogging(string requestUri)
+    {
+        if (!Uri.TryCreate(requestUri, UriKind.Relative, out _))
+            return "[unparseable-uri]";
+
+        var end = requestUri.IndexOfAny(['?', '#']);
+        return end < 0 ? requestUri : requestUri[..end];
+    }
+
+    private static bool LooksLikeAbsoluteUri(string requestUri)
+    {
+        var colon = requestUri.IndexOf(':');
+        if (colon <= 0)
+            return false;
+
+        for (var i = 0; i < colon; i++)
+        {
+            var c = requestUri[i];
+            if (!char.IsAsciiLetterOrDigit(c) && c is not '+' and not '-' and not '.')
+                return false;
+        }
+
+        return char.IsAsciiLetter(requestUri[0]);
+    }
+
+    [RequiresUnreferencedCode("Reflection-based HTTP JSON deserialization may require metadata. Use the JsonTypeInfo constructors for trimming and NativeAOT.")]
+    [RequiresDynamicCode("Reflection-based HTTP JSON deserialization may require runtime code generation. Use the JsonTypeInfo constructors for NativeAOT.")]
+    private static Task<List<T>?> ReadItemsWithReflectionAsync(HttpContent content, CancellationToken ct) =>
+        content.ReadFromJsonAsync<List<T>>(cancellationToken: ct);
+
+    private static Func<HttpContent, CancellationToken, Task<List<T>?>> CreateListReader(
+        JsonTypeInfo<List<T>> listTypeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(listTypeInfo);
+        return (content, ct) => content.ReadFromJsonAsync(listTypeInfo, ct);
     }
 
     private async ValueTask<HttpResponseMessage> SendAsync(CancellationToken ct)

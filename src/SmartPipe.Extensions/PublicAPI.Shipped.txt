@@ -235,3 +235,28 @@ SmartPipe.Extensions.Sinks.HttpSink<T>.HttpSink(System.Net.Http.HttpClient! http
 SmartPipe.Extensions.Sinks.HttpSink<T>.HttpSink(System.Net.Http.HttpClient! http, string! url, Polly.ResiliencePipeline? resilience, bool useTraceIdIdempotencyKey) -> void
 SmartPipe.Extensions.Sinks.HttpSink<T>.HttpSink(System.Net.Http.HttpClient! http, string! url, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! jsonTypeInfo) -> void
 SmartPipe.Extensions.Sinks.HttpSink<T>.HttpSink(System.Net.Http.HttpClient! http, string! url, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! jsonTypeInfo, Polly.ResiliencePipeline? resilience, bool useTraceIdIdempotencyKey) -> void
+SmartPipe.Extensions.SmartPipeHealthCheckOptions.InitialActivityGracePeriod.get -> System.TimeSpan
+SmartPipe.Extensions.SmartPipeHealthCheckOptions.InitialActivityGracePeriod.init -> void
+SmartPipe.Extensions.SmartPipeHealthCheckOptions.RequireInitialActivity.get -> bool
+SmartPipe.Extensions.SmartPipeHealthCheckOptions.RequireInitialActivity.init -> void
+SmartPipe.Extensions.SmartPipeHealthCheckOptions.TimeProvider.get -> System.TimeProvider!
+SmartPipe.Extensions.SmartPipeHealthCheckOptions.TimeProvider.init -> void
+SmartPipe.Extensions.SmartPipeHealthSnapshot.LastActivityAtUtc.get -> System.DateTimeOffset?
+SmartPipe.Extensions.SmartPipeHealthSnapshot.LastActivityAtUtc.init -> void
+SmartPipe.Extensions.SmartPipeHealthSnapshot.StartedAtUtc.get -> System.DateTimeOffset?
+SmartPipe.Extensions.SmartPipeHealthSnapshot.StartedAtUtc.init -> void
+SmartPipe.Extensions.Selectors.DapperSelector<T>.DapperSelector(System.Data.Common.DbConnection! connection, string! sql, System.Func<System.Data.Common.DbDataReader!, T>! mapper) -> void
+SmartPipe.Extensions.Selectors.DapperSelector<T>.DapperSelector(System.Data.Common.DbConnection! connection, string! sql, System.Func<System.Data.Common.DbDataReader!, T>! mapper, object? parameters, bool leaveOpen, int commandTimeout, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.DapperSelector<T>!>? logger) -> void
+SmartPipe.Extensions.Sinks.DbSink<T>.DbSink(System.Data.Common.DbConnection! connection, bool leaveOpen) -> void
+SmartPipe.Extensions.Sinks.DbSink<T>.DbSink(System.Data.Common.DbConnection! connection, string! sql, bool leaveOpen) -> void
+SmartPipe.Extensions.Sinks.DeadLetterSink<T>.FailureMode.get -> SmartPipe.Extensions.Sinks.DeadLetterWriteFailureMode
+SmartPipe.Extensions.Sinks.DeadLetterSink<T>.FailureMode.init -> void
+SmartPipe.Extensions.Sinks.DeadLetterSink<T>.FlushEachWrite.get -> bool
+SmartPipe.Extensions.Sinks.DeadLetterSink<T>.FlushEachWrite.init -> void
+SmartPipe.Extensions.Sinks.DeadLetterWriteException
+SmartPipe.Extensions.Sinks.DeadLetterWriteException.Attempts.get -> int
+SmartPipe.Extensions.Sinks.DeadLetterWriteException.DeadLetterWriteException(string! path, int attempts, System.Exception! innerException) -> void
+SmartPipe.Extensions.Sinks.DeadLetterWriteException.Path.get -> string!
+SmartPipe.Extensions.Sinks.DeadLetterWriteFailureMode
+SmartPipe.Extensions.Sinks.DeadLetterWriteFailureMode.LogAndDrop = 1 -> SmartPipe.Extensions.Sinks.DeadLetterWriteFailureMode
+SmartPipe.Extensions.Sinks.DeadLetterWriteFailureMode.Throw = 0 -> SmartPipe.Extensions.Sinks.DeadLetterWriteFailureMode

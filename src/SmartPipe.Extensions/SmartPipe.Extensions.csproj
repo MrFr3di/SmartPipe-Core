@@ -5,7 +5,6 @@
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>SmartPipe.Extensions</PackageId>
-    <Version>2.1.0</Version>
     <Authors>SmartPipe</Authors>
     <Description>Extensions for SmartPipe.Core integrations including HTTP, EF Core, Dapper, JSON, CSV, Mapster, compression, resilience, validation, and dead-letter components.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -21,6 +20,8 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>2.1.0</PackageValidationBaselineVersion>
+    <ApiCompatEnableRuleCannotChangeParameterName>true</ApiCompatEnableRuleCannotChangeParameterName>
     <EnableStrictModeForCompatibleTfms>true</EnableStrictModeForCompatibleTfms>
   </PropertyGroup>
 
