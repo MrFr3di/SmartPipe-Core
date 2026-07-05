@@ -204,7 +204,8 @@ public class HttpSelector<T> : IPipelineSource<T>
         if (string.IsNullOrWhiteSpace(requestUri))
             return "[unparseable-uri]";
 
-        if (Uri.TryCreate(requestUri, UriKind.Absolute, out var absoluteUri))
+        if (Uri.TryCreate(requestUri, UriKind.Absolute, out var absoluteUri)
+            && !IsImplicitFileUri(requestUri, absoluteUri))
             return RedactAbsoluteUriForLogging(absoluteUri);
 
         if (LooksLikeAbsoluteUri(requestUri))
@@ -252,6 +253,12 @@ public class HttpSelector<T> : IPipelineSource<T>
 
         return char.IsAsciiLetter(requestUri[0]);
     }
+
+    private static bool IsImplicitFileUri(string requestUri, Uri uri) =>
+        uri.IsFile
+        && !requestUri.StartsWith(
+            $"{Uri.UriSchemeFile}:",
+            StringComparison.OrdinalIgnoreCase);
 
     [RequiresUnreferencedCode("Reflection-based HTTP JSON deserialization may require metadata. Use the JsonTypeInfo constructors for trimming and NativeAOT.")]
     [RequiresDynamicCode("Reflection-based HTTP JSON deserialization may require runtime code generation. Use the JsonTypeInfo constructors for NativeAOT.")]
