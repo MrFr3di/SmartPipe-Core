@@ -29,28 +29,58 @@ public class BackpressureStrategy
 
     /// <summary>Initialize backpressure strategy with maximum channel capacity.</summary>
     /// <param name="capacity">Maximum number of items in the channel.</param>
-    public BackpressureStrategy(int capacity) => _capacity = capacity;
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when capacity is not positive.</exception>
+    public BackpressureStrategy(int capacity)
+    {
+        if (capacity <= 0)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be positive.");
+
+        _capacity = capacity;
+    }
 
     /// <summary>Adjust target fill ratio based on current throughput and latency.</summary>
     /// <param name="throughputPerSec">Current pipeline throughput (items per second).</param>
     /// <param name="predictedLatencyMs">Predicted latency for next operations (optional).</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when throughput or latency is negative, NaN, or infinite.</exception>
     public void UpdateThroughput(double throughputPerSec, double predictedLatencyMs = 0)
     {
+        if (!double.IsFinite(throughputPerSec) || throughputPerSec < 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(throughputPerSec),
+                throughputPerSec,
+                "Throughput must be finite and non-negative.");
+
+        if (!double.IsFinite(predictedLatencyMs) || predictedLatencyMs < 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(predictedLatencyMs),
+                predictedLatencyMs,
+                "Predicted latency must be finite and non-negative.");
+
+        double targetFillRatio;
         if (throughputPerSec > HighThroughputThreshold)
-            _targetFillRatio = MediumFillRatioThreshold;
+            targetFillRatio = MediumFillRatioThreshold;
         else if (throughputPerSec < LowThroughputThreshold)
-            _targetFillRatio = HighFillRatioThreshold;
+            targetFillRatio = HighFillRatioThreshold;
         else
-            _targetFillRatio = DefaultTargetFillRatio;
+            targetFillRatio = DefaultTargetFillRatio;
 
         if (predictedLatencyMs > LatencyThresholdMs)
-            _targetFillRatio = Math.Max(MinTargetFillRatio, _targetFillRatio - LatencyAdjustment);
+            targetFillRatio = Math.Max(MinTargetFillRatio, targetFillRatio - LatencyAdjustment);
+
+        Volatile.Write(ref _targetFillRatio, targetFillRatio);
     }
 
     /// <summary>Calculate current channel fill ratio.</summary>
     /// <param name="currentSize">Current number of items in the channel.</param>
     /// <returns>Fill ratio between 0.0 (empty) and 1.0 (full).</returns>
-    public double GetFillRatio(int currentSize) => (double)currentSize / _capacity;
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when currentSize is negative.</exception>
+    public double GetFillRatio(int currentSize)
+    {
+        if (currentSize < 0)
+            throw new ArgumentOutOfRangeException(nameof(currentSize), currentSize, "Current size must be non-negative.");
+
+        return Math.Min(1.0, (double)currentSize / _capacity);
+    }
 
     /// <summary>Apply throttling if channel fill exceeds target ratio.</summary>
     /// <param name="currentSize">Current number of items in the channel.</param>
@@ -59,7 +89,7 @@ public class BackpressureStrategy
     public virtual async ValueTask ThrottleAsync(int currentSize, CancellationToken ct)
     {
         double fillRatio = GetFillRatio(currentSize);
-        double error = fillRatio - _targetFillRatio;
+        double error = fillRatio - Volatile.Read(ref _targetFillRatio);
 
         if (error <= 0)
             return; // Below target — no throttling

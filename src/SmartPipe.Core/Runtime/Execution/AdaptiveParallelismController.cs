@@ -21,7 +21,7 @@ internal sealed class AdaptiveParallelismController
             _options.MinConcurrency,
             _options.MaxConcurrency);
 
-        if (snapshot.TimeSinceLastDecision < _options.Cooldown)
+        if (snapshot.TimeSinceLastDecision < _options.AdjustmentCooldown)
         {
             return new AdaptiveParallelismDecision(
                 current,
@@ -104,8 +104,8 @@ internal sealed class AdaptiveParallelismController
 
     private bool HasFailurePressure(AdaptiveParallelismSnapshot snapshot)
     {
-        var denominator = Math.Max(1, snapshot.ProcessedDelta);
-        return (double)snapshot.FailedDelta / denominator >= _options.FailurePressureThreshold;
+        return snapshot.ProcessedDelta >= _options.MinimumFailureSamples
+            && (double)snapshot.FailedDelta / snapshot.ProcessedDelta >= _options.FailurePressureThreshold;
     }
 
     private static int Clamp(int value, int min, int max) => Math.Min(max, Math.Max(min, value));

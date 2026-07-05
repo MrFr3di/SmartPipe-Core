@@ -9,6 +9,8 @@ internal interface IPipelineObserverDispatcher : IAsyncDisposable
 {
     ValueTask EmitAsync(PipelineEvent pipelineEvent, CancellationToken ct);
 
+    ValueTask FlushAsync(CancellationToken ct);
+
     ValueTask CompleteAsync(CancellationToken ct);
 }
 
@@ -57,10 +59,15 @@ internal sealed class InlinePipelineObserverDispatcher : IPipelineObserverDispat
             {
                 await registration.Registration.Observer.OnEventAsync(pipelineEvent, ct).ConfigureAwait(false);
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
-                    throw;
+                    ExceptionDispatchInfo.Capture(
+                        ObserverRegistrationState.NormalizeObserverFailure(ex)).Throw();
 
                 if (registration.Registration.FailurePolicy == ObserverFailurePolicy.RemoveObserver)
                     registration.Remove();
@@ -101,6 +108,10 @@ internal sealed class InlinePipelineObserverDispatcher : IPipelineObserverDispat
             {
                 await registration.Registration.Observer.OnEventAsync(failureEvent, ct).ConfigureAwait(false);
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception)
             {
                 if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
@@ -110,6 +121,8 @@ internal sealed class InlinePipelineObserverDispatcher : IPipelineObserverDispat
             }
         }
     }
+
+    public ValueTask FlushAsync(CancellationToken ct) => ValueTask.CompletedTask;
 }
 
 internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDispatcher
@@ -199,6 +212,42 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         ThrowPipelineFaultIfRecorded();
     }
 
+    public async ValueTask FlushAsync(CancellationToken ct)
+    {
+        if (Volatile.Read(ref _completed) != 0)
+        {
+            ThrowPipelineFaultIfRecorded();
+            return;
+        }
+
+        ThrowPipelineFaultIfRecorded();
+
+        if (_options.Mode == ObserverDispatchMode.BufferedBestEffort && !_options.FlushOnCompletion)
+            return;
+
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            await _events.Writer.WriteAsync(new ObserverFlushEvent(completion), ct)
+                .ConfigureAwait(false);
+        }
+        catch (ChannelClosedException)
+        {
+            ThrowPipelineFaultIfRecorded();
+            throw;
+        }
+
+        var completed = await Task.WhenAny(completion.Task, _worker)
+            .WaitAsync(ct)
+            .ConfigureAwait(false);
+        if (completed == completion.Task)
+            await completion.Task.ConfigureAwait(false);
+        else
+            await _worker.ConfigureAwait(false);
+
+        ThrowPipelineFaultIfRecorded();
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -243,6 +292,12 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
     {
         await foreach (var pipelineEvent in _events.Reader.ReadAllAsync(_cts.Token).ConfigureAwait(false))
         {
+            if (pipelineEvent is ObserverFlushEvent flush)
+            {
+                flush.Completion.TrySetResult();
+                continue;
+            }
+
             if (await DispatchEventAsync(pipelineEvent).ConfigureAwait(false))
                 return;
         }
@@ -271,6 +326,10 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
             await registration.Registration.Observer.OnEventAsync(pipelineEvent, _cts.Token)
                 .ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        {
+            return true;
+        }
         catch (Exception ex)
         {
             return HandleObserverFailure(registration, ex);
@@ -283,7 +342,8 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
     {
         if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
         {
-            var pipelineFault = RecordPipelineFault(exception);
+            var pipelineFault = RecordPipelineFault(
+                ObserverRegistrationState.NormalizeObserverFailure(exception));
             _events.Writer.TryComplete(pipelineFault);
             return true;
         }
@@ -317,6 +377,15 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
             Volatile.Write(ref _emittingDroppedEvent, 0);
         }
     }
+
+    private sealed record ObserverFlushEvent(TaskCompletionSource Completion)
+        : PipelineEvent(
+            string.Empty,
+            string.Empty,
+            0,
+            null,
+            0,
+            DateTimeOffset.MinValue);
 }
 
 internal sealed class ActiveObserverRegistration(PipelineObserverRegistration registration)
@@ -354,5 +423,12 @@ internal static class ObserverRegistrationState
                 || registration.Reliability == ObserverReliability.Critical,
             _ => throw new ArgumentOutOfRangeException(nameof(failureMode), failureMode, null),
         };
+    }
+
+    public static Exception NormalizeObserverFailure(Exception exception)
+    {
+        return exception is OperationCanceledException
+            ? new InvalidOperationException("Observer dispatch failed.", exception)
+            : exception;
     }
 }

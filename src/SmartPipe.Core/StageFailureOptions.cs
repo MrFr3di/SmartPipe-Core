@@ -31,6 +31,19 @@ public enum CircuitBreakerEvaluationMode
     FailureRatio,
 }
 
+/// <summary>Controls how timed-out stage attempts interact with retry.</summary>
+public enum TimeoutRetryMode
+{
+    /// <summary>Cancel the attempt and retry only after it completes cooperatively.</summary>
+    CooperativeOnly,
+
+    /// <summary>Detach and observe the late attempt without scheduling a retry.</summary>
+    DetachWithoutRetry,
+
+    /// <summary>Detach and retry while the timed-out attempt may still be running.</summary>
+    DetachAndRetryIdempotent,
+}
+
 /// <summary>Configures timeout behavior for a pipeline stage.</summary>
 public sealed class TimeoutPolicy
 {
@@ -39,6 +52,15 @@ public sealed class TimeoutPolicy
 
     /// <summary>Gets the timeout for the whole stage, including retries.</summary>
     public TimeSpan? StageTimeout { get; init; }
+
+    /// <summary>Gets the retry mode used after an attempt timeout.</summary>
+    public TimeoutRetryMode RetryMode { get; init; } = TimeoutRetryMode.CooperativeOnly;
+
+    /// <summary>Gets the grace period for cooperative cancellation before detaching a timed-out attempt.</summary>
+    public TimeSpan CancellationGracePeriod { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>Gets how long runtime finalization waits for detached late attempts.</summary>
+    public TimeSpan LateAttemptFinalizationTimeout { get; init; } = TimeSpan.FromSeconds(30);
 }
 
 /// <summary>Configures circuit-breaker behavior for a pipeline stage.</summary>
@@ -105,6 +127,9 @@ public sealed class StageFailureOptions
 
     /// <summary>Gets circuit-breaker behavior for the stage.</summary>
     public CircuitBreakerPolicy? CircuitBreaker { get; init; }
+
+    /// <summary>Gets a classifier for exceptions thrown by the stage transformer.</summary>
+    public Func<Exception, SmartPipeError>? ExceptionClassifier { get; init; }
 
     /// <summary>Gets the action for permanent failures.</summary>
     public FailureAction OnPermanentFailure { get; init; } = FailureAction.EmitFailureResult;

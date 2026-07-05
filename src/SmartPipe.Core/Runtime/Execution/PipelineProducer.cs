@@ -8,14 +8,17 @@ internal sealed class PipelineProducer<TInput>
 {
     private readonly IPipelineSource<TInput> _source;
     private readonly Func<bool> _shouldStopAccepting;
+    private readonly Action _recordAccepted;
 
     public PipelineProducer(
         IPipelineSource<TInput> source,
-        Func<bool> shouldStopAccepting)
+        Func<bool> shouldStopAccepting,
+        Action recordAccepted)
     {
         _source = source ?? throw new ArgumentNullException(nameof(source));
         _shouldStopAccepting = shouldStopAccepting
             ?? throw new ArgumentNullException(nameof(shouldStopAccepting));
+        _recordAccepted = recordAccepted ?? throw new ArgumentNullException(nameof(recordAccepted));
     }
 
     public async Task ProduceAsync(
@@ -32,6 +35,7 @@ internal sealed class PipelineProducer<TInput>
             while (!_shouldStopAccepting() && await enumerator.MoveNextAsync().ConfigureAwait(false))
             {
                 await writer.WriteAsync(enumerator.Current, ct).ConfigureAwait(false);
+                _recordAccepted();
             }
         }
         finally

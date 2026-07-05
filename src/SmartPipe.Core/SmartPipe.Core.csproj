@@ -5,7 +5,6 @@
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>SmartPipe.Core</PackageId>
-    <Version>2.1.0</Version>
     <Authors>SmartPipe</Authors>
     <Description>Streaming pipeline engine for .NET based on System.Threading.Channels with source, transform, sink, resilience, diagnostics, and compatibility APIs.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -21,6 +20,8 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>2.1.0</PackageValidationBaselineVersion>
+    <ApiCompatEnableRuleCannotChangeParameterName>true</ApiCompatEnableRuleCannotChangeParameterName>
     <EnableStrictModeForCompatibleTfms>true</EnableStrictModeForCompatibleTfms>
     <IsAotCompatible>true</IsAotCompatible>
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>

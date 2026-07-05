@@ -5,6 +5,8 @@ using SmartPipe.Core;
 
 namespace SmartPipe.Core.Tests.Resilience;
 
+[Trait("Category", "CorrectnessRegression")]
+[Trait("Category", "ConcurrencyRegression")]
 public class CircuitBreakerTests
 {
     [Fact]
@@ -149,6 +151,66 @@ public class CircuitBreakerTests
         firstProbe.Dispose();
 
         cb.TryAcquireHalfOpenProbe(out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public void AcquirePermit_StaleHalfOpenPermitAfterReset_ShouldNotAffectClosedState()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 1,
+            clock: clock);
+
+        cb.RecordFailure();
+        clock.Advance(TimeSpan.FromSeconds(11));
+        var stalePermit = cb.AcquirePermit();
+        stalePermit.IsAllowed.Should().BeTrue();
+        cb.State.Should().Be(CircuitState.HalfOpen);
+
+        cb.Reset();
+
+        stalePermit.RecordFailure();
+        stalePermit.Dispose();
+
+        cb.State.Should().Be(CircuitState.Closed);
+        cb.AllowRequest().Should().BeTrue();
+    }
+
+    [Fact]
+    public void AcquirePermit_OldPermitCannotCloseNewHalfOpenGeneration()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 1,
+            clock: clock);
+
+        cb.RecordFailure();
+        clock.Advance(TimeSpan.FromSeconds(11));
+        var stalePermit = cb.AcquirePermit();
+        stalePermit.IsAllowed.Should().BeTrue();
+
+        cb.Reset();
+        cb.RecordFailure();
+        clock.Advance(TimeSpan.FromSeconds(11));
+        var currentPermit = cb.AcquirePermit();
+        currentPermit.IsAllowed.Should().BeTrue();
+        cb.State.Should().Be(CircuitState.HalfOpen);
+
+        stalePermit.RecordSuccess();
+
+        cb.State.Should().Be(CircuitState.HalfOpen);
+
+        currentPermit.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        stalePermit.Dispose();
+        currentPermit.Dispose();
     }
 
     [Fact]
@@ -433,6 +495,59 @@ public class CircuitBreakerTests
         cb.Isolate();
         cb.State.Should().Be(CircuitState.Isolated);
         cb.AllowRequest().Should().BeFalse();
+    }
+
+    [Fact]
+    public void Isolate_ShouldRemainAbsorbingUntilReset()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(1),
+            clock: clock);
+
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        cb.Isolate();
+        clock.Advance(TimeSpan.FromSeconds(2));
+
+        cb.AllowRequest().Should().BeFalse();
+        cb.AcquirePermit().IsAllowed.Should().BeFalse();
+        cb.RecordSuccess();
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Isolated);
+
+        cb.Reset();
+        cb.State.Should().Be(CircuitState.Closed);
+    }
+
+    [Fact]
+    public void TimeProviderConstructor_UsesMonotonicElapsedForBreakDuration()
+    {
+        var timeProvider = new ManualTimeProvider(
+            new DateTimeOffset(2026, 6, 22, 10, 0, 0, TimeSpan.Zero));
+        var cb = new CircuitBreaker(
+            timeProvider,
+            failureRatio: 0.5,
+            samplingDuration: null,
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 1);
+
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        timeProvider.JumpUtc(TimeSpan.FromMinutes(1));
+
+        cb.AcquirePermit().IsAllowed.Should().BeFalse(
+            "wall-clock jumps must not satisfy break duration");
+        cb.State.Should().Be(CircuitState.Open);
+
+        timeProvider.AdvanceTimestamp(TimeSpan.FromSeconds(11));
+
+        cb.AcquirePermit().IsAllowed.Should().BeTrue();
+        cb.State.Should().Be(CircuitState.HalfOpen);
     }
 
     [Fact]
@@ -782,5 +897,32 @@ public class CircuitBreakerTests
         }
 
         private DateTime CurrentUtcNow => new(Interlocked.Read(ref _ticks), DateTimeKind.Utc);
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long _timestamp;
+        private DateTimeOffset _utcNow;
+
+        public ManualTimeProvider(DateTimeOffset utcNow)
+        {
+            _utcNow = utcNow;
+        }
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public override long GetTimestamp() => Interlocked.Read(ref _timestamp);
+
+        public void JumpUtc(TimeSpan duration)
+        {
+            _utcNow += duration;
+        }
+
+        public void AdvanceTimestamp(TimeSpan duration)
+        {
+            Interlocked.Add(ref _timestamp, duration.Ticks);
+        }
     }
 }

@@ -4,11 +4,15 @@ namespace SmartPipe.Core;
 
 internal sealed class AdaptiveParallelismRuntimeState : IDisposable, IAsyncDisposable
 {
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private readonly IPipelineClock _clock;
     private readonly AdaptiveConcurrencyLimiter _limiter;
     private readonly AdaptiveParallelismController _controller;
-    private long _lastLimitChangeTimestamp;
+    private readonly AdaptiveParallelismOptions _adaptiveOptions;
+    private long _lastAdjustmentTimestamp;
+    private long _lastEvaluationTimestamp;
+    private long _intervalProcessed;
+    private long _intervalFailed;
     private bool _completed;
 
     public AdaptiveParallelismRuntimeState(PipelineRuntimeOptions options)
@@ -32,16 +36,21 @@ internal sealed class AdaptiveParallelismRuntimeState : IDisposable, IAsyncDispo
             InitialConcurrency = initialLimit,
             TargetLatency = adaptive.TargetLatency,
             DeadZone = adaptive.DeadZone,
-            Cooldown = adaptive.Cooldown,
+            EvaluationInterval = adaptive.EvaluationInterval,
+            AdjustmentCooldown = adaptive.AdjustmentCooldown,
             MaxAdjustmentStep = adaptive.MaxAdjustmentStep,
             FailurePressureThreshold = adaptive.FailurePressureThreshold,
+            MinimumFailureSamples = adaptive.MinimumFailureSamples,
             MinSmoothingFactor = adaptive.MinSmoothingFactor,
         };
 
         _clock = options.Clock;
+        _adaptiveOptions = controllerOptions;
         _limiter = new AdaptiveConcurrencyLimiter(initialLimit, effectiveAdaptiveMax);
         _controller = new AdaptiveParallelismController(controllerOptions);
-        _lastLimitChangeTimestamp = _clock.GetTimestamp();
+        var now = _clock.GetTimestamp();
+        _lastAdjustmentTimestamp = now;
+        _lastEvaluationTimestamp = now;
     }
 
     public int CurrentLimit => _limiter.CurrentLimit;
@@ -56,19 +65,33 @@ internal sealed class AdaptiveParallelismRuntimeState : IDisposable, IAsyncDispo
             if (_completed)
                 return;
 
+            _intervalProcessed++;
+            if (failed)
+                _intervalFailed++;
+
             var now = _clock.GetTimestamp();
+            var sinceEvaluation = _clock.GetElapsedTime(_lastEvaluationTimestamp, now);
+            if (sinceEvaluation < _adaptiveOptions.EvaluationInterval)
+                return;
+
+            var processed = _intervalProcessed;
+            var failedCount = _intervalFailed;
+            _intervalProcessed = 0;
+            _intervalFailed = 0;
+            _lastEvaluationTimestamp = now;
+
             var decision = _controller.Decide(new AdaptiveParallelismSnapshot(
                 _limiter.CurrentLimit,
                 latency,
-                ProcessedDelta: 1,
-                FailedDelta: failed ? 1 : 0,
-                _clock.GetElapsedTime(_lastLimitChangeTimestamp, now)));
+                ProcessedDelta: processed,
+                FailedDelta: failedCount,
+                _clock.GetElapsedTime(_lastAdjustmentTimestamp, now)));
 
             if (decision.TargetConcurrency == decision.PreviousConcurrency)
                 return;
 
             _limiter.UpdateLimit(decision.TargetConcurrency);
-            _lastLimitChangeTimestamp = now;
+            _lastAdjustmentTimestamp = now;
         }
     }
 

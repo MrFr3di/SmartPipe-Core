@@ -22,6 +22,49 @@ public enum CircuitState
     Isolated,
 }
 
+internal interface ICircuitBreakerTimeSource
+{
+    DateTime UtcNow { get; }
+
+    long GetTimestamp();
+
+    TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp);
+}
+
+internal sealed class ClockCircuitBreakerTimeSource : ICircuitBreakerTimeSource
+{
+    private readonly IClock _clock;
+
+    public ClockCircuitBreakerTimeSource(IClock clock)
+    {
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+    }
+
+    public DateTime UtcNow => _clock.UtcNow;
+
+    public long GetTimestamp() => _clock.UtcNow.Ticks;
+
+    public TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp) =>
+        TimeSpan.FromTicks(endingTimestamp - startingTimestamp);
+}
+
+internal sealed class TimeProviderCircuitBreakerTimeSource : ICircuitBreakerTimeSource
+{
+    private readonly TimeProvider _timeProvider;
+
+    public TimeProviderCircuitBreakerTimeSource(TimeProvider timeProvider)
+    {
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    }
+
+    public DateTime UtcNow => _timeProvider.GetUtcNow().UtcDateTime;
+
+    public long GetTimestamp() => _timeProvider.GetTimestamp();
+
+    public TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp) =>
+        _timeProvider.GetElapsedTime(startingTimestamp, endingTimestamp);
+}
+
 /// <summary>
 /// Thread-safe circuit breaker with hybrid failure detection:
 /// EWMA for fast reaction + Sliding window for accurate threshold decisions.
@@ -37,14 +80,14 @@ public class CircuitBreaker
     private readonly int _minimumThroughput;
     private readonly TimeSpan _breakDuration;
     private readonly int _maxHalfOpenRequests;
-    private readonly IClock _clock;
+    private readonly ICircuitBreakerTimeSource _time;
 
     private int _state = (int)CircuitState.Closed;
     private int _halfOpenCount;
     private int _activeHalfOpenProbes;
     private int _halfOpenSuccesses;
-    private long _openedAtTicks;
-    private long _halfOpenAtTicks;
+    private int _halfOpenGeneration;
+    private long _openedAtTimestamp;
     private readonly object _halfOpenTransitionGate = new();
 
     // Hybrid: EWMA for early warning + Sliding window for decisions
@@ -56,11 +99,96 @@ public class CircuitBreaker
 
     /// <summary>Creates a new circuit breaker with specified thresholds.</summary>
     /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
+    public CircuitBreaker(double failureRatio)
+        : this(
+            failureRatio,
+            samplingDuration: null,
+            minimumThroughput: 10,
+            breakDuration: null,
+            maxHalfOpenRequests: 3,
+            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+    {
+    }
+
+    /// <summary>Creates a new circuit breaker with specified thresholds.</summary>
+    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
+    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
+    public CircuitBreaker(double failureRatio, TimeSpan? samplingDuration)
+        : this(
+            failureRatio,
+            samplingDuration,
+            minimumThroughput: 10,
+            breakDuration: null,
+            maxHalfOpenRequests: 3,
+            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+    {
+    }
+
+    /// <summary>Creates a new circuit breaker with specified thresholds.</summary>
+    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
+    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
+    /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
+    public CircuitBreaker(double failureRatio, TimeSpan? samplingDuration, int minimumThroughput)
+        : this(
+            failureRatio,
+            samplingDuration,
+            minimumThroughput,
+            breakDuration: null,
+            maxHalfOpenRequests: 3,
+            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+    {
+    }
+
+    /// <summary>Creates a new circuit breaker with specified thresholds.</summary>
+    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
+    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
+    /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
+    /// <param name="breakDuration">Duration to stay open before half-open.</param>
+    public CircuitBreaker(
+        double failureRatio,
+        TimeSpan? samplingDuration,
+        int minimumThroughput,
+        TimeSpan? breakDuration)
+        : this(
+            failureRatio,
+            samplingDuration,
+            minimumThroughput,
+            breakDuration,
+            maxHalfOpenRequests: 3,
+            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+    {
+    }
+
+    /// <summary>Creates a new circuit breaker with specified thresholds.</summary>
+    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
+    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
+    /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
+    /// <param name="breakDuration">Duration to stay open before half-open.</param>
+    /// <param name="maxHalfOpenRequests">Max requests in half-open state.</param>
+    public CircuitBreaker(
+        double failureRatio,
+        TimeSpan? samplingDuration,
+        int minimumThroughput,
+        TimeSpan? breakDuration,
+        int maxHalfOpenRequests)
+        : this(
+            failureRatio,
+            samplingDuration,
+            minimumThroughput,
+            breakDuration,
+            maxHalfOpenRequests,
+            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+    {
+    }
+
+    /// <summary>Creates a new circuit breaker with specified thresholds.</summary>
+    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
     /// <param name="samplingDuration">Window for sliding window evaluation.</param>
     /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
     /// <param name="breakDuration">Duration to stay open before half-open.</param>
     /// <param name="maxHalfOpenRequests">Max requests in half-open state.</param>
     /// <param name="clock">Optional clock for testability (defaults to TimeProviderClock()).</param>
+#pragma warning disable RS0027 // Existing 2.1.0 optional constructor preserved for source compatibility.
     public CircuitBreaker(
         double failureRatio = 0.5,
         TimeSpan? samplingDuration = null,
@@ -69,6 +197,135 @@ public class CircuitBreaker
         int maxHalfOpenRequests = 3,
         IClock? clock = null
     )
+        : this(
+            failureRatio,
+            samplingDuration,
+            minimumThroughput,
+            breakDuration,
+            maxHalfOpenRequests,
+            new ClockCircuitBreakerTimeSource(clock ?? new TimeProviderClock()))
+    {
+    }
+#pragma warning restore RS0027
+
+    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
+    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
+    public CircuitBreaker(TimeProvider timeProvider)
+        : this(
+            failureRatio: 0.5,
+            samplingDuration: null,
+            minimumThroughput: 10,
+            breakDuration: null,
+            maxHalfOpenRequests: 3,
+            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+    {
+    }
+
+    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
+    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
+    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
+    public CircuitBreaker(TimeProvider timeProvider, double failureRatio)
+        : this(
+            failureRatio,
+            samplingDuration: null,
+            minimumThroughput: 10,
+            breakDuration: null,
+            maxHalfOpenRequests: 3,
+            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+    {
+    }
+
+    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
+    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
+    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
+    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
+    public CircuitBreaker(
+        TimeProvider timeProvider,
+        double failureRatio,
+        TimeSpan? samplingDuration)
+        : this(
+            failureRatio,
+            samplingDuration,
+            minimumThroughput: 10,
+            breakDuration: null,
+            maxHalfOpenRequests: 3,
+            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+    {
+    }
+
+    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
+    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
+    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
+    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
+    /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
+    public CircuitBreaker(
+        TimeProvider timeProvider,
+        double failureRatio,
+        TimeSpan? samplingDuration,
+        int minimumThroughput)
+        : this(
+            failureRatio,
+            samplingDuration,
+            minimumThroughput,
+            breakDuration: null,
+            maxHalfOpenRequests: 3,
+            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+    {
+    }
+
+    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
+    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
+    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
+    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
+    /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
+    /// <param name="breakDuration">Duration to stay open before half-open.</param>
+    public CircuitBreaker(
+        TimeProvider timeProvider,
+        double failureRatio,
+        TimeSpan? samplingDuration,
+        int minimumThroughput,
+        TimeSpan? breakDuration)
+        : this(
+            failureRatio,
+            samplingDuration,
+            minimumThroughput,
+            breakDuration,
+            maxHalfOpenRequests: 3,
+            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+    {
+    }
+
+    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
+    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
+    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
+    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
+    /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
+    /// <param name="breakDuration">Duration to stay open before half-open.</param>
+    /// <param name="maxHalfOpenRequests">Max requests in half-open state.</param>
+    public CircuitBreaker(
+        TimeProvider timeProvider,
+        double failureRatio,
+        TimeSpan? samplingDuration,
+        int minimumThroughput,
+        TimeSpan? breakDuration,
+        int maxHalfOpenRequests)
+        : this(
+            failureRatio,
+            samplingDuration,
+            minimumThroughput,
+            breakDuration,
+            maxHalfOpenRequests,
+            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+    {
+    }
+
+    internal CircuitBreaker(
+        double failureRatio,
+        TimeSpan? samplingDuration,
+        int minimumThroughput,
+        TimeSpan? breakDuration,
+        int maxHalfOpenRequests,
+        ICircuitBreakerTimeSource timeSource)
     {
         if (double.IsNaN(failureRatio) || failureRatio <= 0 || failureRatio > 1)
             throw new ArgumentOutOfRangeException(
@@ -107,7 +364,7 @@ public class CircuitBreaker
         _minimumThroughput = minimumThroughput;
         _breakDuration = resolvedBreakDuration;
         _maxHalfOpenRequests = maxHalfOpenRequests;
-        _clock = clock ?? new TimeProviderClock();
+        _time = timeSource ?? throw new ArgumentNullException(nameof(timeSource));
     }
 
     /// <summary>Checks if a request is allowed through the circuit.</summary>
@@ -117,31 +374,47 @@ public class CircuitBreaker
     /// Open breakers deny requests until the break duration expires, then transition to
     /// half-open and allow up to the configured total half-open request count.
     /// It does not return a lease and does not release half-open slots after completion.
-    /// Runtime half-open execution uses <see cref="TryAcquireHalfOpenProbe(out CircuitBreakerProbe)" />.
+    /// Runtime half-open execution uses <see cref="AcquirePermit" />.
     /// </remarks>
-    public bool AllowRequest()
+    public bool AllowRequest() => AcquirePermit().IsAllowed;
+
+    /// <summary>Acquires a correlated circuit breaker permit for one request attempt.</summary>
+    /// <returns>A permit that reports whether the request is allowed.</returns>
+    /// <remarks>
+    /// Runtime code should record success or failure through the returned permit.
+    /// Completion from stale half-open generations is ignored.
+    /// </remarks>
+    public CircuitBreakerPermit AcquirePermit()
     {
         CleanupWindow();
-        int currentState = Volatile.Read(ref _state);
+        var currentState = Volatile.Read(ref _state);
 
         if (currentState == (int)CircuitState.Closed)
-            return true;
+            return CircuitBreakerPermit.Allowed(this, isHalfOpen: false, generation: 0);
 
         if (currentState == (int)CircuitState.Open)
         {
-            var nowTicks = _clock.UtcNow.Ticks;
-            if (!TryTransitionOpenToHalfOpen(nowTicks))
-                return false;
+            var nowTimestamp = _time.GetTimestamp();
+            if (!TryTransitionOpenToHalfOpen(nowTimestamp))
+                return default;
 
             currentState = Volatile.Read(ref _state);
         }
 
         if (currentState == (int)CircuitState.HalfOpen)
-            return Interlocked.Increment(ref _halfOpenCount) <= _maxHalfOpenRequests;
+        {
+            var generation = Volatile.Read(ref _halfOpenGeneration);
+            if (Interlocked.Increment(ref _activeHalfOpenProbes) > _maxHalfOpenRequests)
+            {
+                Interlocked.Decrement(ref _activeHalfOpenProbes);
+                return default;
+            }
 
-        if (currentState == (int)CircuitState.Isolated)
-            return false;
-        return true;
+            Interlocked.Increment(ref _halfOpenCount);
+            return CircuitBreakerPermit.Allowed(this, isHalfOpen: true, generation);
+        }
+
+        return default;
     }
 
     /// <summary>Attempts to acquire a half-open probe slot.</summary>
@@ -157,36 +430,24 @@ public class CircuitBreaker
     /// </remarks>
     public bool TryAcquireHalfOpenProbe(out CircuitBreakerProbe probe)
     {
-        CleanupWindow();
         probe = default;
 
         var currentState = Volatile.Read(ref _state);
-        if (currentState == (int)CircuitState.Open)
-        {
-            var nowTicks = _clock.UtcNow.Ticks;
-            if (!TryTransitionOpenToHalfOpen(nowTicks))
-                return false;
-
-            currentState = Volatile.Read(ref _state);
-        }
-
-        if (currentState != (int)CircuitState.HalfOpen)
+        if (currentState is not ((int)CircuitState.Open or (int)CircuitState.HalfOpen))
             return false;
 
-        if (Interlocked.Increment(ref _activeHalfOpenProbes) > _maxHalfOpenRequests)
-        {
-            Interlocked.Decrement(ref _activeHalfOpenProbes);
+        var permit = AcquirePermit();
+        if (!permit.IsAllowed || !permit.IsHalfOpen)
             return false;
-        }
 
-        Interlocked.Increment(ref _halfOpenCount);
-        probe = new CircuitBreakerProbe(this);
+        probe = new CircuitBreakerProbe(permit);
         return true;
     }
 
-    private bool TryTransitionOpenToHalfOpen(long nowTicks)
+    private bool TryTransitionOpenToHalfOpen(long nowTimestamp)
     {
-        if (nowTicks - Interlocked.Read(ref _openedAtTicks) < _breakDuration.Ticks)
+        var openedAtTimestamp = Interlocked.Read(ref _openedAtTimestamp);
+        if (_time.GetElapsedTime(openedAtTimestamp, nowTimestamp) < _breakDuration)
             return false;
 
         lock (_halfOpenTransitionGate)
@@ -198,55 +459,87 @@ public class CircuitBreaker
             if (currentState != (int)CircuitState.Open)
                 return false;
 
-            if (nowTicks - Interlocked.Read(ref _openedAtTicks) < _breakDuration.Ticks)
+            openedAtTimestamp = Interlocked.Read(ref _openedAtTimestamp);
+            if (_time.GetElapsedTime(openedAtTimestamp, nowTimestamp) < _breakDuration)
                 return false;
 
             Interlocked.Exchange(ref _halfOpenCount, 0);
             Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
             Interlocked.Exchange(ref _halfOpenSuccesses, 0);
-            Interlocked.Exchange(ref _halfOpenAtTicks, nowTicks);
+            Interlocked.Increment(ref _halfOpenGeneration);
             Volatile.Write(ref _state, (int)CircuitState.HalfOpen);
             return true;
         }
     }
 
     /// <summary>Records a successful request and updates state.</summary>
-    /// <remarks>May transition from HalfOpen to Closed on enough successes.</remarks>
+    /// <remarks>
+    /// Compatibility API for uncorrelated callers. Runtime code should use
+    /// <see cref="AcquirePermit" /> and record completion through the returned permit.
+    /// </remarks>
     public void RecordSuccess()
     {
-        _window.Enqueue((_clock.UtcNow, true));
+        var currentState = Volatile.Read(ref _state);
+        var generation = Volatile.Read(ref _halfOpenGeneration);
+        RecordSuccess(currentState == (int)CircuitState.HalfOpen, generation);
+    }
+
+    internal void RecordPermitSuccess(int generation, bool isHalfOpenPermit)
+    {
+        RecordSuccess(isHalfOpenPermit, generation);
+    }
+
+    private void RecordSuccess(bool isHalfOpenPermit, int generation)
+    {
+        if (isHalfOpenPermit && !IsCurrentHalfOpenGeneration(generation))
+            return;
+
+        _window.Enqueue((_time.UtcNow, true));
         CleanupWindow();
 
-        // EWMA update — atomic double update via CompareExchange loop
         double alpha = _ewmaFailureRate > 0.1 ? 0.5 : 0.2;
         AtomicHelper.CompareExchangeLoop(ref _ewmaFailureRate, current => (1.0 - alpha) * current);
 
-        if (Volatile.Read(ref _state) == (int)CircuitState.HalfOpen)
+        if ((isHalfOpenPermit || Volatile.Read(ref _state) == (int)CircuitState.HalfOpen)
+            && IsCurrentHalfOpenGeneration(generation))
         {
             int successes = Interlocked.Increment(ref _halfOpenSuccesses);
             if (successes >= _maxHalfOpenRequests / 2 + 1)
-            {
-                Interlocked.Exchange(ref _state, (int)CircuitState.Closed);
-                Interlocked.Exchange(ref _halfOpenCount, 0);
-                Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
-                Interlocked.Exchange(ref _halfOpenSuccesses, 0);
-                Interlocked.Exchange(ref _ewmaFailureRate, 0.0);
-            }
+                TryCloseHalfOpen(generation);
         }
     }
 
     /// <summary>Records a failed request and updates state.</summary>
-    /// <remarks>May transition to Open if failure ratio exceeds threshold.</remarks>
+    /// <remarks>
+    /// Compatibility API for uncorrelated callers. Runtime code should use
+    /// <see cref="AcquirePermit" /> and record completion through the returned permit.
+    /// </remarks>
     public void RecordFailure()
     {
-        _window.Enqueue((_clock.UtcNow, false));
+        var currentState = Volatile.Read(ref _state);
+        var generation = Volatile.Read(ref _halfOpenGeneration);
+        RecordFailure(currentState == (int)CircuitState.HalfOpen, generation);
+    }
+
+    internal void RecordPermitFailure(int generation, bool isHalfOpenPermit)
+    {
+        RecordFailure(isHalfOpenPermit, generation);
+    }
+
+    private void RecordFailure(bool isHalfOpenPermit, int generation)
+    {
+        if (isHalfOpenPermit && !IsCurrentHalfOpenGeneration(generation))
+            return;
+
+        _window.Enqueue((_time.UtcNow, false));
         CleanupWindow();
         UpdateEwmaFailureRate();
         AddEarlyWarningToWindow();
 
-        if (Volatile.Read(ref _state) == (int)CircuitState.HalfOpen)
+        if ((isHalfOpenPermit || Volatile.Read(ref _state) == (int)CircuitState.HalfOpen)
+            && IsCurrentHalfOpenGeneration(generation))
         {
-            TransitionToOpenIfNeeded((int)CircuitState.HalfOpen);
+            TransitionToOpenIfNeeded((int)CircuitState.HalfOpen, generation);
             return;
         }
 
@@ -266,7 +559,7 @@ public class CircuitBreaker
     {
         // Early warning: EWMA spike → pre-emptively add to window
         if (_ewmaFailureRate > _failureRatio * 1.5)
-            _window.Enqueue((_clock.UtcNow, false));
+            _window.Enqueue((_time.UtcNow, false));
     }
 
     private void EvaluateSlidingWindow()
@@ -282,18 +575,37 @@ public class CircuitBreaker
 
         int currentState = Volatile.Read(ref _state);
         if ((double)failures / total >= _failureRatio)
-            TransitionToOpenIfNeeded(currentState);
+            TransitionToOpenIfNeeded(currentState, expectedGeneration: null);
     }
 
-    private void TransitionToOpenIfNeeded(int currentState)
+    private bool TransitionToOpenIfNeeded(int expectedState, int? expectedGeneration)
     {
-        if (currentState == (int)CircuitState.Closed || currentState == (int)CircuitState.HalfOpen)
+        if (expectedState is not ((int)CircuitState.Closed or (int)CircuitState.HalfOpen))
+            return false;
+
+        while (true)
         {
-            Interlocked.Exchange(ref _state, (int)CircuitState.Open);
-            Interlocked.Exchange(ref _openedAtTicks, _clock.UtcNow.Ticks);
-            Interlocked.Exchange(ref _halfOpenCount, 0);
-            Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
-            Interlocked.Exchange(ref _halfOpenSuccesses, 0);
+            var currentState = Volatile.Read(ref _state);
+            if (currentState != expectedState)
+                return false;
+
+            if (expectedGeneration is int generation
+                && Volatile.Read(ref _halfOpenGeneration) != generation)
+            {
+                return false;
+            }
+
+            if (Interlocked.CompareExchange(
+                    ref _state,
+                    (int)CircuitState.Open,
+                    expectedState) != expectedState)
+            {
+                continue;
+            }
+
+            Interlocked.Exchange(ref _openedAtTimestamp, _time.GetTimestamp());
+            ResetHalfOpenCounters();
+            return true;
         }
     }
 
@@ -305,9 +617,8 @@ public class CircuitBreaker
     {
         while (_window.TryDequeue(out _)) { }
         Interlocked.Exchange(ref _state, (int)CircuitState.Closed);
-        Interlocked.Exchange(ref _halfOpenCount, 0);
-        Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
-        Interlocked.Exchange(ref _halfOpenSuccesses, 0);
+        Interlocked.Increment(ref _halfOpenGeneration);
+        ResetHalfOpenCounters();
         Interlocked.Exchange(ref _ewmaFailureRate, 0.0);
     }
 
@@ -348,31 +659,105 @@ public class CircuitBreaker
         return dict;
     }
 
-    internal void ReleaseHalfOpenProbe()
+    internal void ReleaseHalfOpenPermit(int generation)
     {
-        if (Volatile.Read(ref _activeHalfOpenProbes) > 0)
+        if (Volatile.Read(ref _halfOpenGeneration) == generation
+            && Volatile.Read(ref _activeHalfOpenProbes) > 0)
+        {
             Interlocked.Decrement(ref _activeHalfOpenProbes);
+        }
     }
 
     private void CleanupWindow()
     {
-        var cutoff = _clock.UtcNow - _samplingDuration;
+        var cutoff = _time.UtcNow - _samplingDuration;
 
         while (_window.TryPeek(out var item) && item.Timestamp < cutoff)
         {
             _window.TryDequeue(out _);
         }
     }
+
+    private bool IsCurrentHalfOpenGeneration(int generation) =>
+        Volatile.Read(ref _state) == (int)CircuitState.HalfOpen
+        && Volatile.Read(ref _halfOpenGeneration) == generation;
+
+    private void TryCloseHalfOpen(int generation)
+    {
+        if (!IsCurrentHalfOpenGeneration(generation))
+            return;
+
+        if (Interlocked.CompareExchange(
+                ref _state,
+                (int)CircuitState.Closed,
+                (int)CircuitState.HalfOpen) != (int)CircuitState.HalfOpen)
+        {
+            return;
+        }
+
+        if (Volatile.Read(ref _halfOpenGeneration) != generation)
+            return;
+
+        Interlocked.Increment(ref _halfOpenGeneration);
+        ResetHalfOpenCounters();
+        Interlocked.Exchange(ref _ewmaFailureRate, 0.0);
+    }
+
+    private void ResetHalfOpenCounters()
+    {
+        Interlocked.Exchange(ref _halfOpenCount, 0);
+        Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
+        Interlocked.Exchange(ref _halfOpenSuccesses, 0);
+    }
 }
 
-/// <summary>Lease for a circuit breaker half-open probe slot.</summary>
-public readonly struct CircuitBreakerProbe : IDisposable
+/// <summary>Correlated permit for one circuit breaker request attempt.</summary>
+public readonly struct CircuitBreakerPermit : IDisposable
 {
+    private readonly CircuitBreaker? _owner;
+    private readonly int _generation;
+    private readonly bool _isHalfOpen;
     private readonly LeaseState? _lease;
 
-    internal CircuitBreakerProbe(CircuitBreaker owner)
+    private CircuitBreakerPermit(
+        CircuitBreaker owner,
+        bool isHalfOpen,
+        int generation)
     {
-        _lease = new LeaseState(owner);
+        _owner = owner;
+        _isHalfOpen = isHalfOpen;
+        _generation = generation;
+        _lease = isHalfOpen ? new LeaseState(owner, generation) : null;
+        IsAllowed = true;
+    }
+
+    /// <summary>Gets whether the request is allowed through the circuit.</summary>
+    public bool IsAllowed { get; }
+
+    internal bool IsHalfOpen => _isHalfOpen;
+
+    internal static CircuitBreakerPermit Allowed(
+        CircuitBreaker owner,
+        bool isHalfOpen,
+        int generation) =>
+        new(owner, isHalfOpen, generation);
+
+    /// <summary>Records successful completion for this permit.</summary>
+    public void RecordSuccess()
+    {
+        if (!IsAllowed || _owner is null)
+            return;
+
+        _owner.RecordPermitSuccess(_generation, _isHalfOpen);
+    }
+
+    /// <summary>Records failed completion for this permit.</summary>
+    public void RecordFailure()
+    {
+        if (!IsAllowed || _owner is null)
+            return;
+
+        _owner.RecordPermitFailure(_generation, _isHalfOpen);
     }
 
     /// <inheritdoc />
@@ -384,17 +769,36 @@ public readonly struct CircuitBreakerProbe : IDisposable
     private sealed class LeaseState
     {
         private readonly CircuitBreaker _owner;
+        private readonly int _generation;
         private int _released;
 
-        internal LeaseState(CircuitBreaker owner)
+        internal LeaseState(CircuitBreaker owner, int generation)
         {
             _owner = owner;
+            _generation = generation;
         }
 
         internal void Release()
         {
             if (Interlocked.Exchange(ref _released, 1) == 0)
-                _owner.ReleaseHalfOpenProbe();
+                _owner.ReleaseHalfOpenPermit(_generation);
         }
+    }
+}
+
+/// <summary>Lease for a circuit breaker half-open probe slot.</summary>
+public readonly struct CircuitBreakerProbe : IDisposable
+{
+    private readonly CircuitBreakerPermit _permit;
+
+    internal CircuitBreakerProbe(CircuitBreakerPermit permit)
+    {
+        _permit = permit;
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        _permit.Dispose();
     }
 }

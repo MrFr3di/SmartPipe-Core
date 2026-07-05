@@ -91,6 +91,8 @@ public class ProbabilisticMergeTests
             allUniqueItems.Add(i);
         }
 
+        var expectedOccupancy = filter1.Count + filter2.Count;
+
         // Act: Merge filter2 into filter1
         filter1.Merge(filter2);
 
@@ -107,9 +109,10 @@ public class ProbabilisticMergeTests
         falseNegatives.Should().BeLessThanOrEqualTo(5,
             $"Merged CuckooFilter should contain all {allUniqueItems.Count} unique items with no false negatives. Found {falseNegatives} false negatives.");
 
-        // Also verify the count is correct (should be close to 900)
-        filter1.Count.Should().BeGreaterThan(800, "Merged filter should contain at least 800 items");
-        filter1.Count.Should().BeLessThanOrEqualTo(900, "Merged filter should contain at most 900 items");
+        // Count tracks occupied fingerprint entries, not exact unique cardinality.
+        filter1.Count.Should().Be(
+            expectedOccupancy,
+            "merge copies occupied source fingerprints, including overlapping source values");
     }
 
     /// <summary>

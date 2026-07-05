@@ -1,5 +1,6 @@
 #nullable enable
 using System.Diagnostics;
+using System.Text;
 using FluentAssertions;
 using Xunit;
 
@@ -210,5 +211,27 @@ public class SecretScannerReDoSTests
         SecretScanner.HasSecrets("").Should().BeFalse();
         SecretScanner.HasSecrets("hello world").Should().BeFalse();
         SecretScanner.HasSecrets("no secrets here").Should().BeFalse();
+    }
+
+    [Fact]
+    public void FixedSeedNestedEncodingBeyondRecursionLimit_ShouldFailClosedWithoutAmplification()
+    {
+        var random = new Random(20260702);
+
+        for (var i = 0; i < 16; i++)
+        {
+            var bytes = new byte[256];
+            random.NextBytes(bytes);
+            var encoded = "clean-" + Convert.ToHexString(bytes);
+            for (var depth = 0; depth <= SecretScanner.MaxRecursionDepth; depth++)
+                encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(encoded));
+
+            var stopwatch = Stopwatch.StartNew();
+            var result = SecretScanner.Scan(encoded);
+            stopwatch.Stop();
+
+            result.Should().Be(SecretScanResult.Indeterminate);
+            stopwatch.ElapsedMilliseconds.Should().BeLessThan(100);
+        }
     }
 }

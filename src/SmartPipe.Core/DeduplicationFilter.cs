@@ -63,6 +63,9 @@ public class DeduplicationFilter
         if (expectedItems <= 0)
             throw new ArgumentOutOfRangeException(nameof(expectedItems), expectedItems, "Expected items must be greater than zero.");
 
+        if (ttl.HasValue && ttl.Value <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(ttl), ttl, "TTL must be greater than zero.");
+
         if (double.IsNaN(falsePositiveRate) || falsePositiveRate <= 0 || falsePositiveRate >= 1)
             throw new ArgumentOutOfRangeException(
                 nameof(falsePositiveRate),

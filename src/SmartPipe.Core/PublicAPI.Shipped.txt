@@ -726,3 +726,49 @@ SmartPipe.Core.StageResult<T>.IsFailure.get -> bool
 SmartPipe.Core.StageResult<T>.IsTerminalNonFailure.get -> bool
 static SmartPipe.Core.PipelineResult<T>.Filtered(ulong traceId) -> SmartPipe.Core.PipelineResult<T>
 static SmartPipe.Core.PipelineResult<T>.Skipped(ulong traceId) -> SmartPipe.Core.PipelineResult<T>
+SmartPipe.Core.AdaptiveParallelismOptions.AdjustmentCooldown.get -> System.TimeSpan
+SmartPipe.Core.AdaptiveParallelismOptions.AdjustmentCooldown.init -> void
+SmartPipe.Core.AdaptiveParallelismOptions.EvaluationInterval.get -> System.TimeSpan
+SmartPipe.Core.AdaptiveParallelismOptions.EvaluationInterval.init -> void
+SmartPipe.Core.AdaptiveParallelismOptions.MinimumFailureSamples.get -> int
+SmartPipe.Core.AdaptiveParallelismOptions.MinimumFailureSamples.init -> void
+SmartPipe.Core.AdaptiveParallelismOptions.SampleInterval.get -> System.TimeSpan
+SmartPipe.Core.AdaptiveParallelismOptions.SampleInterval.init -> void
+SmartPipe.Core.StageFailureOptions.ExceptionClassifier.get -> System.Func<System.Exception!, SmartPipe.Core.SmartPipeError>?
+SmartPipe.Core.StageFailureOptions.ExceptionClassifier.init -> void
+SmartPipe.Core.TimeoutPolicy.CancellationGracePeriod.get -> System.TimeSpan
+SmartPipe.Core.TimeoutPolicy.CancellationGracePeriod.init -> void
+SmartPipe.Core.TimeoutPolicy.LateAttemptFinalizationTimeout.get -> System.TimeSpan
+SmartPipe.Core.TimeoutPolicy.LateAttemptFinalizationTimeout.init -> void
+SmartPipe.Core.TimeoutPolicy.RetryMode.get -> SmartPipe.Core.TimeoutRetryMode
+SmartPipe.Core.TimeoutPolicy.RetryMode.init -> void
+SmartPipe.Core.TimeoutRetryMode
+SmartPipe.Core.TimeoutRetryMode.CooperativeOnly = 0 -> SmartPipe.Core.TimeoutRetryMode
+SmartPipe.Core.TimeoutRetryMode.DetachAndRetryIdempotent = 2 -> SmartPipe.Core.TimeoutRetryMode
+SmartPipe.Core.TimeoutRetryMode.DetachWithoutRetry = 1 -> SmartPipe.Core.TimeoutRetryMode
+SmartPipe.Core.SmartPipeMetricsRecorder.LastActivityAtUtc.get -> System.DateTimeOffset?
+SmartPipe.Core.SmartPipeMetricsSnapshot.LastActivityAtUtc.get -> System.DateTimeOffset?
+SmartPipe.Core.SmartPipeMetricsSnapshot.SmartPipeMetricsSnapshot(long itemsProcessed, long itemsFailed, long itemsFiltered, long itemsDropped, long outputItemsDropped, long observerEventsDropped, long itemsRetried, long itemsDeadLettered, int inputQueueDepth, int outputQueueDepth, double lastStageLatencyMs, System.DateTimeOffset? lastProcessedAtUtc, System.DateTimeOffset? lastActivityAtUtc, long duplicatesFiltered, double avgLatencyMs, double smoothLatencyMs, double smoothThroughput, int queueSize, double poolHitRate) -> void
+SmartPipe.Core.CircuitBreaker.AcquirePermit() -> SmartPipe.Core.CircuitBreakerPermit
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(double failureRatio) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(double failureRatio, System.TimeSpan? samplingDuration) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(double failureRatio, System.TimeSpan? samplingDuration, int minimumThroughput) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(double failureRatio, System.TimeSpan? samplingDuration, int minimumThroughput, System.TimeSpan? breakDuration) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(double failureRatio, System.TimeSpan? samplingDuration, int minimumThroughput, System.TimeSpan? breakDuration, int maxHalfOpenRequests) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio, System.TimeSpan? samplingDuration) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio, System.TimeSpan? samplingDuration, int minimumThroughput) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio, System.TimeSpan? samplingDuration, int minimumThroughput, System.TimeSpan? breakDuration) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio, System.TimeSpan? samplingDuration, int minimumThroughput, System.TimeSpan? breakDuration, int maxHalfOpenRequests) -> void
+SmartPipe.Core.CircuitBreakerPermit
+SmartPipe.Core.CircuitBreakerPermit.CircuitBreakerPermit() -> void
+SmartPipe.Core.CircuitBreakerPermit.Dispose() -> void
+SmartPipe.Core.CircuitBreakerPermit.IsAllowed.get -> bool
+SmartPipe.Core.CircuitBreakerPermit.RecordFailure() -> void
+SmartPipe.Core.CircuitBreakerPermit.RecordSuccess() -> void
+SmartPipe.Core.SecretScanResult
+SmartPipe.Core.SecretScanResult.Clean = 0 -> SmartPipe.Core.SecretScanResult
+SmartPipe.Core.SecretScanResult.Indeterminate = 2 -> SmartPipe.Core.SecretScanResult
+SmartPipe.Core.SecretScanResult.SecretFound = 1 -> SmartPipe.Core.SecretScanResult
+static SmartPipe.Core.SecretScanner.Scan(string! content) -> SmartPipe.Core.SecretScanResult

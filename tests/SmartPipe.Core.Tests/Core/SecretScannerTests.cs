@@ -1,4 +1,6 @@
 #nullable enable
+using System.Text;
+using System.Text.RegularExpressions;
 using Xunit;
 using SmartPipe.Core;
 using System.Reflection;
@@ -23,6 +25,114 @@ public class SecretScannerTests
             BindingFlags.Static | BindingFlags.NonPublic
         );
         return (string?)method?.Invoke(null, new object[] { content });
+    }
+
+    [Fact]
+    public void Scan_NullInput_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => SecretScanner.Scan(null!));
+    }
+
+    [Fact]
+    public void Scan_StringWithSecret_ReturnsSecretFound()
+    {
+        var result = SecretScanner.Scan("api_key: 'secret123'");
+
+        Assert.Equal(SecretScanResult.SecretFound, result);
+    }
+
+    [Fact]
+    public void Scan_StringWithNoSecrets_ReturnsClean()
+    {
+        var result = SecretScanner.Scan("this is a clean string without secrets");
+
+        Assert.Equal(SecretScanResult.Clean, result);
+    }
+
+    [Fact]
+    public void Scan_RegexTimeout_ReturnsIndeterminate()
+    {
+        var timeoutPattern = new Regex(
+            "^(a+)+$",
+            RegexOptions.None,
+            TimeSpan.FromMilliseconds(1));
+        var input = new string('a', 100_000) + "!";
+
+        var result = SecretScanner.ScanWithPatternsForTesting(input, [timeoutPattern]);
+
+        Assert.Equal(SecretScanResult.Indeterminate, result);
+    }
+
+    [Fact]
+    public void Scan_InputLengthLimit_ReturnsIndeterminateBeforeScanning()
+    {
+        var input = new string('a', SecretScanner.MaxInputLength + 1);
+
+        var result = SecretScanner.Scan(input);
+
+        Assert.Equal(SecretScanResult.Indeterminate, result);
+    }
+
+    [Fact]
+    public void Scan_DecodedLengthLimit_ReturnsIndeterminate()
+    {
+        var decoded = new string('a', SecretScanner.MaxDecodedBytes + 1);
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(decoded));
+
+        var result = SecretScanner.Scan(encoded);
+
+        Assert.Equal(SecretScanResult.Indeterminate, result);
+    }
+
+    [Fact]
+    public void Scan_RecursionLimitWithMoreEncodedContent_ReturnsIndeterminate()
+    {
+        var encoded = "clean";
+        for (var i = 0; i <= SecretScanner.MaxRecursionDepth; i++)
+            encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(encoded));
+
+        var result = SecretScanner.Scan(encoded);
+
+        Assert.Equal(SecretScanResult.Indeterminate, result);
+    }
+
+    [Fact]
+    public void HasSecrets_IndeterminateScan_ReturnsTrue()
+    {
+        var input = new string('a', SecretScanner.MaxInputLength + 1);
+
+        var result = SecretScanner.HasSecrets(input);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void Redact_IndeterminateScan_ReturnsIndeterminateMarker()
+    {
+        var input = new string('a', SecretScanner.MaxInputLength + 1);
+
+        var result = SecretScanner.Redact(input);
+
+        Assert.Equal(SecretScanner.IndeterminateRedaction, result);
+    }
+
+    [Fact]
+    public void Scan_FixedSeedFuzzInputs_DoesNotThrow()
+    {
+        var random = new Random(20260702);
+        const string alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_%:/?='\"-.";
+
+        for (var i = 0; i < 200; i++)
+        {
+            var length = random.Next(0, 4096);
+            var builder = new StringBuilder(length);
+            for (var j = 0; j < length; j++)
+                builder.Append(alphabet[random.Next(alphabet.Length)]);
+
+            var result = SecretScanner.Scan(builder.ToString());
+
+            Assert.True(Enum.IsDefined(result));
+        }
     }
 
     [Fact]
