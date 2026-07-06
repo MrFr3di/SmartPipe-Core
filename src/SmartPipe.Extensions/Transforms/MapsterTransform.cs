@@ -46,7 +46,7 @@ public class MapsterTransform<TInput, TOutput> : IPipelineTransformer<TInput, TO
                     ? envelope.Payload.Adapt<TOutput>(_config)
                     : envelope.Payload.Adapt<TOutput>();
 
-            return ValueTask.FromResult(StageResult<TOutput>.Success(result));
+            return ValueTask.FromResult(StageResult<TOutput>.Success(result!));
         }
         catch (CompileException ex)
         {
