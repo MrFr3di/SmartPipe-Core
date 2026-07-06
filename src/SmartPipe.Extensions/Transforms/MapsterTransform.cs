@@ -1,4 +1,5 @@
 using Mapster;
+using System.Diagnostics.CodeAnalysis;
 using SmartPipe.Core;
 
 namespace SmartPipe.Extensions.Transforms;
@@ -10,6 +11,12 @@ namespace SmartPipe.Extensions.Transforms;
 /// </summary>
 /// <typeparam name="TInput">The source type to map from.</typeparam>
 /// <typeparam name="TOutput">The destination type to map to.</typeparam>
+[RequiresUnreferencedCode(
+    "MapsterTransform uses Mapster runtime mapping metadata, which is not trimming-safe. Use a hand-written mapper, a source-generated mapper, or PipelineTransformer.FromFunc for trimming."
+)]
+[RequiresDynamicCode(
+    "MapsterTransform uses Mapster runtime expression compilation, which is not NativeAOT-safe. Use a hand-written mapper, a source-generated mapper, or PipelineTransformer.FromFunc for NativeAOT."
+)]
 public class MapsterTransform<TInput, TOutput> : IPipelineTransformer<TInput, TOutput>
 {
     private readonly TypeAdapterConfig? _config;
@@ -41,19 +48,28 @@ public class MapsterTransform<TInput, TOutput> : IPipelineTransformer<TInput, TO
 
             return ValueTask.FromResult(StageResult<TOutput>.Success(result));
         }
+        catch (CompileException ex)
+        {
+            return CreateMappingFailure(ex);
+        }
         catch (InvalidOperationException ex)
         {
-            return ValueTask.FromResult(
-                StageResult<TOutput>.Failure(
-                    new SmartPipeError(
-                        $"Mapster mapping error: {ex.Message}",
-                        ErrorType.Permanent,
-                        "Mapping",
-                        ex
-                    )
-                )
-            );
+            return CreateMappingFailure(ex);
         }
+    }
+
+    private static ValueTask<StageResult<TOutput>> CreateMappingFailure(Exception ex)
+    {
+        return ValueTask.FromResult(
+            StageResult<TOutput>.Failure(
+                new SmartPipeError(
+                    $"Mapster mapping error: {ex.Message}",
+                    ErrorType.Permanent,
+                    "Mapping",
+                    ex
+                )
+            )
+        );
     }
 
     /// <inheritdoc/>

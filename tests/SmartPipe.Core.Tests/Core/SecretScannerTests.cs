@@ -207,6 +207,26 @@ public class SecretScannerTests
     }
 
     [Fact]
+    public void Scan_MalformedUrlEncodingAfterValidEscape_ReturnsIndeterminate()
+    {
+        var input = "prefix%20suffix%";
+
+        var result = SecretScanner.Scan(input);
+
+        Assert.Equal(SecretScanResult.Indeterminate, result);
+    }
+
+    [Fact]
+    public void Redact_MalformedUrlEncodingAfterValidEscape_ReturnsIndeterminateMarker()
+    {
+        var input = "prefix%20suffix%";
+
+        var result = SecretScanner.Redact(input);
+
+        Assert.Equal(SecretScanner.IndeterminateRedaction, result);
+    }
+
+    [Fact]
     public void Redact_StringWithSecrets_ReturnsRedactedString()
     {
         var input = "my api_key: 'secret123' and password: 'pass456'";

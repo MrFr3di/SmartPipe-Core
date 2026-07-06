@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Dapper;
@@ -101,20 +102,36 @@ public class DbSink<T> : IPipelineSink<T>
     private static string GenerateInsertSql()
     {
         var type = typeof(T);
-        var tableAttr =
-            type.GetCustomAttribute<System.ComponentModel.DataAnnotations.Schema.TableAttribute>();
+        var tableAttr = type.GetCustomAttribute<TableAttribute>();
         var tableName = tableAttr?.Name ?? type.Name;
-        var props = type.GetProperties().Where(p => p.CanRead).ToList();
+        var props = type.GetProperties().Where(IsInsertableProperty).ToList();
+        if (props.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"No insertable properties were found on type '{type.FullName}'.");
+        }
+
         var columns = string.Join(
             ", ",
             props.Select(p =>
             {
-                var col =
-                    p.GetCustomAttribute<System.ComponentModel.DataAnnotations.Schema.ColumnAttribute>();
+                var col = p.GetCustomAttribute<ColumnAttribute>();
                 return col?.Name ?? p.Name;
             })
         );
         var values = string.Join(", ", props.Select(p => $"@{p.Name}"));
         return $"INSERT INTO {tableName} ({columns}) VALUES ({values})";
+    }
+
+    private static bool IsInsertableProperty(PropertyInfo property)
+    {
+        if (!property.CanRead || property.GetIndexParameters().Length != 0)
+            return false;
+
+        if (property.GetCustomAttribute<NotMappedAttribute>() is not null)
+            return false;
+
+        var generated = property.GetCustomAttribute<DatabaseGeneratedAttribute>();
+        return generated is null || generated.DatabaseGeneratedOption == DatabaseGeneratedOption.None;
     }
 }

@@ -714,10 +714,52 @@ internal static class RuntimeCleanup
 
 internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 {
+    private enum ExecutorLifecycleState
+    {
+        Created = 0,
+        Running = 1,
+        Disposing = 2,
+        Disposed = 3,
+    }
+
+    private enum TimedAttemptCompletionKind
+    {
+        StageResultReturned = 0,
+        ExpectedTimeoutCancellation = 1,
+        Faulted = 2,
+        StillRunning = 3,
+        CallerCancelled = 4,
+    }
+
     private readonly record struct TerminalOutcome(
         PipelineRunState State,
         Exception? Exception,
         ExceptionDispatchInfo? Primary);
+
+    private readonly record struct ComponentDisposeResult(
+        Exception[] CompletionErrors,
+        Exception[] DisposeErrors);
+
+    private readonly record struct TimedAttemptCompletion(
+        TimedAttemptCompletionKind Kind,
+        TypedStageExecutionResult Result,
+        Exception? Exception)
+    {
+        public static TimedAttemptCompletion StageResult(TypedStageExecutionResult result) =>
+            new(TimedAttemptCompletionKind.StageResultReturned, result, null);
+
+        public static TimedAttemptCompletion ExpectedTimeoutCancellation(Exception exception) =>
+            new(TimedAttemptCompletionKind.ExpectedTimeoutCancellation, default, exception);
+
+        public static TimedAttemptCompletion Faulted(Exception exception) =>
+            new(TimedAttemptCompletionKind.Faulted, default, exception);
+
+        public static TimedAttemptCompletion StillRunning() =>
+            new(TimedAttemptCompletionKind.StillRunning, default, null);
+
+        public static TimedAttemptCompletion CallerCancelled(Exception exception) =>
+            new(TimedAttemptCompletionKind.CallerCancelled, default, exception);
+    }
 
     private enum SourceStopReason
     {
@@ -762,13 +804,16 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private ChannelReader<ProcessingEnvelope<TInput>>? _inputReader;
     private readonly Dictionary<string, CircuitBreaker> _breakers = [];
     private readonly object _breakersGate = new();
-    private readonly object _disposeGate = new();
+    private readonly object _lifecycleGate = new();
     private readonly ConcurrentDictionary<long, LateStageAttempt> _lateStageAttempts = [];
+    private readonly ConcurrentDictionary<string, Func<ValueTask>> _deferredStageDisposals = [];
     private long _nextLateStageAttemptId;
+    private ExecutorLifecycleState _executorLifecycleState;
     private int _disposed;
     private int _componentsDisposed;
     private Task? _runTask;
     private Task? _disposeTask;
+    private Exception? _disposeException;
     private int _started;
     private int _drainRequested;
     private int _stopAcceptingRequested;
@@ -851,16 +896,31 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     public PipelineRun<TOutput> Start()
     {
-        if (Interlocked.Exchange(ref _started, 1) != 0)
+        Task runTask;
+        lock (_lifecycleGate)
         {
-            throw new InvalidOperationException(
-                "This pipeline runtime instance has already been started. Create a new runtime instance per run.");
+            if (_executorLifecycleState is ExecutorLifecycleState.Disposing or ExecutorLifecycleState.Disposed)
+            {
+                throw new ObjectDisposedException(
+                    "pipeline runtime",
+                    "This pipeline runtime instance has already been disposed.");
+            }
+
+            if (_executorLifecycleState != ExecutorLifecycleState.Created
+                || Interlocked.Exchange(ref _started, 1) != 0)
+            {
+                throw new InvalidOperationException(
+                    "This pipeline runtime instance has already been started. Create a new runtime instance per run.");
+            }
+
+            _executorLifecycleState = ExecutorLifecycleState.Running;
+            runTask = Task.Run(RunAsync, CancellationToken.None);
+            _runTask = runTask;
         }
 
-        _runTask = Task.Run(RunAsync, CancellationToken.None);
         return new PipelineRun<TOutput>(
             _outputs.Reader,
-            _runTask,
+            runTask,
             () => _lifecycle.State,
             CancelAsync,
             DrainAsync,
@@ -959,12 +1019,14 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     {
         Task disposeTask;
         TaskCompletionSource? starter = null;
-        lock (_disposeGate)
+        lock (_lifecycleGate)
         {
             if (_disposeTask is null)
             {
                 starter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 _disposeTask = starter.Task;
+                if (_executorLifecycleState is ExecutorLifecycleState.Created or ExecutorLifecycleState.Running)
+                    _executorLifecycleState = ExecutorLifecycleState.Disposing;
             }
 
             disposeTask = _disposeTask;
@@ -981,10 +1043,14 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         try
         {
             await DisposeCoreAsync().ConfigureAwait(false);
+            lock (_lifecycleGate)
+                _executorLifecycleState = ExecutorLifecycleState.Disposed;
             completion.SetResult();
         }
         catch (Exception ex)
         {
+            lock (_lifecycleGate)
+                _executorLifecycleState = ExecutorLifecycleState.Disposed;
             completion.SetException(ex);
         }
     }
@@ -1011,15 +1077,23 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 {
                     // RunAsync faults are observed via the pipeline run's Completion task.
                 }
+
+                var deferredCleanupErrors = await DisposeDeferredStagesAsync().ConfigureAwait(false);
+                var disposeException = CreateCombinedException(null, deferredCleanupErrors);
+                if (disposeException is not null)
+                    ExceptionDispatchInfo.Capture(disposeException).Throw();
+
+                if (_disposeException is not null)
+                    ExceptionDispatchInfo.Capture(_disposeException).Throw();
             }
             else
             {
-                var cleanupErrors = await DisposeComponentsAsync().ConfigureAwait(false);
+                var cleanup = await DisposeComponentsAsync().ConfigureAwait(false);
                 var observerErrors = await RuntimeCleanup.CollectAsync([
                     () => _observerDispatcher.DisposeAsync(),
                 ]).ConfigureAwait(false);
                 _sinkExecutor.Dispose();
-                RuntimeCleanup.ThrowCombined(null, cleanupErrors.Concat(observerErrors).ToArray());
+                RuntimeCleanup.ThrowCombined(null, cleanup.DisposeErrors.Concat(observerErrors).ToArray());
             }
         }
         finally
@@ -1083,8 +1157,11 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         var observerFlushErrors = await RuntimeCleanup.CollectAsync([
             () => _observerDispatcher.FlushAsync(CancellationToken.None),
         ]).ConfigureAwait(false);
-        var componentCleanupErrors = await DisposeComponentsAsync().ConfigureAwait(false);
-        var finalizationErrors = observerFlushErrors.Concat(componentCleanupErrors).ToArray();
+        var componentCleanup = await DisposeComponentsAsync().ConfigureAwait(false);
+        var finalizationErrors = observerFlushErrors.Concat(componentCleanup.CompletionErrors).ToArray();
+        _disposeException = CreateCombinedException(
+            null,
+            observerFlushErrors.Concat(componentCleanup.DisposeErrors).ToArray());
         var outcome = DetermineTerminalOutcome(primary, finalizationErrors);
 
         _lifecycle.MarkTerminal(outcome.State);
@@ -1536,6 +1613,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         catch (OperationCanceledException ex)
             when (!ct.IsCancellationRequested && timeoutCts.IsCancellationRequested)
         {
+            var retryMode = stage.FailureOptions.Timeout?.RetryMode ?? TimeoutRetryMode.CooperativeOnly;
             return stage.CreateTimedOutResult(
                 current,
                 _spec.LineageMode,
@@ -1543,11 +1621,14 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 startedAtUtc,
                 attemptTimeout.Value,
                 ex,
-                true
+                retryMode != TimeoutRetryMode.DetachWithoutRetry
             );
         }
         catch (TimeoutException ex)
         {
+            if (execution.IsCompleted)
+                return await execution.ConfigureAwait(false);
+
             timeoutCts.Cancel();
             var transferredTimeoutCts = timeoutCts;
             timeoutCts = null;
@@ -1583,32 +1664,50 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         switch (retryMode)
         {
             case TimeoutRetryMode.CooperativeOnly:
-                try
-                {
-                    canRetryTimeout = await TryWaitForCooperativeTimeoutCompletionAsync(
-                            execution,
-                            GetCancellationGracePeriod(stage),
-                            ct)
-                        .ConfigureAwait(false);
-                }
-                catch
-                {
-                    if (execution.IsCompleted)
-                        timeoutCts.Dispose();
-                    else
-                        RegisterLateStageAttempt(stage, current, execution, timeoutCts);
+                var completion = await TryWaitForCooperativeTimeoutCompletionAsync(
+                        execution,
+                        GetCancellationGracePeriod(stage),
+                        ct)
+                    .ConfigureAwait(false);
 
-                    throw;
+                switch (completion.Kind)
+                {
+                    case TimedAttemptCompletionKind.StageResultReturned:
+                        timeoutCts.Dispose();
+                        return completion.Result;
+                    case TimedAttemptCompletionKind.ExpectedTimeoutCancellation:
+                        timeoutCts.Dispose();
+                        canRetryTimeout = true;
+                        break;
+                    case TimedAttemptCompletionKind.Faulted:
+                    case TimedAttemptCompletionKind.CallerCancelled:
+                        if (execution.IsCompleted)
+                            timeoutCts.Dispose();
+                        else
+                            RegisterLateStageAttempt(stage, current, execution, timeoutCts);
+
+                        ExceptionDispatchInfo.Capture(completion.Exception!).Throw();
+                        return default;
+                    case TimedAttemptCompletionKind.StillRunning:
+                        RegisterLateStageAttempt(stage, current, execution, timeoutCts);
+                        canRetryTimeout = false;
+                        break;
+                    default:
+                        timeoutCts.Dispose();
+                        throw new InvalidOperationException(
+                            $"Unsupported timed attempt completion kind '{completion.Kind}'.");
                 }
 
                 break;
 
             case TimeoutRetryMode.DetachWithoutRetry:
                 canRetryTimeout = false;
+                RegisterLateStageAttempt(stage, current, execution, timeoutCts);
                 break;
 
             case TimeoutRetryMode.DetachAndRetryIdempotent:
                 canRetryTimeout = true;
+                RegisterLateStageAttempt(stage, current, execution, timeoutCts);
                 break;
 
             default:
@@ -1619,10 +1718,14 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     "Timeout retry mode is invalid.");
         }
 
-        if (retryMode == TimeoutRetryMode.CooperativeOnly && canRetryTimeout)
-            timeoutCts.Dispose();
-        else
-            RegisterLateStageAttempt(stage, current, execution, timeoutCts);
+        if (retryMode == TimeoutRetryMode.CooperativeOnly)
+        {
+            if (!canRetryTimeout)
+            {
+                // Still-running cooperative attempts are already tracked above so
+                // their component is not disposed while user code is active.
+            }
+        }
 
         return stage.CreateTimedOutResult(
             current,
@@ -1635,36 +1738,61 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         );
     }
 
-    private static async ValueTask<bool> TryWaitForCooperativeTimeoutCompletionAsync(
+    private static async ValueTask<TimedAttemptCompletion> TryWaitForCooperativeTimeoutCompletionAsync(
         Task<TypedStageExecutionResult> execution,
         TimeSpan gracePeriod,
         CancellationToken ct)
     {
         if (execution.IsCompleted)
-        {
-            await ObserveCompletedLateStageExecutionAsync(execution).ConfigureAwait(false);
-            return true;
-        }
+            return await ObserveTimedAttemptCompletionAsync(execution, ct).ConfigureAwait(false);
 
         if (gracePeriod <= TimeSpan.Zero)
-            return false;
+            return TimedAttemptCompletion.StillRunning();
 
         try
         {
-            await execution.WaitAsync(gracePeriod, ct).ConfigureAwait(false);
-            return true;
+            var result = await execution.WaitAsync(gracePeriod, ct).ConfigureAwait(false);
+            return TimedAttemptCompletion.StageResult(result);
         }
         catch (TimeoutException)
         {
-            return false;
+            if (execution.IsCompleted)
+                return await ObserveTimedAttemptCompletionAsync(execution, ct).ConfigureAwait(false);
+
+            return TimedAttemptCompletion.StillRunning();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested && !execution.IsCompleted)
+        catch (OperationCanceledException ex) when (ct.IsCancellationRequested && !execution.IsCompleted)
         {
-            throw;
+            return TimedAttemptCompletion.CallerCancelled(ex);
         }
-        catch
+        catch (Exception ex)
         {
-            return true;
+            return ex is OperationCanceledException
+                ? TimedAttemptCompletion.ExpectedTimeoutCancellation(ex)
+                : TimedAttemptCompletion.Faulted(ex);
+        }
+    }
+
+    private static async ValueTask<TimedAttemptCompletion> ObserveTimedAttemptCompletionAsync(
+        Task<TypedStageExecutionResult> execution,
+        CancellationToken callerToken)
+    {
+        try
+        {
+            var result = await execution.ConfigureAwait(false);
+            return TimedAttemptCompletion.StageResult(result);
+        }
+        catch (OperationCanceledException ex) when (!callerToken.IsCancellationRequested)
+        {
+            return TimedAttemptCompletion.ExpectedTimeoutCancellation(ex);
+        }
+        catch (OperationCanceledException ex)
+        {
+            return TimedAttemptCompletion.CallerCancelled(ex);
+        }
+        catch (Exception ex)
+        {
+            return TimedAttemptCompletion.Faulted(ex);
         }
     }
 
@@ -1969,10 +2097,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             .ConfigureAwait(false);
     }
 
-    private async ValueTask<Exception[]> DisposeComponentsAsync()
+    private async ValueTask<ComponentDisposeResult> DisposeComponentsAsync()
     {
         if (Interlocked.CompareExchange(ref _componentsDisposed, 1, 0) != 0)
-            return [];
+            return new ComponentDisposeResult([], []);
 
         var lateAttemptErrors = await WaitForLateStageAttemptsAsync().ConfigureAwait(false);
         List<Func<ValueTask>> actions = [];
@@ -1984,7 +2112,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         {
             var stage = _spec.Stages[i];
             if (HasRunningLateAttempt(stage.StageId))
+            {
+                _deferredStageDisposals.TryAdd(
+                    stage.StageId,
+                    () => stage.DisposeAsync(_spec.OwnershipOptions));
                 continue;
+            }
 
             actions.Add(() => stage.DisposeAsync(_spec.OwnershipOptions));
         }
@@ -1993,7 +2126,58 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             actions.Add(() => _spec.Source.DisposeAsync());
 
         var cleanupErrors = await RuntimeCleanup.CollectAsync(actions).ConfigureAwait(false);
-        return lateAttemptErrors.Concat(cleanupErrors).ToArray();
+        return new ComponentDisposeResult(
+            lateAttemptErrors.Concat(cleanupErrors).ToArray(),
+            cleanupErrors);
+    }
+
+    private async ValueTask<Exception[]> DisposeDeferredStagesAsync()
+    {
+        if (_deferredStageDisposals.IsEmpty)
+            return [];
+
+        List<Exception>? errors = null;
+        foreach (var (stageId, dispose) in _deferredStageDisposals.ToArray())
+        {
+            await WaitForLateStageAttemptsToCompleteAsync(stageId).ConfigureAwait(false);
+            if (!_deferredStageDisposals.TryRemove(stageId, out _))
+                continue;
+
+            try
+            {
+                await dispose().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                errors ??= [];
+                errors.Add(ex);
+            }
+        }
+
+        return errors?.ToArray() ?? [];
+    }
+
+    private async Task WaitForLateStageAttemptsToCompleteAsync(string stageId)
+    {
+        while (true)
+        {
+            var attempts = _lateStageAttempts.Values
+                .Where(attempt => attempt.StageId == stageId && !attempt.Execution.IsCompleted)
+                .Select(attempt => attempt.Execution)
+                .ToArray();
+
+            if (attempts.Length == 0)
+                return;
+
+            try
+            {
+                await Task.WhenAll(attempts).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Late attempt failures are already represented by timeout/fault outcomes.
+            }
+        }
     }
 
     private async ValueTask EmitAsync(PipelineEvent pipelineEvent, CancellationToken ct)

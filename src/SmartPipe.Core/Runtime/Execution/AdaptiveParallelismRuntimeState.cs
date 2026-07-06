@@ -13,6 +13,7 @@ internal sealed class AdaptiveParallelismRuntimeState : IDisposable, IAsyncDispo
     private long _lastEvaluationTimestamp;
     private long _intervalProcessed;
     private long _intervalFailed;
+    private long _intervalLatencyTicksSum;
     private bool _completed;
 
     public AdaptiveParallelismRuntimeState(PipelineRuntimeOptions options)
@@ -66,6 +67,7 @@ internal sealed class AdaptiveParallelismRuntimeState : IDisposable, IAsyncDispo
                 return;
 
             _intervalProcessed++;
+            _intervalLatencyTicksSum += Math.Max(0, latency.Ticks);
             if (failed)
                 _intervalFailed++;
 
@@ -76,13 +78,17 @@ internal sealed class AdaptiveParallelismRuntimeState : IDisposable, IAsyncDispo
 
             var processed = _intervalProcessed;
             var failedCount = _intervalFailed;
+            var averageLatency = processed == 0
+                ? latency
+                : TimeSpan.FromTicks(_intervalLatencyTicksSum / processed);
             _intervalProcessed = 0;
             _intervalFailed = 0;
+            _intervalLatencyTicksSum = 0;
             _lastEvaluationTimestamp = now;
 
             var decision = _controller.Decide(new AdaptiveParallelismSnapshot(
                 _limiter.CurrentLimit,
-                latency,
+                averageLatency,
                 ProcessedDelta: processed,
                 FailedDelta: failedCount,
                 _clock.GetElapsedTime(_lastAdjustmentTimestamp, now)));

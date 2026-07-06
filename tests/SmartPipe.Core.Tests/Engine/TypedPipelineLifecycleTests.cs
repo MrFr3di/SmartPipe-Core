@@ -71,8 +71,68 @@ public sealed class TypedPipelineLifecycleTests
 
         var act = () => executor.Start();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*already been started*");
+        act.Should().Throw<ObjectDisposedException>()
+            .WithMessage("*pipeline runtime*");
+    }
+
+    [Fact]
+    public async Task Start_AfterNeverStartedDispose_ShouldThrowObjectDisposedException()
+    {
+        await using var executor = CreateLifecycleExecutor(
+            new CountingLifecycleSource<int>(1),
+            new PassThroughLifecycleTransformer<int>());
+
+        await executor.DisposeAsync();
+
+        var act = () => executor.Start();
+
+        act.Should().Throw<ObjectDisposedException>()
+            .WithMessage("*pipeline runtime*");
+    }
+
+    [Fact]
+    public async Task StartDisposeRace_ShouldPublishRunOrRejectStartWithoutPartialState()
+    {
+        for (var iteration = 0; iteration < 128; iteration++)
+        {
+            var transformer = new BlockingLifecycleTransformer<int>();
+            await using var executor = CreateLifecycleExecutor(
+                new CountingLifecycleSource<int>(1),
+                transformer);
+            using var barrier = new Barrier(2);
+
+            var startTask = Task.Run(() =>
+            {
+                barrier.SignalAndWait();
+                try
+                {
+                    return (Run: executor.Start(), Error: (Exception?)null);
+                }
+                catch (Exception ex)
+                {
+                    return (Run: (PipelineRun<int>?)null, Error: ex);
+                }
+            });
+            var disposeTask = Task.Run(async () =>
+            {
+                barrier.SignalAndWait();
+                await executor.DisposeAsync();
+            });
+
+            var start = await startTask.WaitAsync(TimeSpan.FromSeconds(5));
+            await disposeTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+            if (start.Run is not null)
+            {
+                await FluentActions.Awaiting(() => start.Run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+                    .Should().ThrowAsync<OperationCanceledException>();
+                start.Run.State.Should().BeOneOf(PipelineRunState.Cancelled, PipelineRunState.Aborted);
+            }
+            else
+            {
+                start.Error.Should().BeOfType<ObjectDisposedException>();
+            }
+        }
     }
 
     [Fact]
@@ -474,6 +534,62 @@ public sealed class TypedPipelineLifecycleTests
     }
 
     [Fact]
+    public async Task TypedPipeline_Dispose_AfterProcessingOnlyFailure_ShouldSucceed()
+    {
+        var run = PipelineBuilder
+            .From(new ThrowingInitializeLifecycleSource<int>())
+            .Transform(new PassThroughLifecycleTransformer<int>())
+            .Run();
+
+        await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("source initialize boom");
+
+        await run.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task TypedPipeline_Dispose_AfterCleanupOnlyFailure_ShouldThrowCleanupFailure()
+    {
+        var cleanup = new InvalidOperationException("source cleanup boom");
+        var source = new ThrowingDisposeLifecycleSource<int>(1, cleanup);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new PassThroughLifecycleTransformer<int>())
+            .Run();
+
+        await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("source cleanup boom");
+
+        await FluentActions.Awaiting(async () => await run.DisposeAsync())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .Where(ex => ReferenceEquals(ex, cleanup));
+    }
+
+    [Fact]
+    public async Task TypedPipeline_Dispose_AfterProcessingAndCleanupFailure_ShouldThrowCleanupPortionOnly()
+    {
+        var processing = new InvalidOperationException("source initialize boom");
+        var cleanup = new ApplicationException("source cleanup boom");
+        var source = new ThrowingInitializeAndDisposeLifecycleSource<int>(processing, cleanup);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new PassThroughLifecycleTransformer<int>())
+            .Run();
+
+        var completion = await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<AggregateException>();
+        completion.Which.InnerExceptions.Should().Equal(processing, cleanup);
+
+        await FluentActions.Awaiting(async () => await run.DisposeAsync())
+            .Should().ThrowAsync<ApplicationException>()
+            .Where(ex => ReferenceEquals(ex, cleanup));
+    }
+
+    [Fact]
     public async Task TypedPipeline_ObserverTerminalFailure_DoesNotRewritePublishedStateOrOutput()
     {
         var observer = new RecordingTerminalObserver();
@@ -752,9 +868,14 @@ internal sealed class ThrowingInitializeLifecycleSource<T> : IPipelineSource<T>
 internal sealed class ThrowingDisposeLifecycleSource<T> : IPipelineSource<T>
 {
     private readonly ProcessingEnvelope<T>[] _items;
-    private readonly string _message;
+    private readonly Exception _exception;
 
     public ThrowingDisposeLifecycleSource(T payload, string message)
+        : this(payload, new InvalidOperationException(message))
+    {
+    }
+
+    public ThrowingDisposeLifecycleSource(T payload, Exception exception)
     {
         _items =
         [
@@ -764,7 +885,7 @@ internal sealed class ThrowingDisposeLifecycleSource<T> : IPipelineSource<T>
                 "cleanup-run",
                 (ulong)Random.Shared.Next(1, int.MaxValue)),
         ];
-        _message = message;
+        _exception = exception;
     }
 
     public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
@@ -780,7 +901,32 @@ internal sealed class ThrowingDisposeLifecycleSource<T> : IPipelineSource<T>
         }
     }
 
-    public ValueTask DisposeAsync() => throw new InvalidOperationException(_message);
+    public ValueTask DisposeAsync() => throw _exception;
+}
+
+internal sealed class ThrowingInitializeAndDisposeLifecycleSource<T> : IPipelineSource<T>
+{
+    private readonly Exception _initializeException;
+    private readonly Exception _disposeException;
+
+    public ThrowingInitializeAndDisposeLifecycleSource(
+        Exception initializeException,
+        Exception disposeException)
+    {
+        _initializeException = initializeException;
+        _disposeException = disposeException;
+    }
+
+    public ValueTask InitializeAsync(CancellationToken ct = default) => throw _initializeException;
+
+    public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await Task.Yield();
+        yield break;
+    }
+
+    public ValueTask DisposeAsync() => throw _disposeException;
 }
 
 internal sealed class BlockingDisposeLifecycleSource<T> : IPipelineSource<T>

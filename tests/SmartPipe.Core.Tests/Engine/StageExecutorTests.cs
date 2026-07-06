@@ -251,6 +251,46 @@ public sealed class StageExecutorTests
     }
 
     [Fact]
+    public async Task StageExecutor_Timeout_MultipleDetachedAttempts_DisposeWaitsForDeferredStageCleanup()
+    {
+        var transformer = new ReleasableLateAttemptTransformer<int>();
+
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([9]))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(1, MinimalRetryDelay),
+                    Timeout = new TimeoutPolicy
+                    {
+                        AttemptTimeout = TimeSpan.FromMilliseconds(25),
+                        RetryMode = TimeoutRetryMode.DetachAndRetryIdempotent,
+                        LateAttemptFinalizationTimeout = TimeSpan.FromMilliseconds(25),
+                    },
+                    OnRetryExhausted = FailureAction.EmitFailureResult,
+                })
+            .Run();
+
+        await transformer.WaitForAttemptAsync(0).WaitAsync(TimeSpan.FromSeconds(5));
+        await transformer.WaitForAttemptAsync(1).WaitAsync(TimeSpan.FromSeconds(5));
+        var output = await run.Outputs.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        output.Result.Error!.Value.Category.Should().Be("Timeout");
+
+        await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<TimeoutException>()
+            .WithMessage("*Late stage attempt*");
+        transformer.DisposeOrder.Should().Be(0);
+
+        transformer.ReleaseLateAttempts();
+        await run.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+
+        transformer.LateAttemptCompletedOrder.Should().BePositive();
+        transformer.DisposeOrder.Should().BePositive();
+        transformer.LateAttemptCompletedOrder.Should().BeLessThan(transformer.DisposeOrder);
+    }
+
+    [Fact]
     public async Task StageExecutor_Timeout_StageBudgetIncludesCancellationGrace()
     {
         var clock = new AdvancingPipelineClock(
@@ -288,6 +328,102 @@ public sealed class StageExecutorTests
         transformer.Attempts.Should().Be(1);
         observer.Events.OfType<RetryScheduledEvent>().Should().BeEmpty();
         observer.Events.OfType<RetryExhaustedEvent>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task StageExecutor_Timeout_WhenStageThrowsTimeoutException_ShouldClassifyAsStageException()
+    {
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([9]))
+            .Transform(
+                new ThrowingExceptionTransformer(new TimeoutException("stage timeout exception")),
+                new StageFailureOptions
+                {
+                    Timeout = new TimeoutPolicy
+                    {
+                        AttemptTimeout = TimeSpan.FromSeconds(5),
+                    },
+                    OnPermanentFailure = FailureAction.EmitFailureResult,
+                })
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        outputs.Should().ContainSingle();
+        outputs[0].Result.IsFailure.Should().BeTrue();
+        outputs[0].Result.Error!.Value.Type.Should().Be(ErrorType.Permanent);
+        outputs[0].Result.Error!.Value.Category.Should().Be("StageException");
+    }
+
+    [Fact]
+    public async Task StageExecutor_Timeout_WhenAttemptSucceedsDuringGrace_ShouldReturnSuccessWithoutRetry()
+    {
+        var transformer = new ReleaseAfterCancellationTransformer<int>();
+        var observer = new RecordingPipelineObserver();
+
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([9]))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(1, MinimalRetryDelay),
+                    Timeout = new TimeoutPolicy
+                    {
+                        AttemptTimeout = TimeSpan.FromMilliseconds(25),
+                        CancellationGracePeriod = TimeSpan.FromSeconds(5),
+                    },
+                    OnRetryExhausted = FailureAction.EmitFailureResult,
+                })
+            .WithObserver(observer)
+            .Run();
+
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await transformer.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        transformer.Release();
+        var outputs = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        outputs.Should().ContainSingle();
+        outputs[0].Result.IsSuccess.Should().BeTrue();
+        outputs[0].Result.Value.Should().Be(9);
+        transformer.Attempts.Should().Be(1);
+        observer.Events.OfType<RetryScheduledEvent>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task StageExecutor_Timeout_CooperativeCancellation_ShouldRespectDetachWithoutRetry()
+    {
+        var transformer = new BlockingTimeoutTransformer<int>();
+        var observer = new RecordingPipelineObserver();
+
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([9]))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(1, MinimalRetryDelay),
+                    Timeout = new TimeoutPolicy
+                    {
+                        AttemptTimeout = TimeSpan.FromMilliseconds(25),
+                        RetryMode = TimeoutRetryMode.DetachWithoutRetry,
+                    },
+                    OnPermanentFailure = FailureAction.EmitFailureResult,
+                    OnRetryExhausted = FailureAction.EmitFailureResult,
+                })
+            .WithObserver(observer)
+            .Run();
+
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var outputs = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        outputs.Should().ContainSingle();
+        outputs[0].Result.IsFailure.Should().BeTrue();
+        outputs[0].Result.Error!.Value.Category.Should().Be("Timeout");
+        observer.Events.OfType<RetryScheduledEvent>().Should().BeEmpty();
     }
 
     [Fact]
@@ -1077,6 +1213,41 @@ public sealed class StageExecutorTests
                 throw;
             }
 
+            return StageResult<T>.Success(envelope.Payload);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ReleaseAfterCancellationTransformer<T> : IPipelineTransformer<T, T>
+    {
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _attempts;
+
+        public TaskCompletionSource Entered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource CancellationObserved { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int Attempts => Volatile.Read(ref _attempts);
+
+        public void Release() => _release.TrySetResult();
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public async ValueTask<StageResult<T>> TransformAsync(
+            ProcessingEnvelope<T> envelope,
+            CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _attempts);
+            Entered.TrySetResult();
+            using var registration = ct.Register(
+                static state => ((TaskCompletionSource)state!).TrySetResult(),
+                CancellationObserved);
+
+            await _release.Task.ConfigureAwait(false);
             return StageResult<T>.Success(envelope.Payload);
         }
 

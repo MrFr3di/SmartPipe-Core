@@ -92,6 +92,103 @@ jobs:
         PACKAGE_VERSION=$(dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version)
         echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> "$GITHUB_ENV"
 
+    - name: Mapster packed consumer smoke
+      run: |
+        dotnet new console -n SmartPipe.MapsterConsumerSmoke -o artifacts/mapster-consumer-smoke
+        cat > artifacts/mapster-consumer-smoke/NuGet.Config <<'XML'
+        <?xml version="1.0" encoding="utf-8"?>
+        <configuration>
+          <packageSources>
+            <clear />
+            <add key="smartpipe-local" value="../packages" />
+            <add key="nuget" value="https://api.nuget.org/v3/index.json" />
+          </packageSources>
+          <packageSourceMapping>
+            <packageSource key="smartpipe-local">
+              <package pattern="SmartPipe.*" />
+            </packageSource>
+            <packageSource key="nuget">
+              <package pattern="*" />
+            </packageSource>
+          </packageSourceMapping>
+        </configuration>
+        XML
+        pushd artifacts/mapster-consumer-smoke
+        dotnet add SmartPipe.MapsterConsumerSmoke.csproj package SmartPipe.Core --version "$PACKAGE_VERSION"
+        dotnet add SmartPipe.MapsterConsumerSmoke.csproj package SmartPipe.Extensions --version "$PACKAGE_VERSION"
+        popd
+        cat > artifacts/mapster-consumer-smoke/Program.cs <<'CS'
+        using Mapster;
+        using SmartPipe.Core;
+        using SmartPipe.Extensions.Transforms;
+
+        await MapsterConsumerSmoke.RunAsync();
+
+        internal static class MapsterConsumerSmoke
+        {
+            public static async Task RunAsync()
+            {
+                VerifyTransitiveMapsterReference();
+                await VerifyDefaultMappingAsync();
+                await VerifyConfiguredMappingAsync();
+                Console.WriteLine("SmartPipe Mapster consumer smoke passed.");
+            }
+
+            private static void VerifyTransitiveMapsterReference()
+            {
+                if (typeof(TypeAdapterConfig).Assembly.GetName().Name != "Mapster")
+                    throw new InvalidOperationException("Mapster transitive compile/runtime reference was not available.");
+            }
+
+            private static async Task VerifyDefaultMappingAsync()
+            {
+                var transform = new MapsterTransform<Source, Destination>();
+                var result = await transform.TransformAsync(
+                    ProcessingEnvelope<Source>.Create(new Source { Name = "Alice", Age = 25 }));
+
+                if (!result.IsSuccess || result.Value is not { Name: "Alice", Age: 25 })
+                    throw new InvalidOperationException("Default MapsterTransform mapping failed.");
+            }
+
+            private static async Task VerifyConfiguredMappingAsync()
+            {
+                var config = new TypeAdapterConfig();
+                config.NewConfig<RenamedSource, RenamedDestination>()
+                    .Map(destination => destination.DisplayName, source => source.Name);
+
+                var transform = new MapsterTransform<RenamedSource, RenamedDestination>(config);
+                var result = await transform.TransformAsync(
+                    ProcessingEnvelope<RenamedSource>.Create(new RenamedSource { Name = "Bob" }));
+
+                if (!result.IsSuccess || result.Value?.DisplayName != "Bob")
+                    throw new InvalidOperationException("Configured MapsterTransform mapping failed.");
+            }
+        }
+
+        internal sealed class Source
+        {
+            public string Name { get; set; } = "";
+            public int Age { get; set; }
+        }
+
+        internal sealed class Destination
+        {
+            public string Name { get; set; } = "";
+            public int Age { get; set; }
+        }
+
+        internal sealed class RenamedSource
+        {
+            public string Name { get; set; } = "";
+        }
+
+        internal sealed class RenamedDestination
+        {
+            public string DisplayName { get; set; } = "";
+        }
+        CS
+        dotnet run --project artifacts/mapster-consumer-smoke/SmartPipe.MapsterConsumerSmoke.csproj -c Release
+
     - name: Consumer smoke
       run: |
         dotnet new console -n SmartPipe.ConsumerSmoke -o artifacts/consumer-smoke

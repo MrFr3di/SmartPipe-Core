@@ -152,11 +152,61 @@ public class DbSinkTests : IDisposable
         Assert.Equal(0, connection.LastCommand.SyncExecuteCount);
     }
 
+    [Fact]
+    public async Task GeneratedInsertSql_FiltersIndexerNotMappedAndGeneratedProperties()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "CREATE TABLE FilteredEntities (Name TEXT)";
+        command.ExecuteNonQuery();
+        var sink = new DbSink<FilteredEntity>(_connection);
+        await sink.InitializeAsync();
+
+        await sink.WriteAsync(ProcessingEnvelope<FilteredEntity>.Create(new FilteredEntity
+        {
+            Id = 123,
+            Name = "filtered",
+            Ignored = "ignored",
+        }));
+
+        command.CommandText = "SELECT Name FROM FilteredEntities";
+        var name = (string?)command.ExecuteScalar();
+        Assert.Equal("filtered", name);
+    }
+
+    [Fact]
+    public void GeneratedInsertSql_ThrowsWhenNoWritableMappedPropertiesRemain()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            new DbSink<NoInsertPropertiesEntity>(_connection));
+
+        Assert.Contains("No insertable properties", exception.Message);
+    }
+
     [Table("TestEntities")]
     private class TestEntity
     {
         public int Id { get; set; }
         public string? Name { get; set; }
+    }
+
+    [Table("FilteredEntities")]
+    private class FilteredEntity
+    {
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int Id { get; set; }
+
+        public string? Name { get; set; }
+
+        [NotMapped]
+        public string? Ignored { get; set; }
+
+        public string this[int index] => index.ToString();
+    }
+
+    private class NoInsertPropertiesEntity
+    {
+        [NotMapped]
+        public string? Ignored { get; set; }
     }
 
     private sealed class TrackingExecuteDbConnection : DbConnection

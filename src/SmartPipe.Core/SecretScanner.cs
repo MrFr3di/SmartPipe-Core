@@ -329,6 +329,9 @@ public static partial class SecretScanner
             return DecodeResult.Indeterminate();
         }
 
+        if (ContainsInvalidPercentEscape(content))
+            return DecodeResult.Indeterminate();
+
         if (!budget.HasCapacityFor(content.Length))
             return DecodeResult.Indeterminate();
 
@@ -343,12 +346,31 @@ public static partial class SecretScanner
             if (!string.IsNullOrEmpty(decoded) && decoded != content)
                 return DecodeResult.Decoded(decoded);
         }
-        catch
+        catch (UriFormatException)
         {
             // Invalid URL encoding.
+            return DecodeResult.Indeterminate();
         }
 
         return DecodeResult.NotDecoded();
+    }
+
+    private static bool ContainsInvalidPercentEscape(string content)
+    {
+        for (var i = 0; i < content.Length; i++)
+        {
+            if (content[i] != '%')
+                continue;
+
+            if (i + 2 >= content.Length
+                || !Uri.IsHexDigit(content[i + 1])
+                || !Uri.IsHexDigit(content[i + 2]))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     [GeneratedRegex(

@@ -390,7 +390,7 @@ public sealed class SmartPipeMetricsRecorder
         Interlocked.Increment(ref _itemsProcessed);
         AddDouble(ref _totalLatencyMs, latencyMs);
         Volatile.Write(ref _lastStageLatencyMs, latencyMs);
-        Interlocked.Exchange(ref _lastProcessedAtUtcTicks, now.UtcTicks);
+        MaxTimestamp(ref _lastProcessedAtUtcTicks, now.UtcTicks);
         RecordActivity(now);
         SmartPipeMeter.ItemsProcessedCounter.Add(1);
         SmartPipeMeter.StageLatencyHistogram.Record(latencyMs);
@@ -541,7 +541,18 @@ public sealed class SmartPipeMetricsRecorder
 
     private void RecordActivity(DateTimeOffset timestamp)
     {
-        Interlocked.Exchange(ref _lastActivityAtUtcTicks, timestamp.UtcTicks);
+        MaxTimestamp(ref _lastActivityAtUtcTicks, timestamp.UtcTicks);
+    }
+
+    private static void MaxTimestamp(ref long location, long ticks)
+    {
+        long current;
+        do
+        {
+            current = Interlocked.Read(ref location);
+            if (ticks <= current)
+                return;
+        } while (Interlocked.CompareExchange(ref location, ticks, current) != current);
     }
 }
 

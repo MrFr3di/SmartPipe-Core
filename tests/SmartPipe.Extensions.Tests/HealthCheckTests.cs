@@ -94,6 +94,31 @@ public sealed class HealthCheckTests
     }
 
     [Fact]
+    public async Task HealthCheck_UsesMonitorClockForSnapshotAge()
+    {
+        var runtimeNow = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
+        var healthNow = runtimeNow.AddHours(1);
+        var runtimeTimeProvider = new ManualTimeProvider(runtimeNow);
+        var healthTimeProvider = new ManualTimeProvider(healthNow);
+        var monitor = CreateMonitor(new PipelineRuntimeOptions
+        {
+            Clock = new TimeProviderPipelineClock(runtimeTimeProvider),
+        });
+        monitor.Track(
+            () => PipelineRunState.Running,
+            () => CreateMetrics(lastActivityAtUtc: runtimeNow));
+        var healthCheck = CreateHealthCheck(monitor, new SmartPipeHealthCheckOptions
+        {
+            TimeProvider = healthTimeProvider,
+            StaleAfter = TimeSpan.FromMinutes(5),
+        });
+
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    [Fact]
     public async Task HealthCheck_RunningWithoutActivity_DefaultPolicyRemainsHealthy()
     {
         var now = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);

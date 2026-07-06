@@ -160,10 +160,7 @@ internal sealed class SmartPipeHealthCheck<TInput, TOutput> : IHealthCheck
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        var snapshot = _monitor.CaptureSnapshot() with
-        {
-            CapturedAtUtc = _options.TimeProvider.GetUtcNow(),
-        };
+        var snapshot = _monitor.CaptureSnapshot();
         var data = CreateData(snapshot);
 
         if (snapshot.State == PipelineRunState.Faulted)

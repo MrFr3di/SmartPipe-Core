@@ -11,17 +11,25 @@ namespace SmartPipe.Extensions.Sinks;
 /// <typeparam name="T">Item type.</typeparam>
 public class JsonFileSink<T> : IPipelineSink<T>
 {
+    private enum SinkLifecycleState
+    {
+        Active = 0,
+        Disposing = 1,
+        Disposed = 2,
+    }
+
     private static readonly byte[] NewLine = "\n"u8.ToArray();
 
     private readonly string _path;
     private readonly int _flushInterval;
     private readonly Func<List<T>, byte[]> _serializeBatch;
     private readonly List<T> _buffer = [];
-    private readonly Lock _bufferLock = new();
+    private readonly object _disposeTaskGate = new();
     private readonly SemaphoreSlim _flushGate = new(1, 1);
     private Stream? _stream;
     private bool _leaveOpen;
-    private bool _disposed;
+    private SinkLifecycleState _state;
+    private Task? _disposeTask;
 
     /// <summary>Create JSON file sink for given path.</summary>
     /// <param name="path">Output file path.</param>
@@ -94,6 +102,7 @@ public class JsonFileSink<T> : IPipelineSink<T>
         await _flushGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            ThrowIfNotActive();
             EnsureStream();
         }
         finally
@@ -107,37 +116,51 @@ public class JsonFileSink<T> : IPipelineSink<T>
     {
         if (envelope.Payload != null)
         {
-            var shouldFlush = false;
-            lock (_bufferLock)
+            await _flushGate.WaitAsync(ct).ConfigureAwait(false);
+            try
             {
+                ThrowIfNotActive();
                 _buffer.Add(envelope.Payload);
-                shouldFlush = _buffer.Count >= _flushInterval;
-            }
 
-            if (shouldFlush)
-                await FlushBufferedAsync(force: false, ct).ConfigureAwait(false);
+                if (_buffer.Count >= _flushInterval)
+                    await FlushBufferedCoreAsync(force: false, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                _flushGate.Release();
+            }
         }
     }
 
     /// <inheritdoc />
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (_disposed)
-            return;
+        Task disposeTask;
+        lock (_disposeTaskGate)
+        {
+            _disposeTask ??= DisposeCoreAsync();
+            disposeTask = _disposeTask;
+        }
 
-        await FlushBufferedAsync(force: true, CancellationToken.None).ConfigureAwait(false);
+        return new ValueTask(disposeTask);
+    }
 
+    private async Task DisposeCoreAsync()
+    {
         await _flushGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (_disposed)
+            if (_state == SinkLifecycleState.Disposed)
                 return;
 
-            _disposed = true;
+            _state = SinkLifecycleState.Disposing;
+            await FlushBufferedCoreAsync(force: true, CancellationToken.None).ConfigureAwait(false);
+
             if (_stream != null && !_leaveOpen)
                 await _stream.DisposeAsync().ConfigureAwait(false);
 
             _stream = null;
+            _state = SinkLifecycleState.Disposed;
         }
         finally
         {
@@ -150,28 +173,25 @@ public class JsonFileSink<T> : IPipelineSink<T>
         await _flushGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            List<T> batch;
-            lock (_bufferLock)
-            {
-                if (_buffer.Count == 0 || (!force && _buffer.Count < _flushInterval))
-                    return;
-
-                batch = [.. _buffer];
-            }
-
-            var bytes = _serializeBatch(batch);
-            var stream = EnsureStream();
-            await WriteBatchAsync(stream, bytes, ct).ConfigureAwait(false);
-
-            lock (_bufferLock)
-            {
-                _buffer.RemoveRange(0, Math.Min(batch.Count, _buffer.Count));
-            }
+            await FlushBufferedCoreAsync(force, ct).ConfigureAwait(false);
         }
         finally
         {
             _flushGate.Release();
         }
+    }
+
+    private async Task FlushBufferedCoreAsync(bool force, CancellationToken ct)
+    {
+        if (_buffer.Count == 0 || (!force && _buffer.Count < _flushInterval))
+            return;
+
+        var batch = _buffer.ToList();
+        var bytes = _serializeBatch(batch);
+        var stream = EnsureStream();
+        await WriteBatchAsync(stream, bytes, ct).ConfigureAwait(false);
+
+        _buffer.RemoveRange(0, Math.Min(batch.Count, _buffer.Count));
     }
 
     private Stream EnsureStream()
@@ -190,6 +210,12 @@ public class JsonFileSink<T> : IPipelineSink<T>
         _stream = fileStream;
         _leaveOpen = false;
         return _stream;
+    }
+
+    private void ThrowIfNotActive()
+    {
+        if (_state != SinkLifecycleState.Active)
+            throw new ObjectDisposedException(nameof(JsonFileSink<T>));
     }
 
     private static async Task WriteBatchAsync(Stream stream, byte[] bytes, CancellationToken ct)

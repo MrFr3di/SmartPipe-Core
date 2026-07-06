@@ -86,6 +86,10 @@ and health-check integrations. Common components include:
 - sinks: `LoggerSink<T>`, `HttpSink<T>`, `JsonFileSink<T>`, `CsvFileSink<T>`,
   `DbSink<T>`, `DeadLetterSink<T>`.
 
+`MapsterTransform<TInput,TOutput>` uses Mapster runtime mapping and is not
+trim- or NativeAOT-safe. Use a hand-written mapper, a source-generated mapper,
+or `PipelineTransformer.FromFunc` for trimmed or NativeAOT applications.
+
 Next links:
 
 - [Configuration](configuration.md)

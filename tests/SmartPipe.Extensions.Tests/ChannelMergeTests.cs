@@ -164,6 +164,23 @@ public class ChannelMergeTests
     }
 
     [Fact]
+    public async Task Merge_WhenInputFaultsWithOperationCanceledExceptionWithoutCancellation_CompletesOutputWithFault()
+    {
+        var first = Channel.CreateUnbounded<int>();
+        var second = Channel.CreateUnbounded<int>();
+        var expected = new OperationCanceledException("input cancelled itself");
+        var merged = ChannelMerge.Merge(first.Reader, second.Reader);
+
+        first.Writer.TryComplete(expected);
+
+        var readTask = ReadAllAsync(merged);
+        var exception = await Assert.ThrowsAsync<OperationCanceledException>(
+            () => readTask.WaitAsync(Timeout));
+
+        exception.Should().BeSameAs(expected);
+    }
+
+    [Fact]
     public async Task InputFailure_ShouldRemainPrimary_WhenSiblingIsCancelled()
     {
         var first = Channel.CreateUnbounded<int>();

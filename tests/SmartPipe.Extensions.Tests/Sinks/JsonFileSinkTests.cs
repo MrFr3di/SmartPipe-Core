@@ -207,6 +207,29 @@ public class JsonFileSinkTests
         }
     }
 
+    [Fact]
+    public async Task WriteAsync_AfterDispose_ShouldThrowObjectDisposedException()
+    {
+        await using var stream = new MemoryStream();
+        var sink = new JsonFileSink<TestItem>("dummy.json", stream);
+
+        await sink.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            sink.WriteAsync(ProcessingEnvelope<TestItem>.Create(new TestItem { Value = "late" })).AsTask());
+    }
+
+    [Fact]
+    public async Task InitializeAsync_AfterDispose_ShouldThrowObjectDisposedException()
+    {
+        await using var stream = new MemoryStream();
+        var sink = new JsonFileSink<TestItem>("dummy.json", stream);
+
+        await sink.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => sink.InitializeAsync().AsTask());
+    }
+
     private class TestItem
     {
         public string? Value { get; set; }

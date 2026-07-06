@@ -53,7 +53,7 @@ internal sealed class PipelineLifecycleController
     public void MarkTerminal(PipelineRunState state)
     {
         EnsureTerminalState(state);
-        Volatile.Write(ref _state, (int)state);
+        MarkTerminalUnlessTerminal(state);
     }
 
     public void MarkCancelled()

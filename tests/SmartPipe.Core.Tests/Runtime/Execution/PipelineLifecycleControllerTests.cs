@@ -190,7 +190,7 @@ public sealed class PipelineLifecycleControllerTests
     }
 
     [Fact]
-    public void MarkTerminal_PublishesFinalOutcomeOverEarlierRequestState()
+    public void MarkTerminal_ShouldNotOverwritePreviouslyPublishedTerminalState()
     {
         var controller = new PipelineLifecycleController();
 
@@ -198,7 +198,7 @@ public sealed class PipelineLifecycleControllerTests
         controller.MarkAborted();
         controller.MarkTerminal(PipelineRunState.Faulted);
 
-        controller.State.Should().Be(PipelineRunState.Faulted);
+        controller.State.Should().Be(PipelineRunState.Aborted);
     }
 
     [Fact]

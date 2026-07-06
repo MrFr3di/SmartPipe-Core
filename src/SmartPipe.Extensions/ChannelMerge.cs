@@ -109,7 +109,7 @@ public static class ChannelMerge
         }
         catch (Exception ex)
         {
-            if (ex is not OperationCanceledException)
+            if (ex is not OperationCanceledException || !cancellationSource.IsCancellationRequested)
             {
                 coordinator.TryRecordFailure(ex);
                 try
@@ -174,9 +174,6 @@ public static class ChannelMerge
 
         public void TryRecordFailure(Exception exception)
         {
-            if (exception is OperationCanceledException)
-                return;
-
             lock (_gate)
                 _primaryFailure ??= exception;
         }

@@ -137,6 +137,28 @@ public sealed class AdaptiveParallelismRuntimeStateTests
     }
 
     [Fact]
+    public void RecordCompletion_UsesIntervalAverageLatencyForControllerDecision()
+    {
+        var clock = new ManualPipelineClock();
+        var options = ValidOptions(
+            initialConcurrency: 2,
+            maxConcurrency: 4,
+            evaluationIntervalTicks: TimeSpan.FromMilliseconds(10).Ticks,
+            adjustmentCooldownTicks: 1,
+            clock: clock);
+
+        using var state = new AdaptiveParallelismRuntimeState(options);
+
+        clock.Advance(TimeSpan.FromMilliseconds(5));
+        state.RecordCompletion(TimeSpan.FromMilliseconds(1), failed: false);
+        clock.Advance(TimeSpan.FromMilliseconds(5));
+        state.RecordCompletion(TimeSpan.FromMilliseconds(150), failed: false);
+
+        state.CurrentLimit.Should().Be(3,
+            "the interval average is below target latency, while the last completion alone is above target");
+    }
+
+    [Fact]
     public void RecordCompletion_AfterComplete_IsNoOp()
     {
         var clock = new ManualPipelineClock();

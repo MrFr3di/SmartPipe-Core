@@ -57,6 +57,24 @@ public sealed class SmartPipeMetricsRecorderTests
         recorder.CaptureSnapshot().LastProcessedAtUtc.Should().NotBeNull();
     }
 
+    [Fact]
+    public void Metrics_LastProcessedAndActivityUtc_DoNotMoveBackward()
+    {
+        var clock = new ManualPipelineClock();
+        var recorder = new SmartPipeMetricsRecorder(clock);
+        var later = new DateTimeOffset(2026, 7, 5, 12, 0, 0, TimeSpan.Zero);
+        var earlier = later.AddMinutes(-5);
+
+        clock.Set(later);
+        recorder.RecordProcessed(10.0);
+        clock.Set(earlier);
+        recorder.RecordProcessed(20.0);
+
+        var snapshot = recorder.CaptureSnapshot();
+        snapshot.LastProcessedAtUtc.Should().Be(later);
+        snapshot.LastActivityAtUtc.Should().Be(later);
+    }
+
     [Theory]
     [InlineData("accepted")]
     [InlineData("processed")]
@@ -260,5 +278,20 @@ public sealed class SmartPipeMetricsRecorderTests
         public void Release() => _release.TrySetResult();
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ManualPipelineClock : IPipelineClock
+    {
+        private long _ticks;
+
+        public DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref _ticks), TimeSpan.Zero);
+
+        public long GetTimestamp() => Interlocked.Read(ref _ticks);
+
+        public TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp) =>
+            TimeSpan.FromTicks(endingTimestamp - startingTimestamp);
+
+        public void Set(DateTimeOffset value) =>
+            Interlocked.Exchange(ref _ticks, value.UtcTicks);
     }
 }
