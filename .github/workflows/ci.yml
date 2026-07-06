@@ -70,7 +70,12 @@ jobs:
         done
     
     - name: Core tests with coverage
-      run: dotnet run --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml
+      timeout-minutes: 15
+      run: dotnet run --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-not-trait Category=Stress --timeout 15m --coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml
+
+    - name: Core stress tests
+      timeout-minutes: 15
+      run: dotnet run --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-trait Category=Stress --timeout 15m
 
     - name: Extensions tests
       run: dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build --verbosity normal -c Release

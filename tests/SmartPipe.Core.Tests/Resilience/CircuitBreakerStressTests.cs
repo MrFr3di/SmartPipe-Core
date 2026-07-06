@@ -137,6 +137,7 @@ public class CircuitBreakerStressTests
     }
 
     [Fact(Timeout = 120000)]
+    [Trait("Category", "Stress")]
     public async Task RaceCondition_EwmaLostUpdates_ShouldBeDetected()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
