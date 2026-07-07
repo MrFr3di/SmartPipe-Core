@@ -464,6 +464,7 @@ public class RuntimeOptionsPassTests
                     Mode = ObserverDispatchMode.BufferedBestEffort,
                     Capacity = 1,
                     FullMode = BoundedChannelFullMode.DropOldest,
+                    FlushOnCompletion = false,
                 },
             })
             .WithObserver(new SlowObserver(TimeSpan.FromMilliseconds(25)))

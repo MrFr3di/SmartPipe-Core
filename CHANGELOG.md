@@ -8,6 +8,22 @@ that tag.
 
 ### Correctness Fixes
 
+- **Typed runtime terminal outcomes** — cancel and abort requests are tracked as
+  immutable intent until finalization, so processing faults and mandatory
+  cleanup failures keep `Faulted` precedence while successful cancellation or
+  abort finalization publishes the requested terminal state.
+- **Retry callbacks** — `RetryPolicy.OnRetry` now runs after the retry delay and
+  before the next attempt starts. Callback failures fault the run, and
+  cancellation during retry delay does not invoke the callback.
+- **Provider-backed runtime time** — `TimeProviderPipelineClock` now drives
+  runtime retry delays, attempt timeouts, drain waits, and late-attempt
+  finalization waits through its provider instead of limiting fake-time support
+  to timestamps.
+- **Observer dispatch validation and failures** — reliable buffered observer
+  dispatch rejects lossy full modes, best-effort completion flush rejects lossy
+  full modes, flush markers are internal control messages, and buffered
+  observer failures are reported to remaining observers with
+  `ObserverFailedEvent`.
 - **JsonFileSink checkpointed writes** — path-backed sinks append through a
   seekable async `FileStream`, write one UTF-8 JSON array per flushed batch,
   roll back in-process write exceptions to the pre-write checkpoint, and keep

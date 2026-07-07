@@ -8,6 +8,7 @@ internal sealed class StageExecutor
     private readonly string _runId;
     private readonly LineageMode _lineageMode;
     private readonly IPipelineClock _clock;
+    private readonly PipelineTime _time;
     private readonly Func<ITypedPipelineStage, CircuitBreaker?> _getBreaker;
     private readonly Func<
         ITypedPipelineStage,
@@ -49,6 +50,7 @@ internal sealed class StageExecutor
         string runId,
         LineageMode lineageMode,
         IPipelineClock clock,
+        PipelineTime time,
         Func<ITypedPipelineStage, CircuitBreaker?> getBreaker,
         Func<ITypedPipelineStage, SmartPipeError, int, long, RetryDecision> getRetryDecision,
         Func<
@@ -79,6 +81,7 @@ internal sealed class StageExecutor
         _runId = runId ?? throw new ArgumentNullException(nameof(runId));
         _lineageMode = lineageMode;
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _time = time;
         _getBreaker = getBreaker ?? throw new ArgumentNullException(nameof(getBreaker));
         _getRetryDecision = getRetryDecision ?? throw new ArgumentNullException(nameof(getRetryDecision));
         _emitRetryScheduledAsync = emitRetryScheduledAsync
@@ -450,10 +453,15 @@ internal sealed class StageExecutor
                     decision.Delay,
                     error,
                     ct
-                )
+            )
                 .ConfigureAwait(false);
             if (decision.Delay > TimeSpan.Zero)
-                await Task.Delay(decision.Delay, ct).ConfigureAwait(false);
+                await _time.DelayAsync(decision.Delay, ct).ConfigureAwait(false);
+
+            stage.FailureOptions.Retry?.OnRetry?.Invoke(
+                stage.BoxEnvelope(current),
+                error,
+                decision.NextAttempt);
 
             var next = stage.WithAttempt(current, decision.NextAttempt);
             await _emitAsync(

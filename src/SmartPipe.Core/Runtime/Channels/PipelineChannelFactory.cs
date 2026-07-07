@@ -72,6 +72,14 @@ internal static class PipelineChannelFactory
         BoundedChannelFullMode fullMode,
         Action<PipelineEvent>? itemDropped = null)
     {
+        return CreateObserverBuffer<PipelineEvent>(capacity, fullMode, itemDropped);
+    }
+
+    public static Channel<T> CreateObserverBuffer<T>(
+        int capacity,
+        BoundedChannelFullMode fullMode,
+        Action<T>? itemDropped = null)
+    {
         if (capacity <= 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Observer buffer capacity must be greater than zero.");
 
@@ -87,7 +95,7 @@ internal static class PipelineChannelFactory
         };
 
         return itemDropped is null
-            ? Channel.CreateBounded<PipelineEvent>(options)
+            ? Channel.CreateBounded<T>(options)
             : Channel.CreateBounded(options, itemDropped);
     }
 }

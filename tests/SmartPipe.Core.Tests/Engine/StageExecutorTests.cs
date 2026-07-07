@@ -43,6 +43,162 @@ public sealed class StageExecutorTests
     }
 
     [Fact]
+    public async Task StageExecutor_Retry_InvokesOnRetryBeforeNextAttempt()
+    {
+        var callbackStarted = false;
+        var callbackAttempts = new ConcurrentQueue<int>();
+        var callbackPayloads = new ConcurrentQueue<int>();
+        var transformer = new CallbackOrderingTransformer(() => callbackStarted);
+
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([42]))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(
+                        1,
+                        MinimalRetryDelay,
+                        onRetry: (envelope, _, attempt) =>
+                        {
+                            callbackStarted = true;
+                            callbackAttempts.Enqueue(attempt);
+                            callbackPayloads.Enqueue((int)envelope.Payload);
+                        }),
+                })
+            .Run();
+
+        var outputs = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        outputs.Should().ContainSingle(output => output.Result.IsSuccess);
+        callbackAttempts.Should().Equal(1);
+        callbackPayloads.Should().Equal(42);
+        transformer.RetryAttemptObservedCallback.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StageExecutor_Retry_CancelledDelayDoesNotInvokeOnRetry()
+    {
+        var transformer = new FailThenSucceedTransformer<int>(failuresBeforeSuccess: 1);
+        var callbackAttempts = new ConcurrentQueue<int>();
+
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([42]))
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(
+                        1,
+                        TimeSpan.FromSeconds(5),
+                        onRetry: (_, _, attempt) => callbackAttempts.Enqueue(attempt)),
+                })
+            .Run();
+
+        await transformer.FirstFailureReturned.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.CancelAsync();
+
+        await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<OperationCanceledException>();
+        callbackAttempts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task StageExecutor_Retry_ProviderBackedClockControlsRetryDelay()
+    {
+        var timeProvider = new ManualTimeProvider(
+            new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero));
+        var transformer = new FailThenSucceedTransformer<int>(failuresBeforeSuccess: 1);
+
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([42]))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                Clock = new TimeProviderPipelineClock(timeProvider),
+            })
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(
+                        1,
+                        TimeSpan.FromMinutes(10),
+                        maxDelay: TimeSpan.FromMinutes(10)),
+                })
+            .Run();
+
+        await transformer.FirstFailureReturned.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        transformer.Attempts.Should().Equal(0);
+
+        timeProvider.Advance(TimeSpan.FromMinutes(10));
+
+        var outputs = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromMilliseconds(250));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        outputs.Should().ContainSingle(output => output.Result.IsSuccess);
+        transformer.Attempts.Should().Equal(0, 1);
+    }
+
+    [Fact]
+    public async Task StageExecutor_Timeout_ProviderBackedClockControlsAttemptTimeout()
+    {
+        var timeProvider = new ManualTimeProvider(
+            new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero));
+        var transformer = new BlockingTimeoutTransformer<int>();
+
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([9]))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                Clock = new TimeProviderPipelineClock(timeProvider),
+            })
+            .Transform(
+                transformer,
+                new StageFailureOptions
+                {
+                    Timeout = new TimeoutPolicy
+                    {
+                        AttemptTimeout = TimeSpan.FromMinutes(10),
+                    },
+                    OnPermanentFailure = FailureAction.EmitFailureResult,
+                })
+            .Run();
+
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        timeProvider.Advance(TimeSpan.FromMinutes(10));
+
+        var output = await run.Outputs.ReadAsync().AsTask().WaitAsync(TimeSpan.FromMilliseconds(250));
+        output.Result.Error!.Value.Category.Should().Be("Timeout");
+        transformer.CancellationObserved.Task.IsCompletedSuccessfully.Should().BeTrue();
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task StageExecutor_Retry_OnRetryExceptionFaultsRun()
+    {
+        var callbackException = new ApplicationException("retry callback boom");
+
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([42]))
+            .Transform(
+                new FailThenSucceedTransformer<int>(failuresBeforeSuccess: 1),
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(
+                        1,
+                        MinimalRetryDelay,
+                        onRetry: (_, _, _) => throw callbackException),
+                })
+            .Run();
+
+        await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<ApplicationException>()
+            .Where(ex => ReferenceEquals(ex, callbackException));
+        run.State.Should().Be(PipelineRunState.Faulted);
+    }
+
+    [Fact]
     public async Task StageExecutor_Retry_StopsAfterMaxAttempts()
     {
         var transformer = new AlwaysFailingTransformer<int>(ErrorType.Transient);
@@ -965,6 +1121,42 @@ public sealed class StageExecutorTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
+    private sealed class CallbackOrderingTransformer : IPipelineTransformer<int, int>
+    {
+        private readonly Func<bool> _callbackStarted;
+        private int _retryAttemptObservedCallback;
+
+        public CallbackOrderingTransformer(Func<bool> callbackStarted)
+        {
+            _callbackStarted = callbackStarted;
+        }
+
+        public bool RetryAttemptObservedCallback =>
+            Volatile.Read(ref _retryAttemptObservedCallback) != 0;
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<int>> TransformAsync(
+            ProcessingEnvelope<int> envelope,
+            CancellationToken ct = default)
+        {
+            if (envelope.Attempt == 0)
+            {
+                return ValueTask.FromResult(StageResult<int>.Failure(new SmartPipeError(
+                    "transient failure",
+                    ErrorType.Transient,
+                    "Transient")));
+            }
+
+            if (_callbackStarted())
+                Interlocked.Exchange(ref _retryAttemptObservedCallback, 1);
+
+            return ValueTask.FromResult(StageResult<int>.Success(envelope.Payload));
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class ThrowingPolicyTransformer : IPipelineTransformer<int, int>
     {
         public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
@@ -1186,6 +1378,139 @@ public sealed class StageExecutorTests
 
         public void AdvanceTimestamp(TimeSpan duration) =>
             Interlocked.Add(ref _timestamp, duration.Ticks);
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private readonly object _gate = new();
+        private readonly List<ManualTimer> _timers = [];
+        private DateTimeOffset _utcNow;
+        private long _timestamp;
+
+        public ManualTimeProvider(DateTimeOffset utcNow)
+        {
+            _utcNow = utcNow;
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            lock (_gate)
+                return _utcNow;
+        }
+
+        public override long GetTimestamp()
+        {
+            lock (_gate)
+                return _timestamp;
+        }
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            var timer = new ManualTimer(this, callback, state, dueTime, period);
+            lock (_gate)
+                _timers.Add(timer);
+
+            return timer;
+        }
+
+        public void Advance(TimeSpan duration)
+        {
+            ManualTimer[] dueTimers;
+            lock (_gate)
+            {
+                _utcNow += duration;
+                _timestamp += duration.Ticks;
+                dueTimers = _timers
+                    .Where(timer => timer.IsDue(_utcNow))
+                    .ToArray();
+            }
+
+            foreach (var timer in dueTimers)
+                timer.Fire(_utcNow);
+        }
+
+        private void Remove(ManualTimer timer)
+        {
+            lock (_gate)
+                _timers.Remove(timer);
+        }
+
+        private sealed class ManualTimer : ITimer
+        {
+            private readonly ManualTimeProvider _owner;
+            private readonly TimerCallback _callback;
+            private readonly object? _state;
+            private TimeSpan _period;
+            private DateTimeOffset _dueAtUtc;
+            private bool _disposed;
+
+            public ManualTimer(
+                ManualTimeProvider owner,
+                TimerCallback callback,
+                object? state,
+                TimeSpan dueTime,
+                TimeSpan period)
+            {
+                _owner = owner;
+                _callback = callback;
+                _state = state;
+                _period = period;
+                _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan
+                    ? DateTimeOffset.MaxValue
+                    : owner.GetUtcNow() + dueTime;
+            }
+
+            public bool IsDue(DateTimeOffset utcNow) => !_disposed && utcNow >= _dueAtUtc;
+
+            public void Fire(DateTimeOffset utcNow)
+            {
+                if (_disposed)
+                    return;
+
+                _callback(_state);
+
+                if (_period == Timeout.InfiniteTimeSpan)
+                {
+                    Dispose();
+                    return;
+                }
+
+                _dueAtUtc = utcNow + _period;
+            }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                if (_disposed)
+                    return false;
+
+                _period = period;
+                _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan
+                    ? DateTimeOffset.MaxValue
+                    : _owner.GetUtcNow() + dueTime;
+                return true;
+            }
+
+            public void Dispose()
+            {
+                if (_disposed)
+                    return;
+
+                _disposed = true;
+                _owner.Remove(this);
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 
     private sealed class BlockingTimeoutTransformer<T> : IPipelineTransformer<T, T>

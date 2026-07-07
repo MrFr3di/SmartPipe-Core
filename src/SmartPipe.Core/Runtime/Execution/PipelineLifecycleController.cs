@@ -5,8 +5,14 @@ namespace SmartPipe.Core;
 internal sealed class PipelineLifecycleController
 {
     private int _state = (int)PipelineRunState.NotStarted;
+    private int _cancellationRequested;
+    private int _abortRequested;
 
     public PipelineRunState State => (PipelineRunState)Volatile.Read(ref _state);
+
+    public bool IsCancellationRequested => Volatile.Read(ref _cancellationRequested) != 0;
+
+    public bool IsAbortRequested => Volatile.Read(ref _abortRequested) != 0;
 
     public void MarkRunning()
     {
@@ -40,6 +46,16 @@ internal sealed class PipelineLifecycleController
             ref _state,
             (int)PipelineRunState.Draining,
             (int)PipelineRunState.Running);
+    }
+
+    public void RequestCancellation()
+    {
+        Interlocked.Exchange(ref _cancellationRequested, 1);
+    }
+
+    public void RequestAbort()
+    {
+        Interlocked.Exchange(ref _abortRequested, 1);
     }
 
     public void MarkCompletedIfDraining()

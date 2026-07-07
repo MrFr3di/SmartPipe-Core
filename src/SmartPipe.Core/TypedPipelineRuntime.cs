@@ -230,6 +230,8 @@ internal interface ITypedPipelineStage
 
     TypedStageCorrelation GetCorrelation(object envelope);
 
+    ProcessingEnvelope<object> BoxEnvelope(object envelope);
+
     object WithAttempt(object envelope, int attempt);
 
     ValueTask InitializeAsync(CancellationToken ct);
@@ -305,6 +307,22 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
     {
         var input = (ProcessingEnvelope<TInput>)envelope;
         return new TypedStageCorrelation(input.TraceId, input.Attempt);
+    }
+
+    public ProcessingEnvelope<object> BoxEnvelope(object envelope)
+    {
+        var input = (ProcessingEnvelope<TInput>)envelope;
+        return new ProcessingEnvelope<object>
+        {
+            PipelineId = input.PipelineId,
+            RunId = input.RunId,
+            TraceId = input.TraceId,
+            Payload = input.Payload!,
+            Metadata = input.Metadata,
+            Lineage = input.Lineage,
+            Attempt = input.Attempt,
+            CreatedAtUtc = input.CreatedAtUtc,
+        };
     }
 
     public object WithAttempt(object envelope, int attempt)
@@ -650,16 +668,6 @@ internal readonly record struct DeadLetterWriteResult(
     string StageName
 );
 
-internal sealed record LateStageAttempt(
-    long Id,
-    string StageId,
-    string StageName,
-    ulong TraceId,
-    int Attempt,
-    Task Execution,
-    CancellationTokenSource TimeoutCancellation,
-    TimeSpan FinalizationTimeout);
-
 internal static class RuntimeCleanup
 {
     internal static async ValueTask<Exception[]> CollectAsync(IEnumerable<Func<ValueTask>> actions)
@@ -736,10 +744,6 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         Exception? Exception,
         ExceptionDispatchInfo? Primary);
 
-    private readonly record struct ComponentDisposeResult(
-        Exception[] CompletionErrors,
-        Exception[] DisposeErrors);
-
     private readonly record struct TimedAttemptCompletion(
         TimedAttemptCompletionKind Kind,
         TypedStageExecutionResult Result,
@@ -787,6 +791,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly IPipelineSink<TOutput>? _sink;
     private readonly PipelineRuntimeOptions _options;
     private readonly IPipelineClock _clock;
+    private readonly PipelineTime _time;
     private readonly Channel<PipelineOutput<TOutput>> _outputs;
     private readonly PipelineOutputEmitter<TOutput> _outputEmitter;
     private readonly PipelineProducer<TInput> _producer;
@@ -794,6 +799,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly AdaptiveParallelismRuntimeState? _adaptiveParallelism;
     private readonly StageExecutor _stageExecutor;
     private readonly SinkExecutor<TOutput> _sinkExecutor;
+    private readonly LateStageAttemptRegistry _lateAttemptRegistry;
+    private readonly PipelineComponentLifetimeManager<TInput, TOutput> _componentLifetime;
     private readonly SmartPipeMetricsRecorder _metrics;
     private readonly PipelineLifecycleController _lifecycle = new();
     private readonly IPipelineObserverDispatcher _observerDispatcher;
@@ -805,12 +812,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly Dictionary<string, CircuitBreaker> _breakers = [];
     private readonly object _breakersGate = new();
     private readonly object _lifecycleGate = new();
-    private readonly ConcurrentDictionary<long, LateStageAttempt> _lateStageAttempts = [];
-    private readonly ConcurrentDictionary<string, Func<ValueTask>> _deferredStageDisposals = [];
-    private long _nextLateStageAttemptId;
     private ExecutorLifecycleState _executorLifecycleState;
     private int _disposed;
-    private int _componentsDisposed;
     private Task? _runTask;
     private Task? _disposeTask;
     private Exception? _disposeException;
@@ -831,7 +834,15 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _sink = sink;
         _options = _runtime.Options;
         _clock = _options.Clock;
+        _time = new PipelineTime(_clock);
         _metrics = new SmartPipeMetricsRecorder(_clock);
+        _lateAttemptRegistry = new LateStageAttemptRegistry(_time);
+        _componentLifetime = new PipelineComponentLifetimeManager<TInput, TOutput>(
+            _spec.Source,
+            _spec.Stages,
+            _sink,
+            _spec.OwnershipOptions,
+            _lateAttemptRegistry);
         _outputs = CreateOutputChannel(_options, OnOutputDropped);
         _outputEmitter = new PipelineOutputEmitter<TOutput>(
             _outputs.Writer,
@@ -849,6 +860,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _runtime.RunId,
             _spec.LineageMode,
             _clock,
+            _time,
             GetOrCreateBreaker,
             GetRetryDecision,
             EmitRetryScheduledAsync,
@@ -935,6 +947,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     {
         ct.ThrowIfCancellationRequested();
 
+        _lifecycle.RequestCancellation();
         var cancelTask = _cts.CancelAsync();
         _adaptiveParallelism?.Complete();
 
@@ -977,7 +990,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
         try
         {
-            await runTask.WaitAsync(timeout, ct).ConfigureAwait(false);
+            await _time.WaitAsync(runTask, timeout, ct).ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
@@ -1009,7 +1022,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     public ValueTask AbortAsync(CancellationToken ct = default)
     {
-        _lifecycle.MarkAborted();
+        ct.ThrowIfCancellationRequested();
+
+        _lifecycle.RequestAbort();
         _cts.Cancel();
         _adaptiveParallelism?.Complete();
         return ValueTask.CompletedTask;
@@ -1078,7 +1093,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     // RunAsync faults are observed via the pipeline run's Completion task.
                 }
 
-                var deferredCleanupErrors = await DisposeDeferredStagesAsync().ConfigureAwait(false);
+                var deferredCleanupErrors = await _componentLifetime.DisposeDeferredStagesAsync()
+                    .ConfigureAwait(false);
                 var disposeException = CreateCombinedException(null, deferredCleanupErrors);
                 if (disposeException is not null)
                     ExceptionDispatchInfo.Capture(disposeException).Throw();
@@ -1088,7 +1104,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             }
             else
             {
-                var cleanup = await DisposeComponentsAsync().ConfigureAwait(false);
+                var cleanup = await _componentLifetime.DisposeAsync().ConfigureAwait(false);
                 var observerErrors = await RuntimeCleanup.CollectAsync([
                     () => _observerDispatcher.DisposeAsync(),
                 ]).ConfigureAwait(false);
@@ -1127,7 +1143,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     _processingCts.Token
                 )
                 .ConfigureAwait(false);
-            await InitializeComponentsAsync(_processingCts.Token).ConfigureAwait(false);
+            await _componentLifetime.InitializeAsync(_processingCts.Token).ConfigureAwait(false);
 
             if (_options.EffectiveMaxConcurrency == 1)
                 await RunSequentialProcessingAsync(_sourceCts.Token, _processingCts.Token).ConfigureAwait(false);
@@ -1157,7 +1173,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         var observerFlushErrors = await RuntimeCleanup.CollectAsync([
             () => _observerDispatcher.FlushAsync(CancellationToken.None),
         ]).ConfigureAwait(false);
-        var componentCleanup = await DisposeComponentsAsync().ConfigureAwait(false);
+        var componentCleanup = await _componentLifetime.DisposeAsync().ConfigureAwait(false);
         var finalizationErrors = observerFlushErrors.Concat(componentCleanup.CompletionErrors).ToArray();
         _disposeException = CreateCombinedException(
             null,
@@ -1187,21 +1203,51 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         IReadOnlyList<Exception> componentCleanupErrors)
     {
         var exception = CreateCombinedException(primary, componentCleanupErrors);
-        if (exception is null)
-            return new TerminalOutcome(PipelineRunState.Completed, null, null);
+        var hasCleanupError = componentCleanupErrors.Count != 0;
+        if (primary?.SourceException is not null
+            && primary.SourceException is not OperationCanceledException)
+        {
+            return new TerminalOutcome(
+                PipelineRunState.Faulted,
+                exception,
+                primary);
+        }
+
+        if (hasCleanupError)
+        {
+            return new TerminalOutcome(
+                PipelineRunState.Faulted,
+                exception,
+                primary);
+        }
 
         if (primary?.SourceException is OperationCanceledException)
         {
-            var state = _lifecycle.State == PipelineRunState.Aborted
+            var state = _lifecycle.IsAbortRequested
                 ? PipelineRunState.Aborted
                 : PipelineRunState.Cancelled;
             return new TerminalOutcome(state, exception, primary);
         }
 
-        return new TerminalOutcome(
-            PipelineRunState.Faulted,
-            exception,
-            primary);
+        if (_lifecycle.IsAbortRequested)
+        {
+            var aborted = new OperationCanceledException("Pipeline run aborted.");
+            return new TerminalOutcome(
+                PipelineRunState.Aborted,
+                aborted,
+                ExceptionDispatchInfo.Capture(aborted));
+        }
+
+        if (_lifecycle.IsCancellationRequested)
+        {
+            var cancelled = new OperationCanceledException("Pipeline run cancelled.");
+            return new TerminalOutcome(
+                PipelineRunState.Cancelled,
+                cancelled,
+                ExceptionDispatchInfo.Capture(cancelled));
+        }
+
+        return new TerminalOutcome(PipelineRunState.Completed, null, null);
     }
 
     private static Exception? CreateCombinedException(
@@ -1435,16 +1481,6 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _metrics.RecordObserverEventDropped();
     }
 
-    private async ValueTask InitializeComponentsAsync(CancellationToken ct)
-    {
-        await _spec.Source.InitializeAsync(ct).ConfigureAwait(false);
-        foreach (var stage in _spec.Stages)
-            await stage.InitializeAsync(ct).ConfigureAwait(false);
-
-        if (_sink is not null)
-            await _sink.InitializeAsync(ct).ConfigureAwait(false);
-    }
-
     private async ValueTask<FailureAction?> ProcessEnvelopeAsync(
         ProcessingEnvelope<TInput> sourceEnvelope,
         CancellationToken ct
@@ -1603,12 +1639,11 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             );
 
         CancellationTokenSource? timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(attemptTimeout.Value);
         var execution = stage.ExecuteAsync(current, _spec.LineageMode, _clock, timeoutCts.Token).AsTask();
 
         try
         {
-            return await execution.WaitAsync(attemptTimeout.Value, ct).ConfigureAwait(false);
+            return await _time.WaitAsync(execution, attemptTimeout.Value, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException ex)
             when (!ct.IsCancellationRequested && timeoutCts.IsCancellationRequested)
@@ -1665,6 +1700,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         {
             case TimeoutRetryMode.CooperativeOnly:
                 var completion = await TryWaitForCooperativeTimeoutCompletionAsync(
+                        _time,
                         execution,
                         GetCancellationGracePeriod(stage),
                         ct)
@@ -1739,6 +1775,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     }
 
     private static async ValueTask<TimedAttemptCompletion> TryWaitForCooperativeTimeoutCompletionAsync(
+        PipelineTime time,
         Task<TypedStageExecutionResult> execution,
         TimeSpan gracePeriod,
         CancellationToken ct)
@@ -1751,7 +1788,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
         try
         {
-            var result = await execution.WaitAsync(gracePeriod, ct).ConfigureAwait(false);
+            var result = await time.WaitAsync(execution, gracePeriod, ct).ConfigureAwait(false);
             return TimedAttemptCompletion.StageResult(result);
         }
         catch (TimeoutException)
@@ -1803,9 +1840,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         CancellationTokenSource timeoutCts)
     {
         var correlation = stage.GetCorrelation(current);
-        var id = Interlocked.Increment(ref _nextLateStageAttemptId);
-        var attempt = new LateStageAttempt(
-            id,
+        _lateAttemptRegistry.Register(
             stage.StageId,
             stage.StageName,
             correlation.TraceId,
@@ -1813,39 +1848,6 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             execution,
             timeoutCts,
             GetLateAttemptFinalizationTimeout(stage));
-
-        if (!_lateStageAttempts.TryAdd(id, attempt))
-        {
-            timeoutCts.Dispose();
-            return;
-        }
-
-        _ = ObserveLateStageAttemptAsync(attempt);
-    }
-
-    private async Task ObserveLateStageAttemptAsync(LateStageAttempt attempt)
-    {
-        try
-        {
-            await ObserveCompletedLateStageExecutionAsync(attempt.Execution).ConfigureAwait(false);
-        }
-        finally
-        {
-            _lateStageAttempts.TryRemove(attempt.Id, out _);
-            attempt.TimeoutCancellation.Dispose();
-        }
-    }
-
-    private static async Task ObserveCompletedLateStageExecutionAsync(Task execution)
-    {
-        try
-        {
-            await execution.ConfigureAwait(false);
-        }
-        catch
-        {
-            // Late faults after a timeout are already represented by the timeout result.
-        }
     }
 
     private TimeSpan GetCancellationGracePeriod(ITypedPipelineStage stage)
@@ -1863,76 +1865,6 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         return timeout == Timeout.InfiniteTimeSpan || timeout > TimeSpan.Zero
             ? timeout
             : TimeSpan.Zero;
-    }
-
-    private async ValueTask<Exception[]> WaitForLateStageAttemptsAsync()
-    {
-        var attempts = _lateStageAttempts.Values.ToArray();
-        if (attempts.Length == 0)
-            return [];
-
-        var waits = attempts.Select(WaitForLateStageAttemptAsync).ToArray();
-        try
-        {
-            await Task.WhenAll(waits).ConfigureAwait(false);
-        }
-        catch
-        {
-            // Faults are collected below so cleanup can continue.
-        }
-
-        List<Exception>? errors = null;
-        foreach (var wait in waits)
-        {
-            if (!wait.IsFaulted || wait.Exception is null)
-                continue;
-
-            errors ??= [];
-            errors.AddRange(wait.Exception.InnerExceptions);
-        }
-
-        return errors?.ToArray() ?? [];
-    }
-
-    private static async Task WaitForLateStageAttemptAsync(LateStageAttempt attempt)
-    {
-        if (attempt.Execution.IsCompleted)
-        {
-            await ObserveCompletedLateStageExecutionAsync(attempt.Execution).ConfigureAwait(false);
-            return;
-        }
-
-        if (attempt.FinalizationTimeout == Timeout.InfiniteTimeSpan)
-        {
-            await ObserveCompletedLateStageExecutionAsync(attempt.Execution).ConfigureAwait(false);
-            return;
-        }
-
-        try
-        {
-            await attempt.Execution.WaitAsync(attempt.FinalizationTimeout).ConfigureAwait(false);
-        }
-        catch (TimeoutException ex)
-        {
-            throw new TimeoutException(
-                $"Late stage attempt {attempt.StageId}#{attempt.Attempt} for trace {attempt.TraceId} did not complete within {attempt.FinalizationTimeout}.",
-                ex);
-        }
-        catch
-        {
-            // The timeout result remains the observable stage outcome.
-        }
-    }
-
-    private bool HasRunningLateAttempt(string stageId)
-    {
-        foreach (var attempt in _lateStageAttempts.Values)
-        {
-            if (attempt.StageId == stageId && !attempt.Execution.IsCompleted)
-                return true;
-        }
-
-        return false;
     }
 
     private TimeSpan? GetEffectiveAttemptTimeout(
@@ -2097,89 +2029,6 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             .ConfigureAwait(false);
     }
 
-    private async ValueTask<ComponentDisposeResult> DisposeComponentsAsync()
-    {
-        if (Interlocked.CompareExchange(ref _componentsDisposed, 1, 0) != 0)
-            return new ComponentDisposeResult([], []);
-
-        var lateAttemptErrors = await WaitForLateStageAttemptsAsync().ConfigureAwait(false);
-        List<Func<ValueTask>> actions = [];
-
-        if (_sink is not null && ShouldDispose(_sink))
-            actions.Add(() => _sink.DisposeAsync());
-
-        for (int i = _spec.Stages.Count - 1; i >= 0; i--)
-        {
-            var stage = _spec.Stages[i];
-            if (HasRunningLateAttempt(stage.StageId))
-            {
-                _deferredStageDisposals.TryAdd(
-                    stage.StageId,
-                    () => stage.DisposeAsync(_spec.OwnershipOptions));
-                continue;
-            }
-
-            actions.Add(() => stage.DisposeAsync(_spec.OwnershipOptions));
-        }
-
-        if (ShouldDispose(_spec.Source))
-            actions.Add(() => _spec.Source.DisposeAsync());
-
-        var cleanupErrors = await RuntimeCleanup.CollectAsync(actions).ConfigureAwait(false);
-        return new ComponentDisposeResult(
-            lateAttemptErrors.Concat(cleanupErrors).ToArray(),
-            cleanupErrors);
-    }
-
-    private async ValueTask<Exception[]> DisposeDeferredStagesAsync()
-    {
-        if (_deferredStageDisposals.IsEmpty)
-            return [];
-
-        List<Exception>? errors = null;
-        foreach (var (stageId, dispose) in _deferredStageDisposals.ToArray())
-        {
-            await WaitForLateStageAttemptsToCompleteAsync(stageId).ConfigureAwait(false);
-            if (!_deferredStageDisposals.TryRemove(stageId, out _))
-                continue;
-
-            try
-            {
-                await dispose().ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                errors ??= [];
-                errors.Add(ex);
-            }
-        }
-
-        return errors?.ToArray() ?? [];
-    }
-
-    private async Task WaitForLateStageAttemptsToCompleteAsync(string stageId)
-    {
-        while (true)
-        {
-            var attempts = _lateStageAttempts.Values
-                .Where(attempt => attempt.StageId == stageId && !attempt.Execution.IsCompleted)
-                .Select(attempt => attempt.Execution)
-                .ToArray();
-
-            if (attempts.Length == 0)
-                return;
-
-            try
-            {
-                await Task.WhenAll(attempts).ConfigureAwait(false);
-            }
-            catch
-            {
-                // Late attempt failures are already represented by timeout/fault outcomes.
-            }
-        }
-    }
-
     private async ValueTask EmitAsync(PipelineEvent pipelineEvent, CancellationToken ct)
     {
         await _observerDispatcher.EmitAsync(pipelineEvent, ct).ConfigureAwait(false);
@@ -2209,15 +2058,6 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             // Best-effort notifications must not hide the primary run outcome.
             _metrics.RecordObserverEventDropped();
         }
-    }
-
-    private bool ShouldDispose(object component)
-    {
-        if (component is not IPipelineComponentDescriptor descriptor)
-            return true;
-
-        return descriptor.Lifetime != PipelineComponentLifetime.SingletonExternal
-            || _spec.OwnershipOptions.DisposeExternalComponents;
     }
 
     private CircuitBreaker? GetOrCreateBreaker(ITypedPipelineStage stage)

@@ -318,6 +318,73 @@ public sealed class ObserverDispatcherTests
         await act.Should().NotThrowAsync();
     }
 
+    [Theory]
+    [InlineData(BoundedChannelFullMode.DropWrite)]
+    [InlineData(BoundedChannelFullMode.DropOldest)]
+    [InlineData(BoundedChannelFullMode.DropNewest)]
+    public void BufferedReliable_DropFullMode_ShouldFailValidation(BoundedChannelFullMode fullMode)
+    {
+        var options = new ObserverDispatchOptions
+        {
+            Mode = ObserverDispatchMode.BufferedReliable,
+            FullMode = fullMode,
+            FlushOnCompletion = true,
+        };
+
+        var act = () => PipelineObserverDispatcher.Create([], options, SystemPipelineClock.Instance);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*BufferedReliable*Wait*");
+    }
+
+    [Theory]
+    [InlineData(BoundedChannelFullMode.DropWrite)]
+    [InlineData(BoundedChannelFullMode.DropOldest)]
+    [InlineData(BoundedChannelFullMode.DropNewest)]
+    public void BufferedBestEffort_DropFullModeWithFlush_ShouldFailValidation(
+        BoundedChannelFullMode fullMode)
+    {
+        var options = new ObserverDispatchOptions
+        {
+            Mode = ObserverDispatchMode.BufferedBestEffort,
+            FullMode = fullMode,
+            FlushOnCompletion = true,
+        };
+
+        var act = () => PipelineObserverDispatcher.Create([], options, SystemPipelineClock.Instance);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*BufferedBestEffort*FlushOnCompletion*");
+    }
+
+    [Fact]
+    public async Task BufferedObserverFailure_ShouldNotifyRemainingObservers()
+    {
+        var failingObserver = new ThrowingObserver();
+        var recordingObserver = new RecordingObserver();
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [
+                new PipelineObserverRegistration(
+                    failingObserver,
+                    ObserverReliability.BestEffort,
+                    ObserverFailurePolicy.RemoveObserver),
+                new PipelineObserverRegistration(
+                    recordingObserver,
+                    ObserverReliability.BestEffort,
+                    ObserverFailurePolicy.Ignore),
+            ],
+            BufferedOptions(ObserverFailureMode.UseRegistrationPolicy),
+            SystemPipelineClock.Instance);
+
+        await dispatcher.EmitAsync(
+            new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        await dispatcher.CompleteAsync(CancellationToken.None);
+        await dispatcher.DisposeAsync();
+
+        recordingObserver.Events.OfType<ObserverFailedEvent>().Should().ContainSingle();
+    }
+
     [Fact]
     public async Task InputDroppedEvent_BestEffortEmissionFailure_RecordsObserverDropAndDoesNotFaultRun()
     {

@@ -109,11 +109,14 @@ token for work that was already accepted. A drain timeout throws
 `PipelineDrainResult` with `Completed`, `TimedOutStillRunning`,
 `CancelledByCaller`, `Faulted`, or `AlreadyCompleted`.
 
-`CancelAsync` cancels source and in-flight processing. It requests cooperative
-cancellation and completes outputs as cancelled.
+`CancelAsync` cancels source and in-flight processing. It records cancellation
+intent and requests cooperative cancellation. The terminal state is not final
+until runtime finalization publishes one outcome.
 
-`AbortAsync` performs immediate cancellation and marks the run aborted. It is
-the immediate stop path, distinct from graceful drain.
+`AbortAsync` performs immediate cancellation and records abort intent. It is
+the immediate stop path, distinct from graceful drain. Abort intent has
+precedence over cancellation intent when no processing or mandatory cleanup
+fault exists.
 
 After a run starts, `RunAsync` owns source, stage, sink, and observer cleanup.
 Runtime finalization processes work first, attempts cleanup for every owned
@@ -122,6 +125,12 @@ output channel, sends one terminal pipeline event, and then completes/disposes
 observer dispatch. `PipelineRun<T>.Completion` is the same execution task used
 by the runtime, so state, output completion, terminal event, and completion
 derive from one finalization pass.
+
+Terminal precedence is:
+
+```text
+processing or mandatory cleanup fault > abort request > cancellation request > completion
+```
 
 After state and output completion are published, terminal observer delivery and
 observer teardown failures are diagnostics only. They do not change the
@@ -159,10 +168,16 @@ the timeout result path; thrown `TimeoutException` and `HttpRequestException`
 remain permanent unless a classifier says otherwise. Pipeline cancellation
 `OperationCanceledException` bypasses the classifier and remains cancellation.
 
+`RetryPolicy.OnRetry` is invoked after the retry delay completes and before the
+next retry attempt starts. It is not invoked when the retry delay is cancelled.
+If the callback throws, the run faults with that exception.
+
 `TimeoutPolicy.AttemptTimeout` limits one attempt. `StageTimeout` is measured
 with the runtime monotonic clock and includes attempt execution, cancellation
-grace, retry delay, and the next attempt budget. `RetryMode` controls overlap
-after an attempt timeout:
+grace, retry delay, and the next attempt budget. When `Clock` is a
+`TimeProviderPipelineClock`, runtime retry delays and timeout waits use the
+underlying `TimeProvider`; custom `IPipelineClock` implementations keep the
+compatibility fallback. `RetryMode` controls overlap after an attempt timeout:
 
 - `CooperativeOnly` is the default. The runtime cancels the attempt, waits
   `CancellationGracePeriod`, and retries only if the timed-out attempt has

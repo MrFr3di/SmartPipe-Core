@@ -23,7 +23,7 @@ Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
 | `OrderingMode` | `Unordered` | Cross-item output ordering is not guaranteed. |
 | `ObserverDispatch` | `Inline` | Inline or bounded buffered observer dispatch. |
 | `AdaptiveParallelism` | `disabled` | Opt-in adaptive admission control for parallel envelope processing; requires `InputFullMode = Wait`. |
-| `Clock` | `SystemPipelineClock.Instance` | Timestamps and timeout budgets. |
+| `Clock` | `SystemPipelineClock.Instance` | Timestamps, monotonic durations, and timeout budgets. `TimeProviderPipelineClock` also drives runtime retry delay and timeout waits through its provider. |
 
 All runtime channels are bounded. `BoundedChannelFullMode.Wait` is the safe
 default because it applies backpressure instead of dropping accepted work.
@@ -166,8 +166,10 @@ No removal is planned in a patch or minor stabilization release.
 | `OnRetryExhausted` | `EmitFailureResult` |
 
 `RetryPolicy` retries transient stage failures according to `MaxRetries` and
-backoff settings. `TimeoutPolicy` can set per-attempt and whole-stage budgets.
-`CircuitBreakerPolicy` supports threshold-compatible and failure-ratio modes.
+backoff settings. `OnRetry` runs after the retry delay and before the next
+attempt starts; callback failures fault the run. `TimeoutPolicy` can set
+per-attempt and whole-stage budgets. `CircuitBreakerPolicy` supports
+threshold-compatible and failure-ratio modes.
 
 Open-breaker rejection is terminal for the current item and is not retried back
 into the open breaker.
@@ -183,6 +185,9 @@ channels and can fault, ignore, or remove observers according to
 
 | Observer option | Default | Notes |
 |---|---|---|
+| `Mode` | `Inline` | `BufferedReliable` requires `FullMode = Wait` and `FlushOnCompletion = true`. |
+| `FullMode` | `Wait` | Lossy drop modes are allowed only for `BufferedBestEffort` with `FlushOnCompletion = false`. |
+| `FlushOnCompletion` | `true` | Completion flush is guaranteed only for non-lossy observer queues. |
 | `BestEffortWriteTimeout` | `100 ms` | Maximum wait before `BufferedBestEffort` counts a `Wait`-mode observer event as dropped. |
 | `EmitDroppedObserverEvents` | `true` | Tries to publish `ObserverEventDroppedEvent`; `smartpipe.observer.events.dropped` is the reliable pressure signal. |
 

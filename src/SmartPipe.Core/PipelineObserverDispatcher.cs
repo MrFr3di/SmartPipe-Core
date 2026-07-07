@@ -14,6 +14,30 @@ internal interface IPipelineObserverDispatcher : IAsyncDisposable
     ValueTask CompleteAsync(CancellationToken ct);
 }
 
+internal enum ObserverDispatchMessageKind
+{
+    Event,
+    Flush,
+}
+
+internal readonly record struct ObserverDispatchMessage(
+    ObserverDispatchMessageKind Kind,
+    PipelineEvent? Event,
+    TaskCompletionSource? Completion)
+{
+    public static ObserverDispatchMessage FromEvent(PipelineEvent pipelineEvent)
+    {
+        ArgumentNullException.ThrowIfNull(pipelineEvent);
+        return new ObserverDispatchMessage(ObserverDispatchMessageKind.Event, pipelineEvent, null);
+    }
+
+    public static ObserverDispatchMessage Flush(TaskCompletionSource completion)
+    {
+        ArgumentNullException.ThrowIfNull(completion);
+        return new ObserverDispatchMessage(ObserverDispatchMessageKind.Flush, null, completion);
+    }
+}
+
 internal static class PipelineObserverDispatcher
 {
     public static IPipelineObserverDispatcher Create(
@@ -131,7 +155,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
     private readonly ObserverDispatchOptions _options;
     private readonly IPipelineClock _clock;
     private readonly Action<PipelineEvent>? _onObserverEventDropped;
-    private readonly Channel<PipelineEvent> _events;
+    private readonly Channel<ObserverDispatchMessage> _events;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _worker;
     private Exception? _pipelineFault;
@@ -150,10 +174,10 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         _options = options;
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _onObserverEventDropped = onObserverEventDropped;
-        _events = PipelineChannelFactory.CreateObserverBuffer(
+        _events = PipelineChannelFactory.CreateObserverBuffer<ObserverDispatchMessage>(
             options.Capacity,
             options.FullMode,
-            RecordDroppedEvent);
+            RecordDroppedMessage);
         _worker = Task.Run(ProcessAsync, CancellationToken.None);
     }
 
@@ -166,7 +190,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
 
         if (_options.Mode == ObserverDispatchMode.BufferedBestEffort)
         {
-            if (_events.Writer.TryWrite(pipelineEvent))
+            if (_events.Writer.TryWrite(ObserverDispatchMessage.FromEvent(pipelineEvent)))
                 return;
 
             if (_options.FullMode == BoundedChannelFullMode.Wait)
@@ -175,7 +199,10 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
                 try
                 {
-                    await _events.Writer.WriteAsync(pipelineEvent, linked.Token).ConfigureAwait(false);
+                    await _events.Writer.WriteAsync(
+                            ObserverDispatchMessage.FromEvent(pipelineEvent),
+                            linked.Token)
+                        .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
                 {
@@ -191,7 +218,10 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
 
         try
         {
-            await _events.Writer.WriteAsync(pipelineEvent, ct).ConfigureAwait(false);
+            await _events.Writer.WriteAsync(
+                    ObserverDispatchMessage.FromEvent(pipelineEvent),
+                    ct)
+                .ConfigureAwait(false);
         }
         catch (ChannelClosedException)
         {
@@ -228,7 +258,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
-            await _events.Writer.WriteAsync(new ObserverFlushEvent(completion), ct)
+            await _events.Writer.WriteAsync(ObserverDispatchMessage.Flush(completion), ct)
                 .ConfigureAwait(false);
         }
         catch (ChannelClosedException)
@@ -290,15 +320,15 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
 
     private async Task ProcessAsync()
     {
-        await foreach (var pipelineEvent in _events.Reader.ReadAllAsync(_cts.Token).ConfigureAwait(false))
+        await foreach (var message in _events.Reader.ReadAllAsync(_cts.Token).ConfigureAwait(false))
         {
-            if (pipelineEvent is ObserverFlushEvent flush)
+            if (message.Kind == ObserverDispatchMessageKind.Flush)
             {
-                flush.Completion.TrySetResult();
+                message.Completion!.TrySetResult();
                 continue;
             }
 
-            if (await DispatchEventAsync(pipelineEvent).ConfigureAwait(false))
+            if (await DispatchEventAsync(message.Event!).ConfigureAwait(false))
                 return;
         }
     }
@@ -332,13 +362,17 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         }
         catch (Exception ex)
         {
-            return HandleObserverFailure(registration, ex);
+            return await HandleObserverFailureAsync(pipelineEvent, registration, ex)
+                .ConfigureAwait(false);
         }
 
         return false;
     }
 
-    private bool HandleObserverFailure(ActiveObserverRegistration registration, Exception exception)
+    private async ValueTask<bool> HandleObserverFailureAsync(
+        PipelineEvent sourceEvent,
+        ActiveObserverRegistration registration,
+        Exception exception)
     {
         if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
         {
@@ -351,7 +385,53 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         if (registration.Registration.FailurePolicy == ObserverFailurePolicy.RemoveObserver)
             registration.Remove();
 
+        if (sourceEvent is not ObserverFailedEvent)
+            await EmitObserverFailureAsync(sourceEvent, registration, exception).ConfigureAwait(false);
+
         return false;
+    }
+
+    private async ValueTask EmitObserverFailureAsync(
+        PipelineEvent sourceEvent,
+        ActiveObserverRegistration failedRegistration,
+        Exception exception)
+    {
+        var failureEvent = new ObserverFailedEvent(
+            sourceEvent.PipelineId,
+            sourceEvent.RunId,
+            failedRegistration.Registration.Observer.GetType().Name,
+            _clock.GetUtcNow(),
+            exception);
+
+        foreach (var registration in _observers)
+        {
+            if (registration.IsRemoved)
+                continue;
+
+            if (ReferenceEquals(registration.Registration.Observer, failedRegistration.Registration.Observer))
+                continue;
+
+            try
+            {
+                await registration.Registration.Observer.OnEventAsync(failureEvent, _cts.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception)
+            {
+                if (ObserverRegistrationState.ShouldFaultPipeline(_options.FailureMode, registration.Registration))
+                    return;
+            }
+        }
+    }
+
+    private void RecordDroppedMessage(ObserverDispatchMessage message)
+    {
+        if (message.Kind == ObserverDispatchMessageKind.Event && message.Event is not null)
+            RecordDroppedEvent(message.Event);
     }
 
     private void RecordDroppedEvent(PipelineEvent droppedEvent)
@@ -366,11 +446,12 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
 
         try
         {
-            _events.Writer.TryWrite(new ObserverEventDroppedEvent(
-                droppedEvent.PipelineId,
-                droppedEvent.RunId,
-                _clock.GetUtcNow(),
-                droppedEvent.GetType().Name));
+            _events.Writer.TryWrite(ObserverDispatchMessage.FromEvent(
+                new ObserverEventDroppedEvent(
+                    droppedEvent.PipelineId,
+                    droppedEvent.RunId,
+                    _clock.GetUtcNow(),
+                    droppedEvent.GetType().Name)));
         }
         finally
         {
@@ -378,14 +459,6 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         }
     }
 
-    private sealed record ObserverFlushEvent(TaskCompletionSource Completion)
-        : PipelineEvent(
-            string.Empty,
-            string.Empty,
-            0,
-            null,
-            0,
-            DateTimeOffset.MinValue);
 }
 
 internal sealed class ActiveObserverRegistration(PipelineObserverRegistration registration)

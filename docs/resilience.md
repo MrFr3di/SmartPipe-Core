@@ -17,7 +17,9 @@ Attach retry to a transform stage with `StageFailureOptions`:
 ```
 
 Retries apply to transient stage failures. Retry delay observes cancellation and
-stage timeout budget.
+stage timeout budget. `RetryPolicy.OnRetry` runs after the retry delay and
+before the next attempt starts. If the callback throws, the runtime faults the
+run instead of silently continuing with another attempt.
 
 Transformer exceptions are converted to `SmartPipeError` with category
 `StageException` and `ErrorType.Permanent` by default, then routed through the

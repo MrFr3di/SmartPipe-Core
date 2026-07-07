@@ -376,6 +376,8 @@ public sealed class TypedPipelineLifecycleTests
 
         await run.AbortAsync();
 
+        var act = async () => await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await act.Should().ThrowAsync<OperationCanceledException>();
         run.State.Should().Be(PipelineRunState.Aborted);
     }
 
@@ -531,6 +533,68 @@ public sealed class TypedPipelineLifecycleTests
             .WithMessage("source cleanup boom");
         observer.TerminalEvents.Should().ContainSingle()
             .Which.Should().BeOfType<PipelineFaultedEvent>();
+    }
+
+    [Fact]
+    public async Task TypedPipeline_AbortDuringFaultFinalization_PreservesFaultedOutcome()
+    {
+        var observer = new RecordingTerminalObserver();
+        var source = new ThrowingInitializeBlockingDisposeLifecycleSource<int>(
+            new InvalidOperationException("source initialize boom"));
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new PassThroughLifecycleTransformer<int>())
+            .WithObserver(observer)
+            .Run();
+
+        await source.DisposeEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await run.AbortAsync();
+        source.ReleaseDispose();
+
+        await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("source initialize boom");
+        await FluentActions.Awaiting(() => run.Outputs.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("source initialize boom");
+        run.State.Should().Be(PipelineRunState.Faulted);
+        observer.TerminalEvents.Should().ContainSingle()
+            .Which.Should().BeOfType<PipelineFaultedEvent>();
+    }
+
+    [Fact]
+    public async Task TypedPipeline_AbortAfterCancelRequest_PublishesAbortedOutcome()
+    {
+        var observer = new RecordingTerminalObserver();
+        var source = new BlockingDisposeLifecycleSource<int>(1);
+        var transformer = new BlockingLifecycleTransformer<int>();
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(transformer)
+            .WithObserver(observer)
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxConcurrency = 2,
+            })
+            .Run();
+
+        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await run.CancelAsync();
+        await source.DisposeEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.AbortAsync();
+        source.ReleaseDispose();
+
+        await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<OperationCanceledException>();
+        await FluentActions.Awaiting(() => run.Outputs.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<OperationCanceledException>();
+        run.State.Should().Be(PipelineRunState.Aborted);
+        observer.TerminalEvents.Should().ContainSingle()
+            .Which.Should().BeOfType<PipelineCancelledEvent>();
     }
 
     [Fact]
@@ -927,6 +991,38 @@ internal sealed class ThrowingInitializeAndDisposeLifecycleSource<T> : IPipeline
     }
 
     public ValueTask DisposeAsync() => throw _disposeException;
+}
+
+internal sealed class ThrowingInitializeBlockingDisposeLifecycleSource<T> : IPipelineSource<T>
+{
+    private readonly Exception _initializeException;
+    private readonly TaskCompletionSource _releaseDispose =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public ThrowingInitializeBlockingDisposeLifecycleSource(Exception initializeException)
+    {
+        _initializeException = initializeException;
+    }
+
+    public TaskCompletionSource DisposeEntered { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public void ReleaseDispose() => _releaseDispose.TrySetResult();
+
+    public ValueTask InitializeAsync(CancellationToken ct = default) => throw _initializeException;
+
+    public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await Task.Yield();
+        yield break;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        DisposeEntered.TrySetResult();
+        await _releaseDispose.Task.ConfigureAwait(false);
+    }
 }
 
 internal sealed class BlockingDisposeLifecycleSource<T> : IPipelineSource<T>
