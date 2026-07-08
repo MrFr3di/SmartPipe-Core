@@ -250,13 +250,14 @@ public sealed class LateStageAttemptRegistryTests
             TimeSpan dueTime,
             TimeSpan period)
         {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
             lock (_gate)
             {
                 _registrations.Add(new TimerRegistration(dueTime, period));
                 CompleteSatisfiedWaiters();
             }
 
-            return base.CreateTimer(callback, state, dueTime, period);
+            return timer;
         }
 
         private int CountRegistrations(TimeSpan dueTime, TimeSpan period) =>

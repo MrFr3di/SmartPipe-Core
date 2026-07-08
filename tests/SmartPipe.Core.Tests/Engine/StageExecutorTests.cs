@@ -1474,7 +1474,7 @@ public sealed class StageExecutorTests
     {
         private readonly object _gate = new();
         private readonly List<TimerRegistration> _registrations = [];
-        private readonly Dictionary<TimerRegistration, TaskCompletionSource> _waiters = [];
+        private readonly List<TimerWaiter> _waiters = [];
 
         public ObservedFakeTimeProvider(DateTimeOffset utcNow)
             : base(utcNow)
@@ -1487,15 +1487,15 @@ public sealed class StageExecutorTests
             TimeSpan dueTime,
             TimeSpan period)
         {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
             var registration = new TimerRegistration(dueTime, period);
             lock (_gate)
             {
                 _registrations.Add(registration);
-                if (_waiters.TryGetValue(registration, out var waiter))
-                    waiter.TrySetResult();
+                CompleteSatisfiedWaiters();
             }
 
-            return base.CreateTimer(callback, state, dueTime, period);
+            return timer;
         }
 
         public Task WaitForTimerRegistrationAsync(
@@ -1509,18 +1509,35 @@ public sealed class StageExecutorTests
                 if (_registrations.Count(item => item == registration) >= expectedCount)
                     return Task.CompletedTask;
 
-                if (!_waiters.TryGetValue(registration, out var waiter))
-                {
-                    waiter = new TaskCompletionSource(
-                        TaskCreationOptions.RunContinuationsAsynchronously);
-                    _waiters.Add(registration, waiter);
-                }
+                var waiter = new TimerWaiter(
+                    registration,
+                    expectedCount,
+                    new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+                _waiters.Add(waiter);
 
-                return waiter.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                return waiter.Completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+
+        private void CompleteSatisfiedWaiters()
+        {
+            for (var i = _waiters.Count - 1; i >= 0; i--)
+            {
+                var waiter = _waiters[i];
+                if (_registrations.Count(item => item == waiter.Registration) < waiter.ExpectedCount)
+                    continue;
+
+                _waiters.RemoveAt(i);
+                waiter.Completion.TrySetResult();
             }
         }
 
         private sealed record TimerRegistration(TimeSpan DueTime, TimeSpan Period);
+
+        private sealed record TimerWaiter(
+            TimerRegistration Registration,
+            int ExpectedCount,
+            TaskCompletionSource Completion);
     }
 
     private sealed class BlockingTimeoutTransformer<T> : IPipelineTransformer<T, T>
