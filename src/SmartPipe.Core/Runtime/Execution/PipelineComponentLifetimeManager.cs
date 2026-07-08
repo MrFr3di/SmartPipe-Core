@@ -12,7 +12,8 @@ internal sealed class PipelineComponentLifetimeManager<TInput, TOutput>
     private readonly ComponentOwnershipOptions _ownershipOptions;
     private readonly LateStageAttemptRegistry _lateAttemptRegistry;
     private readonly ConcurrentDictionary<string, Func<ValueTask>> _deferredStageDisposals = [];
-    private int _componentsDisposed;
+    private readonly object _disposeGate = new();
+    private Task<PipelineComponentCleanupResult>? _disposeTask;
 
     public PipelineComponentLifetimeManager(
         IPipelineSource<TInput> source,
@@ -38,11 +39,42 @@ internal sealed class PipelineComponentLifetimeManager<TInput, TOutput>
             await _sink.InitializeAsync(ct).ConfigureAwait(false);
     }
 
-    public async ValueTask<PipelineComponentCleanupResult> DisposeAsync()
+    public ValueTask<PipelineComponentCleanupResult> DisposeAsync()
     {
-        if (Interlocked.CompareExchange(ref _componentsDisposed, 1, 0) != 0)
-            return new PipelineComponentCleanupResult([], []);
+        TaskCompletionSource<PipelineComponentCleanupResult>? starter = null;
+        Task<PipelineComponentCleanupResult> task;
+        lock (_disposeGate)
+        {
+            if (_disposeTask is null)
+            {
+                starter = new TaskCompletionSource<PipelineComponentCleanupResult>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                _disposeTask = starter.Task;
+            }
 
+            task = _disposeTask;
+        }
+
+        if (starter is not null)
+            _ = RunDisposeAsync(starter);
+
+        return new ValueTask<PipelineComponentCleanupResult>(task);
+    }
+
+    private async Task RunDisposeAsync(TaskCompletionSource<PipelineComponentCleanupResult> completion)
+    {
+        try
+        {
+            completion.SetResult(await DisposeCoreAsync().ConfigureAwait(false));
+        }
+        catch (Exception ex)
+        {
+            completion.SetException(ex);
+        }
+    }
+
+    private async ValueTask<PipelineComponentCleanupResult> DisposeCoreAsync()
+    {
         var lateAttemptErrors = await _lateAttemptRegistry.WaitForAllAsync().ConfigureAwait(false);
         List<Func<ValueTask>> actions = [];
 

@@ -6,6 +6,8 @@ using System.Runtime.ExceptionServices;
 
 namespace SmartPipe.Core.Tests.Runtime.Execution;
 
+[Trait("Category", "CorrectnessRegression")]
+[Trait("Category", "ConcurrencyRegression")]
 public sealed class PipelineLifecycleControllerTests
 {
     [Fact]

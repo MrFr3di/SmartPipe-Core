@@ -599,6 +599,27 @@ public class RuntimeOptionsPassTests
     }
 
     [Fact]
+    public async Task Metrics_RecordProcessed_UsesMonotonicTimestampWhenUtcMovesBackward()
+    {
+        var now = new DateTimeOffset(2026, 6, 2, 11, 30, 0, TimeSpan.Zero);
+        var clock = new ManualPipelineClock(now);
+
+        var run = PipelineBuilder
+            .From(new EnvelopeSource<int>(1))
+            .WithRuntimeOptions(new PipelineRuntimeOptions { Clock = clock })
+            .Transform(new TimestampAdvancingUtcRollbackTransformer<int>(
+                clock,
+                TimeSpan.FromMilliseconds(250),
+                TimeSpan.FromMinutes(10)))
+            .Run();
+
+        _ = await ReadOutputsAsync(run.Outputs);
+        await run.Completion;
+
+        run.Metrics.LastStageLatencyMs.Should().Be(250);
+    }
+
+    [Fact]
     public async Task PipelineClock_Custom_ShouldControlStageTimeoutBudget()
     {
         var clock = new ManualPipelineClock(new DateTimeOffset(2026, 6, 2, 12, 30, 0, TimeSpan.Zero));
@@ -2115,23 +2136,66 @@ public class RuntimeOptionsPassTests
         }
     }
 
+    private sealed class TimestampAdvancingUtcRollbackTransformer<T> : IPipelineTransformer<T, T>
+    {
+        private readonly ManualPipelineClock _clock;
+        private readonly TimeSpan _timestampAdvance;
+        private readonly TimeSpan _utcRollback;
+
+        public TimestampAdvancingUtcRollbackTransformer(
+            ManualPipelineClock clock,
+            TimeSpan timestampAdvance,
+            TimeSpan utcRollback)
+        {
+            _clock = clock;
+            _timestampAdvance = timestampAdvance;
+            _utcRollback = utcRollback;
+        }
+
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<T>> TransformAsync(
+            ProcessingEnvelope<T> envelope,
+            CancellationToken ct = default)
+        {
+            _clock.AdvanceTimestamp(_timestampAdvance);
+            _clock.JumpUtc(-_utcRollback);
+            return ValueTask.FromResult(StageResult<T>.Success(envelope.Payload));
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class ManualPipelineClock : IPipelineClock
     {
         private DateTimeOffset _now;
+        private long _timestamp;
 
         public ManualPipelineClock(DateTimeOffset now)
         {
             _now = now;
+            _timestamp = now.UtcTicks;
         }
 
         public DateTimeOffset GetUtcNow() => _now;
 
-        public long GetTimestamp() => _now.UtcTicks;
+        public long GetTimestamp() => Interlocked.Read(ref _timestamp);
 
         public TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp) =>
             TimeSpan.FromTicks(endingTimestamp - startingTimestamp);
 
         public void Advance(TimeSpan value)
+        {
+            _now += value;
+            AdvanceTimestamp(value);
+        }
+
+        public void AdvanceTimestamp(TimeSpan value)
+        {
+            Interlocked.Add(ref _timestamp, value.Ticks);
+        }
+
+        public void JumpUtc(TimeSpan value)
         {
             _now += value;
         }

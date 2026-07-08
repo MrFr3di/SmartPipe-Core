@@ -8,15 +8,16 @@ internal sealed class LateStageAttemptRegistry
 {
     private readonly PipelineTime _time;
     private readonly ConcurrentDictionary<long, LateStageAttempt> _attempts = [];
+    private readonly object _registrationGate = new();
     private long _nextAttemptId;
-    private int _sealed;
+    private bool _sealed;
 
     public LateStageAttemptRegistry(PipelineTime time)
     {
         _time = time;
     }
 
-    public bool Register(
+    public void Register(
         string stageId,
         string stageName,
         ulong traceId,
@@ -30,42 +31,42 @@ internal sealed class LateStageAttemptRegistry
         ArgumentNullException.ThrowIfNull(execution);
         ArgumentNullException.ThrowIfNull(timeoutCancellation);
 
-        if (Volatile.Read(ref _sealed) != 0)
+        LateStageAttempt lateAttempt;
+        lock (_registrationGate)
         {
-            timeoutCancellation.Dispose();
-            return false;
-        }
+            if (_sealed)
+            {
+                _ = ObserveRejectedAttemptAsync(execution, timeoutCancellation);
+                throw new InvalidOperationException(
+                    "Late stage attempt registration occurred after registry sealing.");
+            }
 
-        var id = Interlocked.Increment(ref _nextAttemptId);
-        var lateAttempt = new LateStageAttempt(
-            id,
-            stageId,
-            stageName,
-            traceId,
-            attempt,
-            execution,
-            timeoutCancellation,
-            finalizationTimeout);
+            var id = ++_nextAttemptId;
+            lateAttempt = new LateStageAttempt(
+                id,
+                stageId,
+                stageName,
+                traceId,
+                attempt,
+                execution,
+                timeoutCancellation,
+                finalizationTimeout);
 
-        if (!_attempts.TryAdd(id, lateAttempt))
-        {
-            timeoutCancellation.Dispose();
-            return false;
-        }
-
-        if (Volatile.Read(ref _sealed) != 0 && _attempts.TryRemove(id, out _))
-        {
-            timeoutCancellation.Dispose();
-            return false;
+            if (!_attempts.TryAdd(id, lateAttempt))
+            {
+                _ = ObserveRejectedAttemptAsync(execution, timeoutCancellation);
+                throw new InvalidOperationException(
+                    "Late stage attempt registration failed.");
+            }
         }
 
         _ = ObserveLateStageAttemptAsync(lateAttempt);
-        return true;
     }
 
     public void Seal()
     {
-        Interlocked.Exchange(ref _sealed, 1);
+        lock (_registrationGate)
+            _sealed = true;
     }
 
     public bool HasRunningAttempt(string stageId)
@@ -143,6 +144,20 @@ internal sealed class LateStageAttemptRegistry
         {
             _attempts.TryRemove(attempt.Id, out _);
             attempt.TimeoutCancellation.Dispose();
+        }
+    }
+
+    private static async Task ObserveRejectedAttemptAsync(
+        Task execution,
+        CancellationTokenSource timeoutCancellation)
+    {
+        try
+        {
+            await ObserveCompletedLateStageExecutionAsync(execution).ConfigureAwait(false);
+        }
+        finally
+        {
+            timeoutCancellation.Dispose();
         }
     }
 

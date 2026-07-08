@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using FluentAssertions;
+using Microsoft.Extensions.Time.Testing;
 using SmartPipe.Core;
 
 namespace SmartPipe.Core.Tests.Engine;
@@ -107,7 +108,7 @@ public sealed class StageExecutorTests
     [Fact]
     public async Task StageExecutor_Retry_ProviderBackedClockControlsRetryDelay()
     {
-        var timeProvider = new ManualTimeProvider(
+        var timeProvider = new ObservedFakeTimeProvider(
             new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero));
         var transformer = new FailThenSucceedTransformer<int>(failuresBeforeSuccess: 1);
 
@@ -128,12 +129,17 @@ public sealed class StageExecutorTests
                 })
             .Run();
 
+        var outputsTask = ReadOutputsAsync(run.Outputs);
         await transformer.FirstFailureReturned.Task.WaitAsync(TimeSpan.FromSeconds(5));
         transformer.Attempts.Should().Equal(0);
+        await timeProvider.WaitForTimerRegistrationAsync(
+            TimeSpan.FromMinutes(10),
+            Timeout.InfiniteTimeSpan);
+        outputsTask.IsCompleted.Should().BeFalse();
 
         timeProvider.Advance(TimeSpan.FromMinutes(10));
 
-        var outputs = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromMilliseconds(250));
+        var outputs = await outputsTask.WaitAsync(TimeSpan.FromSeconds(5));
         await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
         outputs.Should().ContainSingle(output => output.Result.IsSuccess);
         transformer.Attempts.Should().Equal(0, 1);
@@ -142,7 +148,7 @@ public sealed class StageExecutorTests
     [Fact]
     public async Task StageExecutor_Timeout_ProviderBackedClockControlsAttemptTimeout()
     {
-        var timeProvider = new ManualTimeProvider(
+        var timeProvider = new ObservedFakeTimeProvider(
             new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero));
         var transformer = new BlockingTimeoutTransformer<int>();
 
@@ -164,11 +170,16 @@ public sealed class StageExecutorTests
                 })
             .Run();
 
+        var outputTask = run.Outputs.ReadAsync().AsTask();
         await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await timeProvider.WaitForTimerRegistrationAsync(
+            TimeSpan.FromMinutes(10),
+            Timeout.InfiniteTimeSpan);
+        outputTask.IsCompleted.Should().BeFalse();
 
         timeProvider.Advance(TimeSpan.FromMinutes(10));
 
-        var output = await run.Outputs.ReadAsync().AsTask().WaitAsync(TimeSpan.FromMilliseconds(250));
+        var output = await outputTask.WaitAsync(TimeSpan.FromSeconds(5));
         output.Result.Error!.Value.Category.Should().Be("Timeout");
         transformer.CancellationObserved.Task.IsCompletedSuccessfully.Should().BeTrue();
         await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
@@ -196,6 +207,85 @@ public sealed class StageExecutorTests
             .Should().ThrowAsync<ApplicationException>()
             .Where(ex => ReferenceEquals(ex, callbackException));
         run.State.Should().Be(PipelineRunState.Faulted);
+    }
+
+    [Fact]
+    public async Task StageExecutor_Retry_OnRetryOperationCanceledExceptionFaultsRun()
+    {
+        var callbackException = new OperationCanceledException("retry callback cancelled itself");
+
+        var run = PipelineBuilder
+            .From(new EnumerablePipelineSource<int>([42]))
+            .Transform(
+                new FailThenSucceedTransformer<int>(failuresBeforeSuccess: 1),
+                new StageFailureOptions
+                {
+                    Retry = new RetryPolicy(
+                        1,
+                        MinimalRetryDelay,
+                        onRetry: (_, _, _) => throw callbackException),
+                })
+            .Run();
+
+        var exception = await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Retry callback failed.");
+        exception.Which.InnerException.Should().BeSameAs(callbackException);
+        run.State.Should().Be(PipelineRunState.Faulted);
+    }
+
+    [Fact]
+    public async Task StageExecutor_Retry_RuntimeCancelledBeforeCallbackDoesNotInvokeCallback()
+    {
+        var callbackAttempts = new ConcurrentQueue<int>();
+        using var runtimeCancellation = new CancellationTokenSource();
+        var stage = new TypedPipelineStage<int, int>(
+            new PassThroughTransformer<int>(),
+            0,
+            new StageFailureOptions
+            {
+                Retry = new RetryPolicy(
+                    1,
+                    MinimalRetryDelay,
+                    onRetry: (_, _, attempt) => callbackAttempts.Enqueue(attempt)),
+            });
+        var envelope = ProcessingEnvelope<int>.Create(42, "pipeline", "run", traceId: 1);
+        var error = new SmartPipeError("transient", ErrorType.Transient);
+        var failure = new TypedStageExecutionResult(
+            IsSuccess: false,
+            Envelope: envelope,
+            Error: error,
+            Kind: StageResultKind.Failure,
+            TraceId: envelope.TraceId,
+            Attempt: envelope.Attempt,
+            Lineage: null,
+            CanRetryTimeout: false);
+        var executor = new StageExecutor(
+            "pipeline",
+            "run",
+            LineageMode.Off,
+            SystemPipelineClock.Instance,
+            new PipelineTime(SystemPipelineClock.Instance),
+            _ => null,
+            (_, _, _, _) => new RetryDecision(RetryDecisionKind.Retry, NextAttempt: 1, Delay: TimeSpan.Zero),
+            (_, _, _, _, _, _) =>
+            {
+                runtimeCancellation.Cancel();
+                return ValueTask.CompletedTask;
+            },
+            (_, _, _, _) => ValueTask.CompletedTask,
+            (_, _, _, _) => ValueTask.CompletedTask,
+            (_, _) => ValueTask.CompletedTask,
+            (_, ct) =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return ValueTask.CompletedTask;
+            },
+            (_, _, _, _) => ValueTask.FromResult(failure));
+
+        await FluentActions.Awaiting(() => executor.ExecuteAsync(stage, envelope, runtimeCancellation.Token).AsTask())
+            .Should().ThrowAsync<OperationCanceledException>();
+        callbackAttempts.Should().BeEmpty();
     }
 
     [Fact]
@@ -1380,31 +1470,16 @@ public sealed class StageExecutorTests
             Interlocked.Add(ref _timestamp, duration.Ticks);
     }
 
-    private sealed class ManualTimeProvider : TimeProvider
+    private sealed class ObservedFakeTimeProvider : FakeTimeProvider
     {
         private readonly object _gate = new();
-        private readonly List<ManualTimer> _timers = [];
-        private DateTimeOffset _utcNow;
-        private long _timestamp;
+        private readonly List<TimerRegistration> _registrations = [];
+        private readonly Dictionary<TimerRegistration, TaskCompletionSource> _waiters = [];
 
-        public ManualTimeProvider(DateTimeOffset utcNow)
+        public ObservedFakeTimeProvider(DateTimeOffset utcNow)
+            : base(utcNow)
         {
-            _utcNow = utcNow;
         }
-
-        public override DateTimeOffset GetUtcNow()
-        {
-            lock (_gate)
-                return _utcNow;
-        }
-
-        public override long GetTimestamp()
-        {
-            lock (_gate)
-                return _timestamp;
-        }
-
-        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
 
         public override ITimer CreateTimer(
             TimerCallback callback,
@@ -1412,105 +1487,40 @@ public sealed class StageExecutorTests
             TimeSpan dueTime,
             TimeSpan period)
         {
-            var timer = new ManualTimer(this, callback, state, dueTime, period);
-            lock (_gate)
-                _timers.Add(timer);
-
-            return timer;
-        }
-
-        public void Advance(TimeSpan duration)
-        {
-            ManualTimer[] dueTimers;
+            var registration = new TimerRegistration(dueTime, period);
             lock (_gate)
             {
-                _utcNow += duration;
-                _timestamp += duration.Ticks;
-                dueTimers = _timers
-                    .Where(timer => timer.IsDue(_utcNow))
-                    .ToArray();
+                _registrations.Add(registration);
+                if (_waiters.TryGetValue(registration, out var waiter))
+                    waiter.TrySetResult();
             }
 
-            foreach (var timer in dueTimers)
-                timer.Fire(_utcNow);
+            return base.CreateTimer(callback, state, dueTime, period);
         }
 
-        private void Remove(ManualTimer timer)
+        public Task WaitForTimerRegistrationAsync(
+            TimeSpan dueTime,
+            TimeSpan period,
+            int expectedCount = 1)
         {
+            var registration = new TimerRegistration(dueTime, period);
             lock (_gate)
-                _timers.Remove(timer);
-        }
-
-        private sealed class ManualTimer : ITimer
-        {
-            private readonly ManualTimeProvider _owner;
-            private readonly TimerCallback _callback;
-            private readonly object? _state;
-            private TimeSpan _period;
-            private DateTimeOffset _dueAtUtc;
-            private bool _disposed;
-
-            public ManualTimer(
-                ManualTimeProvider owner,
-                TimerCallback callback,
-                object? state,
-                TimeSpan dueTime,
-                TimeSpan period)
             {
-                _owner = owner;
-                _callback = callback;
-                _state = state;
-                _period = period;
-                _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan
-                    ? DateTimeOffset.MaxValue
-                    : owner.GetUtcNow() + dueTime;
-            }
+                if (_registrations.Count(item => item == registration) >= expectedCount)
+                    return Task.CompletedTask;
 
-            public bool IsDue(DateTimeOffset utcNow) => !_disposed && utcNow >= _dueAtUtc;
-
-            public void Fire(DateTimeOffset utcNow)
-            {
-                if (_disposed)
-                    return;
-
-                _callback(_state);
-
-                if (_period == Timeout.InfiniteTimeSpan)
+                if (!_waiters.TryGetValue(registration, out var waiter))
                 {
-                    Dispose();
-                    return;
+                    waiter = new TaskCompletionSource(
+                        TaskCreationOptions.RunContinuationsAsynchronously);
+                    _waiters.Add(registration, waiter);
                 }
 
-                _dueAtUtc = utcNow + _period;
-            }
-
-            public bool Change(TimeSpan dueTime, TimeSpan period)
-            {
-                if (_disposed)
-                    return false;
-
-                _period = period;
-                _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan
-                    ? DateTimeOffset.MaxValue
-                    : _owner.GetUtcNow() + dueTime;
-                return true;
-            }
-
-            public void Dispose()
-            {
-                if (_disposed)
-                    return;
-
-                _disposed = true;
-                _owner.Remove(this);
-            }
-
-            public ValueTask DisposeAsync()
-            {
-                Dispose();
-                return ValueTask.CompletedTask;
+                return waiter.Task.WaitAsync(TimeSpan.FromSeconds(5));
             }
         }
+
+        private sealed record TimerRegistration(TimeSpan DueTime, TimeSpan Period);
     }
 
     private sealed class BlockingTimeoutTransformer<T> : IPipelineTransformer<T, T>
@@ -1539,6 +1549,20 @@ public sealed class StageExecutorTests
             }
 
             return StageResult<T>.Success(envelope.Payload);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class PassThroughTransformer<T> : IPipelineTransformer<T, T>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<StageResult<T>> TransformAsync(
+            ProcessingEnvelope<T> envelope,
+            CancellationToken ct = default)
+        {
+            return ValueTask.FromResult(StageResult<T>.Success(envelope.Payload));
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -1759,6 +1783,7 @@ public sealed class StageExecutorTests
             }
         }
     }
+
 
     private sealed class ThrowingDeadLetterSerializer<T> : IDeadLetterSerializer<T>
     {

@@ -741,8 +741,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     private readonly record struct TerminalOutcome(
         PipelineRunState State,
-        Exception? Exception,
-        ExceptionDispatchInfo? Primary);
+        ExceptionDispatchInfo? CompletionError)
+    {
+        public Exception? Exception => CompletionError?.SourceException;
+    }
 
     private readonly record struct TimedAttemptCompletion(
         TimedAttemptCompletionKind Kind,
@@ -1193,9 +1195,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         ]).ConfigureAwait(false);
 
         _sinkExecutor.Dispose();
-        RuntimeCleanup.ThrowCombined(
-            outcome.Primary,
-            finalizationErrors);
+        outcome.CompletionError?.Throw();
     }
 
     private TerminalOutcome DetermineTerminalOutcome(
@@ -1203,22 +1203,21 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         IReadOnlyList<Exception> componentCleanupErrors)
     {
         var exception = CreateCombinedException(primary, componentCleanupErrors);
+        var completionError = CaptureTerminalException(primary, exception, componentCleanupErrors);
         var hasCleanupError = componentCleanupErrors.Count != 0;
         if (primary?.SourceException is not null
             && primary.SourceException is not OperationCanceledException)
         {
             return new TerminalOutcome(
                 PipelineRunState.Faulted,
-                exception,
-                primary);
+                completionError);
         }
 
         if (hasCleanupError)
         {
             return new TerminalOutcome(
                 PipelineRunState.Faulted,
-                exception,
-                primary);
+                completionError);
         }
 
         if (primary?.SourceException is OperationCanceledException)
@@ -1226,7 +1225,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             var state = _lifecycle.IsAbortRequested
                 ? PipelineRunState.Aborted
                 : PipelineRunState.Cancelled;
-            return new TerminalOutcome(state, exception, primary);
+            return new TerminalOutcome(state, completionError);
         }
 
         if (_lifecycle.IsAbortRequested)
@@ -1234,7 +1233,6 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             var aborted = new OperationCanceledException("Pipeline run aborted.");
             return new TerminalOutcome(
                 PipelineRunState.Aborted,
-                aborted,
                 ExceptionDispatchInfo.Capture(aborted));
         }
 
@@ -1243,11 +1241,24 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             var cancelled = new OperationCanceledException("Pipeline run cancelled.");
             return new TerminalOutcome(
                 PipelineRunState.Cancelled,
-                cancelled,
                 ExceptionDispatchInfo.Capture(cancelled));
         }
 
-        return new TerminalOutcome(PipelineRunState.Completed, null, null);
+        return new TerminalOutcome(PipelineRunState.Completed, null);
+    }
+
+    private static ExceptionDispatchInfo? CaptureTerminalException(
+        ExceptionDispatchInfo? primary,
+        Exception? exception,
+        IReadOnlyList<Exception> cleanupErrors)
+    {
+        if (exception is null)
+            return null;
+
+        if (primary is not null && cleanupErrors.Count == 0)
+            return primary;
+
+        return ExceptionDispatchInfo.Capture(exception);
     }
 
     private static Exception? CreateCombinedException(
@@ -1486,7 +1497,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         CancellationToken ct
     )
     {
-        var startedAtUtc = _clock.GetUtcNow();
+        var started = _clock.GetTimestamp();
         object current = NormalizeEnvelope(sourceEnvelope);
         foreach (var stage in _spec.Stages)
         {
@@ -1510,7 +1521,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             .WriteAsync(new PipelineOutput<TOutput>(outputEnvelope, result), ct)
             .ConfigureAwait(false);
 
-        var elapsed = _clock.GetUtcNow() - startedAtUtc;
+        var elapsed = _clock.GetElapsedTime(started, _clock.GetTimestamp());
         _metrics.RecordProcessed(Math.Max(0, elapsed.TotalMilliseconds));
 
         return null;

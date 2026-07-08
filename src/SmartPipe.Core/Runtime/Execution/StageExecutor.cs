@@ -458,10 +458,19 @@ internal sealed class StageExecutor
             if (decision.Delay > TimeSpan.Zero)
                 await _time.DelayAsync(decision.Delay, ct).ConfigureAwait(false);
 
-            stage.FailureOptions.Retry?.OnRetry?.Invoke(
-                stage.BoxEnvelope(current),
-                error,
-                decision.NextAttempt);
+            ct.ThrowIfCancellationRequested();
+
+            try
+            {
+                stage.FailureOptions.Retry?.OnRetry?.Invoke(
+                    stage.BoxEnvelope(current),
+                    error,
+                    decision.NextAttempt);
+            }
+            catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+            {
+                throw new InvalidOperationException("Retry callback failed.", ex);
+            }
 
             var next = stage.WithAttempt(current, decision.NextAttempt);
             await _emitAsync(

@@ -654,6 +654,29 @@ public sealed class TypedPipelineLifecycleTests
     }
 
     [Fact]
+    public async Task TypedPipeline_ProcessingAndCleanupFailure_ShouldUseSingleTerminalExceptionInstance()
+    {
+        var processing = new InvalidOperationException("source initialize boom");
+        var cleanup = new ApplicationException("source cleanup boom");
+        var source = new ThrowingInitializeAndDisposeLifecycleSource<int>(processing, cleanup);
+
+        var run = PipelineBuilder
+            .From(source)
+            .Transform(new PassThroughLifecycleTransformer<int>())
+            .Run();
+
+        var outputException = await FluentActions.Awaiting(
+                () => run.Outputs.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<AggregateException>();
+        var runException = await FluentActions.Awaiting(
+                () => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<AggregateException>();
+
+        runException.Which.Should().BeSameAs(outputException.Which);
+        runException.Which.InnerExceptions.Should().Equal(processing, cleanup);
+    }
+
+    [Fact]
     public async Task TypedPipeline_ObserverTerminalFailure_DoesNotRewritePublishedStateOrOutput()
     {
         var observer = new RecordingTerminalObserver();
