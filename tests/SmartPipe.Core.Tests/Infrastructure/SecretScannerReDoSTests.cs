@@ -6,6 +6,7 @@ using Xunit;
 
 namespace SmartPipe.Core.Tests.Infrastructure;
 
+[Trait("Category", "Stress")]
 public class SecretScannerReDoSTests
 {
     public static IEnumerable<object[]> ReDoSTestCases

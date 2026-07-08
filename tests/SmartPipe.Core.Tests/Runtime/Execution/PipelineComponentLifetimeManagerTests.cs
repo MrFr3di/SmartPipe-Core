@@ -7,10 +7,10 @@ using SmartPipe.Core;
 namespace SmartPipe.Core.Tests.Runtime.Execution;
 
 [Trait("Category", "CorrectnessRegression")]
-[Trait("Category", "ConcurrencyRegression")]
 public sealed class PipelineComponentLifetimeManagerTests
 {
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task DisposeAsync_ConcurrentCallers_ShouldShareInFlightCleanupResult()
     {
         var cleanup = new InvalidOperationException("source cleanup boom");

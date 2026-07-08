@@ -52,6 +52,9 @@ cancellation, not an observer failure.
 drop full modes require `FlushOnCompletion = false`; a lossy queue cannot
 guarantee completion flush delivery. Observer flush uses an internal control
 message and is never delivered to observers as a `PipelineEvent`.
+`FlushOnCompletion = false` affects `CompleteAsync` only. `DisposeAsync` stops
+and awaits the buffered worker before returning. Observer callbacks should
+observe cancellation tokens so shutdown remains bounded.
 
 The runtime sends at most one terminal pipeline event for a run:
 `PipelineCompletedEvent`, `PipelineCancelledEvent`, or `PipelineFaultedEvent`.

@@ -5,7 +5,6 @@ using SmartPipe.Core;
 namespace SmartPipe.Core.Tests.Math;
 
 [Trait("Category", "CorrectnessRegression")]
-[Trait("Category", "ConcurrencyRegression")]
 public class ObjectPoolTests
 {
     private static readonly TimeSpan DeadlockTimeout = TimeSpan.FromSeconds(5);
@@ -132,6 +131,7 @@ public class ObjectPoolTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task Rent_WhenFactoryIsRunning_ShouldNotBlockConcurrentReturn()
     {
         var factoryEntered = CreateGate();
@@ -170,6 +170,7 @@ public class ObjectPoolTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task Return_WhenResetIsRunning_ShouldNotBlockConcurrentRent()
     {
         var resetEntered = CreateGate();
@@ -249,6 +250,7 @@ public class ObjectPoolTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public void Rent_WhenConcurrent_ShouldNotReturnSameInstanceToSimultaneousRenters()
     {
         const int poolCapacity = 8;
@@ -306,6 +308,7 @@ public class ObjectPoolTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task FactoryAndReset_WhenReentrant_ShouldNotDeadlock()
     {
         ObjectPool<TestObject>? factoryPool = null;
@@ -353,6 +356,7 @@ public class ObjectPoolTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public void StressTest_20Threads_ZeroObjectLoss()
     {
         const int poolCapacity = 100;

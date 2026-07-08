@@ -10,7 +10,6 @@ using SmartPipe.Core;
 namespace SmartPipe.Core.Tests.Engine;
 
 [Trait("Category", "CorrectnessRegression")]
-[Trait("Category", "ConcurrencyRegression")]
 public sealed class StageExecutorTests
 {
     private static readonly TimeSpan MinimalRetryDelay = TimeSpan.FromTicks(1);
@@ -349,6 +348,7 @@ public sealed class StageExecutorTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task StageExecutor_Timeout_CooperativeOnlyDoesNotRetryWhileAttemptIsLate()
     {
         var transformer = new ReleasableLateAttemptTransformer<int>();
@@ -390,6 +390,7 @@ public sealed class StageExecutorTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task StageExecutor_Timeout_DetachAndRetryIdempotentAllowsExplicitOverlap()
     {
         var transformer = new ReleasableLateAttemptTransformer<int>(
@@ -428,6 +429,7 @@ public sealed class StageExecutorTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task StageExecutor_Timeout_LateAttemptCompletesBeforeStageDisposal()
     {
         var transformer = new ReleasableLateAttemptTransformer<int>();
@@ -460,6 +462,7 @@ public sealed class StageExecutorTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task StageExecutor_Timeout_LateAttemptFinalizationTimeoutFaultsCompletion()
     {
         var transformer = new ReleasableLateAttemptTransformer<int>();
@@ -497,6 +500,7 @@ public sealed class StageExecutorTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task StageExecutor_Timeout_MultipleDetachedAttempts_DisposeWaitsForDeferredStageCleanup()
     {
         var transformer = new ReleasableLateAttemptTransformer<int>();
@@ -537,6 +541,7 @@ public sealed class StageExecutorTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task StageExecutor_Timeout_StageBudgetIncludesCancellationGrace()
     {
         var clock = new AdvancingPipelineClock(
@@ -603,6 +608,7 @@ public sealed class StageExecutorTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task StageExecutor_Timeout_WhenAttemptSucceedsDuringGrace_ShouldReturnSuccessWithoutRetry()
     {
         var transformer = new ReleaseAfterCancellationTransformer<int>();
@@ -639,6 +645,7 @@ public sealed class StageExecutorTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task StageExecutor_Timeout_CooperativeCancellation_ShouldRespectDetachWithoutRetry()
     {
         var transformer = new BlockingTimeoutTransformer<int>();

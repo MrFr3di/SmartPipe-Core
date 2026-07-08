@@ -8,7 +8,6 @@ using SmartPipe.Core;
 namespace SmartPipe.Core.Tests.Engine;
 
 [Trait("Category", "CorrectnessRegression")]
-[Trait("Category", "ConcurrencyRegression")]
 public sealed class TypedPipelineLifecycleTests
 {
     [Fact]
@@ -91,6 +90,7 @@ public sealed class TypedPipelineLifecycleTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task StartDisposeRace_ShouldPublishRunOrRejectStartWithoutPartialState()
     {
         for (var iteration = 0; iteration < 128; iteration++)
@@ -136,6 +136,7 @@ public sealed class TypedPipelineLifecycleTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task Start_AllowsOnlyOneConcurrentCaller()
     {
         var transformer = new BlockingLifecycleTransformer<int>();
@@ -536,6 +537,7 @@ public sealed class TypedPipelineLifecycleTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task TypedPipeline_AbortDuringFaultFinalization_PreservesFaultedOutcome()
     {
         var observer = new RecordingTerminalObserver();
@@ -703,6 +705,7 @@ public sealed class TypedPipelineLifecycleTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task TypedPipeline_Dispose_ConcurrentCallersAwaitSharedTask()
     {
         var source = new BlockingDisposeLifecycleSource<int>(1);

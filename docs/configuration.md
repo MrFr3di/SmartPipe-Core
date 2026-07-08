@@ -59,6 +59,12 @@ does not run a background sampling loop or periodic timer.
 Retry attempts remain observable through retry metrics and events, but retry
 counts are not adaptive admission signals.
 
+When `EvaluationInterval` elapses, interval counters reset regardless of the
+controller decision. If `AdjustmentCooldown` blocks an adjustment, samples from
+that evaluation window are not carried into the next window.
+`EvaluationInterval` values much smaller than `AdjustmentCooldown` can drop
+several windows of latency or failure signal between concurrency changes.
+
 | Option | Default | Notes |
 |---|---:|---|
 | `Enabled` | `false` | Enables adaptive admission. |
@@ -190,6 +196,14 @@ channels and can fault, ignore, or remove observers according to
 | `FlushOnCompletion` | `true` | Completion flush is guaranteed only for non-lossy observer queues. |
 | `BestEffortWriteTimeout` | `100 ms` | Maximum wait before `BufferedBestEffort` counts a `Wait`-mode observer event as dropped. |
 | `EmitDroppedObserverEvents` | `true` | Tries to publish `ObserverEventDroppedEvent`; `smartpipe.observer.events.dropped` is the reliable pressure signal. |
+
+## Health Checks
+
+Runtime clock settings create run and activity timestamps. Health-check
+`TimeProvider` settings define the instant used for policy evaluation, including
+stale activity and initial activity grace decisions. Production hosts should
+normally use system UTC for both clocks. Custom providers are intended for
+deterministic tests and controlled hosts.
 
 ## Metrics
 

@@ -7,7 +7,6 @@ using SmartPipe.Core;
 namespace SmartPipe.Core.Tests.Runtime.Execution;
 
 [Trait("Category", "CorrectnessRegression")]
-[Trait("Category", "ConcurrencyRegression")]
 public sealed class LateStageAttemptRegistryTests
 {
     [Fact]
@@ -112,6 +111,7 @@ public sealed class LateStageAttemptRegistryTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task SealRegisterRace_ShouldNeverAcceptRegistrationAfterSeal()
     {
         var registry = new LateStageAttemptRegistry(new PipelineTime(SystemPipelineClock.Instance));

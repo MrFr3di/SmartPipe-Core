@@ -7,7 +7,6 @@ using System.Runtime.ExceptionServices;
 namespace SmartPipe.Core.Tests.Runtime.Execution;
 
 [Trait("Category", "CorrectnessRegression")]
-[Trait("Category", "ConcurrencyRegression")]
 public sealed class PipelineLifecycleControllerTests
 {
     [Fact]
@@ -204,6 +203,7 @@ public sealed class PipelineLifecycleControllerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task ConcurrentTerminalTransitions_EndInTerminalState()
     {
         for (var iteration = 0; iteration < 64; iteration++)

@@ -84,10 +84,12 @@ public class BackpressureStrategyTests
     {
         var s = new BackpressureStrategy(100);
         s.UpdateThroughput(500);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        await s.ThrottleAsync(90, CancellationToken.None);
-        sw.Stop();
-        sw.ElapsedMilliseconds.Should().BeGreaterThanOrEqualTo(5);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await s.ThrottleAsync(90, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Fact]
@@ -95,10 +97,12 @@ public class BackpressureStrategyTests
     {
         var s = new BackpressureStrategy(100);
         s.UpdateThroughput(500);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        await s.ThrottleAsync(70, CancellationToken.None);
-        sw.Stop();
-        sw.ElapsedMilliseconds.Should().BeLessThan(5);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await s.ThrottleAsync(70, cts.Token);
+
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
@@ -106,10 +110,12 @@ public class BackpressureStrategyTests
     {
         var s = new BackpressureStrategy(100);
         s.UpdateThroughput(2000);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        await s.ThrottleAsync(60, CancellationToken.None);
-        sw.Stop();
-        sw.ElapsedMilliseconds.Should().BeGreaterThanOrEqualTo(5);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await s.ThrottleAsync(60, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Fact]
@@ -117,9 +123,11 @@ public class BackpressureStrategyTests
     {
         var s = new BackpressureStrategy(100);
         s.UpdateThroughput(50);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        await s.ThrottleAsync(80, CancellationToken.None);
-        sw.Stop();
-        sw.ElapsedMilliseconds.Should().BeLessThan(5);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await s.ThrottleAsync(80, cts.Token);
+
+        await act.Should().NotThrowAsync();
     }
 }

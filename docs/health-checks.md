@@ -54,6 +54,12 @@ Queue depths are observational point-in-time samples from runtime channels.
 Health checks should treat them as current pressure indicators, not as durable
 work accounting or synchronization guarantees.
 
+Runtime clock settings create run, activity, and snapshot timestamps. The
+health-check `TimeProvider` defines the instant used for stale and initial
+activity policy evaluation. Production hosts should normally use system UTC for
+both clocks. Custom providers are intended for deterministic tests and
+controlled hosts.
+
 For hosted services, `SmartPipeHostedFailureBehavior.MarkUnhealthyAndKeepHostAlive`
 keeps the host process alive after a pipeline fault; the tracked run state then
 causes the health check to report `Unhealthy`.

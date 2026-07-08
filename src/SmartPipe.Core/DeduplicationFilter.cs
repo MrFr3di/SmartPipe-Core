@@ -43,7 +43,10 @@ public class DeduplicationFilter
     /// <param name="expectedItems">Expected number of unique items (default: 1,000,000).</param>
     /// <param name="falsePositiveRate">Desired false positive rate (default: 0.001 = 0.1%).</param>
     /// <param name="ttl">Optional time-to-live. If set, elements are automatically removed after TTL expires.</param>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when expectedItems is not positive or falsePositiveRate is outside (0, 1).</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when expectedItems is not positive, falsePositiveRate is outside (0, 1),
+    /// or ttl is not positive.
+    /// </exception>
     public DeduplicationFilter(
         long expectedItems = 1_000_000,
         double falsePositiveRate = 0.001,

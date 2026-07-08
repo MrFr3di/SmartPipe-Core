@@ -161,6 +161,7 @@ internal sealed class SmartPipeHealthCheck<TInput, TOutput> : IHealthCheck
         CancellationToken cancellationToken = default)
     {
         var snapshot = _monitor.CaptureSnapshot();
+        var nowUtc = _options.TimeProvider.GetUtcNow();
         var data = CreateData(snapshot);
 
         if (snapshot.State == PipelineRunState.Faulted)
@@ -184,14 +185,14 @@ internal sealed class SmartPipeHealthCheck<TInput, TOutput> : IHealthCheck
                 data: data));
         }
 
-        if (InitialActivityIsDegraded(snapshot))
+        if (InitialActivityIsDegraded(snapshot, nowUtc))
         {
             return Task.FromResult(HealthCheckResult.Degraded(
                 $"SmartPipe pipeline '{snapshot.PipelineId}' has not reported initial activity.",
                 data: data));
         }
 
-        if (IsStale(snapshot))
+        if (IsStale(snapshot, nowUtc))
         {
             return Task.FromResult(HealthCheckResult.Degraded(
                 $"SmartPipe pipeline '{snapshot.PipelineId}' has not reported activity recently.",
@@ -216,16 +217,19 @@ internal sealed class SmartPipeHealthCheck<TInput, TOutput> : IHealthCheck
             || outputUtilization >= _options.QueueUtilizationDegradedThreshold;
     }
 
-    private bool IsStale(SmartPipeHealthSnapshot snapshot)
+    private bool IsStale(SmartPipeHealthSnapshot snapshot, DateTimeOffset nowUtc)
     {
         if (snapshot.State is not (PipelineRunState.Running or PipelineRunState.Draining))
             return false;
 
-        return snapshot.LastActivityAtUtc is not null
-            && snapshot.CapturedAtUtc - snapshot.LastActivityAtUtc.Value > _options.StaleAfter;
+        if (snapshot.LastActivityAtUtc is null)
+            return false;
+
+        var elapsed = nowUtc - snapshot.LastActivityAtUtc.Value;
+        return elapsed > TimeSpan.Zero && elapsed > _options.StaleAfter;
     }
 
-    private bool InitialActivityIsDegraded(SmartPipeHealthSnapshot snapshot)
+    private bool InitialActivityIsDegraded(SmartPipeHealthSnapshot snapshot, DateTimeOffset nowUtc)
     {
         if (!_options.RequireInitialActivity
             || snapshot.State is not (PipelineRunState.Running or PipelineRunState.Draining)
@@ -235,8 +239,8 @@ internal sealed class SmartPipeHealthCheck<TInput, TOutput> : IHealthCheck
             return false;
         }
 
-        return snapshot.CapturedAtUtc - snapshot.StartedAtUtc.Value
-            > _options.InitialActivityGracePeriod;
+        var elapsed = nowUtc - snapshot.StartedAtUtc.Value;
+        return elapsed > TimeSpan.Zero && elapsed > _options.InitialActivityGracePeriod;
     }
 
     private static Dictionary<string, object> CreateData(SmartPipeHealthSnapshot snapshot)

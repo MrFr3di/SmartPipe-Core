@@ -9,6 +9,7 @@ namespace SmartPipe.Core.Tests.Infrastructure;
 /// Performance tests for SecretScanner to validate throughput requirements.
 /// Verifies that large benign inputs are processed within acceptable throughput limits (>10MB/s).
 /// </summary>
+[Trait("Category", "Stress")]
 public class SecretScannerPerformanceTests
 {
     /// <summary>

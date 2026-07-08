@@ -36,10 +36,12 @@ then processed and failed counts are snapshotted and reset together. Failure
 pressure can reduce concurrency only when the interval processed count reaches
 `MinimumFailureSamples` and `failed / processed` is at least
 `FailurePressureThreshold`. `AdjustmentCooldown` can block a limit change, but
-it does not carry failed samples into the next evaluation interval. The current
-model is completion-based and does not run a background sampling loop. Retry
-attempts remain observable through metrics and events, but they do not affect
-adaptive admission decisions.
+the evaluated window is still reset and not carried into the next interval.
+`EvaluationInterval` values much smaller than `AdjustmentCooldown` can drop
+several windows of latency or failure signal between concurrency changes. The
+current model is completion-based and does not run a background sampling loop.
+Retry attempts remain observable through metrics and events, but they do not
+affect adaptive admission decisions.
 
 ## Factory And Instance Lifetimes
 
@@ -136,6 +138,11 @@ After state and output completion are published, terminal observer delivery and
 observer teardown failures are diagnostics only. They do not change the
 published state, output-channel completion, or `PipelineRun<T>.Completion`
 outcome.
+
+For buffered observer dispatch, `FlushOnCompletion = false` affects completion
+only. Disposal still stops and awaits the buffered worker before returning.
+Observer callbacks should observe cancellation tokens so buffered shutdown is
+bounded.
 
 Cleanup attempts are best-effort but complete: one cleanup failure does not
 skip later owned resources. If processing and cleanup both fail, the processing

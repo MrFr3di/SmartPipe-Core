@@ -181,7 +181,8 @@ public static partial class SecretScanner
             if (nested.IsIndeterminate)
                 return nested;
             if (nested.Value != base64Result.Value)
-                return RedactionResult.Complete(Convert.ToBase64String(Encoding.UTF8.GetBytes(nested.Value)));
+                return RedactionResult.Complete(
+                    EncodeBase64WithOriginalRepresentation(nested.Value, base64Result.Base64));
         }
 
         var urlResult = TryDecodeUrlForScan(content, budget);
@@ -219,7 +220,8 @@ public static partial class SecretScanner
     {
         if (string.IsNullOrEmpty(content))
             return false;
-        return content.All(c => char.IsLetterOrDigit(c) || c == '+' || c == '/' || c == '=');
+        return content.All(c =>
+            char.IsLetterOrDigit(c) || c == '+' || c == '/' || c == '-' || c == '_' || c == '=');
     }
 
     private static bool IsRawAwsAccessKey(string content)
@@ -230,16 +232,9 @@ public static partial class SecretScanner
 
     internal static string? DecodeBase64WithPadding(string content)
     {
-        if (!ValidateBase64Characters(content))
+        if (!TryNormalizeBase64(content, out var normalization))
             return null;
-        var padded = EnsurePadding(content);
-        return TryDecodeWithBuffer(padded, budget: null).Value;
-    }
-
-    private static string EnsurePadding(string content)
-    {
-        var paddingNeeded = (4 - (content.Length % 4)) % 4;
-        return paddingNeeded > 0 ? content + new string('=', paddingNeeded) : content;
+        return TryDecodeWithBuffer(normalization.Normalized, budget: null).Value;
     }
 
     private static DecodeResult TryDecodeWithBuffer(string content, ScanBudget? budget)
@@ -279,33 +274,101 @@ public static partial class SecretScanner
 
     private static DecodeResult TryDecodeBase64ForScan(string content, ScanBudget budget)
     {
-        if (!LooksLikeBase64(content))
+        if (!TryNormalizeBase64(content, out var normalization))
             return DecodeResult.NotDecoded();
 
-        return DecodeBase64WithPaddingForScan(content, budget);
+        return TryDecodeWithBuffer(normalization.Normalized, budget)
+            .WithBase64Normalization(normalization);
     }
 
     private static bool LooksLikeBase64(string content)
     {
-        if (string.IsNullOrEmpty(content))
-            return false;
-
-        // Guard 1: Base64 strings must have length multiple of 4 for recursive scanning.
-        if (content.Length % 4 != 0)
-            return false;
-
-        // Guard 2: All characters must be valid Base64 characters.
-        if (!ValidateBase64Characters(content))
-            return false;
-
-        // Additional guard: raw AWS access keys.
-        return !IsRawAwsAccessKey(content);
+        return TryNormalizeBase64(content, out _);
     }
 
-    private static DecodeResult DecodeBase64WithPaddingForScan(string content, ScanBudget budget)
+    private static bool TryNormalizeBase64(string? content, out Base64NormalizationResult result)
     {
-        var padded = EnsurePadding(content);
-        return TryDecodeWithBuffer(padded, budget);
+        result = default;
+        if (string.IsNullOrEmpty(content) || IsRawAwsAccessKey(content))
+            return false;
+
+        var paddingStart = content.IndexOf('=');
+        var paddingCount = 0;
+        if (paddingStart >= 0)
+        {
+            paddingCount = content.Length - paddingStart;
+            if (paddingCount > 2)
+                return false;
+
+            for (var i = paddingStart; i < content.Length; i++)
+            {
+                if (content[i] != '=')
+                    return false;
+            }
+        }
+
+        var hasCanonicalAlphabet = false;
+        var hasUrlAlphabet = false;
+        for (var i = 0; i < content.Length - paddingCount; i++)
+        {
+            var c = content[i];
+            if (char.IsLetterOrDigit(c))
+                continue;
+
+            if (c is '+' or '/')
+            {
+                hasCanonicalAlphabet = true;
+                continue;
+            }
+
+            if (c is '-' or '_')
+            {
+                hasUrlAlphabet = true;
+                continue;
+            }
+
+            return false;
+        }
+
+        if (hasCanonicalAlphabet && hasUrlAlphabet)
+            return false;
+
+        var remainder = content.Length % 4;
+        if (paddingCount > 0 && remainder != 0)
+            return false;
+
+        var normalized = hasUrlAlphabet
+            ? content.Replace('-', '+').Replace('_', '/')
+            : content;
+
+        normalized = remainder switch
+        {
+            0 => normalized,
+            2 => normalized + "==",
+            3 => normalized + "=",
+            _ => string.Empty,
+        };
+
+        if (normalized.Length == 0)
+            return false;
+
+        result = new Base64NormalizationResult(
+            normalized,
+            IsUrlVariant: hasUrlAlphabet,
+            HadPadding: paddingCount > 0);
+        return true;
+    }
+
+    private static string EncodeBase64WithOriginalRepresentation(
+        string decoded,
+        Base64NormalizationResult normalization)
+    {
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(decoded));
+        if (normalization.IsUrlVariant)
+            encoded = encoded.Replace('+', '-').Replace('/', '_');
+        if (!normalization.HadPadding)
+            encoded = encoded.TrimEnd('=');
+        return encoded;
     }
 
     private static string? TryDecodeUrl(string content)
@@ -434,13 +497,24 @@ public static partial class SecretScanner
         Indeterminate,
     }
 
-    private readonly record struct DecodeResult(DecodeStatus Status, string? Value)
+    private readonly record struct Base64NormalizationResult(
+        string Normalized,
+        bool IsUrlVariant,
+        bool HadPadding);
+
+    private readonly record struct DecodeResult(
+        DecodeStatus Status,
+        string? Value,
+        Base64NormalizationResult Base64)
     {
-        public static DecodeResult NotDecoded() => new(DecodeStatus.NotDecoded, null);
+        public static DecodeResult NotDecoded() => new(DecodeStatus.NotDecoded, null, default);
 
-        public static DecodeResult Decoded(string value) => new(DecodeStatus.Decoded, value);
+        public static DecodeResult Decoded(string value) => new(DecodeStatus.Decoded, value, default);
 
-        public static DecodeResult Indeterminate() => new(DecodeStatus.Indeterminate, null);
+        public static DecodeResult Indeterminate() => new(DecodeStatus.Indeterminate, null, default);
+
+        public DecodeResult WithBase64Normalization(Base64NormalizationResult normalization) =>
+            Status == DecodeStatus.Decoded ? this with { Base64 = normalization } : this;
     }
 
     private readonly record struct RedactionResult(string Value, bool IsIndeterminate)

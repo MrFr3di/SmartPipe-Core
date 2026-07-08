@@ -6,7 +6,6 @@ using SmartPipe.Core;
 namespace SmartPipe.Core.Tests.Resilience;
 
 [Trait("Category", "CorrectnessRegression")]
-[Trait("Category", "ConcurrencyRegression")]
 public class CircuitBreakerTests
 {
     [Fact]
@@ -113,6 +112,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public void CircuitBreaker_HalfOpen_AllowsUpToMaxConcurrentProbes()
     {
         var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -154,6 +154,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public void AcquirePermit_StaleHalfOpenPermitAfterReset_ShouldNotAffectClosedState()
     {
         var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -180,6 +181,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public void AcquirePermit_OldPermitCannotCloseNewHalfOpenGeneration()
     {
         var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -214,6 +216,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public void CircuitBreakerProbe_CopyDispose_DoesNotReleaseAnotherActiveProbeSlot()
     {
         var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -248,6 +251,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public void CircuitBreakerProbe_DoubleDispose_DoesNotReleaseAnotherActiveProbeSlot()
     {
         var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -331,6 +335,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task TryAcquireHalfOpenProbe_ConcurrentExpiredOpen_AllowsAtMostConfiguredProbes()
     {
         var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -370,6 +375,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task TryAcquireHalfOpenProbe_RacingExpiredOpenTransition_DoesNotResetActiveProbeCount()
     {
         var clock = new GatedManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -436,6 +442,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task AllowRequest_ConcurrentExpiredOpen_AllowsAtMostConfiguredHalfOpenRequests()
     {
         var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -596,6 +603,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public void CircuitBreaker_RatioMode_CleanupWindow_ShouldNotReorderSamples()
     {
         var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
@@ -658,6 +666,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task StressTest_CleanupWindow_RaceCondition()
     {
         // Arrange

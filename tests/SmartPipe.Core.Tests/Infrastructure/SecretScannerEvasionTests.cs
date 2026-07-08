@@ -180,7 +180,7 @@ public class SecretScannerEvasionTests
         result.Should().NotBe(secret);
         result.Should().NotContain("api_key");
         result.Should().NotContain("sk-1234567890abcdef");
-        var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(result));
+        var decoded = SecretScanner.DecodeBase64WithPadding(result);
         decoded.Should().Be("***REDACTED***");
         SecretScanner.HasSecrets(result).Should().BeFalse();
     }

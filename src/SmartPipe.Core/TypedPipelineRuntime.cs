@@ -1765,15 +1765,6 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     "Timeout retry mode is invalid.");
         }
 
-        if (retryMode == TimeoutRetryMode.CooperativeOnly)
-        {
-            if (!canRetryTimeout)
-            {
-                // Still-running cooperative attempts are already tracked above so
-                // their component is not disposed while user code is active.
-            }
-        }
-
         return stage.CreateTimedOutResult(
             current,
             _spec.LineageMode,

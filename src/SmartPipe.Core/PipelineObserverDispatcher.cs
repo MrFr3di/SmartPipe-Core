@@ -189,10 +189,10 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
 
     public async ValueTask EmitAsync(PipelineEvent pipelineEvent, CancellationToken ct)
     {
+        ThrowPipelineFaultIfRecorded();
+
         if (Volatile.Read(ref _completed) != 0)
             return;
-
-        ThrowPipelineFaultIfRecorded();
 
         if (_options.Mode == ObserverDispatchMode.BufferedBestEffort)
         {
@@ -381,6 +381,9 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
 
     private async Task DisposeCoreAsync(Task? completeTask)
     {
+        Interlocked.Exchange(ref _completed, 1);
+        _events.Writer.TryComplete();
+
         if (completeTask is not null)
         {
             try
@@ -391,15 +394,13 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
             {
                 // Recorded observer failure is surfaced through EmitAsync/CompleteAsync.
             }
-
-            _cts.Dispose();
-            return;
         }
 
-        _cts.Cancel();
-        _events.Writer.TryComplete();
         try
         {
+            if (!_worker.IsCompleted)
+                _cts.Cancel();
+
             await _worker.ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)

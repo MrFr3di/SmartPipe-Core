@@ -194,6 +194,9 @@ public class CuckooFilter
         if (InsertToBucket(primaryBucket, fingerprint) || InsertToBucket(alternateBucket, fingerprint))
             return true;
 
+        if (_numBuckets == 1)
+            return false;
+
         Span<BucketMutation> journal = stackalloc BucketMutation[MaxKicks];
         var journalCount = 0;
         var currentFingerprint = fingerprint;

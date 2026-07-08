@@ -9,6 +9,8 @@ namespace SmartPipe.Core.Tests.Core;
 
 public class SecretScannerTests
 {
+    private const string EncodedSecretPayload = "api_key='secret123'";
+
     private static string? InvokeTryDecodeBase64(string content)
     {
         var method = typeof(SecretScanner).GetMethod(
@@ -45,6 +47,80 @@ public class SecretScannerTests
     public void Scan_StringWithNoSecrets_ReturnsClean()
     {
         var result = SecretScanner.Scan("this is a clean string without secrets");
+
+        Assert.Equal(SecretScanResult.Clean, result);
+    }
+
+    [Fact]
+    public void Scan_CanonicalPaddedBase64Secret_ReturnsSecretFound()
+    {
+        var input = Convert.ToBase64String(Encoding.UTF8.GetBytes(EncodedSecretPayload));
+
+        var result = SecretScanner.Scan(input);
+
+        Assert.Equal(SecretScanResult.SecretFound, result);
+    }
+
+    [Fact]
+    public void Scan_CanonicalUnpaddedBase64Secret_ReturnsSecretFound()
+    {
+        var input = Convert.ToBase64String(Encoding.UTF8.GetBytes(EncodedSecretPayload)).TrimEnd('=');
+
+        var result = SecretScanner.Scan(input);
+
+        Assert.Equal(SecretScanResult.SecretFound, result);
+    }
+
+    [Fact]
+    public void Scan_Base64UrlPaddedSecret_ReturnsSecretFound()
+    {
+        var input = ToBase64Url(EncodedSecretPayload, padded: true);
+
+        var result = SecretScanner.Scan(input);
+
+        Assert.Equal(SecretScanResult.SecretFound, result);
+    }
+
+    [Fact]
+    public void Scan_Base64UrlUnpaddedSecret_ReturnsSecretFound()
+    {
+        var input = ToBase64Url(EncodedSecretPayload, padded: false);
+
+        var result = SecretScanner.Scan(input);
+
+        Assert.Equal(SecretScanResult.SecretFound, result);
+    }
+
+    [Fact]
+    public void Scan_CleanBase64Url_ReturnsClean()
+    {
+        var input = ToBase64Url("clean payload", padded: false);
+
+        var result = SecretScanner.Scan(input);
+
+        Assert.Equal(SecretScanResult.Clean, result);
+    }
+
+    [Fact]
+    public void Scan_Base64LengthModuloOne_DoesNotDecode()
+    {
+        var result = SecretScanner.Scan("abcde");
+
+        Assert.Equal(SecretScanResult.Clean, result);
+    }
+
+    [Fact]
+    public void Scan_Base64WithInvalidPadding_DoesNotDecode()
+    {
+        var result = SecretScanner.Scan("YWJj=ZA=");
+
+        Assert.Equal(SecretScanResult.Clean, result);
+    }
+
+    [Fact]
+    public void Scan_Base64WithMixedAlphabet_DoesNotDecode()
+    {
+        var result = SecretScanner.Scan("YWJj-ZA/");
 
         Assert.Equal(SecretScanResult.Clean, result);
     }
@@ -90,6 +166,29 @@ public class SecretScannerTests
         var encoded = "clean";
         for (var i = 0; i <= SecretScanner.MaxRecursionDepth; i++)
             encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(encoded));
+
+        var result = SecretScanner.Scan(encoded);
+
+        Assert.Equal(SecretScanResult.Indeterminate, result);
+    }
+
+    [Fact]
+    public void Scan_NestedBase64UrlBeyondRecursionLimit_ReturnsIndeterminate()
+    {
+        var encoded = "clean";
+        for (var i = 0; i <= SecretScanner.MaxRecursionDepth; i++)
+            encoded = ToBase64Url(encoded, padded: false);
+
+        var result = SecretScanner.Scan(encoded);
+
+        Assert.Equal(SecretScanResult.Indeterminate, result);
+    }
+
+    [Fact]
+    public void Scan_Base64UrlDecodedPayloadBeyondBudget_ReturnsIndeterminate()
+    {
+        var decoded = new string('a', SecretScanner.MaxDecodedBytes + 1);
+        var encoded = ToBase64Url(decoded, padded: false);
 
         var result = SecretScanner.Scan(encoded);
 
@@ -248,6 +347,51 @@ public class SecretScannerTests
     }
 
     [Fact]
+    public void Redact_CanonicalUnpaddedSecret_PreservesUnpaddedRepresentation()
+    {
+        var input = Convert.ToBase64String(Encoding.UTF8.GetBytes(EncodedSecretPayload)).TrimEnd('=');
+
+        var result = SecretScanner.Redact(input);
+        var decoded = SecretScanner.DecodeBase64WithPadding(result);
+
+        Assert.NotNull(decoded);
+        Assert.Contains("***REDACTED***", decoded);
+        Assert.DoesNotContain("secret123", decoded);
+        Assert.False(result.EndsWith("=", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Redact_Base64UrlSecret_PreservesUrlAlphabet()
+    {
+        var input = ToBase64Url(EncodedSecretPayload, padded: true);
+
+        var result = SecretScanner.Redact(input);
+        var decoded = SecretScanner.DecodeBase64WithPadding(result);
+
+        Assert.NotNull(decoded);
+        Assert.Contains("***REDACTED***", decoded);
+        Assert.DoesNotContain("secret123", decoded);
+        Assert.DoesNotContain("+", result);
+        Assert.DoesNotContain("/", result);
+    }
+
+    [Fact]
+    public void Redact_Base64UrlUnpaddedSecret_PreservesUrlAlphabetAndPaddingStyle()
+    {
+        var input = ToBase64Url(EncodedSecretPayload, padded: false);
+
+        var result = SecretScanner.Redact(input);
+        var decoded = SecretScanner.DecodeBase64WithPadding(result);
+
+        Assert.NotNull(decoded);
+        Assert.Contains("***REDACTED***", decoded);
+        Assert.DoesNotContain("secret123", decoded);
+        Assert.DoesNotContain("+", result);
+        Assert.DoesNotContain("/", result);
+        Assert.DoesNotContain("=", result);
+    }
+
+    [Fact]
     public void TryDecodeBase64_RawAwsKey_ReturnsNull()
     {
         var awsKey = "AKIA1234567890ABCDEF";
@@ -323,8 +467,7 @@ public class SecretScannerTests
     [Fact]
     public void TryDecodeBase64_LengthNotMultipleOf4_ReturnsNull()
     {
-        // "abc" has length 3, which is not a multiple of 4
-        var input = "abc";
+        var input = "abcde";
 
         var result = InvokeTryDecodeBase64(input);
 
@@ -360,5 +503,13 @@ public class SecretScannerTests
         var result = InvokeTryDecodeUrl(input);
 
         Assert.Null(result);
+    }
+
+    private static string ToBase64Url(string value, bool padded)
+    {
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(value))
+            .Replace('+', '-')
+            .Replace('/', '_');
+        return padded ? encoded : encoded.TrimEnd('=');
     }
 }

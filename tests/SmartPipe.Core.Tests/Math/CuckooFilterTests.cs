@@ -5,7 +5,6 @@ using System.Reflection;
 namespace SmartPipe.Core.Tests.Math;
 
 [Trait("Category", "CorrectnessRegression")]
-[Trait("Category", "ConcurrencyRegression")]
 public class CuckooFilterTests
 {
     [Fact]
@@ -134,6 +133,31 @@ public class CuckooFilterTests
     }
 
     [Fact]
+    public void FailedAdd_SingleBucket_ShouldReturnWithoutKickLoopAndPreserveState()
+    {
+        var filter = new CuckooFilter(expectedItems: 1);
+        GetBucketCount(filter).Should().Be(1);
+        var inserted = new List<ulong>();
+
+        for (ulong value = 1; value < 10_000 && filter.Count < 4; value++)
+        {
+            if (filter.Add(value))
+                inserted.Add(value);
+        }
+
+        inserted.Should().HaveCount(4);
+        var beforeBuckets = CaptureBuckets(filter);
+        var beforeCount = filter.Count;
+
+        filter.Add(10_001UL).Should().BeFalse();
+
+        BucketsShouldEqual(CaptureBuckets(filter), beforeBuckets);
+        filter.Count.Should().Be(beforeCount);
+        foreach (var value in inserted)
+            filter.Contains(value).Should().BeTrue();
+    }
+
+    [Fact]
     public void AlternateBucket_MustBeInvolution()
     {
         var filter = new CuckooFilter(expectedItems: 100);
@@ -240,6 +264,7 @@ public class CuckooFilterTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public void ThreadSafe_AddRemove()
     {
         var filter = new CuckooFilter(expectedItems: 1000);
