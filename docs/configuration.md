@@ -57,7 +57,7 @@ adaptive limit changes; `Cooldown` remains as a compatibility alias. The current
 model is completion-based: the runtime records each envelope completion and
 does not run a background sampling loop or periodic timer.
 Retry attempts remain observable through retry metrics and events, but retry
-counts are not adaptive admission signals in `2.1.0`.
+counts are not adaptive admission signals.
 
 | Option | Default | Notes |
 |---|---:|---|

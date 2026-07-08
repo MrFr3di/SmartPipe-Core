@@ -1,10 +1,9 @@
 # Changelog
 
-## [2.1.1] — Unreleased
+## [2.1.1] — 2026-07-08
 
-`v2.1.0` remains the tagged release. `2.1.1` is the patch line for
-post-review correctness, compatibility, and documentation fixes found after
-that tag.
+Patch release for post-review correctness, compatibility, CI, and documentation
+fixes found after `v2.1.0`.
 
 ### Correctness Fixes
 
@@ -57,6 +56,18 @@ that tag.
 - **CuckooFilter and ObjectPool claims** — older changelog entries remain
   historical release notes. Current docs do not restate ObjectPool ABA or
   Cuckoo insertion guarantees beyond what the current source and tests cover.
+
+### Testing & Release Validation
+
+- **Public API baselines** — Core and Extensions baselines were refreshed for
+  analyzer-visible public surface, including record-generated members, so
+  Release warning-as-error builds validate the `2.1.1` contract.
+- **CI coverage split** — long-running Core stress tests now run outside the
+  coverage job, keeping concurrency regression checks in CI without
+  destabilizing coverage collection.
+- **Package and publish gates** — release workflows continue to validate
+  packages through local consumer, trim, NativeAOT, vulnerability, and
+  deprecated-package checks before publish.
 
 ### Source-Backed Notes
 
