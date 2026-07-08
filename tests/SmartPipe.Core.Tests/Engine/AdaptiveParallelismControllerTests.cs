@@ -20,9 +20,11 @@ public sealed class AdaptiveParallelismControllerTests
             options.AdaptiveParallelism.MaxConcurrency);
         options.AdaptiveParallelism.TargetLatency.Should().BeGreaterThan(TimeSpan.Zero);
         options.AdaptiveParallelism.DeadZone.Should().BeGreaterThan(TimeSpan.Zero);
-        options.AdaptiveParallelism.Cooldown.Should().BeGreaterThan(TimeSpan.Zero);
+        options.AdaptiveParallelism.EvaluationInterval.Should().BeGreaterThan(TimeSpan.Zero);
+        options.AdaptiveParallelism.AdjustmentCooldown.Should().BeGreaterThan(TimeSpan.Zero);
         options.AdaptiveParallelism.MaxAdjustmentStep.Should().Be(1);
         options.AdaptiveParallelism.FailurePressureThreshold.Should().Be(0.10);
+        options.AdaptiveParallelism.MinimumFailureSamples.Should().Be(10);
         options.AdaptiveParallelism.MinSmoothingFactor.Should().Be(0.2);
     }
 
@@ -54,7 +56,7 @@ public sealed class AdaptiveParallelismControllerTests
     [Theory]
     [InlineData(0, 5, 100, "TargetLatency")]
     [InlineData(100, 0, 100, "DeadZone")]
-    [InlineData(100, 5, 0, "Cooldown")]
+    [InlineData(100, 5, 0, "AdjustmentCooldown")]
     public void PipelineRuntimeOptions_Validate_RejectsInvalidAdaptiveTiming(
         int targetLatencyMs,
         int deadZoneMs,
@@ -73,6 +75,24 @@ public sealed class AdaptiveParallelismControllerTests
 
         act.Should().Throw<ArgumentOutOfRangeException>()
             .Which.ParamName.Should().Be(paramName);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void PipelineRuntimeOptions_Validate_RejectsInvalidAdaptiveEvaluationInterval(
+        int evaluationIntervalMs)
+    {
+        var options = new PipelineRuntimeOptions
+        {
+            AdaptiveParallelism = ValidOptions(
+                evaluationInterval: TimeSpan.FromMilliseconds(evaluationIntervalMs)),
+        };
+
+        var act = () => options.Validate();
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .Which.ParamName.Should().Be("EvaluationInterval");
     }
 
     [Theory]
@@ -132,6 +152,23 @@ public sealed class AdaptiveParallelismControllerTests
 
         act.Should().Throw<ArgumentOutOfRangeException>()
             .Which.ParamName.Should().Be("MinSmoothingFactor");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void PipelineRuntimeOptions_Validate_RejectsInvalidAdaptiveMinimumFailureSamples(
+        int minimumFailureSamples)
+    {
+        var options = new PipelineRuntimeOptions
+        {
+            AdaptiveParallelism = ValidOptions(minimumFailureSamples: minimumFailureSamples),
+        };
+
+        var act = () => options.Validate();
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .Which.ParamName.Should().Be("MinimumFailureSamples");
     }
 
     [Fact]
@@ -416,25 +453,27 @@ public sealed class AdaptiveParallelismControllerTests
     }
 
     [Fact]
-    public void Decide_ZeroProcessedWithFailure_CountsAsPressure()
+    public void Decide_BelowMinimumFailureSamples_DoesNotCountAsPressure()
     {
-        var controller = new AdaptiveParallelismController(ValidOptions());
+        var controller = new AdaptiveParallelismController(ValidOptions(minimumFailureSamples: 10));
 
         var decision = controller.Decide(Snapshot(
             currentLimit: 4,
             latency: TimeSpan.FromMilliseconds(20),
             sinceLastDecision: TimeSpan.FromSeconds(10),
-            processedDelta: 0,
-            failedDelta: 1));
+            processedDelta: 9,
+            failedDelta: 9));
 
-        decision.TargetConcurrency.Should().Be(3);
-        decision.Reason.Should().Be(AdaptiveParallelismDecisionReason.FailurePressure);
+        decision.TargetConcurrency.Should().Be(5);
+        decision.Reason.Should().Be(AdaptiveParallelismDecisionReason.LowLatency);
     }
 
     [Fact]
     public void Decide_FailurePressureAtThreshold_CountsAsPressure()
     {
-        var controller = new AdaptiveParallelismController(ValidOptions(failurePressureThreshold: 0.25));
+        var controller = new AdaptiveParallelismController(ValidOptions(
+            failurePressureThreshold: 0.25,
+            minimumFailureSamples: 1));
 
         var decision = controller.Decide(Snapshot(
             currentLimit: 4,
@@ -450,7 +489,9 @@ public sealed class AdaptiveParallelismControllerTests
     [Fact]
     public void Decide_FailurePressureBelowThreshold_DoesNotCountAsPressure()
     {
-        var controller = new AdaptiveParallelismController(ValidOptions(failurePressureThreshold: 0.25));
+        var controller = new AdaptiveParallelismController(ValidOptions(
+            failurePressureThreshold: 0.25,
+            minimumFailureSamples: 1));
 
         var decision = controller.Decide(Snapshot(
             currentLimit: 4,
@@ -484,9 +525,11 @@ public sealed class AdaptiveParallelismControllerTests
         int initialConcurrency = 4,
         TimeSpan? targetLatency = null,
         TimeSpan? deadZone = null,
+        TimeSpan? evaluationInterval = null,
         TimeSpan? cooldown = null,
         int maxAdjustmentStep = 1,
         double failurePressureThreshold = 0.10,
+        int minimumFailureSamples = 10,
         double minSmoothingFactor = 0.2) =>
         new()
         {
@@ -496,9 +539,11 @@ public sealed class AdaptiveParallelismControllerTests
             InitialConcurrency = initialConcurrency,
             TargetLatency = targetLatency ?? TimeSpan.FromMilliseconds(100),
             DeadZone = deadZone ?? TimeSpan.FromMilliseconds(5),
-            Cooldown = cooldown ?? TimeSpan.FromMilliseconds(100),
+            EvaluationInterval = evaluationInterval ?? TimeSpan.FromMilliseconds(100),
+            AdjustmentCooldown = cooldown ?? TimeSpan.FromMilliseconds(100),
             MaxAdjustmentStep = maxAdjustmentStep,
             FailurePressureThreshold = failurePressureThreshold,
+            MinimumFailureSamples = minimumFailureSamples,
             MinSmoothingFactor = minSmoothingFactor,
         };
 

@@ -1,5 +1,7 @@
 #nullable enable
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http;
+using System.Reflection;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +15,7 @@ using Xunit;
 
 namespace SmartPipe.Extensions.Tests.Sources;
 
+[Trait("Category", "CorrectnessRegression")]
 public partial class HttpSelectorTests
 {
     [Fact]
@@ -245,6 +248,91 @@ public partial class HttpSelectorTests
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task ReadAsync_LogsAbsoluteUriWithoutUserInfoQueryOrFragment()
+    {
+        var client = CreateJsonClient("[]");
+        var logger = new ListLogger<HttpSelector<string>>();
+        var selector = new HttpSelector<string>(
+            client,
+            "https://user:password@example.com:8443/orders/list?api_key=secret#frag",
+            HttpSelectorTestJsonContext.Default.ListString,
+            pipeline: null,
+            logger);
+
+        await foreach (var item in selector.ReadEnvelopesAsync()) { }
+
+        var logs = string.Join('\n', logger.Messages);
+        Assert.Contains("https://example.com:8443/orders/list", logs);
+        Assert.DoesNotContain("user", logs);
+        Assert.DoesNotContain("password", logs);
+        Assert.DoesNotContain("api_key", logs);
+        Assert.DoesNotContain("secret", logs);
+        Assert.DoesNotContain("frag", logs);
+    }
+
+    [Fact]
+    public async Task ReadAsync_LogsRelativeUriWithoutQueryOrFragment()
+    {
+        var client = CreateJsonClient("[]");
+        client.BaseAddress = new Uri("https://example.com");
+        var logger = new ListLogger<HttpSelector<string>>();
+        var selector = new HttpSelector<string>(
+            client,
+            "/orders?api_key=secret#frag",
+            HttpSelectorTestJsonContext.Default.ListString,
+            pipeline: null,
+            logger);
+
+        await foreach (var item in selector.ReadEnvelopesAsync()) { }
+
+        var logs = string.Join('\n', logger.Messages);
+        Assert.Contains("/orders", logs);
+        Assert.DoesNotContain("api_key", logs);
+        Assert.DoesNotContain("secret", logs);
+        Assert.DoesNotContain("frag", logs);
+    }
+
+    [Fact]
+    public async Task ReadAsync_LogsUnparseableUriPlaceholderWithoutOriginalValue()
+    {
+        var logger = new ListLogger<HttpSelector<string>>();
+        var selector = new HttpSelector<string>(
+            new HttpClient(),
+            "https://[::1/orders?api_key=secret#frag",
+            HttpSelectorTestJsonContext.Default.ListString,
+            pipeline: null,
+            logger);
+
+        await Assert.ThrowsAnyAsync<Exception>(async () =>
+        {
+            await foreach (var item in selector.ReadEnvelopesAsync()) { }
+        });
+
+        var logs = string.Join('\n', logger.Messages);
+        Assert.Contains("[unparseable-uri]", logs);
+        Assert.DoesNotContain("https://[::1", logs);
+        Assert.DoesNotContain("api_key", logs);
+        Assert.DoesNotContain("secret", logs);
+        Assert.DoesNotContain("frag", logs);
+    }
+
+    [Fact]
+    public void ReflectionJsonConstructors_AreAnnotatedForTrimAndAot()
+    {
+        AssertReflectionConstructorIsAnnotated(typeof(HttpClient), typeof(string));
+        AssertReflectionConstructorIsAnnotated(typeof(HttpClient), typeof(string), typeof(ResiliencePipeline));
+        AssertReflectionConstructorIsAnnotated(
+            typeof(HttpClient),
+            typeof(string),
+            typeof(ILogger<HttpSelector<string>>));
+        AssertReflectionConstructorIsAnnotated(
+            typeof(HttpClient),
+            typeof(string),
+            typeof(ResiliencePipeline),
+            typeof(ILogger<HttpSelector<string>>));
     }
 
     [Fact]
@@ -491,13 +579,69 @@ public partial class HttpSelectorTests
         factory.Verify(x => x.CreateClient("orders"), Times.Once);
     }
 
+    private static HttpClient CreateJsonClient(string content)
+    {
+        var mockHandler = new Mock<HttpMessageHandler>();
+        mockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = System.Net.HttpStatusCode.OK,
+                Content = new StringContent(content)
+            });
+        return new HttpClient(mockHandler.Object);
+    }
+
+    private static void AssertReflectionConstructorIsAnnotated(params Type[] parameterTypes)
+    {
+        var constructor = typeof(HttpSelector<string>).GetConstructor(parameterTypes);
+        Assert.NotNull(constructor);
+        Assert.NotNull(constructor.GetCustomAttribute<RequiresUnreferencedCodeAttribute>());
+        Assert.NotNull(constructor.GetCustomAttribute<RequiresDynamicCodeAttribute>());
+    }
+
     private class TestComplexType
     {
         public int Id { get; set; }
         public string? Name { get; set; }
     }
 
+    private sealed class ListLogger<TCategory> : ILogger<TCategory>
+    {
+        private readonly List<string> _messages = [];
+
+        public IReadOnlyList<string> Messages => _messages;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull =>
+            NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            _messages.Add(formatter(state, exception));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+
+            public void Dispose()
+            {
+            }
+        }
+    }
+
     [JsonSerializable(typeof(string))]
+    [JsonSerializable(typeof(List<string>))]
     [JsonSerializable(typeof(List<TestComplexType>))]
     private sealed partial class HttpSelectorTestJsonContext : JsonSerializerContext;
 }

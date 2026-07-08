@@ -4,9 +4,9 @@ Typed in-process streaming pipelines for .NET.
 
 SmartPipe.Core runs explicit `source -> transform -> sink` pipelines inside your
 process with bounded channels, envelope metadata, retry/timeout/circuit-breaker
-stage handling, observer events, metrics snapshots, and replay-safe dead-letter
-records. It is not a distributed workflow engine, message broker, durable queue,
-or exactly-once delivery system.
+stage handling, observer events, metrics snapshots, and dead-letter records
+with replay context. It is not a distributed workflow engine, message broker,
+durable queue, or exactly-once delivery system.
 
 [![CI](https://github.com/MrFr3di/SmartPipe-Core/actions/workflows/ci.yml/badge.svg)](https://github.com/MrFr3di/SmartPipe-Core/actions)
 [![NuGet Core](https://img.shields.io/nuget/v/SmartPipe.Core.svg)](https://www.nuget.org/packages/SmartPipe.Core)
@@ -64,6 +64,11 @@ For the `OutputMode` compatibility deprecation policy and migration map, see
 | Stage timeout | Treated as transient failure; subject to retry policy. |
 | Circuit breaker rejection | Terminal for the current item; not retried into the open breaker. |
 | Dead-letter action | Requires `StageDeadLetterOptions<T>`; the action fails the run if misconfigured. |
+
+Dead-letter records preserve replay context, but persistence durability depends
+on the configured sink and storage. Path-backed dead-letter and JSON file sinks
+provide in-process exception rollback on seekable streams; they do not provide
+crash-atomic file replacement.
 
 ### Lifecycle Semantics
 
@@ -191,7 +196,8 @@ services
 
 The health check reads the typed run state and immutable metrics snapshot. It
 reports high queue utilization or stale processing as degraded and faulted runs
-as unhealthy.
+as unhealthy. Running pipelines with no initial activity remain healthy by
+default unless `RequireInitialActivity` is enabled.
 
 Hosted-service pipeline faults are configurable through
 `SmartPipeHostedServiceOptions`. The default `FailureBehavior` is
@@ -201,14 +207,18 @@ of being logged and swallowed.
 Lossy bounded channel modes are observable. Input, output, and buffered
 observer drops record `smartpipe.items.dropped`,
 `smartpipe.output.items.dropped`, and `smartpipe.observer.events.dropped`.
+Queue depths in metrics snapshots are point-in-time pressure indicators, not
+durable work accounting.
 
 ## AOT And Trimming
 
 SmartPipe.Core is AOT-conscious and analyzer-gated.
 
-Reflection-based JSON file and dead-letter helpers are annotated with
+Reflection-based HTTP, JSON file, and dead-letter helpers are annotated with
 `RequiresUnreferencedCode` / `RequiresDynamicCode`. Use constructors that accept
 source-generated `JsonTypeInfo` for NativeAOT or trimming-sensitive consumers.
+`JsonFileSink<T>` writes newline-delimited JSON batches: one JSON array per
+flushed batch.
 
 Some SmartPipe.Extensions integrations may require source-generated serializers
 or may not be AOT-friendly.

@@ -22,6 +22,8 @@ services
 when a run starts. The monitor exposes immutable snapshots containing:
 
 - `PipelineRunState`;
+- `StartedAtUtc`;
+- `LastActivityAtUtc`;
 - `LastProcessedAtUtc`;
 - `InputQueueDepth` and `OutputQueueDepth`;
 - `ItemsFailed`;
@@ -37,12 +39,26 @@ when a run starts. The monitor exposes immutable snapshots containing:
 - Queue depth reports `Degraded` when input or output utilization is greater
   than or equal to `QueueUtilizationDegradedThreshold`.
 - Running or draining pipelines report `Degraded` when
-  `LastProcessedAtUtc` is older than `StaleAfter`.
+  `LastActivityAtUtc` is older than `StaleAfter`.
+- Running or draining pipelines with no activity report `Degraded` after
+  `InitialActivityGracePeriod` only when `RequireInitialActivity` is `true`.
 - Otherwise the pipeline reports `Healthy`.
 
 Queue checks are capacity-aware. The default degraded threshold is `0.80`,
 `StaleAfter` defaults to 30 seconds, and not-started pipelines default to
-degraded.
+degraded. `RequireInitialActivity` defaults to `false`, so idle event-driven
+pipelines remain healthy until they fault, report high queue utilization, or
+report stale activity after activity has occurred.
+
+Queue depths are observational point-in-time samples from runtime channels.
+Health checks should treat them as current pressure indicators, not as durable
+work accounting or synchronization guarantees.
+
+Runtime clock settings create run, activity, and snapshot timestamps. The
+health-check `TimeProvider` defines the instant used for stale and initial
+activity policy evaluation. Production hosts should normally use system UTC for
+both clocks. Custom providers are intended for deterministic tests and
+controlled hosts.
 
 For hosted services, `SmartPipeHostedFailureBehavior.MarkUnhealthyAndKeepHostAlive`
 keeps the host process alive after a pipeline fault; the tracked run state then
@@ -54,9 +70,11 @@ services.Configure<SmartPipeHealthCheckOptions>(options =>
     options.QueueUtilizationDegradedThreshold = 0.90;
     options.StaleAfter = TimeSpan.FromMinutes(1);
     options.TreatNotStartedAsDegraded = false;
+    options.RequireInitialActivity = true;
+    options.InitialActivityGracePeriod = TimeSpan.FromMinutes(2);
 });
 ```
 
 The health-check data payload includes the pipeline id, run state, queue
-depths, capacities, failed count, dead-lettered count, and last processed
-timestamp.
+depths, capacities, failed count, dead-lettered count, started timestamp, last
+activity timestamp, and last processed timestamp.

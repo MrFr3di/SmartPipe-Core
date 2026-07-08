@@ -53,6 +53,8 @@ public sealed class TimeProviderPipelineClock : IPipelineClock
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
+    internal TimeProvider TimeProvider => _timeProvider;
+
     /// <inheritdoc />
     public DateTimeOffset GetUtcNow() => _timeProvider.GetUtcNow();
 
@@ -134,6 +136,20 @@ public sealed class ObserverDispatchOptions
 
         if (Mode == ObserverDispatchMode.BufferedReliable && !FlushOnCompletion)
             throw new ArgumentException("BufferedReliable requires FlushOnCompletion = true.");
+
+        if (Mode == ObserverDispatchMode.BufferedReliable
+            && FullMode != BoundedChannelFullMode.Wait)
+        {
+            throw new ArgumentException("BufferedReliable requires FullMode = Wait.");
+        }
+
+        if (Mode == ObserverDispatchMode.BufferedBestEffort
+            && FlushOnCompletion
+            && FullMode != BoundedChannelFullMode.Wait)
+        {
+            throw new ArgumentException(
+                "BufferedBestEffort drop full modes require FlushOnCompletion = false.");
+        }
 
         if (BestEffortWriteTimeout < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(

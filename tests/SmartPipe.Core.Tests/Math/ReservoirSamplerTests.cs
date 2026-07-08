@@ -5,6 +5,17 @@ namespace SmartPipe.Core.Tests.Math;
 
 public class ReservoirSamplerTests
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenCapacityIsInvalid(int capacity)
+    {
+        var act = () => new ReservoirSampler<int>(capacity);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("capacity");
+    }
+
     [Fact]
     public void Add_LessThanCapacity_ShouldStoreAll()
     {
@@ -14,6 +25,30 @@ public class ReservoirSamplerTests
 
         sampler.Count.Should().Be(5);
         sampler.Sample.Take(5).Should().BeEquivalentTo([0, 1, 2, 3, 4]);
+    }
+
+    [Fact]
+    public void Sample_ShouldReturnSnapshotWithOnlyPopulatedItems()
+    {
+        var sampler = new ReservoirSampler<int>(10);
+        sampler.Add(1);
+        sampler.Add(2);
+        sampler.Add(3);
+
+        sampler.Sample.Should().Equal([1, 2, 3]);
+    }
+
+    [Fact]
+    public void GetSampleSnapshot_ShouldReturnCopy()
+    {
+        var sampler = new ReservoirSampler<int>(10);
+        sampler.Add(1);
+        sampler.Add(2);
+
+        var snapshot = sampler.GetSampleSnapshot();
+        snapshot[0] = 42;
+
+        sampler.GetSampleSnapshot().Should().Equal([1, 2]);
     }
 
     [Fact]
@@ -36,6 +71,7 @@ public class ReservoirSamplerTests
 
         sampler.Reset();
         sampler.Count.Should().Be(0);
+        sampler.GetSampleSnapshot().Should().BeEmpty();
     }
 
     [Fact]

@@ -10,10 +10,14 @@ namespace SmartPipe.Core;
 /// Thread-safe: all public methods synchronize access to the internal bucket array.</summary>
 public class CuckooFilter
 {
-    private const int BucketSize = 4,
-        MaxKicks = 500;
+    private const int BucketSize = 4;
+    private const int MaxKicks = 500;
+    private const double TargetLoadFactor = 0.95;
+
     private readonly uint[,] _buckets;
     private readonly int _numBuckets;
+    private readonly int _bucketMask;
+    private readonly int _fingerprintBits;
     private long _count;
     private readonly Lock _syncRoot = new(); // Protects _buckets and _count consistency
 
@@ -25,90 +29,80 @@ public class CuckooFilter
     /// <param name="falsePositiveRate">Desired false positive rate (default: 0.001).</param>
     public CuckooFilter(long expectedItems = 1_000_000, double falsePositiveRate = 0.001)
     {
-        _numBuckets = Math.Max(1, (int)(expectedItems / BucketSize * 1.1));
+        if (expectedItems <= 0)
+            throw new ArgumentOutOfRangeException(nameof(expectedItems), expectedItems, "Expected item count must be positive.");
+        if (!double.IsFinite(falsePositiveRate) || falsePositiveRate <= 0 || falsePositiveRate >= 1)
+            throw new ArgumentOutOfRangeException(nameof(falsePositiveRate), falsePositiveRate, "False positive rate must be finite and between 0 and 1.");
+
+        var rawBits = Math.Ceiling(Math.Log2(2.0 * BucketSize / falsePositiveRate));
+        if (!double.IsFinite(rawBits) || rawBits > 32)
+            throw new ArgumentOutOfRangeException(nameof(falsePositiveRate), falsePositiveRate, "False positive rate requires more than 32 fingerprint bits.");
+
+        var bits = (int)rawBits;
+        _fingerprintBits = Math.Max(1, bits);
+
+        var requiredBuckets = Math.Ceiling(expectedItems / (BucketSize * TargetLoadFactor));
+        _numBuckets = RoundUpToPowerOfTwo(checked((long)requiredBuckets));
+        _bucketMask = _numBuckets - 1;
         _buckets = new uint[_numBuckets, BucketSize];
     }
 
-    /// <summary>Insert item fingerprint into filter.</summary>
-    /// <param name="fp">Fingerprint of the item.</param>
+    /// <summary>Insert an item into the filter.</summary>
+    /// <param name="fp">Input value used to derive the item fingerprint.</param>
     /// <returns>True if inserted successfully.</returns>
+    /// <remarks>
+    /// Membership is approximate and can false-positive. Adding the same input more than once may
+    /// consume more than one bucket slot because duplicate detection is not exact.
+    /// </remarks>
     public bool Add(ulong fp)
     {
+        var hash = Mix64(fp);
+        var primaryBucket = (int)hash & _bucketMask;
+        var fingerprint = ExtractFingerprint(hash, _fingerprintBits);
+
         lock (_syncRoot)
         {
-            uint f = Fingerprint(fp);
-            int i1 = BucketIndex(f, 0);
-            int i2 = (i1 ^ BucketIndex(f, 1)) % _numBuckets;
-            if (InsertToBucket(i1, f) || InsertToBucket(i2, f))
+            if (TryInsertFingerprint(primaryBucket, fingerprint, hash))
             {
                 Interlocked.Increment(ref _count);
                 return true;
             }
 
-            int i = (fp % 2 == 0) ? i1 : i2;
-            for (int n = 0; n < MaxKicks; n++)
-            {
-                int slot = (int)(fp >> 32) % BucketSize;
-                uint evicted = _buckets[i, slot];
-                _buckets[i, slot] = f;
-                f = evicted;
-                i = (i ^ BucketIndex(f, 1)) % _numBuckets;
-                if (InsertToBucket(i, f))
-                {
-                    Interlocked.Increment(ref _count);
-                    return true;
-                }
-            }
             return false;
         }
     }
 
-    /// <summary>Check if item fingerprint exists.</summary>
-    /// <param name="fp">Fingerprint of the item.</param>
+    /// <summary>Check if an item is probably present.</summary>
+    /// <param name="fp">Input value used to derive the item fingerprint.</param>
     /// <returns>True if the item probably exists.</returns>
+    /// <remarks>Membership is approximate and can false-positive.</remarks>
     public bool Contains(ulong fp)
     {
+        GetBucketPair(fp, out var primaryBucket, out var alternateBucket, out var fingerprint);
+
         lock (_syncRoot)
         {
-            uint f = Fingerprint(fp);
-            int i1 = BucketIndex(f, 0);
-            int i2 = (i1 ^ BucketIndex(f, 1)) % _numBuckets;
-            return BucketContains(i1, f) || BucketContains(i2, f);
+            return BucketContains(primaryBucket, fingerprint) || BucketContains(alternateBucket, fingerprint);
         }
     }
 
-    /// <summary>Remove item fingerprint from filter.</summary>
-    /// <param name="fp">Fingerprint of the item.</param>
+    /// <summary>Remove one matching item fingerprint from the filter.</summary>
+    /// <param name="fp">Input value used to derive the item fingerprint.</param>
     /// <returns>True if removed successfully.</returns>
+    /// <remarks>Remove deletes one fingerprint entry. Duplicate adds may require multiple removes.</remarks>
     public bool Remove(ulong fp)
     {
+        GetBucketPair(fp, out var primaryBucket, out var alternateBucket, out var fingerprint);
+
         lock (_syncRoot)
         {
-            uint f = Fingerprint(fp);
-            int i1 = BucketIndex(f, 0);
-            int i2 = (i1 ^ BucketIndex(f, 1)) % _numBuckets;
-            if (RemoveFromBucket(i1, f) || RemoveFromBucket(i2, f))
+            if (RemoveFromBucket(primaryBucket, fingerprint) || RemoveFromBucket(alternateBucket, fingerprint))
             {
                 Interlocked.Decrement(ref _count);
                 return true;
             }
             return false;
         }
-    }
-
-    private static uint Fingerprint(ulong fp)
-    {
-        uint f = (uint)(fp & 0xFFFFFFFF);
-        return f == 0 ? 1u : f; // Ensure non-zero fingerprint
-    }
-
-    private int BucketIndex(uint f, int seed)
-    {
-        ulong x = f;
-        x ^= seed == 0 ? 0x9E3779B9u : 0x85EBCA6Bu;
-        x *= 0xBF58476D1CE4E5B9;
-        x ^= x >> 27;
-        return (int)(x % (ulong)_numBuckets);
     }
 
     private bool InsertToBucket(int b, uint f)
@@ -147,88 +141,162 @@ public class CuckooFilter
     {
         if (other == null)
             throw new ArgumentNullException(nameof(other));
-        if (_numBuckets != other._numBuckets)
-            throw new ArgumentException("Cannot merge filters with different bucket counts.");
+        if (ReferenceEquals(this, other))
+            return;
+        if (_numBuckets != other._numBuckets || _fingerprintBits != other._fingerprintBits)
+            throw new ArgumentException("Cannot merge filters with incompatible layouts.", nameof(other));
 
-        lock (_syncRoot) // synchronize for the whole merge operation
+        var sourceEntries = other.SnapshotEntries();
+
+        lock (_syncRoot)
         {
-            // For each fingerprint in the other filter
-            for (int b = 0; b < other._numBuckets; b++)
-                for (int s = 0; s < BucketSize; s++)
-                    MergeFingerprint(other._buckets[b, s]);
+            var bucketSnapshot = (uint[,])_buckets.Clone();
+            var countSnapshot = Interlocked.Read(ref _count);
+
+            foreach (var entry in sourceEntries)
+            {
+                if (TryInsertFingerprint(entry.SourceBucket, entry.Fingerprint, MergeSeed(entry)))
+                {
+                    Interlocked.Increment(ref _count);
+                    continue;
+                }
+
+                Array.Copy(bucketSnapshot, _buckets, bucketSnapshot.Length);
+                Interlocked.Exchange(ref _count, countSnapshot);
+                throw new InvalidOperationException("Cannot merge filters because the destination cannot fit all source entries.");
+            }
         }
     }
 
-    private void MergeFingerprint(uint fp)
+    private void GetBucketPair(ulong value, out int primaryBucket, out int alternateBucket, out uint fingerprint)
     {
-        if (fp == 0)
-            return;
-
-        int i1 = BucketIndex(fp, 0);
-        int i2 = (i1 ^ BucketIndex(fp, 1)) % _numBuckets;
-
-        // Прямой поиск вместо Contains (уже под локом)
-        if (BucketContains(i1, fp) || BucketContains(i2, fp))
-            return;
-
-        if (TryInsertToBuckets(fp, i1, i2))
-            return;
-
-        if (CuckooKick(fp, i1, 5000) || CuckooKick(fp, i2, 5000))
-            Interlocked.Increment(ref _count);
+        var hash = Mix64(value);
+        primaryBucket = (int)hash & _bucketMask;
+        fingerprint = ExtractFingerprint(hash, _fingerprintBits);
+        alternateBucket = AlternateBucket(primaryBucket, fingerprint);
     }
 
-    private bool TryInsertToBuckets(uint fp, int i1, int i2)
+    private int AlternateBucket(int bucket, uint fingerprint)
     {
-        if (InsertToBucket(i1, fp) || InsertToBucket(i2, fp))
-        {
-            Interlocked.Increment(ref _count);
+        if (_numBuckets == 1)
+            return 0;
+
+        var delta = (int)MixFingerprint(fingerprint) & _bucketMask;
+        if (delta == 0)
+            delta = 1;
+
+        return bucket ^ delta;
+    }
+
+    private bool TryInsertFingerprint(int primaryBucket, uint fingerprint, ulong seed)
+    {
+        var alternateBucket = AlternateBucket(primaryBucket, fingerprint);
+        if (InsertToBucket(primaryBucket, fingerprint) || InsertToBucket(alternateBucket, fingerprint))
             return true;
-        }
-        return false;
-    }
 
-    /// <summary>
-    /// Perform cuckoo kicking to insert a fingerprint.
-    /// </summary>
-    private bool CuckooKick(uint fp, int startBucket, int maxKicks)
-    {
-        uint currentFp = fp;
-        int currentBucket = startBucket;
+        if (_numBuckets == 1)
+            return false;
 
-        for (int n = 0; n < maxKicks; n++)
+        Span<BucketMutation> journal = stackalloc BucketMutation[MaxKicks];
+        var journalCount = 0;
+        var currentFingerprint = fingerprint;
+        var currentBucket = (seed & 1) == 0 ? primaryBucket : alternateBucket;
+
+        for (var kick = 0; kick < MaxKicks; kick++)
         {
-            int slot = n % BucketSize;
-            if (EvictAndInsertSlot(ref currentFp, ref currentBucket, slot))
+            var slot = (int)(Mix64(seed + (ulong)kick) % BucketSize);
+            var evicted = _buckets[currentBucket, slot];
+            journal[journalCount++] = new BucketMutation(currentBucket, slot, evicted);
+            _buckets[currentBucket, slot] = currentFingerprint;
+
+            currentFingerprint = evicted;
+            currentBucket = AlternateBucket(currentBucket, currentFingerprint);
+
+            if (InsertToBucket(currentBucket, currentFingerprint))
                 return true;
         }
 
+        RestoreMutations(journal[..journalCount]);
         return false;
     }
 
-    private bool EvictAndInsertSlot(ref uint currentFp, ref int currentBucket, int slot)
+    private void RestoreMutations(ReadOnlySpan<BucketMutation> mutations)
     {
-        uint evicted = _buckets[currentBucket, slot];
+        for (var i = mutations.Length - 1; i >= 0; i--)
+            _buckets[mutations[i].Bucket, mutations[i].Slot] = mutations[i].PreviousFingerprint;
+    }
 
-        if (evicted == 0)
+    private BucketEntry[] SnapshotEntries()
+    {
+        lock (_syncRoot)
         {
-            _buckets[currentBucket, slot] = currentFp;
-            return true;
+            var entryCount = 0;
+            for (var bucket = 0; bucket < _numBuckets; bucket++)
+                for (var slot = 0; slot < BucketSize; slot++)
+                    if (_buckets[bucket, slot] != 0)
+                        entryCount++;
+
+            var entries = new BucketEntry[entryCount];
+            var index = 0;
+            for (var bucket = 0; bucket < _numBuckets; bucket++)
+                for (var slot = 0; slot < BucketSize; slot++)
+                {
+                    var fingerprint = _buckets[bucket, slot];
+                    if (fingerprint != 0)
+                        entries[index++] = new BucketEntry(bucket, fingerprint);
+                }
+
+            return entries;
         }
+    }
 
-        _buckets[currentBucket, slot] = currentFp;
-        int nextBucket = (currentBucket ^ BucketIndex(evicted, 1)) % _numBuckets;
+    private static uint ExtractFingerprint(ulong hash, int bits)
+    {
+        var fingerprint = (uint)(hash >> (64 - bits));
+        return fingerprint == 0 ? 1u : fingerprint;
+    }
 
-        // Try to insert the evicted fingerprint into its alternate bucket
-        if (InsertToBucket(nextBucket, evicted))
+    private static ulong MixFingerprint(uint fingerprint) => Mix64(fingerprint);
+
+    private static ulong MergeSeed(BucketEntry entry) => MixFingerprint(entry.Fingerprint) ^ (uint)entry.SourceBucket;
+
+    private static ulong Mix64(ulong value)
+    {
+        unchecked
         {
-            currentFp = evicted;
-            currentBucket = nextBucket;
-            return true;
+            value += 0x9E3779B97F4A7C15UL;
+            value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9UL;
+            value = (value ^ (value >> 27)) * 0x94D049BB133111EBUL;
+            return value ^ (value >> 31);
         }
+    }
 
-        // Failed to insert evicted fingerprint — restore original and return false
-        _buckets[currentBucket, slot] = evicted;
-        return false;
+    private static int RoundUpToPowerOfTwo(long value)
+    {
+        if (value <= 1)
+            return 1;
+        if (value > 1 << 30)
+            throw new ArgumentOutOfRangeException(nameof(value), value, "Required bucket count is too large.");
+
+        var result = 1;
+        while (result < value)
+            result <<= 1;
+        return result;
+    }
+
+    private readonly struct BucketMutation(int bucket, int slot, uint previousFingerprint)
+    {
+        public int Bucket { get; } = bucket;
+
+        public int Slot { get; } = slot;
+
+        public uint PreviousFingerprint { get; } = previousFingerprint;
+    }
+
+    private readonly struct BucketEntry(int sourceBucket, uint fingerprint)
+    {
+        public int SourceBucket { get; } = sourceBucket;
+
+        public uint Fingerprint { get; } = fingerprint;
     }
 }

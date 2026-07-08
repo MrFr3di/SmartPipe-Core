@@ -18,6 +18,16 @@ namespace SmartPipe.Extensions.Sinks;
 /// <typeparam name="T">Item type.</typeparam>
 public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
 {
+    /// <summary>Maximum write attempts, including the initial attempt.</summary>
+    internal const int MaxAttempts = 4;
+
+    private static readonly TimeSpan[] RetryDelays =
+    [
+        TimeSpan.FromMilliseconds(100),
+        TimeSpan.FromMilliseconds(200),
+        TimeSpan.FromMilliseconds(400),
+    ];
+
     private readonly string _path;
     private readonly ILogger<DeadLetterSink<T>> _logger;
     private readonly Func<DeadLetterEnvelope<T>, string> _serialize;
@@ -65,7 +75,7 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         Stream? stream = null
     )
     {
-        _path = path;
+        _path = path ?? throw new ArgumentNullException(nameof(path));
         _logger = logger ?? NullLogger<DeadLetterSink<T>>.Instance;
         _serialize = static result => JsonSerializer.Serialize(result);
 
@@ -115,24 +125,32 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         IDeadLetterLineWriter lineWriter
     )
     {
-        _path = path;
+        _path = path ?? throw new ArgumentNullException(nameof(path));
         _logger = logger ?? NullLogger<DeadLetterSink<T>>.Instance;
         _serialize = static result => JsonSerializer.Serialize(result);
         _lineWriter = lineWriter ?? throw new ArgumentNullException(nameof(lineWriter));
     }
+
+    /// <summary>Gets the write failure behavior. The default throws after retry attempts are exhausted.</summary>
+    public DeadLetterWriteFailureMode FailureMode { get; init; } = DeadLetterWriteFailureMode.Throw;
+
+    /// <summary>Gets a value indicating whether each successful write is flushed immediately.</summary>
+    public bool FlushEachWrite { get; init; } = true;
 
     /// <inheritdoc />
     public ValueTask InitializeAsync(CancellationToken ct = default)
     {
         if (_lineWriter == null)
         {
-            // Open file in create mode - overwrite existing file on initialization
             var fileStream = new FileStream(
                 _path,
-                FileMode.Create,
+                FileMode.OpenOrCreate,
                 FileAccess.Write,
-                FileShare.None
+                FileShare.Read,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.SequentialScan
             );
+            fileStream.Seek(0, SeekOrigin.End);
             _lineWriter = new StreamDeadLetterLineWriter(fileStream, leaveOpen: false);
         }
         return ValueTask.CompletedTask;
@@ -162,38 +180,38 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     }
 
     /// <summary>
-    /// Write JSON line with IOException retry logic.
-    /// Uses exponential backoff: 100ms, 200ms, 400ms.
+    /// Write JSON line with IOException retry logic. Uses exponential backoff before
+    /// attempts 2-4: 100ms, 200ms, 400ms.
     /// </summary>
     private async Task WriteWithRetryAsync(string json, CancellationToken ct)
     {
-        var delays = new[] { 100, 200, 400 };
         IOException? lastException = null;
 
-        for (int attempt = 0; attempt < 3; attempt++)
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
         {
             try
             {
                 if (_lineWriter == null)
                     return;
 
-                await _lineWriter.WriteLineAsync(json, ct);
+                await _lineWriter.WriteLineAsync(json, FlushEachWrite, ct);
                 return; // Success
             }
             catch (IOException ex)
             {
                 lastException = ex;
 
-                if (attempt < 2)
+                if (attempt < MaxAttempts)
                 {
                     _logger.LogWarning(
                         ex,
-                        "IOException on attempt {Attempt}/3 writing to dead letter file {Path}. Retrying in {Delay}ms...",
-                        attempt + 1,
+                        "IOException on attempt {Attempt}/{MaxAttempts} writing to dead letter file {Path}. Retrying in {Delay}ms...",
+                        attempt,
+                        MaxAttempts,
                         _path,
-                        delays[attempt]
+                        RetryDelays[attempt - 1].TotalMilliseconds
                     );
-                    await Task.Delay(delays[attempt], ct);
+                    await Task.Delay(RetryDelays[attempt - 1], ct);
                 }
             }
         }
@@ -203,9 +221,13 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         {
             _logger.LogError(
                 lastException,
-                "Failed to write to dead letter file {Path} after 3 retries. Skipping item.",
-                _path
+                "Failed to write to dead letter file {Path} after {MaxAttempts} attempts.",
+                _path,
+                MaxAttempts
             );
+
+            if (FailureMode == DeadLetterWriteFailureMode.Throw)
+                throw new DeadLetterWriteException(_path, MaxAttempts, lastException);
         }
     }
 
@@ -236,25 +258,85 @@ public class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
 
 internal interface IDeadLetterLineWriter : IAsyncDisposable
 {
-    ValueTask WriteLineAsync(string line, CancellationToken ct);
+    ValueTask WriteLineAsync(string line, bool flushEachWrite, CancellationToken ct);
 }
 
 internal sealed class StreamDeadLetterLineWriter : IDeadLetterLineWriter
 {
-    private readonly StreamWriter _writer;
+    private static readonly byte[] NewLine = "\n"u8.ToArray();
+    private readonly Stream _stream;
 
     public StreamDeadLetterLineWriter(Stream stream, bool leaveOpen)
     {
-        _writer = new StreamWriter(stream, Encoding.UTF8, 1024, leaveOpen);
+        _stream = stream ?? throw new ArgumentNullException(nameof(stream));
+        LeaveOpen = leaveOpen;
     }
 
-    public async ValueTask WriteLineAsync(string line, CancellationToken ct)
+    private bool LeaveOpen { get; }
+
+    public async ValueTask WriteLineAsync(string line, bool flushEachWrite, CancellationToken ct)
     {
-        await _writer.WriteLineAsync(line.AsMemory(), ct).ConfigureAwait(false);
+        var checkpoint = _stream.CanSeek ? _stream.Length : (long?)null;
+        if (checkpoint is not null)
+            _stream.Position = checkpoint.Value;
+
+        try
+        {
+            var bytes = Encoding.UTF8.GetBytes(line);
+            await _stream.WriteAsync(bytes, ct).ConfigureAwait(false);
+            await _stream.WriteAsync(NewLine, ct).ConfigureAwait(false);
+
+            if (flushEachWrite)
+                await _stream.FlushAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (checkpoint is not null)
+            {
+                _stream.SetLength(checkpoint.Value);
+                _stream.Position = checkpoint.Value;
+            }
+
+            throw;
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _writer.DisposeAsync().ConfigureAwait(false);
+        if (LeaveOpen)
+            return;
+
+        await _stream.DisposeAsync().ConfigureAwait(false);
     }
+}
+
+/// <summary>Behavior after dead-letter write attempts are exhausted.</summary>
+public enum DeadLetterWriteFailureMode
+{
+    /// <summary>Throw <see cref="DeadLetterWriteException"/> after retry attempts are exhausted.</summary>
+    Throw = 0,
+
+    /// <summary>Log the exhausted write failure and drop the dead-letter record.</summary>
+    LogAndDrop = 1,
+}
+
+/// <summary>Exception thrown when a dead-letter record cannot be written after retry attempts.</summary>
+public sealed class DeadLetterWriteException : IOException
+{
+    /// <summary>Create a dead-letter write exception.</summary>
+    /// <param name="path">Configured dead-letter path.</param>
+    /// <param name="attempts">Number of write attempts made.</param>
+    /// <param name="innerException">Last write exception.</param>
+    public DeadLetterWriteException(string path, int attempts, Exception innerException)
+        : base($"Failed to write dead-letter record to '{path}' after {attempts} attempts.", innerException)
+    {
+        Path = path;
+        Attempts = attempts;
+    }
+
+    /// <summary>Configured dead-letter path.</summary>
+    public string Path { get; }
+
+    /// <summary>Number of write attempts made.</summary>
+    public int Attempts { get; }
 }

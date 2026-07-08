@@ -72,15 +72,47 @@ registration, hosted service integration, and health-check support.
 
 Important selector and streaming contracts:
 
+- `HttpSelector<T>` logs request URIs without userinfo, query strings, or
+  fragments. Malformed absolute URIs are logged as `[unparseable-uri]`.
+  Reflection JSON constructors are annotated for trimming and NativeAOT risk;
+  prefer the `JsonTypeInfo<List<T>>` buffered overload or `JsonTypeInfo<T>`
+  streaming overload in trimmed or NativeAOT applications.
 - `EfCoreSelector<T>` reads with `AsNoTracking()` by default. Use
   `.WithTracking()` to opt into EF Core change tracking for returned entities.
 - `DapperSelector<T>` uses asynchronous `DbConnection` open/read operations and
   leaves externally supplied connections open by default. Use the explicit
   ownership overload with `leaveOpen: false` when the selector should dispose
-  the connection.
+  the connection. For trimming or NativeAOT, prefer the explicit
+  `Func<DbDataReader,T>` mapper overload instead of the reflection mapper.
+- `DbSink<T>` preserves the legacy `IDbConnection` constructor behavior as
+  `leaveOpen: false`. Prefer the explicit `DbConnection` overloads for new
+  code: use `leaveOpen: true` for externally owned connections, and provide
+  explicit INSERT SQL in trimming or NativeAOT-sensitive applications.
+- `JsonFileSink<T>` writes newline-delimited JSON batches: each flush appends
+  one UTF-8 JSON array followed by a newline. Path-backed files use append
+  semantics, checkpoint seekable stream length and position before each batch,
+  and roll back in-process write exceptions by truncating to that checkpoint
+  while keeping the batch buffered for retry. This is not a crash-atomicity
+  guarantee.
 - `ChannelMerge.Merge(first, second, options, cancellationToken)` is the
   cancellation-aware overload for bounded or backpressure-sensitive merges. The
   compatibility overload without a cancellation token remains available.
+- `DeadLetterSink<T>` writes JSON Lines records with append semantics for
+  path-backed files. It checkpoints seekable stream length before each record,
+  retries failed writes up to four total attempts with 100ms, 200ms, and 400ms
+  backoff, and throws `DeadLetterWriteException` by default when attempts are
+  exhausted. Set `FailureMode = DeadLetterWriteFailureMode.LogAndDrop` only for
+  explicit drop-on-failure behavior. `FlushEachWrite` defaults to `true`.
+
+## Secret Scanning
+
+- `SecretScanner.Scan(content)` returns `SecretScanResult.Clean`,
+  `SecretScanResult.SecretFound`, or `SecretScanResult.Indeterminate`.
+- `SecretScanner.HasSecrets(content)` fails closed: it returns `true` for both
+  `SecretFound` and `Indeterminate`.
+- `SecretScanner.Redact(content)` returns `***REDACTION_INDETERMINATE***` when
+  scanning or redaction cannot complete within regex, input-size, decode-budget,
+  or recursion limits.
 
 ## Observability
 

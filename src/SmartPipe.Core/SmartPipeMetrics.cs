@@ -118,6 +118,50 @@ public sealed record SmartPipeMetricsSnapshot
         double smoothThroughput,
         int queueSize,
         double poolHitRate)
+        : this(
+            itemsProcessed,
+            itemsFailed,
+            itemsFiltered,
+            itemsDropped,
+            outputItemsDropped,
+            observerEventsDropped,
+            itemsRetried,
+            itemsDeadLettered,
+            inputQueueDepth,
+            outputQueueDepth,
+            lastStageLatencyMs,
+            lastProcessedAtUtc,
+            lastActivityAtUtc: lastProcessedAtUtc,
+            duplicatesFiltered,
+            avgLatencyMs,
+            smoothLatencyMs,
+            smoothThroughput,
+            queueSize,
+            poolHitRate)
+    {
+    }
+
+    /// <summary>Create an immutable point-in-time sample of SmartPipe metric values.</summary>
+    public SmartPipeMetricsSnapshot(
+        long itemsProcessed,
+        long itemsFailed,
+        long itemsFiltered,
+        long itemsDropped,
+        long outputItemsDropped,
+        long observerEventsDropped,
+        long itemsRetried,
+        long itemsDeadLettered,
+        int inputQueueDepth,
+        int outputQueueDepth,
+        double lastStageLatencyMs,
+        DateTimeOffset? lastProcessedAtUtc,
+        DateTimeOffset? lastActivityAtUtc,
+        long duplicatesFiltered,
+        double avgLatencyMs,
+        double smoothLatencyMs,
+        double smoothThroughput,
+        int queueSize,
+        double poolHitRate)
     {
         ItemsProcessed = itemsProcessed;
         ItemsFailed = itemsFailed;
@@ -131,6 +175,7 @@ public sealed record SmartPipeMetricsSnapshot
         OutputQueueDepth = outputQueueDepth;
         LastStageLatencyMs = lastStageLatencyMs;
         LastProcessedAtUtc = lastProcessedAtUtc;
+        LastActivityAtUtc = lastActivityAtUtc;
         DuplicatesFiltered = duplicatesFiltered;
         AvgLatencyMs = avgLatencyMs;
         SmoothLatencyMs = smoothLatencyMs;
@@ -175,6 +220,9 @@ public sealed record SmartPipeMetricsSnapshot
     /// <summary>Last successful processed timestamp in the sampled view.</summary>
     public DateTimeOffset? LastProcessedAtUtc { get; }
 
+    /// <summary>Most recent accepted or terminal work activity timestamp in the sampled view.</summary>
+    public DateTimeOffset? LastActivityAtUtc { get; }
+
     /// <summary>Total duplicate items filtered out in the sampled view.</summary>
     public long DuplicatesFiltered { get; }
 
@@ -218,6 +266,7 @@ public sealed record SmartPipeMetricsSnapshot
             ["output_queue_depth"] = OutputQueueDepth,
             ["pool_hit_rate"] = PoolHitRate,
             ["last_processed_at_utc"] = LastProcessedAtUtc?.ToString("O") ?? string.Empty,
+            ["last_activity_at_utc"] = LastActivityAtUtc?.ToString("O") ?? string.Empty,
         };
 }
 
@@ -237,6 +286,7 @@ public sealed class SmartPipeMetricsRecorder
     private int _inputQueueDepth;
     private int _outputQueueDepth;
     private long _lastProcessedAtUtcTicks;
+    private long _lastActivityAtUtcTicks;
     private double _totalLatencyMs;
     private double _lastStageLatencyMs;
     private double _smoothLatencyMs;
@@ -320,18 +370,28 @@ public sealed class SmartPipeMetricsRecorder
     {
         get
         {
-            var ticks = Interlocked.Read(ref _lastProcessedAtUtcTicks);
-            return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+            return ReadTimestamp(ref _lastProcessedAtUtcTicks);
+        }
+    }
+
+    /// <summary>Most recent accepted or terminal work activity timestamp.</summary>
+    public DateTimeOffset? LastActivityAtUtc
+    {
+        get
+        {
+            return ReadTimestamp(ref _lastActivityAtUtcTicks);
         }
     }
 
     /// <summary>Record a processed item and its stage latency.</summary>
     public void RecordProcessed(double latencyMs)
     {
+        var now = _clock.GetUtcNow();
         Interlocked.Increment(ref _itemsProcessed);
         AddDouble(ref _totalLatencyMs, latencyMs);
         Volatile.Write(ref _lastStageLatencyMs, latencyMs);
-        Interlocked.Exchange(ref _lastProcessedAtUtcTicks, _clock.GetUtcNow().UtcTicks);
+        MaxTimestamp(ref _lastProcessedAtUtcTicks, now.UtcTicks);
+        RecordActivity(now);
         SmartPipeMeter.ItemsProcessedCounter.Add(1);
         SmartPipeMeter.StageLatencyHistogram.Record(latencyMs);
     }
@@ -340,6 +400,7 @@ public sealed class SmartPipeMetricsRecorder
     public void RecordFailed()
     {
         Interlocked.Increment(ref _itemsFailed);
+        RecordActivity();
         SmartPipeMeter.ItemsFailedCounter.Add(1);
     }
 
@@ -347,6 +408,7 @@ public sealed class SmartPipeMetricsRecorder
     public void RecordFiltered()
     {
         Interlocked.Increment(ref _itemsFiltered);
+        RecordActivity();
         SmartPipeMeter.ItemsFilteredCounter.Add(1);
     }
 
@@ -354,6 +416,7 @@ public sealed class SmartPipeMetricsRecorder
     public void RecordItemDropped()
     {
         Interlocked.Increment(ref _itemsDropped);
+        RecordActivity();
         SmartPipeMeter.ItemsDroppedCounter.Add(1);
     }
 
@@ -361,6 +424,7 @@ public sealed class SmartPipeMetricsRecorder
     public void RecordOutputDropped()
     {
         Interlocked.Increment(ref _outputItemsDropped);
+        RecordActivity();
         SmartPipeMeter.OutputItemsDroppedCounter.Add(1);
     }
 
@@ -375,6 +439,7 @@ public sealed class SmartPipeMetricsRecorder
     public void RecordDuplicate()
     {
         Interlocked.Increment(ref _duplicatesFiltered);
+        RecordActivity();
         SmartPipeMeter.DuplicatesFilteredCounter.Add(1);
     }
 
@@ -382,6 +447,7 @@ public sealed class SmartPipeMetricsRecorder
     public void RecordRetry()
     {
         Interlocked.Increment(ref _itemsRetried);
+        RecordActivity();
         SmartPipeMeter.ItemsRetriedCounter.Add(1);
     }
 
@@ -389,7 +455,13 @@ public sealed class SmartPipeMetricsRecorder
     public void RecordDeadLetter()
     {
         Interlocked.Increment(ref _itemsDeadLettered);
+        RecordActivity();
         SmartPipeMeter.ItemsDeadLetteredCounter.Add(1);
+    }
+
+    internal void RecordActivity()
+    {
+        RecordActivity(_clock.GetUtcNow());
     }
 
     internal void RecordSinkDuration(double latencyMs)
@@ -441,6 +513,7 @@ public sealed class SmartPipeMetricsRecorder
             OutputQueueDepth,
             LastStageLatencyMs,
             LastProcessedAtUtc,
+            LastActivityAtUtc,
             DuplicatesFiltered,
             avgLatency,
             SmoothLatencyMs,
@@ -458,6 +531,28 @@ public sealed class SmartPipeMetricsRecorder
             current = Volatile.Read(ref location);
             next = current + value;
         } while (Interlocked.CompareExchange(ref location, next, current) != current);
+    }
+
+    private static DateTimeOffset? ReadTimestamp(ref long location)
+    {
+        var ticks = Interlocked.Read(ref location);
+        return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+    }
+
+    private void RecordActivity(DateTimeOffset timestamp)
+    {
+        MaxTimestamp(ref _lastActivityAtUtcTicks, timestamp.UtcTicks);
+    }
+
+    private static void MaxTimestamp(ref long location, long ticks)
+    {
+        long current;
+        do
+        {
+            current = Interlocked.Read(ref location);
+            if (ticks <= current)
+                return;
+        } while (Interlocked.CompareExchange(ref location, ticks, current) != current);
     }
 }
 

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using SmartPipe.Core;
 
 namespace SmartPipe.Extensions.Sinks;
@@ -10,12 +11,25 @@ namespace SmartPipe.Extensions.Sinks;
 /// <typeparam name="T">Item type.</typeparam>
 public class JsonFileSink<T> : IPipelineSink<T>
 {
+    private enum SinkLifecycleState
+    {
+        Active = 0,
+        Disposing = 1,
+        Disposed = 2,
+    }
+
+    private static readonly byte[] NewLine = "\n"u8.ToArray();
+
     private readonly string _path;
     private readonly int _flushInterval;
-    private readonly Func<List<T>, string> _serializeBatch;
+    private readonly Func<List<T>, byte[]> _serializeBatch;
     private readonly List<T> _buffer = [];
-    private readonly Lock _bufferLock = new();
-    private int _count;
+    private readonly object _disposeTaskGate = new();
+    private readonly SemaphoreSlim _flushGate = new(1, 1);
+    private Stream? _stream;
+    private bool _leaveOpen;
+    private SinkLifecycleState _state;
+    private Task? _disposeTask;
 
     /// <summary>Create JSON file sink for given path.</summary>
     /// <param name="path">Output file path.</param>
@@ -42,7 +56,7 @@ public class JsonFileSink<T> : IPipelineSink<T>
         _path = ValidatePath(path);
         _flushInterval = ValidateFlushInterval(flushInterval);
         var options = new JsonSerializerOptions { WriteIndented = false };
-        _serializeBatch = batch => JsonSerializer.Serialize(batch, options);
+        _serializeBatch = batch => JsonSerializer.SerializeToUtf8Bytes(batch, options);
     }
 #pragma warning restore RS0027
 
@@ -68,50 +82,169 @@ public class JsonFileSink<T> : IPipelineSink<T>
         _path = ValidatePath(path);
         ArgumentNullException.ThrowIfNull(batchTypeInfo);
         _flushInterval = ValidateFlushInterval(flushInterval);
-        _serializeBatch = batch => JsonSerializer.Serialize(batch, batchTypeInfo);
+        _serializeBatch = batch => JsonSerializer.SerializeToUtf8Bytes(batch, batchTypeInfo);
+    }
+
+    internal JsonFileSink(string path, Stream stream, int flushInterval = 1000)
+    {
+        _path = ValidatePath(path);
+        ArgumentNullException.ThrowIfNull(stream);
+        _flushInterval = ValidateFlushInterval(flushInterval);
+        var options = new JsonSerializerOptions { WriteIndented = false };
+        _serializeBatch = batch => JsonSerializer.SerializeToUtf8Bytes(batch, options);
+        _stream = stream;
+        _leaveOpen = true;
     }
 
     /// <inheritdoc />
-    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+    public async ValueTask InitializeAsync(CancellationToken ct = default)
+    {
+        await _flushGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            ThrowIfNotActive();
+            EnsureStream();
+        }
+        finally
+        {
+            _flushGate.Release();
+        }
+    }
 
     /// <inheritdoc />
     public async ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
     {
         if (envelope.Payload != null)
         {
-            List<T>? batchToFlush = null;
-            lock (_bufferLock)
+            await _flushGate.WaitAsync(ct).ConfigureAwait(false);
+            try
             {
+                ThrowIfNotActive();
                 _buffer.Add(envelope.Payload);
-                if (++_count >= _flushInterval)
-                {
-                    batchToFlush = [.. _buffer];
-                    _buffer.Clear();
-                    _count = 0;
-                }
+
+                if (_buffer.Count >= _flushInterval)
+                    await FlushBufferedCoreAsync(force: false, ct).ConfigureAwait(false);
             }
-            if (batchToFlush != null)
-                await FlushBatchAsync(batchToFlush, ct).ConfigureAwait(false);
+            finally
+            {
+                _flushGate.Release();
+            }
         }
     }
 
     /// <inheritdoc />
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        List<T> remaining;
-        lock (_bufferLock)
+        Task disposeTask;
+        lock (_disposeTaskGate)
         {
-            remaining = [.. _buffer];
-            _buffer.Clear();
+            _disposeTask ??= DisposeCoreAsync();
+            disposeTask = _disposeTask;
         }
-        if (remaining.Count > 0)
-            await FlushBatchAsync(remaining, CancellationToken.None).ConfigureAwait(false);
+
+        return new ValueTask(disposeTask);
     }
 
-    private async Task FlushBatchAsync(List<T> batch, CancellationToken ct)
+    private async Task DisposeCoreAsync()
     {
-        var json = _serializeBatch(batch);
-        await File.AppendAllTextAsync(_path, json + Environment.NewLine, ct).ConfigureAwait(false);
+        await _flushGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_state == SinkLifecycleState.Disposed)
+                return;
+
+            _state = SinkLifecycleState.Disposing;
+            await FlushBufferedCoreAsync(force: true, CancellationToken.None).ConfigureAwait(false);
+
+            if (_stream != null && !_leaveOpen)
+                await _stream.DisposeAsync().ConfigureAwait(false);
+
+            _stream = null;
+            _state = SinkLifecycleState.Disposed;
+        }
+        finally
+        {
+            _flushGate.Release();
+        }
+    }
+
+    private async Task FlushBufferedAsync(bool force, CancellationToken ct)
+    {
+        await _flushGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await FlushBufferedCoreAsync(force, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _flushGate.Release();
+        }
+    }
+
+    private async Task FlushBufferedCoreAsync(bool force, CancellationToken ct)
+    {
+        if (_buffer.Count == 0 || (!force && _buffer.Count < _flushInterval))
+            return;
+
+        var batch = _buffer.ToList();
+        var bytes = _serializeBatch(batch);
+        var stream = EnsureStream();
+        await WriteBatchAsync(stream, bytes, ct).ConfigureAwait(false);
+
+        _buffer.RemoveRange(0, Math.Min(batch.Count, _buffer.Count));
+    }
+
+    private Stream EnsureStream()
+    {
+        if (_stream != null)
+            return _stream;
+
+        var fileStream = new FileStream(
+            _path,
+            FileMode.OpenOrCreate,
+            FileAccess.Write,
+            FileShare.Read,
+            bufferSize: 4096,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        fileStream.Seek(0, SeekOrigin.End);
+        _stream = fileStream;
+        _leaveOpen = false;
+        return _stream;
+    }
+
+    private void ThrowIfNotActive()
+    {
+        if (_state != SinkLifecycleState.Active)
+            throw new ObjectDisposedException(nameof(JsonFileSink<T>));
+    }
+
+    private static async Task WriteBatchAsync(Stream stream, byte[] bytes, CancellationToken ct)
+    {
+        long? checkpointLength = null;
+        long? checkpointPosition = null;
+        if (stream.CanSeek)
+        {
+            stream.Seek(0, SeekOrigin.End);
+            checkpointLength = stream.Length;
+            checkpointPosition = stream.Position;
+        }
+
+        try
+        {
+            await stream.WriteAsync(bytes, ct).ConfigureAwait(false);
+            await stream.WriteAsync(NewLine, ct).ConfigureAwait(false);
+            await stream.FlushAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (checkpointLength is not null && checkpointPosition is not null)
+            {
+                stream.SetLength(checkpointLength.Value);
+                stream.Position = checkpointPosition.Value;
+            }
+
+            throw;
+        }
     }
 
     private static string ValidatePath(string? path)

@@ -65,47 +65,63 @@ public static class ChannelMerge
         CancellationToken cancellationToken
     )
     {
-        Exception? completionError = null;
-        CancellationTokenSource? pumpCancellation = null;
+        var coordinator = new MergeFailureCoordinator(cancellationToken);
+
+        using var pumpCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken
+        );
+        var firstPump = PumpAndCancelOnFailureAsync(
+            first,
+            writer,
+            pumpCancellation,
+            coordinator);
+        var secondPump = PumpAndCancelOnFailureAsync(
+            second,
+            writer,
+            pumpCancellation,
+            coordinator);
 
         try
         {
-            pumpCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken
-            );
-            var firstPump = PumpAndCancelOnFailureAsync(first, writer, pumpCancellation);
-            var secondPump = PumpAndCancelOnFailureAsync(second, writer, pumpCancellation);
-
             await Task.WhenAll(firstPump, secondPump).ConfigureAwait(false);
         }
-        catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+        catch
         {
-            completionError = ex;
-        }
-        catch (Exception ex)
-        {
-            completionError = ex;
+            // Completion is coordinated explicitly so sibling cancellation or
+            // cancellation callback failures cannot replace the primary input failure.
         }
         finally
         {
-            pumpCancellation?.Dispose();
-            writer.TryComplete(completionError);
+            writer.TryComplete(coordinator.GetCompletionError());
         }
     }
 
     private static async Task PumpAndCancelOnFailureAsync<T>(
         ChannelReader<T> reader,
         ChannelWriter<T> writer,
-        CancellationTokenSource cancellationSource
+        CancellationTokenSource cancellationSource,
+        MergeFailureCoordinator coordinator
     )
     {
         try
         {
             await PumpAsync(reader, writer, cancellationSource.Token).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
-            await cancellationSource.CancelAsync().ConfigureAwait(false);
+            if (ex is not OperationCanceledException || !cancellationSource.IsCancellationRequested)
+            {
+                coordinator.TryRecordFailure(ex);
+                try
+                {
+                    await cancellationSource.CancelAsync().ConfigureAwait(false);
+                }
+                catch (Exception cancellationFailure)
+                {
+                    coordinator.TryRecordFailure(cancellationFailure);
+                }
+            }
+
             throw;
         }
     }
@@ -142,6 +158,37 @@ public static class ChannelMerge
 
             if (!written)
                 return;
+        }
+    }
+
+    private sealed class MergeFailureCoordinator
+    {
+        private readonly object _gate = new();
+        private readonly CancellationToken _externalCancellationToken;
+        private Exception? _primaryFailure;
+
+        public MergeFailureCoordinator(CancellationToken externalCancellationToken)
+        {
+            _externalCancellationToken = externalCancellationToken;
+        }
+
+        public void TryRecordFailure(Exception exception)
+        {
+            lock (_gate)
+                _primaryFailure ??= exception;
+        }
+
+        public Exception? GetCompletionError()
+        {
+            lock (_gate)
+            {
+                if (_primaryFailure is not null)
+                    return _primaryFailure;
+            }
+
+            return _externalCancellationToken.IsCancellationRequested
+                ? new OperationCanceledException(_externalCancellationToken)
+                : null;
         }
     }
 }

@@ -8,6 +8,7 @@ using SmartPipe.Core;
 
 namespace SmartPipe.Core.Tests.Engine;
 
+[Trait("Category", "CorrectnessRegression")]
 public sealed class ObserverDispatcherTests
 {
     [Fact]
@@ -113,6 +114,50 @@ public sealed class ObserverDispatcherTests
     }
 
     [Fact]
+    public async Task InlineObserver_UserThrownOperationCanceledExceptionFaultsRun()
+    {
+        var observer = new ThrowingObserver(new OperationCanceledException("observer cancelled itself"));
+
+        var run = PipelineBuilder
+            .From(new EnumerableSource<int>([1]))
+            .Transform(new PassThroughTransformer<int>())
+            .WithObserver(
+                observer,
+                ObserverReliability.BestEffort,
+                ObserverFailurePolicy.FaultPipeline)
+            .Run();
+
+        var act = async () => await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Observer dispatch failed.");
+        exception.Which.InnerException.Should().BeOfType<OperationCanceledException>();
+        run.State.Should().Be(PipelineRunState.Faulted);
+    }
+
+    [Fact]
+    public async Task InlineObserver_ShutdownCancellationRemainsCancellation()
+    {
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [
+                new PipelineObserverRegistration(
+                    new ThrowingObserver(new OperationCanceledException("shutdown")),
+                    ObserverReliability.BestEffort,
+                    ObserverFailurePolicy.FaultPipeline),
+            ],
+            ObserverDispatchOptions.Inline,
+            SystemPipelineClock.Instance);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await dispatcher.EmitAsync(
+            new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task ObserverDispatcher_CompleteAsync_PropagatesBufferedFault()
     {
         var expected = new InvalidOperationException("observer failure");
@@ -135,6 +180,32 @@ public sealed class ObserverDispatcherTests
 
         var exception = await act.Should().ThrowAsync<InvalidOperationException>();
         exception.Which.Should().BeSameAs(expected);
+
+        await dispatcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ObserverDispatcher_CompleteAsync_UserThrownOperationCanceledExceptionFaults()
+    {
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [
+                new PipelineObserverRegistration(
+                    new ThrowingObserver(new OperationCanceledException("observer cancelled itself")),
+                    ObserverReliability.BestEffort,
+                    ObserverFailurePolicy.FaultPipeline),
+            ],
+            BufferedOptions(ObserverFailureMode.UseRegistrationPolicy),
+            SystemPipelineClock.Instance);
+
+        await dispatcher.EmitAsync(
+            new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            CancellationToken.None);
+
+        var act = async () => await dispatcher.CompleteAsync(CancellationToken.None);
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Observer dispatch failed.");
+        exception.Which.InnerException.Should().BeOfType<OperationCanceledException>();
 
         await dispatcher.DisposeAsync();
     }
@@ -168,7 +239,7 @@ public sealed class ObserverDispatcherTests
     }
 
     [Fact]
-    public async Task ObserverDispatcher_EmitAsyncAfterNormalDispose_ThrowsChannelClosedException()
+    public async Task ObserverDispatcher_EmitAsyncAfterNormalDispose_DoesNotThrow()
     {
         var dispatcher = PipelineObserverDispatcher.Create(
             [],
@@ -181,7 +252,7 @@ public sealed class ObserverDispatcherTests
             new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<ChannelClosedException>();
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
@@ -211,6 +282,168 @@ public sealed class ObserverDispatcherTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task ObserverDispatcher_DisposeAsyncDuringBufferedObserverCancellation_DoesNotRecordFailure()
+    {
+        var observer = new CancellationObservingObserver();
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [
+                new PipelineObserverRegistration(
+                    observer,
+                    ObserverReliability.BestEffort,
+                    ObserverFailurePolicy.FaultPipeline),
+            ],
+            BufferedOptions(ObserverFailureMode.UseRegistrationPolicy),
+            SystemPipelineClock.Instance);
+
+        await dispatcher.EmitAsync(
+            new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        await observer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var act = async () => await dispatcher.DisposeAsync();
+
+        await act.Should().NotThrowAsync();
+        await observer.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task BufferedBestEffort_CompleteWithoutFlush_DoesNotWaitForBlockedObserver()
+    {
+        var observer = new CancellationObservingObserver();
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [new PipelineObserverRegistration(observer)],
+            BestEffortNoFlushOptions(ObserverFailureMode.UseRegistrationPolicy),
+            SystemPipelineClock.Instance);
+
+        await dispatcher.EmitAsync(
+            new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        await observer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await dispatcher.CompleteAsync(CancellationToken.None).AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(5));
+
+        observer.CancellationObserved.Task.IsCompleted.Should().BeFalse();
+
+        await dispatcher.DisposeAsync();
+        await observer.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await observer.Exited.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task BufferedBestEffort_CompleteWithoutFlush_ThenDispose_CancelsAndAwaitsWorker()
+    {
+        var observer = new CancellationObservingObserver();
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [new PipelineObserverRegistration(observer)],
+            BestEffortNoFlushOptions(ObserverFailureMode.UseRegistrationPolicy),
+            SystemPipelineClock.Instance);
+
+        await dispatcher.EmitAsync(
+            new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        await observer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await dispatcher.CompleteAsync(CancellationToken.None);
+
+        await dispatcher.DisposeAsync();
+
+        await observer.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await observer.Exited.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task BufferedBestEffort_ConcurrentDisposeAfterComplete_AwaitsSameTeardownTask()
+    {
+        var observer = new ReleasableCancellationObserver();
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [new PipelineObserverRegistration(observer)],
+            BestEffortNoFlushOptions(ObserverFailureMode.UseRegistrationPolicy),
+            SystemPipelineClock.Instance);
+
+        await dispatcher.EmitAsync(
+            new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        await observer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await dispatcher.CompleteAsync(CancellationToken.None);
+
+        var first = dispatcher.DisposeAsync().AsTask();
+        await observer.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = dispatcher.DisposeAsync().AsTask();
+
+        second.IsCompleted.Should().BeFalse();
+
+        observer.Release();
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+        await observer.Exited.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task BufferedBestEffort_DisposeAfterComplete_DoesNotLoseRecordedObserverFault()
+    {
+        var observer = new ReleasableFaultingObserver();
+        var expected = observer.Exception;
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [
+                new PipelineObserverRegistration(
+                    observer,
+                    ObserverReliability.BestEffort,
+                    ObserverFailurePolicy.FaultPipeline),
+            ],
+            BestEffortNoFlushOptions(ObserverFailureMode.UseRegistrationPolicy),
+            SystemPipelineClock.Instance);
+
+        await dispatcher.EmitAsync(
+            new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        await observer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await dispatcher.CompleteAsync(CancellationToken.None);
+
+        observer.Release();
+        var firstException = await WaitUntilEmitThrowsAsync<InvalidOperationException>(
+            dispatcher,
+            new PipelineCompletedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            TimeSpan.FromSeconds(5));
+        firstException.Should().BeSameAs(expected);
+
+        await dispatcher.DisposeAsync();
+
+        var act = async () => await dispatcher.EmitAsync(
+            new PipelineCompletedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        var secondException = await act.Should().ThrowAsync<InvalidOperationException>();
+        secondException.Which.Should().BeSameAs(expected);
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task BufferedBestEffort_DisposeBeforeComplete_RemainsIdempotent()
+    {
+        var observer = new ReleasableCancellationObserver();
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [new PipelineObserverRegistration(observer)],
+            BestEffortNoFlushOptions(ObserverFailureMode.UseRegistrationPolicy),
+            SystemPipelineClock.Instance);
+
+        await dispatcher.EmitAsync(
+            new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        await observer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var first = dispatcher.DisposeAsync().AsTask();
+        await observer.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = dispatcher.DisposeAsync().AsTask();
+        observer.Release();
+
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+        await dispatcher.CompleteAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task ObserverDispatcher_DisposeAsyncWithoutEvents_DoesNotThrow()
     {
         var dispatcher = PipelineObserverDispatcher.Create(
@@ -221,6 +454,227 @@ public sealed class ObserverDispatcherTests
         var act = async () => await dispatcher.DisposeAsync();
 
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task ObserverDispatcher_CompleteAsync_ConcurrentCallersWaitForSameBufferedCompletion()
+    {
+        var observer = new ReleasableObserver();
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [new PipelineObserverRegistration(observer)],
+            BufferedOptions(ObserverFailureMode.UseRegistrationPolicy),
+            SystemPipelineClock.Instance);
+
+        await dispatcher.EmitAsync(
+            new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        await observer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var first = dispatcher.CompleteAsync(CancellationToken.None).AsTask();
+        var second = dispatcher.CompleteAsync(CancellationToken.None).AsTask();
+
+        second.IsCompleted.Should().BeFalse();
+
+        observer.Release();
+
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+        await dispatcher.DisposeAsync();
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task ObserverDispatcher_DisposeAsync_ConcurrentCallersWaitForSameBufferedTeardown()
+    {
+        var observer = new ReleasableCancellationObserver();
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [new PipelineObserverRegistration(observer)],
+            BufferedOptions(ObserverFailureMode.UseRegistrationPolicy),
+            SystemPipelineClock.Instance);
+
+        await dispatcher.EmitAsync(
+            new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        await observer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var first = dispatcher.DisposeAsync().AsTask();
+        await observer.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = dispatcher.DisposeAsync().AsTask();
+
+        second.IsCompleted.Should().BeFalse();
+
+        observer.Release();
+
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Theory]
+    [InlineData(BoundedChannelFullMode.DropWrite)]
+    [InlineData(BoundedChannelFullMode.DropOldest)]
+    [InlineData(BoundedChannelFullMode.DropNewest)]
+    public void BufferedReliable_DropFullMode_ShouldFailValidation(BoundedChannelFullMode fullMode)
+    {
+        var options = new ObserverDispatchOptions
+        {
+            Mode = ObserverDispatchMode.BufferedReliable,
+            FullMode = fullMode,
+            FlushOnCompletion = true,
+        };
+
+        var act = () => PipelineObserverDispatcher.Create([], options, SystemPipelineClock.Instance);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*BufferedReliable*Wait*");
+    }
+
+    [Theory]
+    [InlineData(BoundedChannelFullMode.DropWrite)]
+    [InlineData(BoundedChannelFullMode.DropOldest)]
+    [InlineData(BoundedChannelFullMode.DropNewest)]
+    public void BufferedBestEffort_DropFullModeWithFlush_ShouldFailValidation(
+        BoundedChannelFullMode fullMode)
+    {
+        var options = new ObserverDispatchOptions
+        {
+            Mode = ObserverDispatchMode.BufferedBestEffort,
+            FullMode = fullMode,
+            FlushOnCompletion = true,
+        };
+
+        var act = () => PipelineObserverDispatcher.Create([], options, SystemPipelineClock.Instance);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*BufferedBestEffort*FlushOnCompletion*");
+    }
+
+    [Fact]
+    public async Task BufferedObserverFailure_ShouldNotifyRemainingObservers()
+    {
+        var failingObserver = new ThrowingObserver();
+        var recordingObserver = new RecordingObserver();
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [
+                new PipelineObserverRegistration(
+                    failingObserver,
+                    ObserverReliability.BestEffort,
+                    ObserverFailurePolicy.RemoveObserver),
+                new PipelineObserverRegistration(
+                    recordingObserver,
+                    ObserverReliability.BestEffort,
+                    ObserverFailurePolicy.Ignore),
+            ],
+            BufferedOptions(ObserverFailureMode.UseRegistrationPolicy),
+            SystemPipelineClock.Instance);
+
+        await dispatcher.EmitAsync(
+            new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        await dispatcher.CompleteAsync(CancellationToken.None);
+        await dispatcher.DisposeAsync();
+
+        recordingObserver.Events.OfType<ObserverFailedEvent>().Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData(ObserverDispatchMode.Inline, false)]
+    [InlineData(ObserverDispatchMode.BufferedReliable, false)]
+    [InlineData(ObserverDispatchMode.Inline, true)]
+    [InlineData(ObserverDispatchMode.BufferedReliable, true)]
+    public async Task FailureNotification_CriticalRecipientFailure_ShouldFaultPipeline(
+        ObserverDispatchMode mode,
+        bool throwOperationCanceledException)
+    {
+        var primaryObserver = new ThrowingObserver();
+        Exception recipientException = throwOperationCanceledException
+            ? new OperationCanceledException("recipient cancelled itself")
+            : new InvalidOperationException("failure notification boom");
+        var recipientObserver = new ThrowingOnEventTypeObserver(
+            typeof(ObserverFailedEvent),
+            recipientException);
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [
+                new PipelineObserverRegistration(
+                    primaryObserver,
+                    ObserverReliability.BestEffort,
+                    ObserverFailurePolicy.Ignore),
+                new PipelineObserverRegistration(
+                    recipientObserver,
+                    ObserverReliability.Critical,
+                    ObserverFailurePolicy.Ignore),
+            ],
+            Options(mode, ObserverFailureMode.UseRegistrationPolicy),
+            SystemPipelineClock.Instance);
+
+        try
+        {
+            var act = async () =>
+            {
+                await dispatcher.EmitAsync(
+                    new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+                    CancellationToken.None);
+                await dispatcher.CompleteAsync(CancellationToken.None);
+            };
+
+            if (throwOperationCanceledException)
+            {
+                var exception = await act.Should().ThrowAsync<InvalidOperationException>()
+                    .WithMessage("Observer dispatch failed.");
+                exception.Which.InnerException.Should().BeSameAs(recipientException);
+            }
+            else
+            {
+                var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+                exception.Which.Should().BeSameAs(recipientException);
+            }
+        }
+        finally
+        {
+            await dispatcher.DisposeAsync();
+        }
+    }
+
+    [Theory]
+    [InlineData(ObserverDispatchMode.Inline, ObserverFailurePolicy.Ignore, 2)]
+    [InlineData(ObserverDispatchMode.BufferedReliable, ObserverFailurePolicy.Ignore, 2)]
+    [InlineData(ObserverDispatchMode.Inline, ObserverFailurePolicy.RemoveObserver, 1)]
+    [InlineData(ObserverDispatchMode.BufferedReliable, ObserverFailurePolicy.RemoveObserver, 1)]
+    public async Task FailureNotification_NonFaultingRecipientPolicy_ShouldNotFaultPipeline(
+        ObserverDispatchMode mode,
+        ObserverFailurePolicy recipientPolicy,
+        int expectedRecipientCalls)
+    {
+        var primaryObserver = new ThrowingObserver();
+        var recipientObserver = new ThrowingOnEventTypeObserver(typeof(ObserverFailedEvent));
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [
+                new PipelineObserverRegistration(
+                    primaryObserver,
+                    ObserverReliability.BestEffort,
+                    ObserverFailurePolicy.Ignore),
+                new PipelineObserverRegistration(
+                    recipientObserver,
+                    ObserverReliability.BestEffort,
+                    recipientPolicy),
+            ],
+            Options(mode, ObserverFailureMode.UseRegistrationPolicy),
+            SystemPipelineClock.Instance);
+
+        try
+        {
+            await dispatcher.EmitAsync(
+                new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+                CancellationToken.None);
+            await dispatcher.EmitAsync(
+                new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+                CancellationToken.None);
+            await dispatcher.CompleteAsync(CancellationToken.None);
+
+            recipientObserver.Calls.Should().Be(expectedRecipientCalls);
+        }
+        finally
+        {
+            await dispatcher.DisposeAsync();
+        }
     }
 
     [Fact]
@@ -321,6 +775,31 @@ public sealed class ObserverDispatcherTests
             FailureMode = failureMode,
             FlushOnCompletion = true,
         };
+    }
+
+    private static ObserverDispatchOptions BestEffortNoFlushOptions(ObserverFailureMode failureMode)
+    {
+        return new ObserverDispatchOptions
+        {
+            Mode = ObserverDispatchMode.BufferedBestEffort,
+            Capacity = 16,
+            FullMode = BoundedChannelFullMode.Wait,
+            FailureMode = failureMode,
+            FlushOnCompletion = false,
+        };
+    }
+
+    private static ObserverDispatchOptions Options(
+        ObserverDispatchMode mode,
+        ObserverFailureMode failureMode)
+    {
+        return mode == ObserverDispatchMode.Inline
+            ? new ObserverDispatchOptions
+            {
+                Mode = ObserverDispatchMode.Inline,
+                FailureMode = failureMode,
+            }
+            : BufferedOptions(failureMode);
     }
 
     private static async Task<List<PipelineOutput<T>>> ReadOutputsAsync<T>(
@@ -474,24 +953,134 @@ public sealed class ObserverDispatcherTests
     private sealed class ThrowingOnEventTypeObserver : IPipelineObserver
     {
         private readonly Type _eventType;
+        private readonly Exception _exception;
+        private int _calls;
 
-        public ThrowingOnEventTypeObserver(Type eventType)
+        public ThrowingOnEventTypeObserver(Type eventType, Exception? exception = null)
         {
             _eventType = eventType;
+            _exception = exception ?? new InvalidOperationException("observer failure");
         }
 
         public TaskCompletionSource EventObserved { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public int Calls => Volatile.Read(ref _calls);
+
         public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
         {
             if (pipelineEvent.GetType() == _eventType)
             {
+                Interlocked.Increment(ref _calls);
                 EventObserved.TrySetResult();
-                throw new InvalidOperationException("observer failure");
+                throw _exception;
             }
 
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class CancellationObservingObserver : IPipelineObserver
+    {
+        public TaskCompletionSource Entered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource CancellationObserved { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Exited { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            Entered.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                CancellationObserved.TrySetResult();
+                throw;
+            }
+            finally
+            {
+                Exited.TrySetResult();
+            }
+        }
+    }
+
+    private sealed class ReleasableObserver : IPipelineObserver
+    {
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Entered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release() => _release.TrySetResult();
+
+        public async ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            Entered.TrySetResult();
+            await _release.Task.WaitAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    private sealed class ReleasableCancellationObserver : IPipelineObserver
+    {
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Entered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource CancellationObserved { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Exited { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release() => _release.TrySetResult();
+
+        public async ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            Entered.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                CancellationObserved.TrySetResult();
+                await _release.Task.ConfigureAwait(false);
+                throw;
+            }
+            finally
+            {
+                Exited.TrySetResult();
+            }
+        }
+    }
+
+    private sealed class ReleasableFaultingObserver : IPipelineObserver
+    {
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Entered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public InvalidOperationException Exception { get; } =
+            new("observer failure");
+
+        public void Release() => _release.TrySetResult();
+
+        public async ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            Entered.TrySetResult();
+            await _release.Task.WaitAsync(ct).ConfigureAwait(false);
+            throw Exception;
         }
     }
 

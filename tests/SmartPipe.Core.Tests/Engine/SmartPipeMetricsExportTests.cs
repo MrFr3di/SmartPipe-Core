@@ -55,6 +55,7 @@ public class SmartPipeMetricsExportTests
             "output_queue_depth",
             "pool_hit_rate",
             "last_processed_at_utc",
+            "last_activity_at_utc",
         ]);
     }
 
@@ -118,7 +119,7 @@ public class SmartPipeMetricsExportTests
     }
 
     private static bool HasExpectedShape(Dictionary<string, object> export) =>
-        export.Count == 18
+        export.Count == 19
         && export.TryGetValue("items_processed", out var itemsProcessed) && itemsProcessed is long
         && export.TryGetValue("items_failed", out var itemsFailed) && itemsFailed is long
         && export.TryGetValue("items_filtered", out var itemsFiltered) && itemsFiltered is long
@@ -136,7 +137,8 @@ public class SmartPipeMetricsExportTests
         && export.TryGetValue("input_queue_depth", out var inputQueueDepth) && inputQueueDepth is int
         && export.TryGetValue("output_queue_depth", out var outputQueueDepth) && outputQueueDepth is int
         && export.TryGetValue("pool_hit_rate", out var poolHitRate) && poolHitRate is double
-        && export.TryGetValue("last_processed_at_utc", out var lastProcessedAtUtc) && lastProcessedAtUtc is string;
+        && export.TryGetValue("last_processed_at_utc", out var lastProcessedAtUtc) && lastProcessedAtUtc is string
+        && export.TryGetValue("last_activity_at_utc", out var lastActivityAtUtc) && lastActivityAtUtc is string;
 
     [Fact]
     public void ExportJson_ShouldReturnValidJson()

@@ -32,21 +32,26 @@ jobs:
         id: version
         shell: bash
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          CORE_VERSION="$(dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo)"
+          EXT_VERSION="$(dotnet msbuild src/SmartPipe.Extensions/SmartPipe.Extensions.csproj -getProperty:Version -nologo)"
+          VERSION_OUTPUT="$(bash eng/validate-release-version.sh "${GITHUB_REF_NAME}" "$CORE_VERSION" "$EXT_VERSION")"
+          echo "$VERSION_OUTPUT"
+          PACKAGE_VERSION="$(echo "$VERSION_OUTPUT" | awk -F= '/^PACKAGE_VERSION=/{print $2}')"
+          BASE_VERSION="$(echo "$VERSION_OUTPUT" | awk -F= '/^BASE_VERSION=/{print $2}')"
 
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid release tag: $TAG"
-            echo "Expected examples: v1.1.0, v1.1.0-rc.1, v1.2.0-preview.1"
-            exit 1
-          fi
-
-          VERSION="${TAG#v}"
-
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Publishing SmartPipe packages version: $VERSION"
+          echo "version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing SmartPipe packages version: $PACKAGE_VERSION"
 
       - name: Restore
         run: dotnet restore SmartPipe.Core.slnx --locked-mode
+
+      - name: Verify tag matches project versions
+        shell: bash
+        run: |
+          CORE_VERSION="$(dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo)"
+          EXT_VERSION="$(dotnet msbuild src/SmartPipe.Extensions/SmartPipe.Extensions.csproj -getProperty:Version -nologo)"
+          bash eng/validate-release-version.sh "${GITHUB_REF_NAME}" "$CORE_VERSION" "$EXT_VERSION"
 
       - name: Build Release
         run: |

@@ -5,45 +5,50 @@ using System.Threading;
 namespace SmartPipe.Core;
 
 /// <summary>
-/// Thread-safe object pool that uses <see cref="Interlocked"/> operations for rent and return coordination.
-/// Enforces a maximum total capacity to prevent unbounded growth under sustained load.
+/// Thread-safe object pool that retains reusable objects up to a configured maximum retained capacity.
 /// </summary>
 /// <typeparam name="T">Type of pooled objects.</typeparam>
 public class ObjectPool<T>
     where T : class
 {
-    private readonly T?[] _items;
-    private readonly int[] _versions;
+    private const int DefaultCapacity = 256;
+    private const int DefaultMaxCapacity = 1024;
+
+    private readonly Lock _gate = new();
+    private readonly T[] _items;
     private readonly Func<T> _factory;
     private readonly Action<T>? _reset;
-    private readonly int _maxCapacity;
-    private int _index;
-    private int _totalCreated;
+    private int _count;
 
     /// <summary>Creates a new object pool with pre-allocated objects.</summary>
     /// <param name="factory">Factory function to create new objects.</param>
-    /// <exception cref="ArgumentNullException">Thrown when factory is null.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="factory"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="factory"/> returns null.</exception>
     public ObjectPool(Func<T> factory)
-        : this(factory, capacity: 256, maxCapacity: 1024)
+        : this(factory, capacity: DefaultCapacity, maxCapacity: DefaultMaxCapacity)
     {
     }
 
     /// <summary>Creates a new object pool with pre-allocated objects.</summary>
     /// <param name="factory">Factory function to create new objects.</param>
     /// <param name="capacity">Initial pool capacity (number of pre-allocated objects).</param>
-    /// <exception cref="ArgumentNullException">Thrown when factory is null.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="factory"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="capacity"/> is negative.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="factory"/> returns null.</exception>
     public ObjectPool(Func<T> factory, int capacity)
-        : this(factory, capacity, maxCapacity: 1024)
+        : this(factory, reset: null, capacity, maxCapacity: Math.Max(DefaultMaxCapacity, capacity))
     {
     }
 
     /// <summary>Creates a new object pool with pre-allocated objects.</summary>
     /// <param name="factory">Factory function to create new objects.</param>
     /// <param name="capacity">Initial pool capacity (number of pre-allocated objects).</param>
-    /// <param name="maxCapacity">Maximum total objects this pool can create. If exceeded, returned objects are discarded.</param>
-    /// <exception cref="ArgumentNullException">Thrown when factory is null.</exception>
+    /// <param name="maxCapacity">Maximum number of objects retained by the pool. This does not limit how many objects can be created over the pool lifetime.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="factory"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="capacity"/> or <paramref name="maxCapacity"/> is negative, or <paramref name="maxCapacity"/> is less than <paramref name="capacity"/>.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="factory"/> returns null.</exception>
 #pragma warning disable RS0027 // Existing 1.x optional constructor preserved for source compatibility.
-    public ObjectPool(Func<T> factory, int capacity = 256, int maxCapacity = 1024)
+    public ObjectPool(Func<T> factory, int capacity = DefaultCapacity, int maxCapacity = DefaultMaxCapacity)
         : this(factory, reset: null, capacity, maxCapacity)
     {
     }
@@ -53,9 +58,11 @@ public class ObjectPool<T>
     /// <param name="factory">Factory function to create new objects.</param>
     /// <param name="reset">Optional callback invoked before an object is stored for reuse.</param>
     /// <param name="capacity">Initial pool capacity (number of pre-allocated objects).</param>
-    /// <exception cref="ArgumentNullException">Thrown when factory is null.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="factory"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="capacity"/> is negative.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="factory"/> returns null.</exception>
     public ObjectPool(Func<T> factory, Action<T>? reset, int capacity)
-        : this(factory, reset, capacity, maxCapacity: 1024)
+        : this(factory, reset, capacity, maxCapacity: Math.Max(DefaultMaxCapacity, capacity))
     {
     }
 
@@ -63,91 +70,90 @@ public class ObjectPool<T>
     /// <param name="factory">Factory function to create new objects.</param>
     /// <param name="reset">Optional callback invoked before an object is stored for reuse.</param>
     /// <param name="capacity">Initial pool capacity (number of pre-allocated objects).</param>
-    /// <param name="maxCapacity">Maximum total objects this pool can create. If exceeded, returned objects are discarded.</param>
-    /// <exception cref="ArgumentNullException">Thrown when factory is null.</exception>
+    /// <param name="maxCapacity">Maximum number of objects retained by the pool. This does not limit how many objects can be created over the pool lifetime.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="factory"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="capacity"/> or <paramref name="maxCapacity"/> is negative, or <paramref name="maxCapacity"/> is less than <paramref name="capacity"/>.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="factory"/> returns null.</exception>
     public ObjectPool(Func<T> factory, Action<T>? reset, int capacity, int maxCapacity)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _reset = reset;
-        _items = new T[capacity];
-        _versions = new int[capacity];
-        _maxCapacity = maxCapacity;
+
+        if (capacity < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(capacity));
+        }
+
+        if (maxCapacity < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxCapacity));
+        }
+
+        if (maxCapacity < capacity)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxCapacity),
+                "Maximum retained capacity must be greater than or equal to the initial capacity.");
+        }
+
+        _items = new T[maxCapacity];
         for (int i = 0; i < capacity; i++)
-            _items[i] = _factory();
-        _index = capacity;
-        _totalCreated = capacity;
+        {
+            _items[i] = Create();
+        }
+
+        _count = capacity;
     }
 
     /// <summary>Rents an object from the pool or creates a new one if empty.</summary>
     /// <returns>A pooled or new object.</returns>
-    /// <remarks>Uses version stamps to prevent ABA race conditions.
-    /// If pool is exhausted and max capacity reached, creates a new object without tracking it.</remarks>
+    /// <exception cref="InvalidOperationException">Thrown when the factory returns null.</exception>
+    /// <remarks>When the retained pool is empty, the factory creates a new object outside the pool lock.</remarks>
     public T Rent()
     {
-        const int maxRetries = 100;
+        T? item = null;
 
-        for (int attempt = 0; attempt < maxRetries; attempt++)
+        lock (_gate)
         {
-            int i = Interlocked.Decrement(ref _index);
-            if (i < 0 || i >= _items.Length)
+            if (_count > 0)
             {
-                Interlocked.Increment(ref _index);
-                // Pool exhausted — create new if under max capacity
-                if (Volatile.Read(ref _totalCreated) < _maxCapacity)
-                {
-                    Interlocked.Increment(ref _totalCreated);
-                    return _factory();
-                }
-                // Max capacity reached — create without tracking
-                return _factory();
+                _count--;
+                item = _items[_count];
+                _items[_count] = null!;
             }
-
-            // Read version before attempting exchange
-            int version = Volatile.Read(ref _versions[i]);
-            T? obj = Interlocked.Exchange(ref _items[i], null);
-
-            if (obj != null)
-            {
-                // Verify version hasn't changed (ABA check)
-                int currentVersion = Volatile.Read(ref _versions[i]);
-                if (version == currentVersion)
-                    return obj;
-
-                // ABA detected: slot was recycled while we were exchanging.
-                // Put object back and retry with a different slot.
-                Interlocked.Exchange(ref _items[i], obj);
-            }
-
-            // Slot was empty or ABA detected - release our claim on this slot
-            Interlocked.Increment(ref _index);
         }
 
-        return _factory(); // Max retries exceeded, create new
+        return item ?? Create();
     }
 
     /// <summary>Returns an object to the pool for reuse.</summary>
     /// <param name="item">Object to return.</param>
-    /// <exception cref="ArgumentNullException">Thrown when item is null.</exception>
-    /// <remarks>Increments version stamp to prevent ABA issues.
-    /// If pool is full, the item is discarded and left for GC.</remarks>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="item"/> is null.</exception>
+    /// <remarks>The reset callback runs outside the pool lock. If reset throws or the retained pool is full, the item is not retained.</remarks>
     public void Return(T item)
     {
-        if (item == null)
-            throw new ArgumentNullException(nameof(item));
+        ArgumentNullException.ThrowIfNull(item);
 
         _reset?.Invoke(item);
 
-        int i = Interlocked.Increment(ref _index) - 1;
-        if (i >= 0 && i < _items.Length)
+        lock (_gate)
         {
-            // Store item first, then increment version as atomic commit
-            Volatile.Write(ref _items[i], item);
-            Interlocked.Increment(ref _versions[i]);
+            if (_count < _items.Length)
+            {
+                _items[_count] = item;
+                _count++;
+            }
         }
-        else
+    }
+
+    private T Create()
+    {
+        T item = _factory();
+        if (item is null)
         {
-            Interlocked.Decrement(ref _index);
-            // Pool is full — item is discarded, GC will collect it
+            throw new InvalidOperationException("Object pool factory returned null.");
         }
+
+        return item;
     }
 }

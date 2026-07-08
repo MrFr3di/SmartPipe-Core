@@ -167,7 +167,7 @@ public sealed class AdaptiveParallelismControllerStressTests
                 .Should().BeLessThanOrEqualTo(options.MaxAdjustmentStep, because);
             decision.SmoothedLatency.Should().BeGreaterThanOrEqualTo(TimeSpan.Zero, because);
 
-            if (sinceLastDecision < options.Cooldown)
+            if (sinceLastDecision < options.AdjustmentCooldown)
             {
                 decision.TargetConcurrency.Should().Be(decision.PreviousConcurrency, because);
                 decision.Reason.Should().Be(AdaptiveParallelismDecisionReason.Cooldown, because);
@@ -195,9 +195,11 @@ public sealed class AdaptiveParallelismControllerStressTests
             InitialConcurrency = initialConcurrency,
             TargetLatency = targetLatency ?? TimeSpan.FromMilliseconds(100),
             DeadZone = deadZone ?? TimeSpan.FromMilliseconds(5),
-            Cooldown = cooldown ?? TimeSpan.FromMilliseconds(100),
+            EvaluationInterval = TimeSpan.FromMilliseconds(100),
+            AdjustmentCooldown = cooldown ?? TimeSpan.FromMilliseconds(100),
             MaxAdjustmentStep = maxAdjustmentStep,
             FailurePressureThreshold = failurePressureThreshold,
+            MinimumFailureSamples = 10,
             MinSmoothingFactor = minSmoothingFactor,
         };
 

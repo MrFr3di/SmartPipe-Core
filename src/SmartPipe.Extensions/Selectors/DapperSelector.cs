@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Reflection;
 using Dapper;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,7 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
     private readonly int _commandTimeout;
     private readonly ILogger<DapperSelector<T>>? _logger;
     private readonly bool _leaveOpen;
+    private readonly Func<DbDataReader, T>? _dbDataReaderMapper;
     private IDataReader? _reader;
     private int _disposed;
 
@@ -35,6 +37,7 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
         "RS0027:Public API with optional parameter(s) should have the most parameters amongst its public overloads",
         Justification = "The shipped constructor is preserved for binary compatibility; the DbConnection overload adds explicit ownership without optional parameters."
     )]
+    [RequiresUnreferencedCode("The default DapperSelector mapper uses reflection over T. Use the DbDataReader mapper overload for trimming and NativeAOT.")]
     public DapperSelector(
         IDbConnection connection,
         string sql,
@@ -53,6 +56,7 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
     /// <param name="leaveOpen">Whether to leave the injected connection open when disposing the source.</param>
     /// <param name="commandTimeout">Command timeout in seconds (default: 30).</param>
     /// <param name="logger">Optional logger.</param>
+    [RequiresUnreferencedCode("The default DapperSelector mapper uses reflection over T. Use the DbDataReader mapper overload for trimming and NativeAOT.")]
     public DapperSelector(
         DbConnection connection,
         string sql,
@@ -65,13 +69,46 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
     {
     }
 
+    /// <summary>Create Dapper source with an explicit row mapper.</summary>
+    /// <param name="connection">Database connection.</param>
+    /// <param name="sql">SQL query to execute.</param>
+    /// <param name="mapper">Mapper from the active data reader row to the output value.</param>
+    public DapperSelector(
+        DbConnection connection,
+        string sql,
+        Func<DbDataReader, T> mapper)
+        : this(connection, sql, mapper, parameters: null, leaveOpen: true, commandTimeout: 30, logger: null)
+    {
+    }
+
+    /// <summary>Create Dapper source with an explicit row mapper and connection ownership.</summary>
+    /// <param name="connection">Database connection.</param>
+    /// <param name="sql">SQL query to execute.</param>
+    /// <param name="mapper">Mapper from the active data reader row to the output value.</param>
+    /// <param name="parameters">Optional query parameters.</param>
+    /// <param name="leaveOpen">Whether to leave the injected connection open when disposing the source.</param>
+    /// <param name="commandTimeout">Command timeout in seconds.</param>
+    /// <param name="logger">Optional logger.</param>
+    public DapperSelector(
+        DbConnection connection,
+        string sql,
+        Func<DbDataReader, T> mapper,
+        object? parameters,
+        bool leaveOpen,
+        int commandTimeout,
+        ILogger<DapperSelector<T>>? logger)
+        : this(connection, sql, parameters, commandTimeout, logger, leaveOpen, mapper)
+    {
+    }
+
     private DapperSelector(
         IDbConnection connection,
         string sql,
         object? parameters,
         int commandTimeout,
         ILogger<DapperSelector<T>>? logger,
-        bool leaveOpen
+        bool leaveOpen,
+        Func<DbDataReader, T>? dbDataReaderMapper = null
     )
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
@@ -80,6 +117,7 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
         _commandTimeout = commandTimeout;
         _logger = logger;
         _leaveOpen = leaveOpen;
+        _dbDataReaderMapper = dbDataReaderMapper;
     }
 
     /// <inheritdoc />
@@ -138,11 +176,14 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
 
         try
         {
-            var mapper = RowMapper.Create(reader);
+            var mapper = _dbDataReaderMapper;
+            var reflectionMapper = mapper is null ? RowMapper.Create(reader) : null;
 
             while (await reader.ReadAsync(ct).ConfigureAwait(false))
             {
-                var row = mapper.Map(reader);
+                var row = mapper is null
+                    ? reflectionMapper!.Map(reader)
+                    : mapper(reader);
                 yield return ProcessingEnvelope<T>.Create(row);
             }
         }
@@ -234,8 +275,9 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
             var bindings = new List<PropertyBinding>();
             for (var ordinal = 0; ordinal < record.FieldCount; ordinal++)
             {
-                if (writableProperties.TryGetValue(record.GetName(ordinal), out var property))
-                    bindings.Add(new PropertyBinding(ordinal, property));
+                var name = record.GetName(ordinal);
+                if (writableProperties.TryGetValue(name, out var property))
+                    bindings.Add(new PropertyBinding(ordinal, name, property));
             }
 
             return new RowMapper(bindings.ToArray());
@@ -248,12 +290,57 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
             foreach (var binding in _bindings)
             {
                 if (!record.IsDBNull(binding.Ordinal))
-                    binding.Property.SetValue(instance, record.GetValue(binding.Ordinal));
+                {
+                    var value = ConvertValue(
+                        record.GetValue(binding.Ordinal),
+                        binding.Property.PropertyType,
+                        binding.ColumnName,
+                        binding.Property.Name);
+                    binding.Property.SetValue(instance, value);
+                }
             }
 
             return instance;
         }
+
+        private static object? ConvertValue(
+            object value,
+            Type propertyType,
+            string columnName,
+            string propertyName)
+        {
+            var targetType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
+            var valueType = value.GetType();
+            if (targetType.IsAssignableFrom(valueType))
+                return value;
+
+            try
+            {
+                if (targetType.IsEnum)
+                {
+                    return value is string name
+                        ? Enum.Parse(targetType, name, ignoreCase: true)
+                        : Enum.ToObject(
+                            targetType,
+                            Convert.ChangeType(
+                                value,
+                                Enum.GetUnderlyingType(targetType),
+                                CultureInfo.InvariantCulture));
+                }
+
+                if (targetType == typeof(Guid) && value is string guid)
+                    return Guid.Parse(guid);
+
+                return Convert.ChangeType(value, targetType, CultureInfo.InvariantCulture);
+            }
+            catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidCastException or OverflowException)
+            {
+                throw new InvalidOperationException(
+                    $"Column '{columnName}' value of type '{valueType.FullName}' cannot be mapped to property '{propertyName}' of type '{propertyType.FullName}'.",
+                    ex);
+            }
+        }
     }
 
-    private readonly record struct PropertyBinding(int Ordinal, PropertyInfo Property);
+    private readonly record struct PropertyBinding(int Ordinal, string ColumnName, PropertyInfo Property);
 }

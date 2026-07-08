@@ -23,7 +23,7 @@ Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
 | `OrderingMode` | `Unordered` | Cross-item output ordering is not guaranteed. |
 | `ObserverDispatch` | `Inline` | Inline or bounded buffered observer dispatch. |
 | `AdaptiveParallelism` | `disabled` | Opt-in adaptive admission control for parallel envelope processing; requires `InputFullMode = Wait`. |
-| `Clock` | `SystemPipelineClock.Instance` | Timestamps and timeout budgets. |
+| `Clock` | `SystemPipelineClock.Instance` | Timestamps, monotonic durations, and timeout budgets. `TimeProviderPipelineClock` also drives runtime retry delay and timeout waits through its provider. |
 
 All runtime channels are bounded. `BoundedChannelFullMode.Wait` is the safe
 default because it applies backpressure instead of dropping accepted work.
@@ -49,13 +49,21 @@ Adaptive admission changes how many envelopes are admitted to processing at the
 same time. The stage chain inside one envelope remains sequential. With parallel
 processing, cross-envelope output order is still not guaranteed.
 
-The controller reacts to per-envelope completion latency, failure pressure,
-target latency, dead zone, cooldown, and configured min/max concurrency bounds.
-`Cooldown` is the minimum elapsed time between adaptive limit changes. The
-current `2.1.0` model is completion-based: the runtime records each envelope
-completion and does not run a background sampling loop or periodic timer.
+The controller reacts to per-envelope completion latency, interval failure
+ratio, target latency, dead zone, adjustment cooldown, and configured min/max
+concurrency bounds. `EvaluationInterval` controls how often completion samples
+are evaluated. `AdjustmentCooldown` is the minimum elapsed time between
+adaptive limit changes; `Cooldown` remains as a compatibility alias. The current
+model is completion-based: the runtime records each envelope completion and
+does not run a background sampling loop or periodic timer.
 Retry attempts remain observable through retry metrics and events, but retry
-counts are not adaptive admission signals in `2.1.0`.
+counts are not adaptive admission signals.
+
+When `EvaluationInterval` elapses, interval counters reset regardless of the
+controller decision. If `AdjustmentCooldown` blocks an adjustment, samples from
+that evaluation window are not carried into the next window.
+`EvaluationInterval` values much smaller than `AdjustmentCooldown` can drop
+several windows of latency or failure signal between concurrency changes.
 
 | Option | Default | Notes |
 |---|---:|---|
@@ -65,9 +73,12 @@ counts are not adaptive admission signals in `2.1.0`.
 | `InitialConcurrency` | `1` | Initial adaptive admission limit. |
 | `TargetLatency` | `100 ms` | Desired per-envelope processing latency. |
 | `DeadZone` | `5 ms` | Latency band around target where no limit change is made. |
-| `Cooldown` | `1 second` | Minimum elapsed time between adaptive limit changes. |
+| `EvaluationInterval` | `1 second` | Completion-sample interval used for adaptive decisions. |
+| `AdjustmentCooldown` | `1 second` | Minimum elapsed time between adaptive limit changes. |
+| `Cooldown` | `1 second` | Obsolete compatibility alias for `AdjustmentCooldown`. |
 | `MaxAdjustmentStep` | `1` | Maximum limit change per controller decision. |
-| `FailurePressureThreshold` | `0.10` | Failure pressure threshold that prevents growth and reduces concurrency. |
+| `FailurePressureThreshold` | `0.10` | Interval failure ratio threshold that prevents growth and reduces concurrency. |
+| `MinimumFailureSamples` | `10` | Minimum processed samples before interval failure ratio can reduce concurrency. |
 | `MinSmoothingFactor` | `0.2` | Lower bound for latency smoothing factor. |
 
 ```csharp
@@ -83,9 +94,11 @@ var options = new PipelineRuntimeOptions
         InitialConcurrency = 2,
         TargetLatency = TimeSpan.FromMilliseconds(100),
         DeadZone = TimeSpan.FromMilliseconds(10),
-        Cooldown = TimeSpan.FromSeconds(1),
+        EvaluationInterval = TimeSpan.FromSeconds(1),
+        AdjustmentCooldown = TimeSpan.FromSeconds(1),
         MaxAdjustmentStep = 1,
         FailurePressureThreshold = 0.10,
+        MinimumFailureSamples = 10,
         MinSmoothingFactor = 0.2,
     },
 };
@@ -159,8 +172,10 @@ No removal is planned in a patch or minor stabilization release.
 | `OnRetryExhausted` | `EmitFailureResult` |
 
 `RetryPolicy` retries transient stage failures according to `MaxRetries` and
-backoff settings. `TimeoutPolicy` can set per-attempt and whole-stage budgets.
-`CircuitBreakerPolicy` supports threshold-compatible and failure-ratio modes.
+backoff settings. `OnRetry` runs after the retry delay and before the next
+attempt starts; callback failures fault the run. `TimeoutPolicy` can set
+per-attempt and whole-stage budgets. `CircuitBreakerPolicy` supports
+threshold-compatible and failure-ratio modes.
 
 Open-breaker rejection is terminal for the current item and is not retried back
 into the open breaker.
@@ -176,8 +191,19 @@ channels and can fault, ignore, or remove observers according to
 
 | Observer option | Default | Notes |
 |---|---|---|
+| `Mode` | `Inline` | `BufferedReliable` requires `FullMode = Wait` and `FlushOnCompletion = true`. |
+| `FullMode` | `Wait` | Lossy drop modes are allowed only for `BufferedBestEffort` with `FlushOnCompletion = false`. |
+| `FlushOnCompletion` | `true` | Completion flush is guaranteed only for non-lossy observer queues. |
 | `BestEffortWriteTimeout` | `100 ms` | Maximum wait before `BufferedBestEffort` counts a `Wait`-mode observer event as dropped. |
 | `EmitDroppedObserverEvents` | `true` | Tries to publish `ObserverEventDroppedEvent`; `smartpipe.observer.events.dropped` is the reliable pressure signal. |
+
+## Health Checks
+
+Runtime clock settings create run and activity timestamps. Health-check
+`TimeProvider` settings define the instant used for policy evaluation, including
+stale activity and initial activity grace decisions. Production hosts should
+normally use system UTC for both clocks. Custom providers are intended for
+deterministic tests and controlled hosts.
 
 ## Metrics
 

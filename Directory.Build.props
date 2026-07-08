@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Version>2.1.0</Version>
+    <Version>2.1.1</Version>
     <Authors>SmartPipe</Authors>
     <Description>Streaming pipeline library based on System.Threading.Channels.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

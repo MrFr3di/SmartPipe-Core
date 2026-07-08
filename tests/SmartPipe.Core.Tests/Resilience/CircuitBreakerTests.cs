@@ -5,6 +5,7 @@ using SmartPipe.Core;
 
 namespace SmartPipe.Core.Tests.Resilience;
 
+[Trait("Category", "CorrectnessRegression")]
 public class CircuitBreakerTests
 {
     [Fact]
@@ -111,6 +112,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public void CircuitBreaker_HalfOpen_AllowsUpToMaxConcurrentProbes()
     {
         var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -152,6 +154,69 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public void AcquirePermit_StaleHalfOpenPermitAfterReset_ShouldNotAffectClosedState()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 1,
+            clock: clock);
+
+        cb.RecordFailure();
+        clock.Advance(TimeSpan.FromSeconds(11));
+        var stalePermit = cb.AcquirePermit();
+        stalePermit.IsAllowed.Should().BeTrue();
+        cb.State.Should().Be(CircuitState.HalfOpen);
+
+        cb.Reset();
+
+        stalePermit.RecordFailure();
+        stalePermit.Dispose();
+
+        cb.State.Should().Be(CircuitState.Closed);
+        cb.AllowRequest().Should().BeTrue();
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public void AcquirePermit_OldPermitCannotCloseNewHalfOpenGeneration()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 1,
+            clock: clock);
+
+        cb.RecordFailure();
+        clock.Advance(TimeSpan.FromSeconds(11));
+        var stalePermit = cb.AcquirePermit();
+        stalePermit.IsAllowed.Should().BeTrue();
+
+        cb.Reset();
+        cb.RecordFailure();
+        clock.Advance(TimeSpan.FromSeconds(11));
+        var currentPermit = cb.AcquirePermit();
+        currentPermit.IsAllowed.Should().BeTrue();
+        cb.State.Should().Be(CircuitState.HalfOpen);
+
+        stalePermit.RecordSuccess();
+
+        cb.State.Should().Be(CircuitState.HalfOpen);
+
+        currentPermit.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        stalePermit.Dispose();
+        currentPermit.Dispose();
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public void CircuitBreakerProbe_CopyDispose_DoesNotReleaseAnotherActiveProbeSlot()
     {
         var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -186,6 +251,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public void CircuitBreakerProbe_DoubleDispose_DoesNotReleaseAnotherActiveProbeSlot()
     {
         var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -269,6 +335,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task TryAcquireHalfOpenProbe_ConcurrentExpiredOpen_AllowsAtMostConfiguredProbes()
     {
         var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -308,6 +375,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task TryAcquireHalfOpenProbe_RacingExpiredOpenTransition_DoesNotResetActiveProbeCount()
     {
         var clock = new GatedManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -374,6 +442,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task AllowRequest_ConcurrentExpiredOpen_AllowsAtMostConfiguredHalfOpenRequests()
     {
         var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
@@ -436,6 +505,83 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    public void Isolate_ShouldRemainAbsorbingUntilReset()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc));
+        var cb = new CircuitBreaker(
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(1),
+            clock: clock);
+
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        cb.Isolate();
+        clock.Advance(TimeSpan.FromSeconds(2));
+
+        cb.AllowRequest().Should().BeFalse();
+        cb.AcquirePermit().IsAllowed.Should().BeFalse();
+        cb.RecordSuccess();
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Isolated);
+
+        cb.Reset();
+        cb.State.Should().Be(CircuitState.Closed);
+    }
+
+    [Fact]
+    public void TimeProviderConstructor_UsesMonotonicElapsedForBreakDuration()
+    {
+        var timeProvider = new ManualTimeProvider(
+            new DateTimeOffset(2026, 6, 22, 10, 0, 0, TimeSpan.Zero));
+        var cb = new CircuitBreaker(
+            timeProvider,
+            failureRatio: 0.5,
+            samplingDuration: null,
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(10),
+            maxHalfOpenRequests: 1);
+
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Open);
+
+        timeProvider.JumpUtc(TimeSpan.FromMinutes(1));
+
+        cb.AcquirePermit().IsAllowed.Should().BeFalse(
+            "wall-clock jumps must not satisfy break duration");
+        cb.State.Should().Be(CircuitState.Open);
+
+        timeProvider.AdvanceTimestamp(TimeSpan.FromSeconds(11));
+
+        cb.AcquirePermit().IsAllowed.Should().BeTrue();
+        cb.State.Should().Be(CircuitState.HalfOpen);
+    }
+
+    [Fact]
+    public void TimeProviderConstructor_UsesMonotonicElapsedForSamplingWindow()
+    {
+        var timeProvider = new ManualTimeProvider(
+            new DateTimeOffset(2026, 6, 22, 10, 0, 0, TimeSpan.Zero));
+        var cb = new CircuitBreaker(
+            timeProvider,
+            failureRatio: 0.5,
+            samplingDuration: TimeSpan.FromSeconds(10),
+            minimumThroughput: 2,
+            breakDuration: TimeSpan.FromMinutes(1),
+            maxHalfOpenRequests: 1);
+
+        cb.RecordFailure();
+        cb.State.Should().Be(CircuitState.Closed);
+
+        timeProvider.AdvanceTimestamp(TimeSpan.FromSeconds(20));
+        timeProvider.JumpUtc(TimeSpan.FromHours(-1));
+        cb.RecordSuccess();
+
+        cb.State.Should().Be(CircuitState.Closed);
+        cb.GetCurrentFailureRatio().Should().Be(0);
+    }
+
+    [Fact]
     public void Reset_ShouldClearAndClose()
     {
         var cb = new CircuitBreaker(minimumThroughput: 5);
@@ -457,14 +603,15 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public void CircuitBreaker_RatioMode_CleanupWindow_ShouldNotReorderSamples()
     {
         var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
         var clock = new ManualClock(now);
         var cb = new CircuitBreaker(samplingDuration: TimeSpan.FromMinutes(1), clock: clock);
         var window = GetWindow(cb);
-        var first = (now.AddSeconds(-10), true);
-        var second = (now.AddSeconds(-5), false);
+        var first = (now.AddSeconds(-10).Ticks, true);
+        var second = (now.AddSeconds(-5).Ticks, false);
         window.Enqueue(first);
         window.Enqueue(second);
 
@@ -480,8 +627,8 @@ public class CircuitBreakerTests
         var clock = new ManualClock(now);
         var cb = new CircuitBreaker(samplingDuration: TimeSpan.FromMinutes(1), clock: clock);
         var window = GetWindow(cb);
-        var expired = (now.AddMinutes(-2), false);
-        var current = (now.AddSeconds(-5), true);
+        var expired = (now.AddMinutes(-2).Ticks, false);
+        var current = (now.AddSeconds(-5).Ticks, true);
         window.Enqueue(expired);
         window.Enqueue(current);
 
@@ -497,10 +644,10 @@ public class CircuitBreakerTests
         var clock = new ManualClock(now);
         var cb = new CircuitBreaker(samplingDuration: TimeSpan.FromMinutes(1), clock: clock);
         var window = GetWindow(cb);
-        var expired1 = (now.AddMinutes(-2), false);
-        var expired2 = (now.AddMinutes(-3), false);
-        var current1 = (now.AddSeconds(-10), true);
-        var current2 = (now.AddSeconds(-5), true);
+        var expired1 = (now.AddMinutes(-2).Ticks, false);
+        var expired2 = (now.AddMinutes(-3).Ticks, false);
+        var current1 = (now.AddSeconds(-10).Ticks, true);
+        var current2 = (now.AddSeconds(-5).Ticks, true);
         window.Enqueue(expired1);
         window.Enqueue(expired2);
         window.Enqueue(current1);
@@ -519,6 +666,7 @@ public class CircuitBreakerTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task StressTest_CleanupWindow_RaceCondition()
     {
         // Arrange
@@ -536,7 +684,7 @@ public class CircuitBreakerTests
         Assert.NotNull(cleanupMethod);
         Assert.NotNull(windowField);
 
-        var window = (ConcurrentQueue<(DateTime Timestamp, bool IsSuccess)>)windowField.GetValue(cb)!;
+        var window = (ConcurrentQueue<(long Timestamp, bool IsSuccess)>)windowField.GetValue(cb)!;
 
         int recordFailureThreads = 10;
         int cleanupThreads = 5;
@@ -609,7 +757,7 @@ public class CircuitBreakerTests
         exceptions.Should().BeEmpty("No exceptions should occur during stress test");
 
         // Assert: Verify no old items remain in the window
-        var cutoff = DateTime.UtcNow - samplingDuration;
+        var cutoff = DateTime.UtcNow.Ticks - samplingDuration.Ticks;
         var oldItems = window.Where(item => item.Timestamp < cutoff).ToList();
 
         if (oldItems.Any())
@@ -617,14 +765,14 @@ public class CircuitBreakerTests
             _output.WriteLine($"Found {oldItems.Count} old items in window after test:");
             foreach (var item in oldItems.Take(10))
             {
-                _output.WriteLine($"  Timestamp: {item.Timestamp}, IsSuccess: {item.IsSuccess}, Age: {DateTime.UtcNow - item.Timestamp}");
+                _output.WriteLine($"  Timestamp: {item.Timestamp}, IsSuccess: {item.IsSuccess}, AgeTicks: {DateTime.UtcNow.Ticks - item.Timestamp}");
             }
         }
 
         // The key verification: after cleanup, no items older than cutoff should exist
         // However, due to timing, some items might still be slightly old
         // Let's check with a more lenient cutoff (add 1 second tolerance)
-        var tolerantCutoff = DateTime.UtcNow - samplingDuration + TimeSpan.FromSeconds(1);
+        var tolerantCutoff = DateTime.UtcNow.Ticks - samplingDuration.Ticks + TimeSpan.FromSeconds(1).Ticks;
         var veryOldItems = window.Where(item => item.Timestamp < tolerantCutoff).ToList();
 
         _output.WriteLine($"Test completed. Items enqueued: {itemsEnqueued}");
@@ -646,7 +794,7 @@ public class CircuitBreakerTests
         _output.WriteLine("The fix is to replace TryPeek+TryDequeue with TryDequeue+check pattern.");
     }
 
-    private static ConcurrentQueue<(DateTime Timestamp, bool IsSuccess)> GetWindow(CircuitBreaker cb)
+    private static ConcurrentQueue<(long Timestamp, bool IsSuccess)> GetWindow(CircuitBreaker cb)
     {
         var windowField = typeof(CircuitBreaker).GetField(
             "_window",
@@ -654,7 +802,7 @@ public class CircuitBreakerTests
         );
 
         windowField.Should().NotBeNull();
-        return (ConcurrentQueue<(DateTime Timestamp, bool IsSuccess)>)windowField!.GetValue(cb)!;
+        return (ConcurrentQueue<(long Timestamp, bool IsSuccess)>)windowField!.GetValue(cb)!;
     }
 
     private static void InvokeCleanupWindow(CircuitBreaker cb)
@@ -782,5 +930,32 @@ public class CircuitBreakerTests
         }
 
         private DateTime CurrentUtcNow => new(Interlocked.Read(ref _ticks), DateTimeKind.Utc);
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long _timestamp;
+        private DateTimeOffset _utcNow;
+
+        public ManualTimeProvider(DateTimeOffset utcNow)
+        {
+            _utcNow = utcNow;
+        }
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public override long GetTimestamp() => Interlocked.Read(ref _timestamp);
+
+        public void JumpUtc(TimeSpan duration)
+        {
+            _utcNow += duration;
+        }
+
+        public void AdvanceTimestamp(TimeSpan duration)
+        {
+            Interlocked.Add(ref _timestamp, duration.Ticks);
+        }
     }
 }

@@ -276,6 +276,8 @@ public sealed class TypedPipelineDrainTests
 
         await source.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await transformer.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var completionAct = async () => await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await completionAct.Should().ThrowAsync<OperationCanceledException>();
         run.State.Should().Be(PipelineRunState.Aborted);
     }
 

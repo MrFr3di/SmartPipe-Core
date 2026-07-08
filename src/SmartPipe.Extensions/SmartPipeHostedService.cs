@@ -85,9 +85,22 @@ public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
     public override async Task StopAsync(CancellationToken ct)
     {
         _logger.LogInformation("Typed SmartPipe pipeline stopping, draining...");
-        await DrainPipelineAsync(ct).ConfigureAwait(false);
-        await base.StopAsync(ct).ConfigureAwait(false);
-        await DisposePipelineAsync().ConfigureAwait(false);
+
+        List<Exception> errors = [];
+        if (ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("Typed SmartPipe pipeline graceful drain skipped because host cancellation was already requested");
+        }
+        else
+        {
+            await CollectStopExceptionAsync(errors, () => DrainPipelineAsync(ct)).ConfigureAwait(false);
+        }
+
+        var baseStopToken = ct.IsCancellationRequested ? CancellationToken.None : ct;
+        await CollectStopExceptionAsync(errors, () => base.StopAsync(baseStopToken)).ConfigureAwait(false);
+        CollectExecuteTaskExceptions(errors);
+        await CollectStopExceptionAsync(errors, DisposePipelineAsync).ConfigureAwait(false);
+        ThrowIfStopFailed(errors);
     }
 
     private async Task DrainPipelineAsync(CancellationToken stoppingToken)
@@ -129,6 +142,54 @@ public class SmartPipeHostedService<TInput, TOutput> : BackgroundService
     {
         if (_typedRun is not null)
             await _typedRun.DisposeAsync().ConfigureAwait(false);
+    }
+
+    private static async Task CollectStopExceptionAsync(
+        List<Exception> errors,
+        Func<Task> action)
+    {
+        try
+        {
+            await action().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            errors.Add(ex);
+        }
+    }
+
+    private void CollectExecuteTaskExceptions(List<Exception> errors)
+    {
+        var executeTask = ExecuteTask;
+        if (executeTask?.IsFaulted != true || executeTask.Exception is null)
+            return;
+
+        foreach (var exception in executeTask.Exception.InnerExceptions)
+        {
+            var alreadyRecorded = false;
+            foreach (var existing in errors)
+            {
+                if (ReferenceEquals(existing, exception))
+                {
+                    alreadyRecorded = true;
+                    break;
+                }
+            }
+
+            if (!alreadyRecorded)
+                errors.Add(exception);
+        }
+    }
+
+    private static void ThrowIfStopFailed(IReadOnlyList<Exception> errors)
+    {
+        if (errors.Count == 0)
+            return;
+
+        if (errors.Count == 1)
+            ExceptionDispatchInfo.Capture(errors[0]).Throw();
+
+        throw new AggregateException(errors);
     }
 
     private void HandlePipelineFault(Exception exception)

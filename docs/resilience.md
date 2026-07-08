@@ -17,12 +17,22 @@ Attach retry to a transform stage with `StageFailureOptions`:
 ```
 
 Retries apply to transient stage failures. Retry delay observes cancellation and
-stage timeout budget.
+stage timeout budget. `RetryPolicy.OnRetry` runs after the retry delay and
+before the next attempt starts. If the callback throws, the runtime faults the
+run instead of silently continuing with another attempt.
 
 Transformer exceptions are converted to `SmartPipeError` with category
-`StageException` and routed through the same retry, dead-letter, and failure
-action policy as returned `StageResult.Failure(...)`. `OperationCanceledException`
-remains cancellation and is not converted into a stage failure.
+`StageException` and `ErrorType.Permanent` by default, then routed through the
+same retry, dead-letter, and failure action policy as returned
+`StageResult.Failure(...)`. Runtime-generated timeout results remain transient.
+Thrown `TimeoutException` and `HttpRequestException` are permanent by default.
+Use `StageFailureOptions.ExceptionClassifier` to classify thrown exceptions as
+transient when a stage has domain-specific retry rules.
+
+`OperationCanceledException` caused by pipeline cancellation remains
+cancellation and bypasses the classifier. A user-thrown
+`OperationCanceledException` when the pipeline token is not cancelled follows
+the normal exception-classifier path.
 
 ## Timeout
 
@@ -66,6 +76,22 @@ Use `FailureAction.DeadLetter` with `StageDeadLetterOptions<T>`:
 
 Dead-letter persistence writes `DeadLetterEnvelope<T>`, not a result-only shape.
 The envelope preserves original payload and replay context.
+
+`DeadLetterSink<T>` writes newline-delimited JSON records. Path-backed sinks open
+the file with append semantics and use a seekable `FileStream`. Before each
+record write, the sink checkpoints the file length, writes UTF-8 bytes directly,
+and flushes by default through `FlushEachWrite = true`. If an in-process write
+throws, a seekable stream is truncated back to the checkpoint before retry.
+Injected non-seekable streams can still be used, but they do not provide this
+in-process rollback guarantee. This is not crash-atomic persistence; durability
+after process or machine failure depends on the configured stream, file system,
+and storage.
+
+Dead-letter writes make at most four attempts. The retry backoff before attempts
+2, 3, and 4 is 100ms, 200ms, and 400ms. After attempts are exhausted, the
+default `DeadLetterWriteFailureMode.Throw` raises `DeadLetterWriteException`.
+Use `DeadLetterWriteFailureMode.LogAndDrop` only when dropping the failed
+dead-letter record is an explicit policy choice.
 
 `DeadLetterSource<T>` reads these envelopes and yields typed
 `ProcessingEnvelope<T>` values for explicit replay.

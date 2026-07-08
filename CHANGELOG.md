@@ -1,5 +1,92 @@
 # Changelog
 
+## [2.1.1] — 2026-07-08
+
+Patch release for post-review correctness, compatibility, CI, and documentation
+fixes found after `v2.1.0`.
+
+### Correctness Fixes
+
+- **Typed runtime terminal outcomes** — cancel and abort requests are tracked as
+  immutable intent until finalization, so processing faults and mandatory
+  cleanup failures keep `Faulted` precedence while successful cancellation or
+  abort finalization publishes the requested terminal state.
+- **Retry callbacks** — `RetryPolicy.OnRetry` now runs after the retry delay and
+  before the next attempt starts. Callback failures fault the run, and
+  cancellation during retry delay does not invoke the callback.
+- **Provider-backed runtime time** — `TimeProviderPipelineClock` now drives
+  runtime retry delays, attempt timeouts, drain waits, and late-attempt
+  finalization waits through its provider instead of limiting fake-time support
+  to timestamps.
+- **Observer dispatch validation and failures** — reliable buffered observer
+  dispatch rejects lossy full modes, best-effort completion flush rejects lossy
+  full modes, flush markers are internal control messages, and buffered
+  observer failures are reported to remaining observers with
+  `ObserverFailedEvent`.
+- **JsonFileSink checkpointed writes** — path-backed sinks append through a
+  seekable async `FileStream`, write one UTF-8 JSON array per flushed batch,
+  roll back in-process write exceptions to the pre-write checkpoint, and keep
+  failed batches buffered for retry.
+- **HttpSelector log redaction and JSON AOT** — request URI logs remove
+  userinfo, query strings, and fragments; unparseable absolute URIs log
+  `[unparseable-uri]`. Reflection JSON constructors are annotated for trimming
+  and NativeAOT risk, while `JsonTypeInfo` constructors remain the recommended
+  path.
+- **SecretScanner fail-closed scanning** — added `SecretScanner.Scan()` and
+  `SecretScanResult` with `Clean`, `SecretFound`, and `Indeterminate`.
+  `HasSecrets()` now returns `true` for indeterminate scans, and `Redact()`
+  returns `***REDACTION_INDETERMINATE***` when regex, input-size,
+  decode-budget, or recursion limits prevent safe redaction.
+
+### Documentation Corrections
+
+- **JSON file terminology** — current docs describe `JsonFileSink<T>` output as
+  newline-delimited JSON batches, one JSON array per line, rather than generic
+  one-record-per-line NDJSON.
+- **Dead-letter persistence** — current docs clarify that dead-letter writers
+  preserve replay context and provide in-process checkpoint rollback on
+  seekable streams, but crash durability remains the responsibility of the
+  configured sink and storage.
+- **Queue depth and health checks** — current docs keep queue depths as
+  observational point-in-time pressure signals. Hosted pipelines with no
+  initial activity remain healthy by default unless `RequireInitialActivity` is
+  enabled.
+- **Timeout semantics** — current docs describe timeouts as cooperative runtime
+  guards. Detached timeout modes do not forcibly stop user code in-process.
+- **CuckooFilter and ObjectPool claims** — older changelog entries remain
+  historical release notes. Current docs do not restate ObjectPool ABA or
+  Cuckoo insertion guarantees beyond what the current source and tests cover.
+
+### Testing & Release Validation
+
+- **Public API baselines** — Core and Extensions baselines were refreshed for
+  analyzer-visible public surface, including record-generated members, so
+  Release warning-as-error builds validate the `2.1.1` contract.
+- **CI coverage split** — long-running Core stress tests now run outside the
+  coverage job, keeping concurrency regression checks in CI without
+  destabilizing coverage collection.
+- **Package and publish gates** — release workflows continue to validate
+  packages through local consumer, trim, NativeAOT, vulnerability, and
+  deprecated-package checks before publish.
+
+### Source-Backed Notes
+
+- Regex hardening follows .NET guidance for
+  [`GeneratedRegexAttribute`](https://learn.microsoft.com/en-us/dotnet/standard/base-types/regular-expression-source-generators)
+  and [`RegexOptions.NonBacktracking`](https://learn.microsoft.com/en-us/dotnet/standard/base-types/regular-expression-options#nonbacktracking-mode).
+- Observability wording follows .NET
+  [`System.Diagnostics.Metrics`](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/metrics-instrumentation)
+  guidance: `Meter` creates named instrument groups, while exporters belong at
+  the host boundary.
+- Probabilistic structure docs remain bounded by the original algorithm papers:
+  Fan et al.,
+  [Cuckoo Filter: Practically Better Than Bloom](https://www.cs.cmu.edu/~dga/papers/cuckoo-conext2014.pdf),
+  and Flajolet et al.,
+  [HyperLogLog: the analysis of a near-optimal cardinality estimation algorithm](https://algo.inria.fr/flajolet/Publications/FlFuGaMe07.pdf).
+- ObjectPool concurrency wording avoids ABA guarantees unless backed by current
+  implementation evidence; tagged-state ABA mitigation is treated as a
+  concurrency pattern, not a blanket pool guarantee.
+
 ## [2.1.0] — 2026-06-27
 
 ### Stabilization Behavior Changes

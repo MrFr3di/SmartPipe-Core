@@ -54,6 +54,14 @@ public class DeduplicationFilterTests
         filter.ContainsAndAdd(1UL).Should().BeFalse();
     }
 
+    [Fact]
+    public void Constructor_ShouldAllowNullTtl()
+    {
+        var filter = new DeduplicationFilter(expectedItems: 100, falsePositiveRate: 0.01, ttl: null);
+
+        filter.ContainsAndAdd(1UL).Should().BeFalse();
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -78,6 +86,17 @@ public class DeduplicationFilterTests
 
         act.Should().Throw<ArgumentOutOfRangeException>()
             .WithParameterName("falsePositiveRate");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_ShouldThrowArgumentOutOfRangeException_WhenTtlIsNotPositive(int ttlMilliseconds)
+    {
+        var act = () => new DeduplicationFilter(ttl: TimeSpan.FromMilliseconds(ttlMilliseconds));
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("ttl");
     }
 
     [Fact]

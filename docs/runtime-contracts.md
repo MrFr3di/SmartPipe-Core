@@ -30,10 +30,18 @@ envelope processing: it changes the active concurrent envelope admission limit,
 not the sequential stage chain inside one envelope.
 
 `MaxConcurrency` remains the hard cap. The adaptive limit can move within the
-configured min/max bounds based on completion latency and failure pressure. The
-current `2.1.0` model is completion-based and does not run a background sampling
-loop. Retry attempts remain observable through metrics and events, but they do
-not affect adaptive admission decisions in `2.1.0`.
+configured min/max bounds based on completion latency and interval failure
+ratio. Completion samples are accumulated until `EvaluationInterval` elapses,
+then processed and failed counts are snapshotted and reset together. Failure
+pressure can reduce concurrency only when the interval processed count reaches
+`MinimumFailureSamples` and `failed / processed` is at least
+`FailurePressureThreshold`. `AdjustmentCooldown` can block a limit change, but
+the evaluated window is still reset and not carried into the next interval.
+`EvaluationInterval` values much smaller than `AdjustmentCooldown` can drop
+several windows of latency or failure signal between concurrency changes. The
+current model is completion-based and does not run a background sampling loop.
+Retry attempts remain observable through metrics and events, but they do not
+affect adaptive admission decisions.
 
 ## Factory And Instance Lifetimes
 
@@ -103,18 +111,89 @@ token for work that was already accepted. A drain timeout throws
 `PipelineDrainResult` with `Completed`, `TimedOutStillRunning`,
 `CancelledByCaller`, `Faulted`, or `AlreadyCompleted`.
 
-`CancelAsync` cancels source and in-flight processing. It requests cooperative
-cancellation and completes outputs as cancelled.
+`CancelAsync` cancels source and in-flight processing. It records cancellation
+intent and requests cooperative cancellation. The terminal state is not final
+until runtime finalization publishes one outcome.
 
-`AbortAsync` performs immediate cancellation and marks the run aborted. It is
-the immediate stop path, distinct from graceful drain.
+`AbortAsync` performs immediate cancellation and records abort intent. It is
+the immediate stop path, distinct from graceful drain. Abort intent has
+precedence over cancellation intent when no processing or mandatory cleanup
+fault exists.
 
-`DisposeAsync` is idempotent and disposes runtime-owned components once.
+After a run starts, `RunAsync` owns source, stage, sink, and observer cleanup.
+Runtime finalization processes work first, attempts cleanup for every owned
+component, determines the terminal outcome, publishes state, completes the
+output channel, sends one terminal pipeline event, and then completes/disposes
+observer dispatch. `PipelineRun<T>.Completion` is the same execution task used
+by the runtime, so state, output completion, terminal event, and completion
+derive from one finalization pass.
+
+Terminal precedence is:
+
+```text
+processing or mandatory cleanup fault > abort request > cancellation request > completion
+```
+
+After state and output completion are published, terminal observer delivery and
+observer teardown failures are diagnostics only. They do not change the
+published state, output-channel completion, or `PipelineRun<T>.Completion`
+outcome.
+
+For buffered observer dispatch, `FlushOnCompletion = false` affects completion
+only. Disposal still stops and awaits the buffered worker before returning.
+Observer callbacks should observe cancellation tokens so buffered shutdown is
+bounded.
+
+Cleanup attempts are best-effort but complete: one cleanup failure does not
+skip later owned resources. If processing and cleanup both fail, the processing
+exception remains primary and cleanup errors are reported after it. If cleanup
+is the only failure, the run faults during finalization.
+
+Late timed-out stage attempts are part of runtime cleanup. The runtime tracks
+detached attempts and waits up to `TimeoutPolicy.LateAttemptFinalizationTimeout`
+before disposing the owning stage. If a non-cooperative transformer continues
+past that timeout, the runtime reports a cleanup failure instead of forcibly
+stopping user code in-process. A stage with a still-running late attempt is not
+disposed during that failed finalization pass.
+
+`DisposeAsync` is idempotent. Concurrent callers await one shared disposal
+task. For a started run, external disposal requests cancellation, waits for the
+run task to finish its owned cleanup, and then disposes executor-level
+primitives. If the runtime was never started, disposal performs component
+cleanup itself.
 
 ## Failure Handling
 
 `StageExecutor` owns retry, timeout, circuit-breaker checks, dead-letter writes,
 and terminal failure action decisions.
+
+Thrown transformer exceptions are stage failures. By default they become
+permanent `StageException` errors. `StageFailureOptions.ExceptionClassifier`
+can map thrown exceptions to a custom `SmartPipeError`, including transient
+errors for retry. Runtime-generated timeout results remain transient through
+the timeout result path; thrown `TimeoutException` and `HttpRequestException`
+remain permanent unless a classifier says otherwise. Pipeline cancellation
+`OperationCanceledException` bypasses the classifier and remains cancellation.
+
+`RetryPolicy.OnRetry` is invoked after the retry delay completes and before the
+next retry attempt starts. It is not invoked when the retry delay is cancelled.
+If the callback throws, the run faults with that exception.
+
+`TimeoutPolicy.AttemptTimeout` limits one attempt. `StageTimeout` is measured
+with the runtime monotonic clock and includes attempt execution, cancellation
+grace, retry delay, and the next attempt budget. When `Clock` is a
+`TimeProviderPipelineClock`, runtime retry delays and timeout waits use the
+underlying `TimeProvider`; custom `IPipelineClock` implementations keep the
+compatibility fallback. `RetryMode` controls overlap after an attempt timeout:
+
+- `CooperativeOnly` is the default. The runtime cancels the attempt, waits
+  `CancellationGracePeriod`, and retries only if the timed-out attempt has
+  completed.
+- `DetachWithoutRetry` returns the timeout result, observes the late task, and
+  does not retry.
+- `DetachAndRetryIdempotent` detaches the late task and permits retry overlap;
+  use it only for idempotent transformers that are safe to run concurrently for
+  the same item.
 
 Circuit-breaker rejection is a terminal failure for the current item. It is not
 retried into the open breaker.

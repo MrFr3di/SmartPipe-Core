@@ -137,6 +137,28 @@ public sealed class AdaptiveParallelismRuntimeStateTests
     }
 
     [Fact]
+    public void RecordCompletion_UsesIntervalAverageLatencyForControllerDecision()
+    {
+        var clock = new ManualPipelineClock();
+        var options = ValidOptions(
+            initialConcurrency: 2,
+            maxConcurrency: 4,
+            evaluationIntervalTicks: TimeSpan.FromMilliseconds(10).Ticks,
+            adjustmentCooldownTicks: 1,
+            clock: clock);
+
+        using var state = new AdaptiveParallelismRuntimeState(options);
+
+        clock.Advance(TimeSpan.FromMilliseconds(5));
+        state.RecordCompletion(TimeSpan.FromMilliseconds(1), failed: false);
+        clock.Advance(TimeSpan.FromMilliseconds(5));
+        state.RecordCompletion(TimeSpan.FromMilliseconds(150), failed: false);
+
+        state.CurrentLimit.Should().Be(3,
+            "the interval average is below target latency, while the last completion alone is above target");
+    }
+
+    [Fact]
     public void RecordCompletion_AfterComplete_IsNoOp()
     {
         var clock = new ManualPipelineClock();
@@ -173,6 +195,78 @@ public sealed class AdaptiveParallelismRuntimeStateTests
         state.RecordCompletion(TimeSpan.FromMilliseconds(1), failed: true);
 
         state.CurrentLimit.Should().BeLessThan(4);
+    }
+
+    [Fact]
+    public void RecordCompletion_BeforeEvaluationInterval_DoesNotChangeLimit()
+    {
+        var clock = new ManualPipelineClock();
+        var options = ValidOptions(
+            initialConcurrency: 4,
+            maxConcurrency: 4,
+            evaluationIntervalTicks: TimeSpan.FromMilliseconds(10).Ticks,
+            adjustmentCooldownTicks: 1,
+            clock: clock);
+
+        using var state = new AdaptiveParallelismRuntimeState(options);
+
+        clock.Advance(TimeSpan.FromMilliseconds(5));
+        state.RecordCompletion(TimeSpan.FromMilliseconds(500), failed: false);
+
+        state.CurrentLimit.Should().Be(4);
+    }
+
+    [Fact]
+    public void RecordCompletion_FailurePressureBelowMinimumSamples_DoesNotReduceLimit()
+    {
+        var clock = new ManualPipelineClock();
+        var options = ValidOptions(
+            initialConcurrency: 4,
+            maxConcurrency: 4,
+            evaluationIntervalTicks: 1,
+            adjustmentCooldownTicks: 1,
+            minimumFailureSamples: 10,
+            clock: clock);
+
+        using var state = new AdaptiveParallelismRuntimeState(options);
+
+        clock.Advance(TimeSpan.FromMilliseconds(2));
+        for (var i = 0; i < 9; i++)
+        {
+            state.RecordCompletion(TimeSpan.FromMilliseconds(1), failed: true);
+            clock.Advance(TimeSpan.FromMilliseconds(2));
+        }
+
+        state.CurrentLimit.Should().Be(4);
+    }
+
+    [Fact]
+    public void RecordCompletion_WhenCooldownBlocksDecision_ResetsIntervalCounters()
+    {
+        var clock = new ManualPipelineClock();
+        var options = ValidOptions(
+            initialConcurrency: 4,
+            maxConcurrency: 4,
+            evaluationIntervalTicks: 1,
+            adjustmentCooldownTicks: TimeSpan.FromSeconds(10).Ticks,
+            minimumFailureSamples: 10,
+            clock: clock);
+
+        using var state = new AdaptiveParallelismRuntimeState(options);
+
+        for (var i = 0; i < 10; i++)
+        {
+            clock.Advance(TimeSpan.FromMilliseconds(2));
+            state.RecordCompletion(TimeSpan.FromMilliseconds(1), failed: true);
+        }
+
+        state.CurrentLimit.Should().Be(4, "adjustment cooldown blocks the first interval decision");
+
+        clock.Advance(TimeSpan.FromSeconds(11));
+        state.RecordCompletion(TimeSpan.FromMilliseconds(1), failed: false);
+
+        state.CurrentLimit.Should().Be(4,
+            "the previous failed interval must not carry into the next evaluation");
     }
 
     [Fact]
@@ -251,6 +345,9 @@ public sealed class AdaptiveParallelismRuntimeStateTests
         int maxConcurrency = 4,
         int runtimeMaxConcurrency = 8,
         long cooldownTicks = 1,
+        long? evaluationIntervalTicks = null,
+        long? adjustmentCooldownTicks = null,
+        int minimumFailureSamples = 1,
         IPipelineClock? clock = null) =>
         new()
         {
@@ -264,9 +361,11 @@ public sealed class AdaptiveParallelismRuntimeStateTests
                 InitialConcurrency = initialConcurrency,
                 TargetLatency = TimeSpan.FromMilliseconds(100),
                 DeadZone = TimeSpan.FromMilliseconds(5),
-                Cooldown = TimeSpan.FromTicks(cooldownTicks),
+                EvaluationInterval = TimeSpan.FromTicks(evaluationIntervalTicks ?? cooldownTicks),
+                AdjustmentCooldown = TimeSpan.FromTicks(adjustmentCooldownTicks ?? cooldownTicks),
                 MaxAdjustmentStep = 1,
                 FailurePressureThreshold = 0.10,
+                MinimumFailureSamples = minimumFailureSamples,
                 MinSmoothingFactor = 1.0,
             },
         };

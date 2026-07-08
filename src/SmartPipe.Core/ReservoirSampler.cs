@@ -1,38 +1,48 @@
 #nullable enable
 
 using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 
 namespace SmartPipe.Core;
 
 /// <summary>Two-Stage Reservoir Sampling (Algorithm R).
 /// Maintains a representative sample of size k from an infinite stream in O(k) memory.
-/// Thread-safe: uses ThreadLocal of Random for concurrent access to random number generation.</summary>
+/// Thread-safe: sampling operations are synchronized.</summary>
 /// <typeparam name="T">Type of items to sample.</typeparam>
 /// <remarks>Each item has equal probability of being in the final sample.</remarks>
 public class ReservoirSampler<T>
 {
     private readonly T[] _reservoir;
-    private readonly ThreadLocal<Random> _rng;
     private long _count;
-    private readonly Lock _reservoirLock = new(); // Protects reservoir array from concurrent writes
+    private readonly Lock _reservoirLock = new();
 
     /// <summary>Gets the sample capacity.</summary>
     public int Capacity => _reservoir.Length;
 
     /// <summary>Gets the total number of items processed.</summary>
-    public long Count => Interlocked.Read(ref _count);
+    public long Count
+    {
+        get
+        {
+            lock (_reservoirLock)
+            {
+                return _count;
+            }
+        }
+    }
 
-    /// <summary>Gets the current sample array (read-only reference).</summary>
-    public T[] Sample => _reservoir;
+    /// <summary>Gets a snapshot of the populated sample entries.</summary>
+    public T[] Sample => GetSampleSnapshot();
 
     /// <summary>Creates a new reservoir sampler.</summary>
     /// <param name="capacity">Maximum sample size (default: 1000).</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when capacity is not positive.</exception>
     public ReservoirSampler(int capacity = 1000)
     {
+        if (capacity <= 0)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be greater than zero.");
+
         _reservoir = new T[capacity];
-        _rng = new ThreadLocal<Random>(() => new Random());
     }
 
     /// <summary>Adds an item to the sample using reservoir sampling algorithm.</summary>
@@ -40,32 +50,43 @@ public class ReservoirSampler<T>
     /// <remarks>First 'capacity' items are stored directly, then probabilistic replacement.</remarks>
     public void Add(T item)
     {
-        long n = Interlocked.Increment(ref _count);
-        if (n <= _reservoir.Length)
+        lock (_reservoirLock)
         {
-            lock (_reservoirLock)
+            _count++;
+            long n = _count;
+
+            if (n <= _reservoir.Length)
             {
-                _reservoir[n - 1] = item;
+                _reservoir[(int)n - 1] = item;
+                return;
             }
-            return;
+
+            if (Random.Shared.NextDouble() < (double)_reservoir.Length / n)
+            {
+                _reservoir[Random.Shared.Next(_reservoir.Length)] = item;
+            }
         }
-        // ThreadLocal<Random>.Value always returns non-null because factory creates Random on first access
-        Random rng = _rng.Value!;
-        if (rng.NextDouble() < (double)_reservoir.Length / n)
+    }
+
+    /// <summary>Returns a snapshot copy of the currently populated sample entries.</summary>
+    /// <returns>Snapshot containing at most <see cref="Capacity"/> populated entries.</returns>
+    internal T[] GetSampleSnapshot()
+    {
+        lock (_reservoirLock)
         {
-            lock (_reservoirLock)
-            {
-                _reservoir[rng.Next(_reservoir.Length)] = item;
-            }
+            int populatedCount = (int)Math.Min(_count, _reservoir.Length);
+            var snapshot = new T[populatedCount];
+            Array.Copy(_reservoir, snapshot, populatedCount);
+            return snapshot;
         }
     }
 
     /// <summary>Resets the sampler, clearing all data.</summary>
     public void Reset()
     {
-        Interlocked.Exchange(ref _count, 0);
         lock (_reservoirLock)
         {
+            _count = 0;
             Array.Clear(_reservoir);
         }
     }

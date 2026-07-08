@@ -31,7 +31,7 @@ connection.
 |-----------|---------|-------------|
 | `JsonTransform<TIn,TOut>` | System.Text.Json | JSON serialization |
 | `CsvTransform<TIn,TOut>` | CsvHelper | CSV parsing |
-| `MapsterTransform<TIn,TOut>` | Mapster | Object mapping |
+| `MapsterTransform<TIn,TOut>` | Mapster | Runtime object mapping |
 | `CompressionTransform` | System.IO.Compression | Brotli/GZip compression |
 | `PollyResilienceTransform<T>` | Polly v8 | Retry/CircuitBreaker/Hedging |
 | `FilterTransform<T>` | — | Predicate-based filtering with And/Or/Not |
@@ -110,7 +110,7 @@ dotnet add package SmartPipe.Extensions
 ## Requirements
 
 - .NET 10.0+
-- SmartPipe.Core 2.1.0 (included as dependency)
+- SmartPipe.Core 2.1.1 (included as dependency)
 - This package intentionally includes integration dependencies for the features below.
 - Individual features pull their own dependencies:
   - `HttpSelector` / `HttpSink` → Polly (via Microsoft.Extensions.Resilience)
@@ -121,6 +121,13 @@ dotnet add package SmartPipe.Extensions
   - `PollyResilienceTransform` → Polly.Core
   - `SmartPipeHostedService` / `SmartPipeHealthCheck` → Microsoft.Extensions.Hosting / HealthChecks
   - Other components use platform APIs or dependencies already carried by this package.
+
+### Trimming and NativeAOT
+
+`MapsterTransform<TIn,TOut>` uses Mapster runtime mapping metadata and runtime
+expression compilation. It is supported for normal runtime consumers, but is not
+trim- or NativeAOT-safe. For trimmed or NativeAOT applications, prefer a
+hand-written mapper, a source-generated mapper, or `PipelineTransformer.FromFunc`.
 
 
 ## License

@@ -39,15 +39,40 @@ var options = new PipelineRuntimeOptions
 };
 ```
 
-`BufferedReliable` flushes during completion and preserves the original
-observer exception when a registration-level or critical observer failure
-faults the run. `BufferedBestEffort` is for diagnostics that must not block the
-pipeline.
+`BufferedReliable` requires `FullMode = BoundedChannelFullMode.Wait` and
+`FlushOnCompletion = true`. It flushes already queued observer events before
+the runtime publishes the final run outcome. Registration-level or critical
+observer failures observed during that flush fault the run and preserve the
+original observer exception, except user-thrown `OperationCanceledException` is
+wrapped as an observer dispatch failure so it is not mistaken for pipeline
+shutdown. Expected shutdown cancellation from the dispatcher token remains
+cancellation, not an observer failure.
+
+`BufferedBestEffort` is for diagnostics that must not block the pipeline. Lossy
+drop full modes require `FlushOnCompletion = false`; a lossy queue cannot
+guarantee completion flush delivery. Observer flush uses an internal control
+message and is never delivered to observers as a `PipelineEvent`.
+`FlushOnCompletion = false` affects `CompleteAsync` only. `DisposeAsync` stops
+and awaits the buffered worker before returning. Observer callbacks should
+observe cancellation tokens so shutdown remains bounded.
+
+The runtime sends at most one terminal pipeline event for a run:
+`PipelineCompletedEvent`, `PipelineCancelledEvent`, or `PipelineFaultedEvent`.
+Terminal-event delivery happens after the runtime has published the terminal
+state and completed the output channel. Observer delivery or teardown failures
+at that point are cleanup diagnostics only: they do not fault
+`PipelineRun<T>.Completion` or rewrite the already published terminal state or
+output-channel outcome.
 
 Buffered best-effort pressure is observable. Dropped observer events increment
 `smartpipe.observer.events.dropped`. When `EmitDroppedObserverEvents` is true,
 the dispatcher also tries to publish `ObserverEventDroppedEvent`; the metric is
 the reliable signal when the observer queue is already full.
+
+When an observer failure is ignored or removes the failed observer, the
+dispatcher emits `ObserverFailedEvent` to the remaining observers on a
+best-effort basis. Failure notifications are not sent back to the failed
+observer and do not recurse indefinitely.
 
 ## Rules
 

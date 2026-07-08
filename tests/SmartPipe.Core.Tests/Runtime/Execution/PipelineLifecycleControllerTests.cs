@@ -2,9 +2,11 @@
 
 using FluentAssertions;
 using SmartPipe.Core;
+using System.Runtime.ExceptionServices;
 
 namespace SmartPipe.Core.Tests.Runtime.Execution;
 
+[Trait("Category", "CorrectnessRegression")]
 public sealed class PipelineLifecycleControllerTests
 {
     [Fact]
@@ -189,6 +191,19 @@ public sealed class PipelineLifecycleControllerTests
     }
 
     [Fact]
+    public void MarkTerminal_ShouldNotOverwritePreviouslyPublishedTerminalState()
+    {
+        var controller = new PipelineLifecycleController();
+
+        controller.MarkRunning();
+        controller.MarkAborted();
+        controller.MarkTerminal(PipelineRunState.Faulted);
+
+        controller.State.Should().Be(PipelineRunState.Aborted);
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
     public async Task ConcurrentTerminalTransitions_EndInTerminalState()
     {
         for (var iteration = 0; iteration < 64; iteration++)
@@ -227,5 +242,58 @@ public sealed class PipelineLifecycleControllerTests
                 PipelineRunState.Cancelled,
                 PipelineRunState.Aborted);
         }
+    }
+
+    [Fact]
+    public async Task RuntimeCleanup_CollectAsync_ReturnsAllErrorsWithoutThrowing()
+    {
+        var first = new InvalidOperationException("first cleanup");
+        var second = new ApplicationException("second cleanup");
+
+        var errors = await RuntimeCleanup.CollectAsync([
+            () => ValueTask.CompletedTask,
+            () => throw first,
+            async () =>
+            {
+                await Task.Yield();
+                throw second;
+            },
+        ]);
+
+        errors.Should().Equal(first, second);
+    }
+
+    [Fact]
+    public void RuntimeCleanup_ThrowCombined_RethrowsPrimaryWhenAlone()
+    {
+        var primary = new InvalidOperationException("primary");
+
+        var act = () => RuntimeCleanup.ThrowCombined(ExceptionDispatchInfo.Capture(primary), []);
+
+        act.Should().Throw<InvalidOperationException>()
+            .Which.Should().BeSameAs(primary);
+    }
+
+    [Fact]
+    public void RuntimeCleanup_ThrowCombined_RethrowsSingleCleanupOnlyError()
+    {
+        var cleanup = new InvalidOperationException("cleanup");
+
+        var act = () => RuntimeCleanup.ThrowCombined(null, [cleanup]);
+
+        act.Should().Throw<InvalidOperationException>()
+            .Which.Should().BeSameAs(cleanup);
+    }
+
+    [Fact]
+    public void RuntimeCleanup_ThrowCombined_AggregatesPrimaryFirstWhenMultipleErrorsExist()
+    {
+        var primary = new InvalidOperationException("primary");
+        var cleanup = new ApplicationException("cleanup");
+
+        var act = () => RuntimeCleanup.ThrowCombined(ExceptionDispatchInfo.Capture(primary), [cleanup]);
+
+        var aggregate = act.Should().Throw<AggregateException>().Which;
+        aggregate.InnerExceptions.Should().Equal(primary, cleanup);
     }
 }

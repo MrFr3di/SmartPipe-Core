@@ -5,7 +5,6 @@
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>SmartPipe.Extensions</PackageId>
-    <Version>2.1.0</Version>
     <Authors>SmartPipe</Authors>
     <Description>Extensions for SmartPipe.Core integrations including HTTP, EF Core, Dapper, JSON, CSV, Mapster, compression, resilience, validation, and dead-letter components.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -21,6 +20,8 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>2.1.0</PackageValidationBaselineVersion>
+    <ApiCompatEnableRuleCannotChangeParameterName>true</ApiCompatEnableRuleCannotChangeParameterName>
     <EnableStrictModeForCompatibleTfms>true</EnableStrictModeForCompatibleTfms>
   </PropertyGroup>
 
@@ -37,10 +38,10 @@
   <ItemGroup>
     <PackageReference Include="CsvHelper" Version="33.1.0" />
     <PackageReference Include="Dapper" Version="2.1.79" />
-    <PackageReference Include="Mapster" Version="7.4.0" />
+    <PackageReference Include="Mapster" Version="10.0.10" />
     <PackageReference
       Include="Microsoft.CodeAnalysis.PublicApiAnalyzers"
-      Version="3.3.4"
+      Version="5.6.0"
       PrivateAssets="all"
     />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.8" />

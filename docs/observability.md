@@ -37,6 +37,7 @@ Snapshot fields include:
 - `InputQueueDepth`
 - `OutputQueueDepth`
 - `LastStageLatencyMs`
+- `LastActivityAtUtc`
 - `LastProcessedAtUtc`
 
 Compatibility export fields such as `duplicates_filtered`, `retries`,
@@ -52,6 +53,11 @@ OpenTelemetry metrics exporters at the host boundary.
 Snapshots are point-in-time samples. Under concurrent updates, individual values
 may come from adjacent moments, so snapshots are suitable for reporting and
 health checks, not for coordinating pipeline lifecycle.
+
+Queue depths are sampled from the runtime channel readers when those readers can
+report counts. They are observational, point-in-time values; a depth of zero can
+mean that the channel is empty or that no countable channel is active for the
+current execution path.
 
 ## Meter instruments
 

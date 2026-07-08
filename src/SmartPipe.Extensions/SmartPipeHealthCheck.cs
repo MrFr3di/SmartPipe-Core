@@ -19,7 +19,14 @@ public sealed record SmartPipeHealthSnapshot(
     SmartPipeMetricsSnapshot Metrics,
     int InputCapacity,
     int OutputCapacity,
-    DateTimeOffset CapturedAtUtc);
+    DateTimeOffset CapturedAtUtc)
+{
+    /// <summary>UTC timestamp when the current run was first tracked by the health monitor.</summary>
+    public DateTimeOffset? StartedAtUtc { get; init; }
+
+    /// <summary>UTC timestamp of the most recent accepted or terminal work activity.</summary>
+    public DateTimeOffset? LastActivityAtUtc { get; init; }
+}
 
 /// <summary>Exposes immutable typed pipeline health snapshots.</summary>
 /// <typeparam name="TInput">Pipeline input payload type.</typeparam>
@@ -42,8 +49,10 @@ public sealed class SmartPipeRunHealthMonitor<TInput, TOutput>
     private readonly string _pipelineId;
     private readonly int _inputCapacity;
     private readonly int _outputCapacity;
+    private readonly IPipelineClock _clock;
     private Func<PipelineRunState>? _stateProvider;
     private Func<SmartPipeMetricsSnapshot>? _metricsProvider;
+    private DateTimeOffset? _startedAtUtc;
 
     /// <summary>Creates a health monitor for a typed pipeline definition.</summary>
     /// <param name="pipelineId">Stable pipeline identifier.</param>
@@ -67,6 +76,7 @@ public sealed class SmartPipeRunHealthMonitor<TInput, TOutput>
         _pipelineId = pipelineId;
         _inputCapacity = runtimeOptions.InputCapacity;
         _outputCapacity = runtimeOptions.OutputCapacity ?? DefaultOutputCapacity;
+        _clock = runtimeOptions.Clock;
     }
 
     /// <summary>Tracks a started run through snapshot delegates.</summary>
@@ -91,6 +101,7 @@ public sealed class SmartPipeRunHealthMonitor<TInput, TOutput>
         {
             _stateProvider = stateProvider;
             _metricsProvider = metricsProvider;
+            _startedAtUtc = _clock.GetUtcNow();
         }
     }
 
@@ -99,20 +110,27 @@ public sealed class SmartPipeRunHealthMonitor<TInput, TOutput>
     {
         Func<PipelineRunState>? stateProvider;
         Func<SmartPipeMetricsSnapshot>? metricsProvider;
+        DateTimeOffset? startedAtUtc;
 
         lock (_gate)
         {
             stateProvider = _stateProvider;
             metricsProvider = _metricsProvider;
+            startedAtUtc = _startedAtUtc;
         }
+        var metrics = metricsProvider?.Invoke() ?? SmartPipeMetricsSnapshot.Empty;
 
         return new SmartPipeHealthSnapshot(
             _pipelineId,
             stateProvider?.Invoke() ?? PipelineRunState.NotStarted,
-            metricsProvider?.Invoke() ?? SmartPipeMetricsSnapshot.Empty,
+            metrics,
             _inputCapacity,
             _outputCapacity,
-            DateTimeOffset.UtcNow);
+            _clock.GetUtcNow())
+        {
+            StartedAtUtc = startedAtUtc,
+            LastActivityAtUtc = metrics.LastActivityAtUtc,
+        };
     }
 }
 
@@ -143,6 +161,7 @@ internal sealed class SmartPipeHealthCheck<TInput, TOutput> : IHealthCheck
         CancellationToken cancellationToken = default)
     {
         var snapshot = _monitor.CaptureSnapshot();
+        var nowUtc = _options.TimeProvider.GetUtcNow();
         var data = CreateData(snapshot);
 
         if (snapshot.State == PipelineRunState.Faulted)
@@ -166,10 +185,17 @@ internal sealed class SmartPipeHealthCheck<TInput, TOutput> : IHealthCheck
                 data: data));
         }
 
-        if (IsStale(snapshot))
+        if (InitialActivityIsDegraded(snapshot, nowUtc))
         {
             return Task.FromResult(HealthCheckResult.Degraded(
-                $"SmartPipe pipeline '{snapshot.PipelineId}' has not processed an item recently.",
+                $"SmartPipe pipeline '{snapshot.PipelineId}' has not reported initial activity.",
+                data: data));
+        }
+
+        if (IsStale(snapshot, nowUtc))
+        {
+            return Task.FromResult(HealthCheckResult.Degraded(
+                $"SmartPipe pipeline '{snapshot.PipelineId}' has not reported activity recently.",
                 data: data));
         }
 
@@ -191,14 +217,30 @@ internal sealed class SmartPipeHealthCheck<TInput, TOutput> : IHealthCheck
             || outputUtilization >= _options.QueueUtilizationDegradedThreshold;
     }
 
-    private bool IsStale(SmartPipeHealthSnapshot snapshot)
+    private bool IsStale(SmartPipeHealthSnapshot snapshot, DateTimeOffset nowUtc)
     {
         if (snapshot.State is not (PipelineRunState.Running or PipelineRunState.Draining))
             return false;
 
-        var lastProcessed = snapshot.Metrics.LastProcessedAtUtc;
-        return lastProcessed is not null
-            && snapshot.CapturedAtUtc - lastProcessed.Value > _options.StaleAfter;
+        if (snapshot.LastActivityAtUtc is null)
+            return false;
+
+        var elapsed = nowUtc - snapshot.LastActivityAtUtc.Value;
+        return elapsed > TimeSpan.Zero && elapsed > _options.StaleAfter;
+    }
+
+    private bool InitialActivityIsDegraded(SmartPipeHealthSnapshot snapshot, DateTimeOffset nowUtc)
+    {
+        if (!_options.RequireInitialActivity
+            || snapshot.State is not (PipelineRunState.Running or PipelineRunState.Draining)
+            || snapshot.LastActivityAtUtc is not null
+            || snapshot.StartedAtUtc is null)
+        {
+            return false;
+        }
+
+        var elapsed = nowUtc - snapshot.StartedAtUtc.Value;
+        return elapsed > TimeSpan.Zero && elapsed > _options.InitialActivityGracePeriod;
     }
 
     private static Dictionary<string, object> CreateData(SmartPipeHealthSnapshot snapshot)
@@ -214,6 +256,8 @@ internal sealed class SmartPipeHealthCheck<TInput, TOutput> : IHealthCheck
             ["items_failed"] = snapshot.Metrics.ItemsFailed,
             ["items_dead_lettered"] = snapshot.Metrics.ItemsDeadLettered,
             ["last_processed_at_utc"] = snapshot.Metrics.LastProcessedAtUtc?.ToString("O") ?? string.Empty,
+            ["started_at_utc"] = snapshot.StartedAtUtc?.ToString("O") ?? string.Empty,
+            ["last_activity_at_utc"] = snapshot.LastActivityAtUtc?.ToString("O") ?? string.Empty,
         };
     }
 }

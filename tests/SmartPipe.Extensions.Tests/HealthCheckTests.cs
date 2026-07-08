@@ -10,6 +10,7 @@ using SmartPipe.Core;
 
 namespace SmartPipe.Extensions.Tests;
 
+[Trait("Category", "CorrectnessRegression")]
 public sealed class HealthCheckTests
 {
     [Fact]
@@ -93,6 +94,226 @@ public sealed class HealthCheckTests
     }
 
     [Fact]
+    public async Task HealthCheck_UsesConfiguredTimeProviderForStalePolicy()
+    {
+        var runtimeNow = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
+        var healthNow = runtimeNow.AddHours(1);
+        var runtimeTimeProvider = new ManualTimeProvider(runtimeNow);
+        var healthTimeProvider = new ManualTimeProvider(healthNow);
+        var monitor = CreateMonitor(new PipelineRuntimeOptions
+        {
+            Clock = new TimeProviderPipelineClock(runtimeTimeProvider),
+        });
+        monitor.Track(
+            () => PipelineRunState.Running,
+            () => CreateMetrics(lastActivityAtUtc: runtimeNow));
+        var healthCheck = CreateHealthCheck(monitor, new SmartPipeHealthCheckOptions
+        {
+            TimeProvider = healthTimeProvider,
+            StaleAfter = TimeSpan.FromMinutes(5),
+        });
+
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Degraded);
+    }
+
+    [Fact]
+    public async Task HealthCheck_TimeProviderBeforeLastActivity_DoesNotReportStale()
+    {
+        var lastActivity = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
+        var healthNow = lastActivity.AddMinutes(-1);
+        var monitor = CreateMonitor();
+        monitor.Track(
+            () => PipelineRunState.Running,
+            () => CreateMetrics(lastActivityAtUtc: lastActivity));
+        var healthCheck = CreateHealthCheck(monitor, new SmartPipeHealthCheckOptions
+        {
+            TimeProvider = new ManualTimeProvider(healthNow),
+            StaleAfter = TimeSpan.FromMinutes(5),
+        });
+
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    [Fact]
+    public async Task HealthCheck_InitialActivity_UsesConfiguredTimeProvider()
+    {
+        var runtimeNow = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
+        var healthNow = runtimeNow.AddHours(1);
+        var runtimeTimeProvider = new ManualTimeProvider(runtimeNow);
+        var monitor = CreateMonitor(new PipelineRuntimeOptions
+        {
+            Clock = new TimeProviderPipelineClock(runtimeTimeProvider),
+        });
+        monitor.Track(() => PipelineRunState.Running, () => SmartPipeMetricsSnapshot.Empty);
+        var healthCheck = CreateHealthCheck(monitor, new SmartPipeHealthCheckOptions
+        {
+            TimeProvider = new ManualTimeProvider(healthNow),
+            RequireInitialActivity = true,
+            InitialActivityGracePeriod = TimeSpan.FromMinutes(5),
+            StaleAfter = TimeSpan.FromHours(2),
+        });
+
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Degraded);
+        result.Description.Should().Contain("initial activity");
+    }
+
+    [Fact]
+    public async Task HealthCheck_CapturesTimeProviderNowOncePerCheck()
+    {
+        var now = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
+        var countingTimeProvider = new CountingTimeProvider(now);
+        var monitor = CreateMonitor();
+        monitor.Track(
+            () => PipelineRunState.Running,
+            () => CreateMetrics(lastActivityAtUtc: now));
+        var healthCheck = CreateHealthCheck(monitor, new SmartPipeHealthCheckOptions
+        {
+            TimeProvider = countingTimeProvider,
+            StaleAfter = TimeSpan.FromMinutes(5),
+        });
+
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Healthy);
+        countingTimeProvider.Calls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task HealthCheck_ExactlyAtStaleThreshold_RemainsHealthy()
+    {
+        var lastActivity = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
+        var monitor = CreateMonitor();
+        monitor.Track(
+            () => PipelineRunState.Running,
+            () => CreateMetrics(lastActivityAtUtc: lastActivity));
+        var healthCheck = CreateHealthCheck(monitor, new SmartPipeHealthCheckOptions
+        {
+            TimeProvider = new ManualTimeProvider(lastActivity.AddMinutes(5)),
+            StaleAfter = TimeSpan.FromMinutes(5),
+        });
+
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    [Fact]
+    public async Task HealthCheck_AfterStaleThreshold_IsDegraded()
+    {
+        var lastActivity = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
+        var monitor = CreateMonitor();
+        monitor.Track(
+            () => PipelineRunState.Running,
+            () => CreateMetrics(lastActivityAtUtc: lastActivity));
+        var healthCheck = CreateHealthCheck(monitor, new SmartPipeHealthCheckOptions
+        {
+            TimeProvider = new ManualTimeProvider(lastActivity.AddMinutes(5).AddTicks(1)),
+            StaleAfter = TimeSpan.FromMinutes(5),
+        });
+
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Degraded);
+    }
+
+    [Fact]
+    public async Task HealthCheck_ExactlyAtInitialGraceBoundary_RemainsHealthy()
+    {
+        var started = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
+        var monitor = CreateMonitor(new PipelineRuntimeOptions
+        {
+            Clock = new TimeProviderPipelineClock(new ManualTimeProvider(started)),
+        });
+        monitor.Track(() => PipelineRunState.Running, () => SmartPipeMetricsSnapshot.Empty);
+        var healthCheck = CreateHealthCheck(monitor, new SmartPipeHealthCheckOptions
+        {
+            TimeProvider = new ManualTimeProvider(started.AddMinutes(5)),
+            RequireInitialActivity = true,
+            InitialActivityGracePeriod = TimeSpan.FromMinutes(5),
+        });
+
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    [Fact]
+    public async Task HealthCheck_AfterInitialGraceBoundary_IsDegraded()
+    {
+        var started = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
+        var monitor = CreateMonitor(new PipelineRuntimeOptions
+        {
+            Clock = new TimeProviderPipelineClock(new ManualTimeProvider(started)),
+        });
+        monitor.Track(() => PipelineRunState.Running, () => SmartPipeMetricsSnapshot.Empty);
+        var healthCheck = CreateHealthCheck(monitor, new SmartPipeHealthCheckOptions
+        {
+            TimeProvider = new ManualTimeProvider(started.AddMinutes(5).AddTicks(1)),
+            RequireInitialActivity = true,
+            InitialActivityGracePeriod = TimeSpan.FromMinutes(5),
+        });
+
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Degraded);
+    }
+
+    [Fact]
+    public async Task HealthCheck_RunningWithoutActivity_DefaultPolicyRemainsHealthy()
+    {
+        var now = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
+        var timeProvider = new ManualTimeProvider(now);
+        var monitor = CreateMonitor(new PipelineRuntimeOptions
+        {
+            Clock = new TimeProviderPipelineClock(timeProvider),
+        });
+        monitor.Track(() => PipelineRunState.Running, () => SmartPipeMetricsSnapshot.Empty);
+        timeProvider.Advance(TimeSpan.FromMinutes(5));
+        var healthCheck = CreateHealthCheck(monitor, new SmartPipeHealthCheckOptions
+        {
+            TimeProvider = timeProvider,
+            StaleAfter = TimeSpan.FromSeconds(30),
+        });
+
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Healthy);
+        result.Data["started_at_utc"].Should().NotBe(string.Empty);
+        result.Data["last_activity_at_utc"].Should().Be(string.Empty);
+    }
+
+    [Fact]
+    public async Task HealthCheck_RequireInitialActivity_DegradedAfterGraceWithoutActivity()
+    {
+        var now = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
+        var timeProvider = new ManualTimeProvider(now);
+        var monitor = CreateMonitor(new PipelineRuntimeOptions
+        {
+            Clock = new TimeProviderPipelineClock(timeProvider),
+        });
+        monitor.Track(() => PipelineRunState.Running, () => SmartPipeMetricsSnapshot.Empty);
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+        var healthCheck = CreateHealthCheck(monitor, new SmartPipeHealthCheckOptions
+        {
+            RequireInitialActivity = true,
+            InitialActivityGracePeriod = TimeSpan.FromMinutes(1),
+            TimeProvider = timeProvider,
+            StaleAfter = TimeSpan.FromMinutes(10),
+        });
+
+        var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Degraded);
+        result.Description.Should().Contain("initial activity");
+    }
+
+    [Fact]
     public async Task DI_FactoryStart_UpdatesHealthMonitorWithTypedRunState()
     {
         var services = new ServiceCollection();
@@ -116,6 +337,8 @@ public sealed class HealthCheckTests
         var snapshot = monitor.CaptureSnapshot();
         snapshot.State.Should().Be(PipelineRunState.Completed);
         snapshot.Metrics.ItemsProcessed.Should().Be(1);
+        snapshot.StartedAtUtc.Should().NotBeNull();
+        snapshot.LastActivityAtUtc.Should().NotBeNull();
         snapshot.PipelineId.Should().Be("health-di");
     }
 
@@ -167,7 +390,8 @@ public sealed class HealthCheckTests
     private static SmartPipeMetricsSnapshot CreateMetrics(
         int inputQueueDepth = 0,
         int outputQueueDepth = 0,
-        DateTimeOffset? lastProcessedAtUtc = null) =>
+        DateTimeOffset? lastProcessedAtUtc = null,
+        DateTimeOffset? lastActivityAtUtc = null) =>
         new(
             itemsProcessed: lastProcessedAtUtc is null ? 0 : 1,
             itemsFailed: 0,
@@ -181,6 +405,7 @@ public sealed class HealthCheckTests
             outputQueueDepth,
             lastStageLatencyMs: 1,
             lastProcessedAtUtc,
+            lastActivityAtUtc ?? lastProcessedAtUtc,
             duplicatesFiltered: 0,
             avgLatencyMs: 1,
             smoothLatencyMs: 1,
@@ -255,5 +480,40 @@ public sealed class HealthCheckTests
         }
 
         public Task ExecuteForTestAsync(CancellationToken ct) => ExecuteAsync(ct);
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _utcNow;
+
+        public ManualTimeProvider(DateTimeOffset utcNow)
+        {
+            _utcNow = utcNow;
+        }
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan elapsed)
+        {
+            _utcNow += elapsed;
+        }
+    }
+
+    private sealed class CountingTimeProvider : TimeProvider
+    {
+        private readonly DateTimeOffset _utcNow;
+
+        public CountingTimeProvider(DateTimeOffset utcNow)
+        {
+            _utcNow = utcNow;
+        }
+
+        public int Calls { get; private set; }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            Calls++;
+            return _utcNow;
+        }
     }
 }

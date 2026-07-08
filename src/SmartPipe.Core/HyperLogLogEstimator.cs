@@ -57,10 +57,12 @@ public class HyperLogLogEstimator
         ulong remainingBits = h >> _precision;
         // LeadingZeroCount counts zeros in 64-bit value; subtract _precision to account
         // for the upper zero bits introduced by the right shift
-        byte rank = (byte)(BitOperations.LeadingZeroCount(remainingBits) - _precision + 1);
+        int rank = BitOperations.LeadingZeroCount(remainingBits) - _precision + 1;
+        int maxRank = 64 - _precision + 1;
+        rank = Math.Min(rank, maxRank);
 
         if (rank > _regs[idx])
-            _regs[idx] = rank;
+            _regs[idx] = (byte)rank;
     }
 
     /// <summary>Estimates the number of distinct items added.</summary>
@@ -77,7 +79,10 @@ public class HyperLogLogEstimator
                 sum += 1.0;
             }
             else
-                sum += 1.0 / (1 << _regs[i]);
+            {
+                int rank = _regs[i];
+                sum += Math.ScaleB(1.0, -rank);
+            }
         }
         double e = _alpha * _m * _m / sum;
         if (e <= 2.5 * _m && zeros > 0)
@@ -90,11 +95,39 @@ public class HyperLogLogEstimator
     /// <returns>New estimator with combined data.</returns>
     public static HyperLogLogEstimator Merge(params HyperLogLogEstimator[] es)
     {
-        var m = new HyperLogLogEstimator((int)Math.Log2(es[0]._m));
+        ArgumentNullException.ThrowIfNull(es);
+        if (es.Length == 0)
+            throw new ArgumentException("At least one estimator is required.", nameof(es));
+
+        var first = es[0] ?? throw new ArgumentNullException(
+            nameof(es),
+            "Estimators cannot contain null elements."
+        );
+        int precision = first._precision;
+
+        foreach (var e in es)
+        {
+            if (e is null)
+                throw new ArgumentNullException(
+                    nameof(es),
+                    "Estimators cannot contain null elements."
+                );
+            if (e._precision != precision)
+                throw new ArgumentException(
+                    "All estimators must have the same precision.",
+                    nameof(es)
+                );
+        }
+
+        var m = new HyperLogLogEstimator(precision);
         for (int i = 0; i < m._m; i++)
+        {
             foreach (var e in es)
+            {
                 if (e._regs[i] > m._regs[i])
                     m._regs[i] = e._regs[i];
+            }
+        }
         return m;
     }
 }
