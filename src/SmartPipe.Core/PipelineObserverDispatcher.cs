@@ -167,7 +167,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
     private Task? _completeTask;
     private Task? _disposeTask;
     private int _completed;
-    private int _emittingDroppedEvent;
+    private ObserverEventDroppedEvent? _pendingDroppedEvent;
 
     public BufferedPipelineObserverDispatcher(
         IReadOnlyList<PipelineObserverRegistration> observers,
@@ -438,13 +438,28 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         {
             if (message.Kind == ObserverDispatchMessageKind.Flush)
             {
+                if (await DispatchPendingDroppedEventAsync().ConfigureAwait(false))
+                    return;
+
                 message.Completion!.TrySetResult();
                 continue;
             }
 
             if (await DispatchEventAsync(message.Event!).ConfigureAwait(false))
                 return;
+
+            if (await DispatchPendingDroppedEventAsync().ConfigureAwait(false))
+                return;
         }
+
+        _ = await DispatchPendingDroppedEventAsync().ConfigureAwait(false);
+    }
+
+    private async ValueTask<bool> DispatchPendingDroppedEventAsync()
+    {
+        var droppedEvent = Interlocked.Exchange(ref _pendingDroppedEvent, null);
+        return droppedEvent is not null
+            && await DispatchEventAsync(droppedEvent).ConfigureAwait(false);
     }
 
     private async ValueTask<bool> DispatchEventAsync(PipelineEvent pipelineEvent)
@@ -563,22 +578,14 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         if (!_options.EmitDroppedObserverEvents || droppedEvent is ObserverEventDroppedEvent)
             return;
 
-        if (Interlocked.Exchange(ref _emittingDroppedEvent, 1) != 0)
-            return;
-
-        try
-        {
-            _events.Writer.TryWrite(ObserverDispatchMessage.FromEvent(
-                new ObserverEventDroppedEvent(
-                    droppedEvent.PipelineId,
-                    droppedEvent.RunId,
-                    _clock.GetUtcNow(),
-                    droppedEvent.GetType().Name)));
-        }
-        finally
-        {
-            Volatile.Write(ref _emittingDroppedEvent, 0);
-        }
+        Interlocked.CompareExchange(
+            ref _pendingDroppedEvent,
+            new ObserverEventDroppedEvent(
+                droppedEvent.PipelineId,
+                droppedEvent.RunId,
+                _clock.GetUtcNow(),
+                droppedEvent.GetType().Name),
+            null);
     }
 
 }

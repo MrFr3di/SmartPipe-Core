@@ -658,6 +658,31 @@ public class CircuitBreakerTests
         window.ToArray().Should().Equal(current1, current2);
     }
 
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public void CircuitBreaker_CleanupWindow_InterleavedExpiredHead_DoesNotRemoveFreshSample()
+    {
+        var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
+        var timeSource = new ReentrantCleanupTimeSource(now.Ticks);
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            samplingDuration: TimeSpan.FromMinutes(1),
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(30),
+            maxHalfOpenRequests: 1,
+            timeSource);
+        timeSource.Attach(cb);
+        var window = GetWindow(cb);
+        var expired = (now.AddMinutes(-2).Ticks, false);
+        var fresh = (now.AddSeconds(-5).Ticks, true);
+        window.Enqueue(expired);
+        window.Enqueue(fresh);
+
+        InvokeCleanupWindow(cb);
+
+        window.ToArray().Should().Equal(fresh);
+    }
+
     private readonly ITestOutputHelper _output;
 
     public CircuitBreakerTests(ITestOutputHelper output)
@@ -956,6 +981,35 @@ public class CircuitBreakerTests
         public void AdvanceTimestamp(TimeSpan duration)
         {
             Interlocked.Add(ref _timestamp, duration.Ticks);
+        }
+    }
+
+    private sealed class ReentrantCleanupTimeSource : ICircuitBreakerTimeSource
+    {
+        private readonly long _now;
+        private CircuitBreaker? _breaker;
+        private int _reentered;
+
+        public ReentrantCleanupTimeSource(long now)
+        {
+            _now = now;
+        }
+
+        public DateTime UtcNow => new(_now, DateTimeKind.Utc);
+
+        public long GetTimestamp() => _now;
+
+        public TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp)
+        {
+            if (Interlocked.Exchange(ref _reentered, 1) == 0)
+                InvokeCleanupWindow(_breaker ?? throw new InvalidOperationException("Circuit breaker was not attached."));
+
+            return TimeSpan.FromTicks(endingTimestamp - startingTimestamp);
+        }
+
+        public void Attach(CircuitBreaker breaker)
+        {
+            _breaker = breaker;
         }
     }
 }
