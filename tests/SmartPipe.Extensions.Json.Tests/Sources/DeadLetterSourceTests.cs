@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using SmartPipe.Core;
+using SmartPipe.Extensions;
 using SmartPipe.Extensions.Selectors;
 using Xunit;
 
@@ -35,6 +36,34 @@ public class DeadLetterSourceTests
             var source = new DeadLetterSource<string>(path);
 
             await source.InitializeAsync();
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ExplicitSerializer_ReadsEnvelopesAndPreservesReplayContext()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var serializer = new JsonLinesDeadLetterSerializer<string>();
+            await using (var output = File.Create(path))
+            {
+                await serializer.WriteAsync(CreateDeadLetter("one", 11UL), output);
+                await serializer.WriteAsync(CreateDeadLetter("two", 12UL), output);
+            }
+
+            var source = new DeadLetterSource<string>(
+                path,
+                serializer,
+                new DeadLetterSourceOptions());
+            var items = await ReadAllAsync(source);
+
+            Assert.Equal(["one", "two"], items.Select(static item => item.Payload));
+            Assert.Equal([11UL, 12UL], items.Select(static item => item.TraceId));
         }
         finally
         {
@@ -118,15 +147,17 @@ public class DeadLetterSourceTests
         var path = Path.GetTempFileName();
         try
         {
-            var json = JsonSerializer.Serialize(new[]
-            {
-                CreateDeadLetter(new AotDeadLetterSourceItem(5, "five"), 5UL),
-            });
-            await File.WriteAllTextAsync(path, json);
+            var typeInfo = DeadLetterSourceTestJsonContext.Default.DeadLetterEnvelopeAotDeadLetterSourceItem;
+            var serializer = new JsonLinesDeadLetterSerializer<AotDeadLetterSourceItem>(typeInfo);
+            await using (var output = File.Create(path))
+                await serializer.WriteAsync(
+                    CreateDeadLetter(new AotDeadLetterSourceItem(5, "five"), 5UL),
+                    output);
 
             var source = new DeadLetterSource<AotDeadLetterSourceItem>(
                 path,
-                DeadLetterSourceTestJsonContext.Default.AotDeadLetterSourceItem);
+                typeInfo,
+                new DeadLetterSourceOptions());
             var result = await ReadAllAsync(source);
 
             Assert.Single(result);
@@ -140,7 +171,7 @@ public class DeadLetterSourceTests
     }
 
     [Fact]
-    public async Task ReadEnvelopesAsync_SkipsRecordsWithoutPayload()
+    public async Task ReadEnvelopesAsync_ThrowsForRecordsWithoutPayloadByDefault()
     {
         var path = Path.GetTempFileName();
         try
@@ -154,10 +185,7 @@ public class DeadLetterSourceTests
             await File.WriteAllTextAsync(path, JsonSerializer.Serialize(items));
 
             var source = new DeadLetterSource<string>(path);
-            var result = await ReadAllAsync(source);
-
-            Assert.Single(result);
-            Assert.Equal("valid", result[0].Payload);
+            await Assert.ThrowsAnyAsync<JsonException>(() => ReadAllAsync(source));
         }
         finally
         {
@@ -231,7 +259,6 @@ public class DeadLetterSourceTests
     }
 
     [Theory]
-    [InlineData("")]
     [InlineData("\"just a string\"")]
     [InlineData("12345")]
     public async Task ReadEnvelopesAsync_ThrowsJsonException_ForUnexpectedJsonRoot(string json)
@@ -246,6 +273,22 @@ public class DeadLetterSourceTests
             {
                 await foreach (var _ in source.ReadEnvelopesAsync()) { }
             });
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ReadEnvelopesAsync_EmptyFile_ReturnsNoRecords()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var source = new DeadLetterSource<string>(path);
+            var records = await ReadAllAsync(source);
+            Assert.Empty(records);
         }
         finally
         {
@@ -332,4 +375,5 @@ public class DeadLetterSourceTests
 public sealed record AotDeadLetterSourceItem(int Id, string Name);
 
 [JsonSerializable(typeof(AotDeadLetterSourceItem))]
+[JsonSerializable(typeof(DeadLetterEnvelope<AotDeadLetterSourceItem>))]
 internal sealed partial class DeadLetterSourceTestJsonContext : JsonSerializerContext;

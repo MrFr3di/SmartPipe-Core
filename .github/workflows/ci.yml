@@ -28,6 +28,16 @@ jobs:
     - name: Verify NuGet lock files
       run: dotnet restore SmartPipe.Core.slnx --locked-mode
 
+    - name: Test release version validation
+      shell: bash
+      run: |
+        bash eng/validate-release-version.sh v2.1.2 2.1.2 2.1.2 2.1.2
+        bash eng/validate-release-version.sh v2.1.2-rc.1 2.1.2 2.1.2 2.1.2
+        if bash eng/validate-release-version.sh v2.1.2 2.1.2 2.1.1 2.1.2; then
+          echo "JSON version mismatch was accepted." >&2
+          exit 1
+        fi
+
     - name: Format verify
       run: dotnet format SmartPipe.Core.slnx --verify-no-changes --no-restore
     
@@ -35,20 +45,20 @@ jobs:
       run: dotnet build SmartPipe.Core.slnx --no-restore -c Release -warnaserror
 
     - name: Core correctness regressions
-      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-query /[Category=CorrectnessRegression] --minimum-expected-tests 1
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-query /[Category=CorrectnessRegression] --minimum-expected-tests 1
 
     - name: Core concurrency regressions
-      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-query /[Category=ConcurrencyRegression] --minimum-expected-tests 1
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-query /[Category=ConcurrencyRegression] --minimum-expected-tests 1
 
     - name: Extensions correctness regressions
       run: |
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.HealthCheckTests
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.ChannelMergeTests
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.DeadLetterSinkTests
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.Sinks.DbSinkTests
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.Selectors.DapperSelectorTests
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.Sources.HttpSelectorTests
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.HealthCheckTests
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.ChannelMergeTests
+        dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.DeadLetterSinkTests
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.DbSinkTests
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Selectors.DapperSelectorTests
+        dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sources.HttpSelectorTests
 
     - name: PR concurrency regression repeat
       if: github.event_name == 'pull_request'
@@ -56,9 +66,9 @@ jobs:
       run: |
         for pass in {1..10}; do
           echo "Concurrency regression pass $pass"
-          dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-query /[Category=ConcurrencyRegression] --minimum-expected-tests 1
-          dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.ChannelMergeTests
-          dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release -- --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests
+          dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-query /[Category=ConcurrencyRegression] --minimum-expected-tests 1
+          dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.ChannelMergeTests
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests
         done
     
     - name: Core tests with coverage
@@ -72,22 +82,33 @@ jobs:
     - name: Extensions tests
       run: dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build --verbosity normal -c Release
 
+    - name: JSON Extensions tests
+      run: dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build --verbosity normal -c Release
+
     - name: Test and benchmark warning gate
       run: |
         dotnet build tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-restore -c Release -warnaserror
+        dotnet build tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-restore -c Release -warnaserror
         dotnet build tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-restore -c Release -warnaserror
         dotnet build benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj --no-restore -c Release -warnaserror
-
-    - name: Pack Core
-      run: dotnet pack src/SmartPipe.Core/SmartPipe.Core.csproj --no-build -c Release -p:EnablePackageValidation=true -o artifacts/packages
-
-    - name: Pack Extensions
-      run: dotnet pack src/SmartPipe.Extensions/SmartPipe.Extensions.csproj --no-build -c Release -p:EnablePackageValidation=true -o artifacts/packages
 
     - name: Set package version
       run: |
         PACKAGE_VERSION=$(dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version)
         echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> "$GITHUB_ENV"
+
+    - name: Pack Core
+      run: dotnet pack src/SmartPipe.Core/SmartPipe.Core.csproj --no-build -c Release -p:EnablePackageValidation=true -o artifacts/packages
+
+    - name: Pack JSON Extensions
+      run: dotnet pack src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj --no-build -c Release -p:EnablePackageValidation=true -o artifacts/packages
+
+    - name: Pack Extensions
+      run: dotnet pack src/SmartPipe.Extensions/SmartPipe.Extensions.csproj --no-build -c Release -p:EnablePackageValidation=true -o artifacts/packages
+
+    - name: Validate JSON package split
+      shell: pwsh
+      run: ./eng/validate-json-package-split.ps1 -PackageDirectory ./artifacts/packages -Version $env:PACKAGE_VERSION
 
     - name: Mapster packed consumer smoke
       run: |
@@ -430,11 +451,12 @@ jobs:
             <TargetFramework>net10.0</TargetFramework>
             <ImplicitUsings>enable</ImplicitUsings>
             <Nullable>enable</Nullable>
+            <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
             <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
           </PropertyGroup>
           <ItemGroup>
             <PackageReference Include="SmartPipe.Core" Version="$PACKAGE_VERSION" />
-            <PackageReference Include="SmartPipe.Extensions" Version="$PACKAGE_VERSION" />
+            <PackageReference Include="SmartPipe.Extensions.Json" Version="$PACKAGE_VERSION" />
           </ItemGroup>
         </Project>
         XML
@@ -443,6 +465,7 @@ jobs:
         using System.Text.Json;
         using System.Text.Json.Serialization;
         using SmartPipe.Core;
+        using SmartPipe.Extensions;
         using SmartPipe.Extensions.Selectors;
         using SmartPipe.Extensions.Sinks;
         using SmartPipe.Extensions.Transforms;
@@ -485,13 +508,21 @@ jobs:
             private static async Task VerifyJsonFileSinkAndArraySourceAsync(string workDir)
             {
                 var path = Path.Combine(workDir, "payloads.json");
-                var sink = new JsonFileSink<AotPayload>(path, AotSmokeJsonContext.Default.ListAotPayload, flushInterval: 2);
+                var sink = new JsonFileSink<AotPayload>(
+                    path,
+                    AotSmokeJsonContext.Default.AotPayload,
+                    AotSmokeJsonContext.Default.ListAotPayload,
+                    new JsonFileSinkOptions { Format = JsonFileFormat.Array, OpenMode = JsonFileOpenMode.Create, FlushInterval = 2 });
                 await sink.InitializeAsync();
                 await sink.WriteAsync(ProcessingEnvelope<AotPayload>.Create(new AotPayload(2, "sink-a")));
                 await sink.WriteAsync(ProcessingEnvelope<AotPayload>.Create(new AotPayload(3, "sink-b")));
                 await sink.DisposeAsync();
 
-                var source = new JsonFileSource<AotPayload>(path, AotSmokeJsonContext.Default.ListAotPayload, AotSmokeJsonContext.Default.AotPayload);
+                var source = new JsonFileSource<AotPayload>(
+                    path,
+                    AotSmokeJsonContext.Default.AotPayload,
+                    AotSmokeJsonContext.Default.ListAotPayload,
+                    new JsonFileSourceOptions { Format = JsonFileFormat.Array });
                 await source.InitializeAsync();
                 var values = await ReadTypedSourceAsync(source);
                 await source.DisposeAsync();
@@ -506,7 +537,11 @@ jobs:
                     JsonSerializer.Serialize(new AotPayload(4, "ndjson-a"), AotSmokeJsonContext.Default.AotPayload),
                     JsonSerializer.Serialize(new AotPayload(5, "ndjson-b"), AotSmokeJsonContext.Default.AotPayload),
                 ]);
-                var source = new JsonFileSource<AotPayload>(path, AotSmokeJsonContext.Default.ListAotPayload, AotSmokeJsonContext.Default.AotPayload);
+                var source = new JsonFileSource<AotPayload>(
+                    path,
+                    AotSmokeJsonContext.Default.AotPayload,
+                    AotSmokeJsonContext.Default.ListAotPayload,
+                    new JsonFileSourceOptions { Format = JsonFileFormat.Ndjson });
                 await source.InitializeAsync();
                 var values = await ReadTypedSourceAsync(source);
                 await source.DisposeAsync();
@@ -586,7 +621,10 @@ jobs:
                 await File.WriteAllTextAsync(
                     path,
                     JsonSerializer.Serialize(deadLetter, AotSmokeJsonContext.Default.DeadLetterEnvelopeAotPayload));
-                var source = new DeadLetterSource<AotPayload>(path, AotSmokeJsonContext.Default.AotPayload);
+                var source = new DeadLetterSource<AotPayload>(
+                    path,
+                    AotSmokeJsonContext.Default.DeadLetterEnvelopeAotPayload,
+                    new DeadLetterSourceOptions());
                 await source.InitializeAsync();
                 var values = await ReadTypedSourceAsync(source);
                 await source.DisposeAsync();

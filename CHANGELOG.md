@@ -1,5 +1,50 @@
 # Changelog
 
+## [2.1.2] — Unreleased
+
+Patch release that separates JSON integrations into a dedicated package while
+preserving the SmartPipe.Extensions 2.x compatibility contract.
+
+### Added
+
+- **Explicit JSON layouts** — options-based APIs add root-array, NDJSON, and
+  batch-JSON-lines modes while preserving the 2.1.1 batch default.
+- **Streaming JSON contracts** — sources stream root arrays and multiple
+  top-level values, enforce strict null handling, depth, and framed-record
+  limits, and expose complete source-generated metadata paths.
+- **Dead-letter write integrity** — the sink serializes once through Core's
+  `IDeadLetterSerializer<T>`, uses deterministic retry timing, idempotent
+  lifecycle state, seekable rollback, and reports possible partial
+  non-seekable writes.
+
+- **SmartPipe.Extensions.Json** — dedicated package for System.Text.Json file
+  sources and sinks, transforms, and JSON dead-letter persistence.
+- **JSON package validation** — dedicated unit tests, direct-package and
+  Extensions-only consumers, a binary consumer compiled against 2.1.1, and
+  trimming/NativeAOT package smoke coverage.
+- **Migration documentation** — package selection, source-generated metadata,
+  file-format, and 3.0 bridge-removal guidance.
+
+### Changed
+
+- **JSON implementation ownership** — `JsonFileSource<T>`,
+  `DeadLetterSource<T>`, `JsonFileSink<T>`, `DeadLetterSink<T>`,
+  `DeadLetterWriteFailureMode`, `DeadLetterWriteException`, and
+  `JsonTransform<TInput,TOutput>` now live in `SmartPipe.Extensions.Json`.
+- **SmartPipe.Extensions compatibility bridge** — the broad package retains
+  type forwarders and a transitive JSON dependency throughout the 2.x line.
+- **Release train** — Core, JSON Extensions, and Extensions use version 2.1.2;
+  validation and tag publishing cover all three packages in dependency order.
+
+### Compatibility
+
+- Existing namespaces, public signatures, defaults, file bytes, retry delays,
+  exceptions, and lifecycle behavior are preserved.
+- `JsonFileSink<T>` output is documented as batch JSON Lines: one JSON array
+  per flushed line, not conventional one-object-per-line NDJSON.
+- `JsonLinesDeadLetterSerializer<T>` remains in `SmartPipe.Core`.
+- Newtonsoft.Json is not introduced into the package graph.
+
 ## [2.1.1] — 2026-07-08
 
 Patch release for post-review correctness, compatibility, CI, and documentation

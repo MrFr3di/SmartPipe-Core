@@ -99,6 +99,7 @@ public class DeadLetterSinkTests
     public async Task WriteAsync_IoException_ThrowsAfterExhaustedAttemptsByDefault()
     {
         var loggerMock = new Mock<ILogger<DeadLetterSink<string>>>();
+        loggerMock.Setup(x => x.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         var lineWriter = new FaultInjectingDeadLetterLineWriter(
             new IOException("first write failed"),
             new IOException("second write failed"),
@@ -136,6 +137,7 @@ public class DeadLetterSinkTests
     public async Task WriteAsync_IoException_LogAndDropSkipsAfterExhaustedAttempts()
     {
         var loggerMock = new Mock<ILogger<DeadLetterSink<string>>>();
+        loggerMock.Setup(x => x.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         var lineWriter = new FaultInjectingDeadLetterLineWriter(
             new IOException("first write failed"),
             new IOException("second write failed"),
@@ -165,6 +167,7 @@ public class DeadLetterSinkTests
     public async Task WriteAsync_IoException_RecoversOnRetry()
     {
         var loggerMock = new Mock<ILogger<DeadLetterSink<string>>>();
+        loggerMock.Setup(x => x.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         var lineWriter = new FaultInjectingDeadLetterLineWriter(
             new IOException("first write failed"),
             new IOException("second write failed"));
@@ -243,6 +246,21 @@ public class DeadLetterSinkTests
     }
 
     [Fact]
+    public async Task WriteAsync_NonSeekablePartialFailure_IsNotRetriedAndIsReported()
+    {
+        await using var stream = new NonSeekablePartialFailureStream();
+        var sink = new DeadLetterSink<string>("dummy.json", logger: null, stream: stream);
+
+        var exception = await Assert.ThrowsAsync<DeadLetterWriteException>(async () =>
+            await sink.WriteAsync(Envelope(CreateDeadLetter("payload", "partial", 126UL))));
+        await sink.DisposeAsync();
+
+        exception.Attempts.Should().Be(1);
+        exception.MayContainPartialRecord.Should().BeTrue();
+        stream.WriteAttempts.Should().Be(1);
+    }
+
+    [Fact]
     public async Task DisposeAsync_DrainsRemainingItems()
     {
         var tempFile = Path.GetTempFileName();
@@ -287,6 +305,36 @@ public class DeadLetterSinkTests
         lineWriter.DisposeCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task DisposeAsync_ConcurrentCalls_ShareOneCompletion()
+    {
+        var lineWriter = new FaultInjectingDeadLetterLineWriter();
+        var sink = new DeadLetterSink<string>("dummy.json", null, lineWriter);
+
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => sink.DisposeAsync().AsTask()));
+
+        lineWriter.DisposeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task WriteAsync_CustomSerializer_IsInvokedOnceAcrossRetry()
+    {
+        var serializer = new CountingDeadLetterSerializer();
+        var lineWriter = new FaultInjectingDeadLetterLineWriter(new IOException("retry"));
+        var sink = new DeadLetterSink<string>(
+            "dummy.json",
+            serializer,
+            new DeadLetterSinkOptions(),
+            logger: null,
+            lineWriter);
+
+        await sink.WriteAsync(Envelope(CreateDeadLetter("payload", "error", 42UL)));
+        await sink.DisposeAsync();
+
+        serializer.WriteCount.Should().Be(1);
+        lineWriter.Lines.Should().ContainSingle().Which.Should().Contain("custom");
+    }
+
     private static ProcessingEnvelope<DeadLetterEnvelope<T>> Envelope<T>(DeadLetterEnvelope<T> deadLetter) =>
         ProcessingEnvelope<DeadLetterEnvelope<T>>.Create(
             deadLetter,
@@ -324,12 +372,12 @@ public class DeadLetterSinkTests
 
         public int DisposeCount { get; private set; }
 
-        public ValueTask WriteLineAsync(string line, bool flushEachWrite, CancellationToken ct)
+        public ValueTask WriteRecordAsync(ReadOnlyMemory<byte> record, bool flushEachWrite, CancellationToken ct)
         {
             if (_writeFailures.Count > 0)
                 throw _writeFailures.Dequeue();
 
-            _lines.Add(line);
+            _lines.Add(Encoding.UTF8.GetString(record.Span).TrimEnd('\n'));
             return ValueTask.CompletedTask;
         }
 
@@ -337,6 +385,28 @@ public class DeadLetterSinkTests
         {
             DisposeCount++;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class CountingDeadLetterSerializer : IDeadLetterSerializer<string>
+    {
+        public int WriteCount { get; private set; }
+
+        public async ValueTask WriteAsync(
+            DeadLetterEnvelope<string> envelope,
+            Stream stream,
+            CancellationToken ct = default)
+        {
+            WriteCount++;
+            await stream.WriteAsync("{\"custom\":true}\n"u8.ToArray(), ct);
+        }
+
+        public async IAsyncEnumerable<DeadLetterEnvelope<string>> ReadAsync(
+            Stream stream,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
         }
     }
 
@@ -365,6 +435,40 @@ public class DeadLetterSinkTests
             }
 
             return base.WriteAsync(buffer, cancellationToken);
+        }
+    }
+
+    private sealed class NonSeekablePartialFailureStream : Stream
+    {
+        private readonly MemoryStream _inner = new();
+        public int WriteAttempts { get; private set; }
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            WriteAttempts++;
+            _inner.Write(buffer.Span[..Math.Min(3, buffer.Length)]);
+            throw new IOException("partial non-seekable write");
+        }
+
+        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                _inner.Dispose();
+            base.Dispose(disposing);
         }
     }
 }

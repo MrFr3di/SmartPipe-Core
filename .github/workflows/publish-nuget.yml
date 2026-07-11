@@ -33,8 +33,9 @@ jobs:
         shell: bash
         run: |
           CORE_VERSION="$(dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo)"
+          JSON_VERSION="$(dotnet msbuild src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj -getProperty:Version -nologo)"
           EXT_VERSION="$(dotnet msbuild src/SmartPipe.Extensions/SmartPipe.Extensions.csproj -getProperty:Version -nologo)"
-          VERSION_OUTPUT="$(bash eng/validate-release-version.sh "${GITHUB_REF_NAME}" "$CORE_VERSION" "$EXT_VERSION")"
+          VERSION_OUTPUT="$(bash eng/validate-release-version.sh "${GITHUB_REF_NAME}" "$CORE_VERSION" "$JSON_VERSION" "$EXT_VERSION")"
           echo "$VERSION_OUTPUT"
           PACKAGE_VERSION="$(echo "$VERSION_OUTPUT" | awk -F= '/^PACKAGE_VERSION=/{print $2}')"
           BASE_VERSION="$(echo "$VERSION_OUTPUT" | awk -F= '/^BASE_VERSION=/{print $2}')"
@@ -50,8 +51,19 @@ jobs:
         shell: bash
         run: |
           CORE_VERSION="$(dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo)"
+          JSON_VERSION="$(dotnet msbuild src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj -getProperty:Version -nologo)"
           EXT_VERSION="$(dotnet msbuild src/SmartPipe.Extensions/SmartPipe.Extensions.csproj -getProperty:Version -nologo)"
-          bash eng/validate-release-version.sh "${GITHUB_REF_NAME}" "$CORE_VERSION" "$EXT_VERSION"
+          bash eng/validate-release-version.sh "${GITHUB_REF_NAME}" "$CORE_VERSION" "$JSON_VERSION" "$EXT_VERSION"
+
+      - name: Test release version validation
+        shell: bash
+        run: |
+          bash eng/validate-release-version.sh v2.1.2 2.1.2 2.1.2 2.1.2
+          bash eng/validate-release-version.sh v2.1.2-rc.1 2.1.2 2.1.2 2.1.2
+          if bash eng/validate-release-version.sh v2.1.2 2.1.2 2.1.1 2.1.2; then
+            echo "JSON version mismatch was accepted." >&2
+            exit 1
+          fi
 
       - name: Build Release
         run: |
@@ -75,12 +87,26 @@ jobs:
             --no-build \
             --verbosity normal
 
+      - name: Test JSON Extensions
+        run: |
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj \
+            --configuration Release \
+            --no-build \
+            --verbosity normal
+
       - name: Pack
         run: |
           rm -rf artifacts/packages
           mkdir -p artifacts/packages
 
           dotnet pack src/SmartPipe.Core/SmartPipe.Core.csproj \
+            --configuration Release \
+            --no-build \
+            --output artifacts/packages \
+            /p:PackageVersion=${{ steps.version.outputs.version }} \
+            /p:ContinuousIntegrationBuild=true
+
+          dotnet pack src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj \
             --configuration Release \
             --no-build \
             --output artifacts/packages \
@@ -97,6 +123,10 @@ jobs:
       - name: List packages
         run: ls -la artifacts/packages
 
+      - name: Validate JSON package split
+        shell: pwsh
+        run: ./eng/validate-json-package-split.ps1 -PackageDirectory ./artifacts/packages -Version '${{ steps.version.outputs.version }}'
+
       - name: Upload package artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -107,7 +137,15 @@ jobs:
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
-          dotnet nuget push "artifacts/packages/*.nupkg" \
+          dotnet nuget push "artifacts/packages/SmartPipe.Core.${{ steps.version.outputs.version }}.nupkg" \
+            --api-key "$NUGET_API_KEY" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+          dotnet nuget push "artifacts/packages/SmartPipe.Extensions.Json.${{ steps.version.outputs.version }}.nupkg" \
+            --api-key "$NUGET_API_KEY" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+          dotnet nuget push "artifacts/packages/SmartPipe.Extensions.${{ steps.version.outputs.version }}.nupkg" \
             --api-key "$NUGET_API_KEY" \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate

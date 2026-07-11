@@ -11,6 +11,7 @@ durable queue, or exactly-once delivery system.
 [![CI](https://github.com/MrFr3di/SmartPipe-Core/actions/workflows/ci.yml/badge.svg)](https://github.com/MrFr3di/SmartPipe-Core/actions)
 [![NuGet Core](https://img.shields.io/nuget/v/SmartPipe.Core.svg)](https://www.nuget.org/packages/SmartPipe.Core)
 [![NuGet Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.svg)](https://www.nuget.org/packages/SmartPipe.Extensions)
+[![NuGet JSON Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.Json.svg)](https://www.nuget.org/packages/SmartPipe.Extensions.Json)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
 ## Contract
@@ -82,9 +83,13 @@ crash-atomic file replacement.
 ## Install
 
 ```bash
-dotnet add package SmartPipe.Core
-dotnet add package SmartPipe.Extensions
+dotnet add package SmartPipe.Core --version 2.1.2
+dotnet add package SmartPipe.Extensions.Json --version 2.1.2
 ```
+
+Install `SmartPipe.Extensions` 2.1.2 for HTTP, database, CSV, mapping,
+resilience, hosting, and health-check integrations. JSON-only applications
+should reference `SmartPipe.Extensions.Json` directly.
 
 ## Quick Start
 
@@ -220,15 +225,21 @@ source-generated `JsonTypeInfo` for NativeAOT or trimming-sensitive consumers.
 `JsonFileSink<T>` writes newline-delimited JSON batches: one JSON array per
 flushed batch.
 
-Some SmartPipe.Extensions integrations may require source-generated serializers
-or may not be AOT-friendly.
+Options-based constructors also support one root JSON array and conventional
+NDJSON. Sources stream arrays and top-level values, reject null records by
+default, and enforce configurable depth and framed-record limits.
+
+JSON file, transform, and JSON dead-letter integrations live in
+`SmartPipe.Extensions.Json`. HTTP JSON helpers remain in `SmartPipe.Extensions`.
+Some non-JSON integrations may not be AOT-friendly.
 
 ## Extensions Package Surface
 
-SmartPipe.Extensions is currently a broad integration package. This release
-keeps it monolithic to avoid expanding the typed-only hardening scope. Future
-releases may split integrations into focused packages such as Hosting,
-HealthChecks, Json, Csv, EFCore, Dapper, Mapster, and Resilience.
+`SmartPipe.Extensions.Json` owns JSON file sources and sinks, JSON transforms,
+and JSON dead-letter persistence without the broad Extensions dependency graph.
+`SmartPipe.Extensions` 2.1.2 retains type forwarders and a transitive JSON
+dependency for 2.x source and binary compatibility. New JSON applications
+should reference the dedicated package directly.
 
 README examples are intentionally minimal. CI consumer smoke is the executable
 check for the public quick-start scenarios.
@@ -248,13 +259,16 @@ check for the public quick-start scenarios.
 - [API reference](docs/api-reference.md)
 - [Contributing](docs/contributing.md)
 - [Migration from removed legacy APIs](docs/migration/legacy-to-typed.md)
+- [Migration to SmartPipe.Extensions.Json](docs/migration/2.1.2-json-package-split.md)
 
 ## Requirements
 
 - .NET 10.0 or later.
 - `SmartPipe.Core` depends on `Microsoft.Extensions.Logging.Abstractions`.
-- `SmartPipe.Extensions` adds HTTP, EF Core, Dapper, JSON, CSV, Mapster, Polly,
-  hosting, health-check, and file integration components.
+- `SmartPipe.Extensions.Json` adds System.Text.Json file, transform, and
+  dead-letter integrations.
+- `SmartPipe.Extensions` adds HTTP, EF Core, Dapper, CSV, Mapster, Polly,
+  hosting, health-check, and compatibility forwarding for JSON integrations.
 
 ## License
 

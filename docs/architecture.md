@@ -27,6 +27,25 @@ the runtime unless they declare external ownership through
 
 Factory-based DI registration creates a new scope and new runtime per run.
 
+## Package Dependencies
+
+```text
+SmartPipe.Core
+    ↑
+    ├── SmartPipe.Extensions.Json
+    └── SmartPipe.Extensions
+            └── SmartPipe.Extensions.Json (2.x compatibility bridge)
+```
+
+`SmartPipe.Extensions.Json` owns JSON file, transform, and JSON dead-letter
+implementations. It must never reference `SmartPipe.Extensions`.
+`SmartPipe.Extensions` 2.1.2 references the JSON package only to preserve the
+2.x type-forwarding contract.
+
+Core permanently owns `DeadLetterEnvelope<T>`, `IDeadLetterSerializer<T>`, and
+the standard `JsonLinesDeadLetterSerializer<T>` codec reused by the JSON source
+and sink. This is the final ownership boundary, not a deferred package move.
+
 ## Channels
 
 Input, output, and observer queues are bounded. Runtime channel factories state
@@ -49,5 +68,6 @@ transitions for drain, cancel, abort, completion, and fault.
 SmartPipe.Core is AOT-conscious and analyzer-gated. Reflection-sensitive JSON
 and dead-letter helpers expose source-generated serializer paths where relevant.
 
-Some SmartPipe.Extensions integrations may require source-generated serializers
-or may not be AOT-friendly.
+`SmartPipe.Extensions.Json` exposes source-generated metadata paths for its
+reflection-sensitive APIs. Some integrations remaining in
+`SmartPipe.Extensions` may not be AOT-friendly.

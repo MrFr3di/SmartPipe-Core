@@ -1,5 +1,6 @@
 using FluentAssertions;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using SmartPipe.Core;
 
@@ -117,6 +118,65 @@ public class DeadLetterSerializationTests
         jsonl.Count(c => c == '\n').Should().Be(1);
     }
 
+    [Fact]
+    public async Task JsonLinesSerializer_ShouldDefensivelyCopySerializerOptions()
+    {
+        var options = new JsonSerializerOptions { WriteIndented = false };
+        var serializer = new JsonLinesDeadLetterSerializer<string>(options);
+        options.WriteIndented = true;
+        using var stream = new MemoryStream();
+
+        await serializer.WriteAsync(CreateEnvelope("payload"), stream);
+
+        Encoding.UTF8.GetString(stream.ToArray()).TrimEnd('\n').Should().NotContain("\n");
+    }
+
+    [Fact]
+    public async Task JsonLinesSerializer_ReadsLegacyRootArrayWithoutBufferingJsonLinesContract()
+    {
+        var serializer = new JsonLinesDeadLetterSerializer<string>();
+        var json = JsonSerializer.Serialize(new[] { CreateEnvelope("first"), CreateEnvelope("second") });
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        var payloads = new List<string>();
+
+        await foreach (var envelope in serializer.ReadAsync(stream))
+            payloads.Add(envelope.OriginalPayload);
+
+        payloads.Should().Equal("first", "second");
+    }
+
+    [Fact]
+    public async Task JsonLinesSerializer_ReadsJsonLinesFromNonSeekableStream()
+    {
+        var serializer = new JsonLinesDeadLetterSerializer<string>();
+        using var bytes = new MemoryStream();
+        await serializer.WriteAsync(CreateEnvelope("first"), bytes);
+        await serializer.WriteAsync(CreateEnvelope("second"), bytes);
+        await using var stream = new NonSeekableReadStream(bytes.ToArray());
+        var payloads = new List<string>();
+
+        await foreach (var envelope in serializer.ReadAsync(stream))
+            payloads.Add(envelope.OriginalPayload);
+
+        payloads.Should().Equal("first", "second");
+    }
+
+    [Fact]
+    public async Task JsonLinesSerializer_ReadsBomWhenNonSeekableStreamReturnsPartialPrefixReads()
+    {
+        var serializer = new JsonLinesDeadLetterSerializer<string>();
+        using var json = new MemoryStream();
+        await serializer.WriteAsync(CreateEnvelope("payload"), json);
+        var bytes = Encoding.UTF8.GetPreamble().Concat(json.ToArray()).ToArray();
+        await using var stream = new NonSeekableReadStream(bytes, maxReadSize: 1);
+        var payloads = new List<string>();
+
+        await foreach (var envelope in serializer.ReadAsync(stream))
+            payloads.Add(envelope.OriginalPayload);
+
+        payloads.Should().Equal("payload");
+    }
+
     private static DeadLetterEnvelope<string> CreateEnvelope(string payload) => new()
     {
         SchemaVersion = 1,
@@ -146,6 +206,23 @@ public class DeadLetterSerializationTests
         Attempt = 1,
         FailedAtUtc = DateTimeOffset.UnixEpoch,
     };
+
+    private sealed class NonSeekableReadStream(byte[] data, int maxReadSize = int.MaxValue) : MemoryStream(data)
+    {
+        public override bool CanSeek => false;
+        public override long Position
+        {
+            get => base.Position;
+            set => throw new NotSupportedException();
+        }
+
+        public override long Seek(long offset, SeekOrigin loc) => throw new NotSupportedException();
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default) =>
+            base.ReadAsync(buffer[..System.Math.Min(buffer.Length, maxReadSize)], cancellationToken);
+    }
 }
 
 public sealed record DeadLetterAotPayload(int Id, string Name);

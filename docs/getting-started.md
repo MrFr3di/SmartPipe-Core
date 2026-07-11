@@ -2,6 +2,21 @@
 
 SmartPipe.Core has one runtime model: typed envelopes.
 
+## Choose the integration package
+
+```bash
+dotnet add package SmartPipe.Core --version 2.1.2
+dotnet add package SmartPipe.Extensions.Json --version 2.1.2
+dotnet add package SmartPipe.Extensions --version 2.1.2
+```
+
+Use `SmartPipe.Extensions.Json` for JSON files, JSON transforms, and JSON
+dead-letter persistence. Use `SmartPipe.Extensions` for HTTP, database, CSV,
+mapping, resilience, hosting, and health-check integrations.
+
+`SmartPipe.Extensions` 2.1.2 forwards the JSON types for 2.x compatibility.
+Direct JSON package references are recommended for new applications.
+
 ```text
 IPipelineSource<TInput>
   -> ProcessingEnvelope<TInput>
@@ -75,8 +90,9 @@ remain sequential; cross-envelope output order is not guaranteed.
 
 ## Extensions
 
-`SmartPipe.Extensions` provides typed selectors, transforms, sinks, DI, hosting,
-and health-check integrations. Common components include:
+`SmartPipe.Extensions.Json` provides the JSON components below.
+`SmartPipe.Extensions` provides the remaining selectors, transforms, sinks, DI,
+hosting, and health-check integrations. Common components include:
 
 - selectors: `HttpSelector<T>`, `JsonFileSource<T>`, `CsvFileSource<T>`,
   `EfCoreSelector<T>`, `DapperSelector<T>`, `DeadLetterSource<T>`;

@@ -16,8 +16,8 @@ namespace SmartPipe.Extensions.Transforms;
 /// <typeparam name="TOutput">The output type to deserialize.</typeparam>
 public class JsonTransform<TInput, TOutput> : IPipelineTransformer<TInput, TOutput>
 {
-    private readonly Func<TInput, string> _serialize;
-    private readonly Func<string, TOutput?> _deserialize;
+    private readonly Func<TInput, byte[]> _serialize;
+    private readonly Func<byte[], TOutput?> _deserialize;
 
     /// <summary>
     /// Initializes a new instance of <see cref="JsonTransform{TInput, TOutput}"/> with default JSON serializer options.
@@ -40,12 +40,15 @@ public class JsonTransform<TInput, TOutput> : IPipelineTransformer<TInput, TOutp
     {
         var serializerOptions =
             options
-            ?? new JsonSerializerOptions
+            == null
+            ? new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
                 WriteIndented = false,
-            };
-        _serialize = value => JsonSerializer.Serialize(value, serializerOptions);
+            }
+            : new JsonSerializerOptions(options);
+        serializerOptions.MakeReadOnly(populateMissingResolver: true);
+        _serialize = value => JsonSerializer.SerializeToUtf8Bytes(value, serializerOptions);
         _deserialize = json => JsonSerializer.Deserialize<TOutput>(json, serializerOptions);
     }
 #pragma warning restore RS0027
@@ -60,7 +63,7 @@ public class JsonTransform<TInput, TOutput> : IPipelineTransformer<TInput, TOutp
     {
         ArgumentNullException.ThrowIfNull(inputTypeInfo);
         ArgumentNullException.ThrowIfNull(outputTypeInfo);
-        _serialize = value => JsonSerializer.Serialize(value, inputTypeInfo);
+        _serialize = value => JsonSerializer.SerializeToUtf8Bytes(value, inputTypeInfo);
         _deserialize = json => JsonSerializer.Deserialize(json, outputTypeInfo);
     }
 
@@ -73,6 +76,7 @@ public class JsonTransform<TInput, TOutput> : IPipelineTransformer<TInput, TOutp
         CancellationToken ct = default
     )
     {
+        ct.ThrowIfCancellationRequested();
         try
         {
             var json = _serialize(envelope.Payload);
@@ -80,7 +84,7 @@ public class JsonTransform<TInput, TOutput> : IPipelineTransformer<TInput, TOutp
 
             return ValueTask.FromResult(StageResult<TOutput>.Success(result!));
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
             return ValueTask.FromResult(
                 StageResult<TOutput>.Failure(

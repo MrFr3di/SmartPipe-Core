@@ -3,7 +3,11 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
+using Moq;
 using SmartPipe.Core;
+using SmartPipe.Extensions;
 using SmartPipe.Extensions.Selectors;
 using Xunit;
 
@@ -11,6 +15,44 @@ namespace SmartPipe.Extensions.Tests.Sources;
 
 public class JsonFileSourceTests
 {
+    [Fact]
+    public async Task ReadAsync_AutoDetectsArray_WhenBomArrivesInPartialReads()
+    {
+        await using var stream = new OneByteReadMemoryStream(
+            "\uFEFF[{\"Value\":\"first\"}]"u8.ToArray());
+        var source = new JsonFileSource<TestItem>(
+            "partial-bom.json",
+            stream,
+            new JsonFileSourceOptions());
+
+        var items = new List<TestItem>();
+        await foreach (var envelope in source.ReadEnvelopesAsync())
+            items.Add(envelope.Payload);
+
+        Assert.Equal("first", Assert.Single(items).Value);
+    }
+
+    [Fact]
+    public async Task ReadAsync_AutoPreservesMultipleTopLevelValuesWithoutLineBreaks()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, "\"first\" \"second\"");
+            var source = new JsonFileSource<string>(path);
+            var values = new List<string>();
+
+            await foreach (var envelope in source.ReadEnvelopesAsync())
+                values.Add(envelope.Payload);
+
+            Assert.Equal(["first", "second"], values);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenPathIsNull()
     {
@@ -281,7 +323,7 @@ public class JsonFileSourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_SkipsNullItems_InNdjson()
+    public async Task ReadAsync_ThrowsForNullItems_InNdjsonByDefault()
     {
         var path = Path.GetTempFileName();
         try
@@ -291,17 +333,10 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, ndjson);
 
             var source = new JsonFileSource<string?>(path);
-            var items = new List<ProcessingEnvelope<string?>>();
-
-            await foreach (var item in source.ReadEnvelopesAsync())
+            await Assert.ThrowsAsync<JsonException>(async () =>
             {
-                items.Add(item);
-            }
-
-            // null items should be skipped
-            Assert.Equal(2, items.Count);
-            Assert.Equal("valid", items[0].Payload);
-            Assert.Equal("also valid", items[1].Payload);
+                await foreach (var item in source.ReadEnvelopesAsync()) { }
+            });
         }
         finally
         {
@@ -311,7 +346,7 @@ public class JsonFileSourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_SkipsNullItems_InJsonArray()
+    public async Task ReadAsync_ThrowsForNullItems_InJsonArrayByDefault()
     {
         var path = Path.GetTempFileName();
         try
@@ -321,22 +356,79 @@ public class JsonFileSourceTests
             await File.WriteAllTextAsync(path, json);
 
             var source = new JsonFileSource<string?>(path);
-            var items = new List<ProcessingEnvelope<string?>>();
-
-            await foreach (var item in source.ReadEnvelopesAsync())
+            await Assert.ThrowsAsync<JsonException>(async () =>
             {
-                items.Add(item);
-            }
-
-            // null items should be skipped
-            Assert.Equal(2, items.Count);
-            Assert.Equal("valid", items[0].Payload);
-            Assert.Equal("also valid", items[1].Payload);
+                await foreach (var item in source.ReadEnvelopesAsync()) { }
+            });
         }
         finally
         {
             if (File.Exists(path))
                 File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ReadAsync_SkipAndLog_SkipsNullAtSafeRecordBoundary()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, "\"valid\"\nnull\n\"also valid\"\n");
+            var logger = new Mock<ILogger<JsonFileSource<string?>>>();
+            var source = new JsonFileSource<string?>(
+                path,
+                new JsonFileSourceOptions
+                {
+                    Format = JsonFileFormat.Ndjson,
+                    InvalidRecordBehavior = InvalidJsonRecordBehavior.SkipAndLog,
+                },
+                logger.Object);
+            var values = new List<string?>();
+
+            await foreach (var item in source.ReadEnvelopesAsync())
+                values.Add(item.Payload);
+
+            Assert.Equal(["valid", "also valid"], values);
+            Assert.NotEmpty(logger.Invocations);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData(JsonFileFormat.Ndjson, "\"first\"\nnot-json\n\"third\"\n")]
+    [InlineData(JsonFileFormat.BatchJsonLines, "[\"first\"]\nnot-json\n[\"third\"]\n")]
+    public async Task ReadAsync_SkipAndLog_ContinuesAfterMalformedFramedRecord(
+        JsonFileFormat format,
+        string content)
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, content);
+            var logger = new Mock<ILogger<JsonFileSource<string>>>();
+            var source = new JsonFileSource<string>(
+                path,
+                new JsonFileSourceOptions
+                {
+                    Format = format,
+                    InvalidRecordBehavior = InvalidJsonRecordBehavior.SkipAndLog,
+                },
+                logger.Object);
+            var values = new List<string>();
+
+            await foreach (var item in source.ReadEnvelopesAsync())
+                values.Add(item.Payload);
+
+            Assert.Equal(["first", "third"], values);
+            Assert.NotEmpty(logger.Invocations);
+        }
+        finally
+        {
+            File.Delete(path);
         }
     }
 
@@ -489,9 +581,106 @@ public class JsonFileSourceTests
         }
     }
 
+    [Fact]
+    public async Task ReadAsync_NdjsonRecordExceedingByteLimit_ThrowsJsonException()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, "\"record larger than limit\"\n");
+            var source = new JsonFileSource<string>(
+                path,
+                new JsonFileSourceOptions
+                {
+                    Format = JsonFileFormat.Ndjson,
+                    MaxRecordSizeBytes = 8,
+                });
+
+            await Assert.ThrowsAsync<JsonException>(async () =>
+            {
+                await foreach (var item in source.ReadEnvelopesAsync()) { }
+            });
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ReadAsync_ArrayYieldsFirstItemBeforeEndOfStreamArrives()
+    {
+        var stream = new GatedReadStream();
+        stream.Append("[{\"Value\":\"first\"},"u8.ToArray());
+        var source = new JsonFileSource<TestItem>(
+            "gated.json",
+            stream,
+            new JsonFileSourceOptions { Format = JsonFileFormat.Array });
+        await using var enumerator = source.ReadEnvelopesAsync().GetAsyncEnumerator();
+
+        var firstMove = enumerator.MoveNextAsync().AsTask();
+        Assert.Same(firstMove, await Task.WhenAny(firstMove, Task.Delay(TimeSpan.FromSeconds(5))));
+        Assert.True(await firstMove);
+        Assert.Equal("first", enumerator.Current.Payload.Value);
+
+        stream.Append("{\"Value\":\"second\"}]"u8.ToArray());
+        stream.Complete();
+        Assert.True(await enumerator.MoveNextAsync());
+        Assert.Equal("second", enumerator.Current.Payload.Value);
+        Assert.False(await enumerator.MoveNextAsync());
+    }
+
     private class TestItem
     {
         public string? Value { get; set; }
+    }
+
+    private sealed class GatedReadStream : Stream
+    {
+        private readonly Channel<byte[]> _segments = Channel.CreateUnbounded<byte[]>();
+        private byte[]? _current;
+        private int _offset;
+
+        public void Append(byte[] bytes) => Assert.True(_segments.Writer.TryWrite(bytes));
+        public void Complete() => _segments.Writer.TryComplete();
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            while (_current == null || _offset == _current.Length)
+            {
+                if (!await _segments.Reader.WaitToReadAsync(cancellationToken))
+                    return 0;
+                if (_segments.Reader.TryRead(out _current))
+                    _offset = 0;
+            }
+
+            var count = Math.Min(buffer.Length, _current.Length - _offset);
+            _current.AsMemory(_offset, count).CopyTo(buffer);
+            _offset += count;
+            return count;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    private sealed class OneByteReadMemoryStream(byte[] buffer) : MemoryStream(buffer)
+    {
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> destination,
+            CancellationToken cancellationToken = default) =>
+            base.ReadAsync(destination[..Math.Min(1, destination.Length)], cancellationToken);
     }
 }
 
