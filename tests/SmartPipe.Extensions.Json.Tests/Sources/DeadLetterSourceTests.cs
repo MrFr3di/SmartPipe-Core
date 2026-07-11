@@ -13,6 +13,63 @@ namespace SmartPipe.Extensions.Tests.Sources;
 public class DeadLetterSourceTests
 {
     [Fact]
+    public async Task Auto_UsesDocumentLimitAcrossNdjsonRecords()
+    {
+        var first = JsonSerializer.Serialize(CreateDeadLetter("one", 1));
+        var second = JsonSerializer.Serialize(CreateDeadLetter("two", 2));
+        var content = $"{first}\n{second}\n";
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, content, TestContext.Current.CancellationToken);
+            var source = new DeadLetterSource<string>(path, new JsonLinesDeadLetterSerializer<string>(),
+                new DeadLetterSourceOptions { Format = JsonFileFormat.Auto, MaxDocumentSizeBytes = content.Length - 1 });
+            await Assert.ThrowsAsync<JsonException>(() => ReadAllAsync(source));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task Array_UsesDocumentLimitAndIgnoresRecordLimit()
+    {
+        var content = JsonSerializer.Serialize(new[] { CreateDeadLetter("one", 1) });
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, content, TestContext.Current.CancellationToken);
+            var source = new DeadLetterSource<string>(path, new JsonLinesDeadLetterSerializer<string>(),
+                new DeadLetterSourceOptions
+                {
+                    Format = JsonFileFormat.Array,
+                    MaxRecordSizeBytes = 1,
+                    MaxDocumentSizeBytes = System.Text.Encoding.UTF8.GetByteCount(content),
+                });
+            Assert.Single(await ReadAllAsync(source));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task Ndjson_UsesRecordLimitAndIgnoresDocumentLimit()
+    {
+        var content = JsonSerializer.Serialize(CreateDeadLetter("one", 1));
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, content + "\n", TestContext.Current.CancellationToken);
+            var source = new DeadLetterSource<string>(path, new JsonLinesDeadLetterSerializer<string>(),
+                new DeadLetterSourceOptions
+                {
+                    Format = JsonFileFormat.Ndjson,
+                    MaxRecordSizeBytes = System.Text.Encoding.UTF8.GetByteCount(content),
+                    MaxDocumentSizeBytes = 1,
+                });
+            Assert.Single(await ReadAllAsync(source));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public void Constructor_RejectsBatchJsonLinesFormat()
     {
         Assert.Throws<ArgumentException>(() => new DeadLetterSource<string>(
