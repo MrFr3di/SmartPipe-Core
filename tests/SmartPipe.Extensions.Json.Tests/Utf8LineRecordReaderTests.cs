@@ -5,6 +5,28 @@ namespace SmartPipe.Extensions.Tests;
 
 public sealed class Utf8LineRecordReaderTests
 {
+    [Fact]
+    public async Task TruncatedBomPrefixBeforeLf_IsReturnedForJsonValidation()
+    {
+        await using var stream = new MemoryStream([0xEF, (byte)'\n']);
+
+        var record = Assert.Single(await ReadAllAsync(stream, 4));
+
+        Assert.False(record.TooLarge);
+        Assert.Equal([0xEF], record.Bytes);
+    }
+
+    [Fact]
+    public async Task TruncatedBomPrefixAtEof_IsReturnedForJsonValidation()
+    {
+        await using var stream = new MemoryStream([0xEF, 0xBB]);
+
+        var record = Assert.Single(await ReadAllAsync(stream, 4));
+
+        Assert.False(record.TooLarge);
+        Assert.Equal([0xEF, 0xBB], record.Bytes);
+    }
+
     [Theory]
     [InlineData("12345\n", 5, false)]
     [InlineData("123456\n", 5, true)]

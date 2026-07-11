@@ -30,7 +30,9 @@ internal static class Utf8LineRecordReader
                 if (value == (byte)'\n')
                 {
                     pendingCarriageReturn = false;
-                    var completed = CompleteRecord(record, tooLarge, hasNonWhitespace, ref firstRecord);
+                    var semanticHasNonWhitespace = hasNonWhitespace
+                        || (firstRecord && bomPrefixMatches && firstRecordByteCount is > 0 and < 3);
+                    var completed = CompleteRecord(record, tooLarge, semanticHasNonWhitespace, ref firstRecord);
                     if (completed.HasValue)
                         yield return completed.Value;
                     record.SetLength(0);
@@ -49,7 +51,9 @@ internal static class Utf8LineRecordReader
 
         if (pendingCarriageReturn)
             Append((byte)'\r');
-        var final = CompleteRecord(record, tooLarge, hasNonWhitespace, ref firstRecord);
+        var finalHasNonWhitespace = hasNonWhitespace
+            || (firstRecord && bomPrefixMatches && firstRecordByteCount is > 0 and < 3);
+        var final = CompleteRecord(record, tooLarge, finalHasNonWhitespace, ref firstRecord);
         if (final.HasValue)
             yield return final.Value;
 
