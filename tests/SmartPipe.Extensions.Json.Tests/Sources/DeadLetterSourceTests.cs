@@ -13,6 +13,15 @@ namespace SmartPipe.Extensions.Tests.Sources;
 public class DeadLetterSourceTests
 {
     [Fact]
+    public void Constructor_RejectsBatchJsonLinesFormat()
+    {
+        Assert.Throws<ArgumentException>(() => new DeadLetterSource<string>(
+            "deadletters.json",
+            new JsonLinesDeadLetterSerializer<string>(),
+            new DeadLetterSourceOptions { Format = JsonFileFormat.BatchJsonLines }));
+    }
+
+    [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenPathIsNull()
     {
         Assert.Throws<ArgumentNullException>(() => new DeadLetterSource<string>(null!));

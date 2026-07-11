@@ -16,10 +16,13 @@ public sealed class JsonOptionsTests
         Assert.Equal(InvalidJsonRecordBehavior.Throw, source.InvalidRecordBehavior);
         Assert.Equal(64, source.MaxDepth);
         Assert.Equal(16 * 1024 * 1024, source.MaxRecordSizeBytes);
+        Assert.Equal(256L * 1024 * 1024, source.MaxDocumentSizeBytes);
         Assert.Equal(JsonFileFormat.BatchJsonLines, sink.Format);
         Assert.Equal(JsonFileOpenMode.Append, sink.OpenMode);
         Assert.Equal(1000, sink.FlushInterval);
         Assert.Equal(InvalidJsonRecordBehavior.Throw, deadLetterSource.InvalidRecordBehavior);
+        Assert.Equal(JsonFileFormat.Auto, deadLetterSource.Format);
+        Assert.Equal(256L * 1024 * 1024, deadLetterSource.MaxDocumentSizeBytes);
         Assert.Equal(3, deadLetterSink.RetryDelays.Count);
         Assert.Same(TimeProvider.System, deadLetterSink.TimeProvider);
     }

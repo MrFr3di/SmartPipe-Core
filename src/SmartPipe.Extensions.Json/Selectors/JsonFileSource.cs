@@ -61,7 +61,7 @@ public class JsonFileSource<T> : IPipelineSource<T>
     {
         _path = ValidatePath(path);
         _openStream = () => OpenFile(_path);
-        _options = ValidateOptions(options, logger);
+        _options = JsonInputOptionsValidator.Validate(options, logger);
         _logger = logger;
         var frozenOptions = FreezeOptions(serializerOptions, _options.MaxDepth);
         _deserializeItems = (stream, topLevelValues, token) =>
@@ -103,7 +103,7 @@ public class JsonFileSource<T> : IPipelineSource<T>
         _openStream = () => OpenFile(_path);
         ArgumentNullException.ThrowIfNull(itemTypeInfo);
         ArgumentNullException.ThrowIfNull(listTypeInfo);
-        _options = ValidateOptions(options, logger);
+        _options = JsonInputOptionsValidator.Validate(options, logger);
         _logger = logger;
         _deserializeItems = (stream, topLevelValues, token) =>
             JsonSerializer.DeserializeAsyncEnumerable(stream, itemTypeInfo, topLevelValues, token);
@@ -172,9 +172,9 @@ public class JsonFileSource<T> : IPipelineSource<T>
                 yield break;
             }
 
-            using var limitedStream = new JsonRecordLimitStream(
+            using var limitedStream = new JsonDocumentLimitStream(
                 stream,
-                _options.MaxRecordSizeBytes,
+                _options.MaxDocumentSizeBytes,
                 _path);
             var recordIndex = 0L;
             await foreach (var batch in _deserializeBatches(limitedStream, ct).ConfigureAwait(false))
@@ -214,13 +214,8 @@ public class JsonFileSource<T> : IPipelineSource<T>
             yield break;
         }
 
-        Stream itemStream = stream;
-        JsonRecordLimitStream? limitedItemStream = null;
-        if (format == JsonFileFormat.Ndjson)
-        {
-            limitedItemStream = new JsonRecordLimitStream(stream, _options.MaxRecordSizeBytes, _path);
-            itemStream = limitedItemStream;
-        }
+        using var limitedItemStream = new JsonDocumentLimitStream(stream, _options.MaxDocumentSizeBytes, _path);
+        Stream itemStream = limitedItemStream;
         var itemIndex = 0L;
         await foreach (var item in _deserializeItems(itemStream, topLevelValues, ct).ConfigureAwait(false))
         {
@@ -232,7 +227,6 @@ public class JsonFileSource<T> : IPipelineSource<T>
             }
             yield return ProcessingEnvelope<T>.Create(item);
         }
-        limitedItemStream?.Dispose();
     }
 
     private async IAsyncEnumerable<TRecord> ReadFramedRecordsAsync<TRecord>(
@@ -259,6 +253,7 @@ public class JsonFileSource<T> : IPipelineSource<T>
             TRecord? value;
             try
             {
+                JsonRecordValidator.Validate(record.Bytes, _options.MaxDepth, _path, recordIndex);
                 value = deserialize(record.Bytes);
             }
             catch (JsonException ex)
@@ -340,20 +335,6 @@ public class JsonFileSource<T> : IPipelineSource<T>
     {
         var type = typeof(T);
         return type != typeof(string) && type != typeof(byte[]) && typeof(IEnumerable).IsAssignableFrom(type);
-    }
-
-    private static JsonFileSourceOptions ValidateOptions(
-        JsonFileSourceOptions? options,
-        ILogger<JsonFileSource<T>>? logger)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        if (options.MaxDepth <= 0)
-            throw new ArgumentOutOfRangeException(nameof(options), options.MaxDepth, "MaxDepth must be greater than zero.");
-        if (options.MaxRecordSizeBytes <= 0)
-            throw new ArgumentOutOfRangeException(nameof(options), options.MaxRecordSizeBytes, "MaxRecordSizeBytes must be greater than zero.");
-        if (options.InvalidRecordBehavior == InvalidJsonRecordBehavior.SkipAndLog && logger == null)
-            throw new ArgumentException("SkipAndLog requires a logger.", nameof(options));
-        return options with { };
     }
 
     private static string ValidatePath(string? path)

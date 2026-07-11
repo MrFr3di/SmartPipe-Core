@@ -95,14 +95,7 @@ public class DeadLetterSource<T> : IPipelineSource<T>
     {
         _path = path ?? throw new ArgumentNullException(nameof(path));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
-        ArgumentNullException.ThrowIfNull(options);
-        if (options.MaxDepth <= 0)
-            throw new ArgumentOutOfRangeException(nameof(options), options.MaxDepth, "MaxDepth must be greater than zero.");
-        if (options.MaxRecordSizeBytes <= 0)
-            throw new ArgumentOutOfRangeException(nameof(options), options.MaxRecordSizeBytes, "MaxRecordSizeBytes must be greater than zero.");
-        if (options.InvalidRecordBehavior == InvalidJsonRecordBehavior.SkipAndLog && logger == null)
-            throw new ArgumentException("SkipAndLog requires a logger.", nameof(options));
-        _sourceOptions = options with { };
+        _sourceOptions = JsonInputOptionsValidator.Validate(options, logger);
         _logger = logger;
     }
 
@@ -129,11 +122,10 @@ public class DeadLetterSource<T> : IPipelineSource<T>
                 4096,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
             var recordIndex = 0L;
-            using var limitedStream = new JsonRecordLimitStream(
-                stream,
-                _sourceOptions.MaxRecordSizeBytes,
-                _path);
-            await foreach (var envelope in _serializer.ReadAsync(limitedStream, ct).ConfigureAwait(false))
+            var envelopes = _sourceOptions.Format == JsonFileFormat.Ndjson
+                ? ReadFramedEnvelopesAsync(stream, ct)
+                : ReadDocumentEnvelopesAsync(stream, ct);
+            await foreach (var envelope in envelopes.ConfigureAwait(false))
             {
                 recordIndex++;
                 if (envelope.OriginalPayload is null)
@@ -169,9 +161,9 @@ public class DeadLetterSource<T> : IPipelineSource<T>
         if (firstByte == null)
             yield break;
         var topLevelValues = firstByte != (byte)'[';
-        using var limitedLegacyStream = new JsonRecordLimitStream(
+        using var limitedLegacyStream = new JsonDocumentLimitStream(
             legacyStream,
-            _sourceOptions.MaxRecordSizeBytes,
+            _sourceOptions.MaxDocumentSizeBytes,
             _path);
         await foreach (var element in JsonSerializer.DeserializeAsyncEnumerable(
             limitedLegacyStream,
@@ -182,6 +174,40 @@ public class DeadLetterSource<T> : IPipelineSource<T>
             var context = ProcessElement(element);
             if (context != null)
                 yield return context;
+        }
+    }
+
+    private async IAsyncEnumerable<DeadLetterEnvelope<T>> ReadDocumentEnvelopesAsync(
+        Stream stream,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        using var limitedStream = new JsonDocumentLimitStream(
+            stream,
+            _sourceOptions.MaxDocumentSizeBytes,
+            _path);
+        await foreach (var envelope in _serializer!.ReadAsync(limitedStream, ct).ConfigureAwait(false))
+            yield return envelope;
+    }
+
+    private async IAsyncEnumerable<DeadLetterEnvelope<T>> ReadFramedEnvelopesAsync(
+        Stream stream,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var recordIndex = 0L;
+        await foreach (var record in Utf8LineRecordReader.ReadAsync(
+            stream,
+            _sourceOptions.MaxRecordSizeBytes,
+            ct).ConfigureAwait(false))
+        {
+            recordIndex++;
+            if (record.TooLarge)
+                throw new JsonException(
+                    $"JSON record {recordIndex} in '{_path}' exceeds the {_sourceOptions.MaxRecordSizeBytes}-byte limit.");
+
+            JsonRecordValidator.Validate(record.Bytes, _sourceOptions.MaxDepth, _path, recordIndex);
+            await using var recordStream = new MemoryStream(record.Bytes, writable: false);
+            await foreach (var envelope in _serializer!.ReadAsync(recordStream, ct).ConfigureAwait(false))
+                yield return envelope;
         }
     }
 

@@ -44,6 +44,8 @@ public sealed record JsonFileSourceOptions
     public int MaxDepth { get; init; } = 64;
     /// <summary>Gets the maximum encoded size of one logical record.</summary>
     public int MaxRecordSizeBytes { get; init; } = 16 * 1024 * 1024;
+    /// <summary>Gets the maximum encoded size of one unframed JSON document.</summary>
+    public long MaxDocumentSizeBytes { get; init; } = 256L * 1024 * 1024;
 }
 
 /// <summary>Options for <see cref="Sinks.JsonFileSink{T}"/>.</summary>
@@ -60,12 +62,16 @@ public sealed record JsonFileSinkOptions
 /// <summary>Options for <see cref="Selectors.DeadLetterSource{T}"/>.</summary>
 public sealed record DeadLetterSourceOptions
 {
+    /// <summary>Gets the input layout.</summary>
+    public JsonFileFormat Format { get; init; } = JsonFileFormat.Auto;
     /// <summary>Gets the invalid-record behavior.</summary>
     public InvalidJsonRecordBehavior InvalidRecordBehavior { get; init; } = InvalidJsonRecordBehavior.Throw;
     /// <summary>Gets the maximum JSON nesting depth.</summary>
     public int MaxDepth { get; init; } = 64;
     /// <summary>Gets the maximum encoded size of one logical record.</summary>
     public int MaxRecordSizeBytes { get; init; } = 16 * 1024 * 1024;
+    /// <summary>Gets the maximum encoded size of one unframed JSON document.</summary>
+    public long MaxDocumentSizeBytes { get; init; } = 256L * 1024 * 1024;
 }
 
 /// <summary>Options for <see cref="DeadLetterSink{T}"/>.</summary>

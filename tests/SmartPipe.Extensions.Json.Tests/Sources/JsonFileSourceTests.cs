@@ -16,6 +16,60 @@ namespace SmartPipe.Extensions.Tests.Sources;
 public class JsonFileSourceTests
 {
     [Fact]
+    public void Constructor_RejectsUndefinedFormat()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new JsonFileSource<string>(
+            "input.json",
+            new JsonFileSourceOptions { Format = (JsonFileFormat)99 }));
+    }
+
+    [Fact]
+    public async Task ReadAsync_ArrayUsesDocumentLimitAndCountsBom()
+    {
+        await using var stream = new MemoryStream("\uFEFF[]"u8.ToArray());
+        var source = new JsonFileSource<string>(
+            "bom-array.json",
+            stream,
+            new JsonFileSourceOptions
+            {
+                Format = JsonFileFormat.Array,
+                MaxRecordSizeBytes = 1,
+                MaxDocumentSizeBytes = 4,
+            });
+
+        var exception = await Assert.ThrowsAsync<JsonException>(async () =>
+        {
+            await foreach (var _ in source.ReadEnvelopesAsync()) { }
+        });
+
+        Assert.Contains("4-byte", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("bom-array.json", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ReadAsync_NdjsonRejectsRecordExceedingConfiguredDepth()
+    {
+        await using var stream = new MemoryStream("[[0]]\n"u8.ToArray());
+        var source = new JsonFileSource<int[]>(
+            "deep.ndjson",
+            stream,
+            new JsonFileSourceOptions
+            {
+                Format = JsonFileFormat.Ndjson,
+                MaxDepth = 1,
+            });
+
+        var exception = await Assert.ThrowsAsync<JsonException>(async () =>
+        {
+            await foreach (var _ in source.ReadEnvelopesAsync()) { }
+        });
+
+        Assert.Contains("record 1", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("deep.ndjson", exception.Message, StringComparison.Ordinal);
+        Assert.NotNull(exception.InnerException);
+    }
+
+    [Fact]
     public async Task ReadAsync_AutoDetectsArray_WhenBomArrivesInPartialReads()
     {
         await using var stream = new OneByteReadMemoryStream(
