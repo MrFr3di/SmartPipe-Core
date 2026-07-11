@@ -121,23 +121,21 @@ public class DeadLetterSource<T> : IPipelineSource<T>
                 FileShare.ReadWrite,
                 4096,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var recordIndex = 0L;
-            var envelopes = _sourceOptions.Format == JsonFileFormat.Ndjson
-                ? ReadFramedEnvelopesAsync(stream, ct)
-                : ReadDocumentEnvelopesAsync(stream, ct);
+            var serializerFirstByte = await ReadFirstJsonByteAsync(stream, ct).ConfigureAwait(false);
+            if (serializerFirstByte is null)
+                yield break;
+            var array = _sourceOptions.Format == JsonFileFormat.Array
+                || (_sourceOptions.Format == JsonFileFormat.Auto && serializerFirstByte == (byte)'[');
+            if (array && _sourceOptions.InvalidRecordBehavior == InvalidJsonRecordBehavior.SkipAndLog)
+                throw new ArgumentException("SkipAndLog is supported only for independently framed JSON records.");
+            var envelopes = array
+                ? ReadDocumentEnvelopesAsync(stream, ct)
+                : new DeadLetterRecordReader<T>().ReadFramedAsync(
+                    stream, _serializer, _sourceOptions, _logger, _path, ct);
             await foreach (var envelope in envelopes.ConfigureAwait(false))
             {
-                recordIndex++;
                 if (envelope.OriginalPayload is null)
-                {
-                    if (_sourceOptions.InvalidRecordBehavior == InvalidJsonRecordBehavior.Throw)
-                        throw new JsonException($"Dead-letter record {recordIndex} in '{_path}' has a null OriginalPayload.");
-                    _logger!.LogWarning(
-                        "Skipping dead-letter record {RecordIndex} with null OriginalPayload in {Path}.",
-                        recordIndex,
-                        _path);
-                    continue;
-                }
+                    throw new JsonException($"Dead-letter record in '{_path}' has a null OriginalPayload.");
 
                 yield return ProcessingEnvelope<T>.Create(
                     envelope.OriginalPayload,
@@ -181,6 +179,11 @@ public class DeadLetterSource<T> : IPipelineSource<T>
         Stream stream,
         [EnumeratorCancellation] CancellationToken ct)
     {
+        var start = stream.Position;
+        using (var validationStream = new JsonDocumentLimitStream(
+            stream, _sourceOptions.MaxDocumentSizeBytes, _path))
+            ValidateDocument(validationStream, _sourceOptions.MaxDepth, ct);
+        stream.Position = start;
         using var limitedStream = new JsonDocumentLimitStream(
             stream,
             _sourceOptions.MaxDocumentSizeBytes,
@@ -189,25 +192,40 @@ public class DeadLetterSource<T> : IPipelineSource<T>
             yield return envelope;
     }
 
-    private async IAsyncEnumerable<DeadLetterEnvelope<T>> ReadFramedEnvelopesAsync(
-        Stream stream,
-        [EnumeratorCancellation] CancellationToken ct)
+    private void ValidateDocument(Stream stream, int maxDepth, CancellationToken ct)
     {
-        var recordIndex = 0L;
-        await foreach (var record in Utf8LineRecordReader.ReadAsync(
-            stream,
-            _sourceOptions.MaxRecordSizeBytes,
-            ct).ConfigureAwait(false))
+        var buffer = new byte[8192];
+        var buffered = 0;
+        var state = new JsonReaderState(new JsonReaderOptions
         {
-            recordIndex++;
-            if (record.TooLarge)
-                throw new JsonException(
-                    $"JSON record {recordIndex} in '{_path}' exceeds the {_sourceOptions.MaxRecordSizeBytes}-byte limit.");
-
-            JsonRecordValidator.Validate(record.Bytes, _sourceOptions.MaxDepth, _path, recordIndex);
-            await using var recordStream = new MemoryStream(record.Bytes, writable: false);
-            await foreach (var envelope in _serializer!.ReadAsync(recordStream, ct).ConfigureAwait(false))
-                yield return envelope;
+            MaxDepth = maxDepth,
+            CommentHandling = JsonCommentHandling.Disallow,
+            AllowTrailingCommas = false,
+        });
+        try
+        {
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                var read = stream.Read(buffer, buffered, buffer.Length - buffered);
+                var final = read == 0;
+                var available = buffered + read;
+                var reader = new Utf8JsonReader(buffer.AsSpan(0, available), final, state);
+                while (reader.Read()) { }
+                var consumed = checked((int)reader.BytesConsumed);
+                state = reader.CurrentState;
+                buffered = available - consumed;
+                if (buffered != 0)
+                    buffer.AsSpan(consumed, buffered).CopyTo(buffer);
+                if (final)
+                    break;
+                if (buffered == buffer.Length)
+                    throw new JsonException($"Invalid JSON document in '{_path}'.");
+            }
+        }
+        catch (JsonException exception)
+        {
+            throw new JsonException($"Invalid JSON document in '{_path}': {exception.Message}", exception);
         }
     }
 

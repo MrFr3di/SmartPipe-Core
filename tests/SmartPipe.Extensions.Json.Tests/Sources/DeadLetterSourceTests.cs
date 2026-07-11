@@ -13,7 +13,7 @@ namespace SmartPipe.Extensions.Tests.Sources;
 public class DeadLetterSourceTests
 {
     [Fact]
-    public async Task Auto_UsesDocumentLimitAcrossNdjsonRecords()
+    public async Task Auto_UsesFramedRecordLimitForNdjsonRecords()
     {
         var first = JsonSerializer.Serialize(CreateDeadLetter("one", 1));
         var second = JsonSerializer.Serialize(CreateDeadLetter("two", 2));
@@ -23,8 +23,15 @@ public class DeadLetterSourceTests
         {
             await File.WriteAllTextAsync(path, content, TestContext.Current.CancellationToken);
             var source = new DeadLetterSource<string>(path, new JsonLinesDeadLetterSerializer<string>(),
-                new DeadLetterSourceOptions { Format = JsonFileFormat.Auto, MaxDocumentSizeBytes = content.Length - 1 });
-            await Assert.ThrowsAsync<JsonException>(() => ReadAllAsync(source));
+                new DeadLetterSourceOptions
+                {
+                    Format = JsonFileFormat.Auto,
+                    MaxRecordSizeBytes = Math.Max(
+                        System.Text.Encoding.UTF8.GetByteCount(first),
+                        System.Text.Encoding.UTF8.GetByteCount(second)),
+                    MaxDocumentSizeBytes = 1,
+                });
+            Assert.Equal(2, (await ReadAllAsync(source)).Count);
         }
         finally { File.Delete(path); }
     }

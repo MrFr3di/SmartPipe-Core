@@ -19,6 +19,11 @@ internal static class JsonInputOptionsValidator
             options.MaxRecordSizeBytes, options.MaxDocumentSizeBytes, logger, nameof(options));
         if (options.Format == JsonFileFormat.BatchJsonLines)
             throw new ArgumentException("BatchJsonLines is not supported by DeadLetterSource.", nameof(options));
+        if (options.Format == JsonFileFormat.Array
+            && options.InvalidRecordBehavior == InvalidJsonRecordBehavior.SkipAndLog)
+            throw new ArgumentException(
+                "SkipAndLog is supported only for independently framed JSON records.",
+                nameof(options));
         return options with { };
     }
 
