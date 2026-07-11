@@ -15,6 +15,8 @@ internal static class Utf8LineRecordReader
         var firstRecord = true;
         var hasNonWhitespace = false;
         var pendingCarriageReturn = false;
+        var firstRecordByteCount = 0;
+        var bomPrefixMatches = true;
 
         while (true)
         {
@@ -53,8 +55,32 @@ internal static class Utf8LineRecordReader
 
         void Append(byte value)
         {
-            if (!IsHorizontalWhitespace(value))
-                hasNonWhitespace = true;
+            var isBomByte = firstRecord
+                && bomPrefixMatches
+                && firstRecordByteCount < 3
+                && value == (firstRecordByteCount switch
+                {
+                    0 => (byte)0xEF,
+                    1 => (byte)0xBB,
+                    _ => (byte)0xBF,
+                });
+            if (firstRecord && firstRecordByteCount < 3 && bomPrefixMatches)
+            {
+                firstRecordByteCount++;
+                if (!isBomByte)
+                {
+                    if (firstRecordByteCount > 1 || !IsHorizontalWhitespace(value))
+                        hasNonWhitespace = true;
+                    bomPrefixMatches = false;
+                }
+            }
+            else
+            {
+                if (firstRecord && firstRecordByteCount < 3)
+                    firstRecordByteCount++;
+                if (!IsHorizontalWhitespace(value))
+                    hasNonWhitespace = true;
+            }
             if (record.Length < maxRecordSizeBytes)
                 record.WriteByte(value);
             else
