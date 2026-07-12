@@ -201,7 +201,7 @@ def validate(documents: dict[str, dict]) -> None:
     all_runs = windows_runs + reusable_runs
     filtered = [command for command in all_runs
                 if "--filter-class" in command or "--filter-query" in command]
-    require(filtered,
+    require(bool(filtered),
             "At least one filtered test command must be present for the contract to be meaningful.")
     for command in filtered:
         require("--minimum-expected-tests 1" in command,
