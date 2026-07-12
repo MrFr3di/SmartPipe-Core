@@ -18,6 +18,7 @@ except ImportError as error:
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
+LYCHEE = ROOT / "lychee.toml"
 FILES = {
     name: WORKFLOWS / name
     for name in (
@@ -81,6 +82,40 @@ def assert_immutable_action_refs(documents: dict[str, dict]) -> None:
                 if action and not str(action).startswith("./"):
                     require(SHA_REF.fullmatch(str(action)) is not None,
                             f"{file_name}:{job_name} action '{action}' must use a full commit SHA.")
+
+
+def assert_persist_credentials_disabled(documents: dict[str, dict]) -> None:
+    for file_name, document in documents.items():
+        for job_name, job in document["jobs"].items():
+            for step in job.get("steps", []):
+                action = str(step.get("uses", ""))
+                if action.startswith("actions/checkout"):
+                    with_block = step.get("with")
+                    require(isinstance(with_block, dict)
+                            and with_block.get("persist-credentials") is False,
+                            f"{file_name}:{job_name} read-only checkout must set "
+                            "persist-credentials: false.")
+
+
+def assert_link_check_exclusion_scoped() -> None:
+    require(LYCHEE.is_file(), "lychee.toml must exist to scope the docs link check exclusion.")
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
+        import tomli as tomllib  # type: ignore
+    with LYCHEE.open("rb") as stream:
+        config = tomllib.load(stream)
+    require(isinstance(config, dict), "lychee.toml must contain a TOML mapping.")
+    exclude = config.get("exclude")
+    require(isinstance(exclude, list) and len(exclude) == 1,
+            "lychee.toml must exclude exactly one URL.")
+    target = r"^https://www\.nuget\.org/packages/SmartPipe\.Extensions\.Json/?$"
+    require(exclude[0] == target,
+            "lychee.toml exclusion must be scoped to the single pre-release "
+            "SmartPipe.Extensions.Json URL.")
+    require(not any("nuget.org" in pattern and pattern != target for pattern in exclude),
+            "lychee.toml must not contain a broad nuget.org exclusion.")
+
 
 
 def validate(documents: dict[str, dict]) -> None:
@@ -151,8 +186,36 @@ def validate(documents: dict[str, dict]) -> None:
             "Windows JSON lane must not execute the stress suite.")
     for name in ("Build JSON test project", "JSON file source, path, open, and share tests",
                  "JSON file sink and dispose tests", "Dead-letter source and sink tests",
+                 "Build Extensions package",
                  "Package split direct, forwarding, and legacy consumers"):
         named_step(windows_steps, name)
+
+    windows_text = "\n".join(windows_runs)
+    require("SmartPipe.Extensions.Json.Tests.Sinks.JsonFileSinkLifecycleTests" in windows_text,
+            "Windows lifecycle filter must use the correct "
+            "SmartPipe.Extensions.Json.Tests.Sinks namespace.")
+    require("SmartPipe.Extensions.Tests.Sinks.JsonFileSinkLifecycleTests" not in windows_text,
+            "Windows lifecycle filter must not use the obsolete "
+            "SmartPipe.Extensions.Tests.Sinks namespace.")
+
+    all_runs = windows_runs + reusable_runs
+    filtered = [command for command in all_runs
+                if "--filter-class" in command or "--filter-query" in command]
+    require(filtered,
+            "At least one filtered test command must be present for the contract to be meaningful.")
+    for command in filtered:
+        require("--minimum-expected-tests 1" in command,
+                f"Every filtered test command must set --minimum-expected-tests 1: {command}")
+
+    pack_index = command_index(windows_runs,
+                               "dotnet pack src/SmartPipe.Extensions/SmartPipe.Extensions.csproj")
+    build_index = command_index(windows_runs,
+                                "dotnet build src/SmartPipe.Extensions/SmartPipe.Extensions.csproj")
+    require(build_index < pack_index,
+            "SmartPipe.Extensions must be built before it is packed with --no-build.")
+
+    assert_persist_credentials_disabled(documents)
+    assert_link_check_exclusion_scoped()
 
     version = publish["jobs"].get("version")
     validation = publish["jobs"].get("validation")
@@ -191,6 +254,20 @@ def validate(documents: dict[str, dict]) -> None:
     assert_immutable_action_refs(documents)
 
 
+def _revert_windows_lifecycle_namespace(documents: dict[str, dict]) -> None:
+    wrong = "SmartPipe.Extensions.Tests.Sinks.JsonFileSinkLifecycleTests"
+    correct = "SmartPipe.Extensions.Json.Tests.Sinks.JsonFileSinkLifecycleTests"
+    for step in documents["ci.yml"]["jobs"]["json-file-windows"]["steps"]:
+        if "run" in step:
+            step["run"] = str(step["run"]).replace(correct, wrong)
+
+
+def _strip_minimum_expected_from_windows(documents: dict[str, dict]) -> None:
+    for step in documents["ci.yml"]["jobs"]["json-file-windows"]["steps"]:
+        if "run" in step:
+            step["run"] = str(step["run"]).replace("--minimum-expected-tests 1", "")
+
+
 def assert_mutation_rejected(documents: dict[str, dict], mutate, expected: str) -> None:
     mutated = copy.deepcopy(documents)
     mutate(mutated)
@@ -219,6 +296,22 @@ def main() -> int:
         documents,
         lambda docs: docs["ci.yml"]["jobs"]["json-file-windows"]["steps"][0].update({"uses": "actions/checkout@v7"}),
         "full commit SHA",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: docs["ci.yml"]["jobs"]["json-file-windows"]["steps"][0]
+            .setdefault("with", {}).__setitem__("persist-credentials", True),
+        "persist-credentials: false",
+    )
+    assert_mutation_rejected(
+        documents,
+        _revert_windows_lifecycle_namespace,
+        "SmartPipe.Extensions.Json.Tests.Sinks",
+    )
+    assert_mutation_rejected(
+        documents,
+        _strip_minimum_expected_from_windows,
+        "--minimum-expected-tests 1",
     )
     print("Workflow contract tests passed (YAML 1.2 structure, graph, artifact flow, ordering, immutable refs, RED mutations).")
     return 0

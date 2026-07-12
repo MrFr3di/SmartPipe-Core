@@ -22,6 +22,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
@@ -36,23 +38,31 @@ jobs:
 
       - name: JSON file source, path, open, and share tests
         run: |
-          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sources.JsonFileSourceTests
-          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sources.JsonFileSourceRecoveryTests
-          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sources.JsonFileSourceMetadataTests
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sources.JsonFileSourceTests --minimum-expected-tests 1
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sources.JsonFileSourceRecoveryTests --minimum-expected-tests 1
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sources.JsonFileSourceMetadataTests --minimum-expected-tests 1
 
       - name: JSON file sink and dispose tests
         run: |
-          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests
-          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkAppendTests
-          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkLifecycleTests
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests --minimum-expected-tests 1
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkAppendTests --minimum-expected-tests 1
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Json.Tests.Sinks.JsonFileSinkLifecycleTests --minimum-expected-tests 1
 
       - name: Dead-letter source and sink tests
         run: |
-          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sources.DeadLetterSourceTests
-          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sources.DeadLetterSourceRecoveryTests
-          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.DeadLetterSinkTests
-          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.DeadLetterSinkAppendTests
-          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Json.Tests.DeadLetterSinkLifecycleTests
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sources.DeadLetterSourceTests --minimum-expected-tests 1
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.Sources.DeadLetterSourceRecoveryTests --minimum-expected-tests 1
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.DeadLetterSinkTests --minimum-expected-tests 1
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.DeadLetterSinkAppendTests --minimum-expected-tests 1
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Json.Tests.DeadLetterSinkLifecycleTests --minimum-expected-tests 1
+
+      - name: Build Extensions package
+        run: >
+          dotnet build
+          src/SmartPipe.Extensions/SmartPipe.Extensions.csproj
+          --configuration Release
+          --no-restore
+          -warnaserror
 
       - name: Package split direct, forwarding, and legacy consumers
         shell: pwsh

@@ -23,6 +23,8 @@ jobs:
     
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        persist-credentials: false
     
     - name: Setup .NET
       uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
@@ -61,13 +63,13 @@ jobs:
 
     - name: Extensions correctness regressions
       run: |
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.HealthCheckTests
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.ChannelMergeTests
-        dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.DeadLetterSinkTests
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.DbSinkTests
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Selectors.DapperSelectorTests
-        dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sources.HttpSelectorTests
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.HealthCheckTests --minimum-expected-tests 1
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.ChannelMergeTests --minimum-expected-tests 1
+        dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.DeadLetterSinkTests --minimum-expected-tests 1
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.DbSinkTests --minimum-expected-tests 1
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Selectors.DapperSelectorTests --minimum-expected-tests 1
+        dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests --minimum-expected-tests 1
+        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sources.HttpSelectorTests --minimum-expected-tests 1
 
     - name: PR concurrency regression repeat
       if: github.event_name == 'pull_request'
@@ -76,8 +78,8 @@ jobs:
         for pass in {1..10}; do
           echo "Concurrency regression pass $pass"
           dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-query /[Category=ConcurrencyRegression] --minimum-expected-tests 1
-          dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.ChannelMergeTests
-          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests
+          dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.ChannelMergeTests --minimum-expected-tests 1
+          dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests --minimum-expected-tests 1
         done
     
     - name: Core tests with coverage
