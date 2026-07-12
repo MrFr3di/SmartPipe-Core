@@ -887,6 +887,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _spec.Observers,
             _options.ObserverDispatch,
             _clock,
+            _time,
             OnObserverEventDropped
         );
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);

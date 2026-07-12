@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using SmartPipe.Core;
+using SmartPipe.Extensions;
 
 namespace SmartPipe.Extensions.Sinks;
 
@@ -14,6 +15,7 @@ public class JsonFileSink<T> : IPipelineSink<T>
         Active,
         Disposing,
         Disposed,
+        Faulted,
     }
 
     private static readonly byte[] NewLine = "\n"u8.ToArray();
@@ -22,14 +24,14 @@ public class JsonFileSink<T> : IPipelineSink<T>
     private readonly Func<List<T>, byte[]> _serializeBatch;
     private readonly Func<T, byte[]>? _serializeItem;
     private readonly List<T> _buffer = [];
-    private readonly object _disposeTaskGate = new();
+    private readonly SharedAsyncDisposeState _dispose = new();
     private readonly SemaphoreSlim _flushGate = new(1, 1);
     private Stream? _stream;
     private bool _leaveOpen;
     private bool _arrayStarted;
     private bool _arrayHasItems;
-    private SinkLifecycleState _state;
-    private Task? _disposeTask;
+    private bool _appendBoundaryChecked;
+    private int _state;
 
     /// <summary>Create a legacy batch-JSON-lines sink.</summary>
     [RequiresUnreferencedCode("Reflection-based JSON file writing is not trimming-safe. Use a JsonTypeInfo constructor.")]
@@ -105,6 +107,13 @@ public class JsonFileSink<T> : IPipelineSink<T>
     [RequiresUnreferencedCode("Reflection-based JSON file writing is not trimming-safe.")]
     [RequiresDynamicCode("Reflection-based JSON file writing may require runtime code generation.")]
     internal JsonFileSink(string path, Stream stream, int flushInterval = 1000)
+        : this(path, stream, flushInterval, leaveOpen: true)
+    {
+    }
+
+    [RequiresUnreferencedCode("Reflection-based JSON file writing is not trimming-safe.")]
+    [RequiresDynamicCode("Reflection-based JSON file writing may require runtime code generation.")]
+    internal JsonFileSink(string path, Stream stream, int flushInterval, bool leaveOpen)
     {
         _path = ValidatePath(path);
         ArgumentNullException.ThrowIfNull(stream);
@@ -113,12 +122,13 @@ public class JsonFileSink<T> : IPipelineSink<T>
         _serializeBatch = batch => JsonSerializer.SerializeToUtf8Bytes(batch, frozenOptions);
         _serializeItem = item => JsonSerializer.SerializeToUtf8Bytes(item, frozenOptions);
         _stream = stream;
-        _leaveOpen = true;
+        _leaveOpen = leaveOpen;
     }
 
     /// <inheritdoc />
     public async ValueTask InitializeAsync(CancellationToken ct = default)
     {
+        ThrowIfNotActive();
         await _flushGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -134,6 +144,7 @@ public class JsonFileSink<T> : IPipelineSink<T>
     /// <inheritdoc />
     public async ValueTask WriteAsync(ProcessingEnvelope<T> envelope, CancellationToken ct = default)
     {
+        ThrowIfNotActive();
         if (envelope.Payload is null)
             return;
 
@@ -154,27 +165,21 @@ public class JsonFileSink<T> : IPipelineSink<T>
     /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
-        Task disposeTask;
-        lock (_disposeTaskGate)
-        {
-            if (_disposeTask == null)
-            {
-                _state = SinkLifecycleState.Disposing;
-                _disposeTask = DisposeCoreAsync();
-            }
-            disposeTask = _disposeTask;
-        }
-
-        return new ValueTask(disposeTask);
+        Interlocked.CompareExchange(
+            ref _state,
+            (int)SinkLifecycleState.Disposing,
+            (int)SinkLifecycleState.Active);
+        return new ValueTask(_dispose.GetOrStart(DisposeCoreAsync));
     }
 
     private async Task DisposeCoreAsync()
     {
-        await _flushGate.WaitAsync().ConfigureAwait(false);
+        var acquired = false;
+        var succeeded = false;
         try
         {
-            if (_state == SinkLifecycleState.Disposed)
-                return;
+            await _flushGate.WaitAsync().ConfigureAwait(false);
+            acquired = true;
 
             await FlushBufferedCoreAsync(force: true, CancellationToken.None).ConfigureAwait(false);
             if (_options.Format == JsonFileFormat.Array)
@@ -188,11 +193,15 @@ public class JsonFileSink<T> : IPipelineSink<T>
             }
 
             _stream = null;
-            _state = SinkLifecycleState.Disposed;
+            succeeded = true;
         }
         finally
         {
-            _flushGate.Release();
+            Volatile.Write(
+                ref _state,
+                (int)(succeeded ? SinkLifecycleState.Disposed : SinkLifecycleState.Faulted));
+            if (acquired)
+                _flushGate.Release();
         }
     }
 
@@ -203,7 +212,10 @@ public class JsonFileSink<T> : IPipelineSink<T>
 
         var batch = _buffer.ToList();
         var bytes = BuildRecord(batch);
-        await WriteTransactionalAsync(EnsureStream(), bytes, ct).ConfigureAwait(false);
+        var stream = EnsureStream();
+        var prefixLineFeed = await NeedsLeadingLineFeedAsync(stream, ct).ConfigureAwait(false);
+        await WriteTransactionalAsync(stream, bytes, prefixLineFeed, ct).ConfigureAwait(false);
+        _appendBoundaryChecked = true;
         if (_options.Format == JsonFileFormat.Array)
         {
             _arrayStarted = true;
@@ -246,20 +258,24 @@ public class JsonFileSink<T> : IPipelineSink<T>
     {
         var stream = EnsureStream();
         var closing = _arrayStarted ? "]"u8.ToArray() : "[]"u8.ToArray();
-        await WriteTransactionalAsync(stream, closing, ct).ConfigureAwait(false);
+        await WriteTransactionalAsync(stream, closing, prefixLineFeed: false, ct).ConfigureAwait(false);
         _arrayStarted = true;
     }
 
     private Stream EnsureStream()
     {
         if (_stream != null)
+        {
+            if (_options.OpenMode == JsonFileOpenMode.Append && !_appendBoundaryChecked)
+                AppendFraming.EnsureReadableAndSeekable(_stream);
             return _stream;
+        }
 
         var mode = _options.OpenMode == JsonFileOpenMode.Create ? FileMode.Create : FileMode.OpenOrCreate;
         var stream = new FileStream(
             _path,
             mode,
-            FileAccess.Write,
+            _options.OpenMode == JsonFileOpenMode.Append ? FileAccess.ReadWrite : FileAccess.Write,
             FileShare.Read,
             4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
@@ -269,13 +285,21 @@ public class JsonFileSink<T> : IPipelineSink<T>
         return stream;
     }
 
+    private async ValueTask<bool> NeedsLeadingLineFeedAsync(Stream stream, CancellationToken ct)
+    {
+        if (_options.OpenMode != JsonFileOpenMode.Append || _appendBoundaryChecked)
+            return false;
+
+        return await AppendFraming.RequiresLineSeparatorAsync(stream, ct).ConfigureAwait(false);
+    }
+
     private void ThrowIfNotActive()
     {
-        if (_state != SinkLifecycleState.Active)
+        if (Volatile.Read(ref _state) != (int)SinkLifecycleState.Active)
             throw new ObjectDisposedException(nameof(JsonFileSink<T>));
     }
 
-    private static async Task WriteTransactionalAsync(Stream stream, byte[] bytes, CancellationToken ct)
+    private static async Task WriteTransactionalAsync(Stream stream, byte[] bytes, bool prefixLineFeed, CancellationToken ct)
     {
         long? checkpoint = stream.CanSeek ? stream.Length : null;
         if (checkpoint.HasValue)
@@ -283,15 +307,24 @@ public class JsonFileSink<T> : IPipelineSink<T>
 
         try
         {
+            if (prefixLineFeed)
+                await stream.WriteAsync(NewLine, ct).ConfigureAwait(false);
             await stream.WriteAsync(bytes, ct).ConfigureAwait(false);
             await stream.FlushAsync(ct).ConfigureAwait(false);
         }
-        catch
+        catch (Exception original)
         {
             if (checkpoint.HasValue)
             {
-                stream.SetLength(checkpoint.Value);
-                stream.Position = checkpoint.Value;
+                try
+                {
+                    stream.SetLength(checkpoint.Value);
+                    stream.Position = checkpoint.Value;
+                }
+                catch (Exception rollback)
+                {
+                    throw new AggregateException("Append write failed and rollback also failed; the destination may contain a partial record.", original, rollback);
+                }
             }
             throw;
         }

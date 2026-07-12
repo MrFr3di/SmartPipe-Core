@@ -178,6 +178,12 @@ SmartPipe.Core.BackpressureStrategy.UpdateThroughput(double throughputPerSec, do
 SmartPipe.Core.CircuitBreaker
 SmartPipe.Core.CircuitBreaker.AllowRequest() -> bool
 SmartPipe.Core.CircuitBreaker.CircuitBreaker(double failureRatio = 0.5, System.TimeSpan? samplingDuration = null, int minimumThroughput = 10, System.TimeSpan? breakDuration = null, int maxHalfOpenRequests = 3, SmartPipe.Core.IClock? clock = null) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio, System.TimeSpan? samplingDuration, int minimumThroughput, System.TimeSpan? breakDuration, int maxHalfOpenRequests) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio, System.TimeSpan? samplingDuration, int minimumThroughput, System.TimeSpan? breakDuration) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio, System.TimeSpan? samplingDuration, int minimumThroughput) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio, System.TimeSpan? samplingDuration) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio) -> void
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider) -> void
 SmartPipe.Core.CircuitBreaker.GetCurrentFailureRatio() -> double
 SmartPipe.Core.CircuitBreaker.GetMetrics() -> System.Collections.Generic.Dictionary<string!, object!>!
 SmartPipe.Core.CircuitBreaker.Isolate() -> void

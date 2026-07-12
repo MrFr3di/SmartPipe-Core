@@ -65,9 +65,15 @@ public class JsonFileSource<T> : IPipelineSource<T>
         _logger = logger;
         var frozenOptions = FreezeOptions(serializerOptions, _options.MaxDepth);
         _deserializeItems = (stream, topLevelValues, token) =>
-            JsonSerializer.DeserializeAsyncEnumerable<T>(stream, topLevelValues, frozenOptions, token);
+            WrapJsonErrors(
+                JsonSerializer.DeserializeAsyncEnumerable<T>(stream, topLevelValues, frozenOptions, token),
+                _path,
+                "document");
         _deserializeBatches = (stream, token) =>
-            JsonSerializer.DeserializeAsyncEnumerable<List<T>>(stream, topLevelValues: true, frozenOptions, token);
+            WrapJsonErrors(
+                JsonSerializer.DeserializeAsyncEnumerable<List<T>>(stream, topLevelValues: true, frozenOptions, token),
+                _path,
+                "document");
         _deserializeItemRecord = bytes => JsonSerializer.Deserialize<T>(bytes, frozenOptions);
         _deserializeBatchRecord = bytes => JsonSerializer.Deserialize<List<T>>(bytes, frozenOptions);
     }
@@ -105,12 +111,19 @@ public class JsonFileSource<T> : IPipelineSource<T>
         ArgumentNullException.ThrowIfNull(listTypeInfo);
         _options = JsonInputOptionsValidator.Validate(options, logger);
         _logger = logger;
+        var frozenTypeInfo = FreezeSourceGeneratedOptions(itemTypeInfo, listTypeInfo, _options.MaxDepth);
         _deserializeItems = (stream, topLevelValues, token) =>
-            JsonSerializer.DeserializeAsyncEnumerable(stream, itemTypeInfo, topLevelValues, token);
+            WrapJsonErrors(
+                JsonSerializer.DeserializeAsyncEnumerable(stream, frozenTypeInfo.Item, topLevelValues, token),
+                _path,
+                "document");
         _deserializeBatches = (stream, token) =>
-            JsonSerializer.DeserializeAsyncEnumerable(stream, listTypeInfo, topLevelValues: true, token);
-        _deserializeItemRecord = bytes => JsonSerializer.Deserialize(bytes, itemTypeInfo);
-        _deserializeBatchRecord = bytes => JsonSerializer.Deserialize(bytes, listTypeInfo);
+            WrapJsonErrors(
+                JsonSerializer.DeserializeAsyncEnumerable(stream, frozenTypeInfo.List, topLevelValues: true, token),
+                _path,
+                "document");
+        _deserializeItemRecord = bytes => JsonSerializer.Deserialize(bytes, frozenTypeInfo.Item);
+        _deserializeBatchRecord = bytes => JsonSerializer.Deserialize(bytes, frozenTypeInfo.List);
     }
 
     [RequiresUnreferencedCode("Reflection-based JSON file reading is not trimming-safe.")]
@@ -258,8 +271,11 @@ public class JsonFileSource<T> : IPipelineSource<T>
             }
             catch (JsonException ex)
             {
-                if (!HandleInvalidRecord(recordIndex, ex))
-                    throw;
+                var contextual = ex.Message.Contains(_path, StringComparison.Ordinal)
+                    ? ex
+                    : new JsonException($"Invalid JSON record {recordIndex} in '{_path}': {ex.Message}", ex);
+                if (!HandleInvalidRecord(recordIndex, contextual))
+                    throw contextual;
                 continue;
             }
 
@@ -353,5 +369,53 @@ public class JsonFileSource<T> : IPipelineSource<T>
         clone.MaxDepth = maxDepth;
         clone.MakeReadOnly(populateMissingResolver: true);
         return clone;
+    }
+
+    private static (JsonTypeInfo<T> Item, JsonTypeInfo<List<T>> List) FreezeSourceGeneratedOptions(
+        JsonTypeInfo<T> itemTypeInfo,
+        JsonTypeInfo<List<T>> listTypeInfo,
+        int maxDepth)
+    {
+        if (itemTypeInfo.Type != typeof(T) || listTypeInfo.Type != typeof(List<T>))
+            throw new ArgumentException("JSON type metadata does not match the source item and batch types.");
+        if (!ReferenceEquals(itemTypeInfo.Options, listTypeInfo.Options))
+            throw new ArgumentException("Item and list JSON type metadata must come from the same serializer context.");
+        if (itemTypeInfo.Options.TypeInfoResolver == null)
+            throw new ArgumentException("Source-generated JSON metadata must provide a type-info resolver.");
+
+        var clone = new JsonSerializerOptions(itemTypeInfo.Options)
+        {
+            MaxDepth = maxDepth,
+            TypeInfoResolver = itemTypeInfo.Options.TypeInfoResolver,
+        };
+        if (clone.GetTypeInfo(typeof(T)) is not JsonTypeInfo<T> frozenItem
+            || clone.GetTypeInfo(typeof(List<T>)) is not JsonTypeInfo<List<T>> frozenList)
+            throw new ArgumentException("The JSON metadata resolver cannot resolve both item and batch types.");
+        clone.MakeReadOnly();
+        return (frozenItem, frozenList);
+    }
+
+    private static async IAsyncEnumerable<TValue?> WrapJsonErrors<TValue>(
+        IAsyncEnumerable<TValue?> values,
+        string path,
+        string scope,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await using var enumerator = values.GetAsyncEnumerator(ct);
+        while (true)
+        {
+            bool hasValue;
+            try
+            {
+                hasValue = await enumerator.MoveNextAsync().ConfigureAwait(false);
+            }
+            catch (JsonException exception)
+            {
+                throw new JsonException($"Invalid JSON {scope} in '{path}': {exception.Message}", exception);
+            }
+            if (!hasValue)
+                yield break;
+            yield return enumerator.Current;
+        }
     }
 }

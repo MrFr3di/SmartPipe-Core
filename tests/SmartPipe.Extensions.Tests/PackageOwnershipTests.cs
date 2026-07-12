@@ -22,6 +22,30 @@ public sealed class PackageOwnershipTests
     }
 
     [Fact]
+    public void Extensions_ForwardsEveryJsonTypeThatExistedIn211_AndNoNewOptions()
+    {
+        var expectedForwardedTypes = new HashSet<Type>
+        {
+            typeof(JsonFileSource<>),
+            typeof(DeadLetterSource<>),
+            typeof(JsonFileSink<>),
+            typeof(DeadLetterSink<>),
+            typeof(DeadLetterWriteFailureMode),
+            typeof(DeadLetterWriteException),
+            typeof(JsonTransform<,>),
+        };
+
+        var extensionsAssembly = typeof(DapperSelector<>).Assembly;
+        var forwardedTypes = extensionsAssembly.GetForwardedTypes().ToHashSet();
+
+        Assert.True(expectedForwardedTypes.SetEquals(forwardedTypes));
+        Assert.DoesNotContain(typeof(JsonFileSourceOptions), forwardedTypes);
+        Assert.DoesNotContain(typeof(JsonFileSinkOptions), forwardedTypes);
+        Assert.DoesNotContain(typeof(DeadLetterSourceOptions), forwardedTypes);
+        Assert.DoesNotContain(typeof(DeadLetterSinkOptions), forwardedTypes);
+    }
+
+    [Fact]
     public void JsonLinesDeadLetterSerializer_RemainsOwnedByCore()
     {
         Assert.Equal("SmartPipe.Core", typeof(JsonLinesDeadLetterSerializer<>).Assembly.GetName().Name);

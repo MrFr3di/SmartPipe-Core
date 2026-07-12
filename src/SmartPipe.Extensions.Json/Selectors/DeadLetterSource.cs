@@ -182,7 +182,8 @@ public class DeadLetterSource<T> : IPipelineSource<T>
         var start = stream.Position;
         using (var validationStream = new JsonDocumentLimitStream(
             stream, _sourceOptions.MaxDocumentSizeBytes, _path))
-            ValidateDocument(validationStream, _sourceOptions.MaxDepth, ct);
+            await JsonDocumentValidator.ValidateAsync(
+                validationStream, _sourceOptions.MaxDepth, _path, ct);
         stream.Position = start;
         using var limitedStream = new JsonDocumentLimitStream(
             stream,
@@ -190,43 +191,6 @@ public class DeadLetterSource<T> : IPipelineSource<T>
             _path);
         await foreach (var envelope in _serializer!.ReadAsync(limitedStream, ct).ConfigureAwait(false))
             yield return envelope;
-    }
-
-    private void ValidateDocument(Stream stream, int maxDepth, CancellationToken ct)
-    {
-        var buffer = new byte[8192];
-        var buffered = 0;
-        var state = new JsonReaderState(new JsonReaderOptions
-        {
-            MaxDepth = maxDepth,
-            CommentHandling = JsonCommentHandling.Disallow,
-            AllowTrailingCommas = false,
-        });
-        try
-        {
-            while (true)
-            {
-                ct.ThrowIfCancellationRequested();
-                var read = stream.Read(buffer, buffered, buffer.Length - buffered);
-                var final = read == 0;
-                var available = buffered + read;
-                var reader = new Utf8JsonReader(buffer.AsSpan(0, available), final, state);
-                while (reader.Read()) { }
-                var consumed = checked((int)reader.BytesConsumed);
-                state = reader.CurrentState;
-                buffered = available - consumed;
-                if (buffered != 0)
-                    buffer.AsSpan(consumed, buffered).CopyTo(buffer);
-                if (final)
-                    break;
-                if (buffered == buffer.Length)
-                    throw new JsonException($"Invalid JSON document in '{_path}'.");
-            }
-        }
-        catch (JsonException exception)
-        {
-            throw new JsonException($"Invalid JSON document in '{_path}': {exception.Message}", exception);
-        }
     }
 
     private ProcessingEnvelope<T>? ProcessElement(JsonElement element)

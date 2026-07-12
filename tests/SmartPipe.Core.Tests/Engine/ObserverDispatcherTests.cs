@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using FluentAssertions;
+using Microsoft.Extensions.Time.Testing;
 using SmartPipe.Core;
 
 namespace SmartPipe.Core.Tests.Engine;
@@ -11,6 +12,152 @@ namespace SmartPipe.Core.Tests.Engine;
 [Trait("Category", "CorrectnessRegression")]
 public sealed class ObserverDispatcherTests
 {
+    [Fact]
+    public async Task BufferedBestEffort_FakeTimeProviderControlsWriteTimeout()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var fixture = await CreateSaturatedBestEffortDispatcherAsync(timeProvider, TimeSpan.FromSeconds(5));
+
+        var emit = fixture.Dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None).AsTask();
+        emit.IsCompleted.Should().BeFalse();
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        await emit;
+
+        fixture.Dropped().Should().Be(1);
+        fixture.Observer.Release();
+        await fixture.Dispatcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task BufferedBestEffort_CallerCancellationIsNotCountedAsDrop()
+    {
+        var fixture = await CreateSaturatedBestEffortDispatcherAsync(new FakeTimeProvider(), TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource();
+        var emit = fixture.Dispatcher.EmitAsync(NewStartedEvent(), cts.Token).AsTask();
+        cts.Cancel();
+
+        Func<Task> act = async () => await emit;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        fixture.Dropped().Should().Be(0);
+        fixture.Observer.Release();
+        await fixture.Dispatcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task BufferedBestEffort_TimeoutIsCountedExactlyOnce()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var fixture = await CreateSaturatedBestEffortDispatcherAsync(timeProvider, TimeSpan.FromSeconds(1));
+        var emit = fixture.Dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None).AsTask();
+
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        await emit;
+        timeProvider.Advance(TimeSpan.FromSeconds(10));
+
+        fixture.Dropped().Should().Be(1);
+        fixture.Observer.Release();
+        await fixture.Dispatcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task BufferedBestEffort_DisposalCancellationIsNotCountedAsDrop()
+    {
+        var fixture = await CreateSaturatedBestEffortDispatcherAsync(new FakeTimeProvider(), TimeSpan.FromSeconds(5));
+        var emit = fixture.Dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None).AsTask();
+
+        var dispose = fixture.Dispatcher.DisposeAsync().AsTask();
+        await emit;
+
+        fixture.Dropped().Should().Be(0);
+        await dispose;
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task BufferedBestEffort_SimultaneousTimeoutAndDispose_IsNotCountedAsDrop()
+    {
+        var timeProvider = new GatedTimerFakeTimeProvider();
+        var fixture = await CreateSaturatedBestEffortDispatcherAsync(timeProvider, TimeSpan.FromSeconds(1));
+        var emit = fixture.Dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None).AsTask();
+
+        var advance = Task.Run(() => timeProvider.Advance(TimeSpan.FromSeconds(1)));
+        await timeProvider.TimerCallbackEntered.Task;
+        var dispose = fixture.Dispatcher.DisposeAsync().AsTask();
+        timeProvider.ReleaseTimerCallback();
+        await Task.WhenAll(advance, emit, dispose);
+
+        fixture.Dropped().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task BufferedBestEffort_ZeroTimeoutDropsDeterministically()
+    {
+        var fixture = await CreateSaturatedBestEffortDispatcherAsync(new FakeTimeProvider(), TimeSpan.Zero);
+
+        await fixture.Dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None);
+
+        fixture.Dropped().Should().Be(1);
+        fixture.Observer.Release();
+        await fixture.Dispatcher.DisposeAsync();
+    }
+
+    private static PipelineStartedEvent NewStartedEvent() =>
+        new("pipeline", "run", DateTimeOffset.UnixEpoch);
+
+    private static async Task<(IPipelineObserverDispatcher Dispatcher, ReleasableObserver Observer, Func<int> Dropped)>
+        CreateSaturatedBestEffortDispatcherAsync(TimeProvider timeProvider, TimeSpan timeout)
+    {
+        var observer = new ReleasableObserver();
+        var dropped = 0;
+        var options = new ObserverDispatchOptions
+        {
+            Mode = ObserverDispatchMode.BufferedBestEffort,
+            Capacity = 1,
+            FullMode = BoundedChannelFullMode.Wait,
+            FailureMode = ObserverFailureMode.Ignore,
+            FlushOnCompletion = false,
+            BestEffortWriteTimeout = timeout,
+        };
+        var clock = new TimeProviderPipelineClock(timeProvider);
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [new PipelineObserverRegistration(observer)], options, clock, new PipelineTime(clock),
+            _ => Interlocked.Increment(ref dropped));
+
+        await dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None);
+        await observer.Entered.Task;
+        await dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None);
+        return (dispatcher, observer, () => Volatile.Read(ref dropped));
+    }
+
+    private sealed class GatedTimerFakeTimeProvider : FakeTimeProvider
+    {
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource TimerCallbackEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void ReleaseTimerCallback() => _release.TrySetResult();
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            return base.CreateTimer(
+                timerState =>
+                {
+                    TimerCallbackEntered.TrySetResult();
+                    _release.Task.GetAwaiter().GetResult();
+                    callback(timerState);
+                },
+                state,
+                dueTime,
+                period);
+        }
+    }
+
     [Fact]
     public async Task BufferedObserver_UseRegistrationPolicy_FaultPipelineObserverFaultsRun()
     {

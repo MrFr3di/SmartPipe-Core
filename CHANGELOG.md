@@ -10,12 +10,21 @@ preserving the SmartPipe.Extensions 2.x compatibility contract.
 - **Explicit JSON layouts** — options-based APIs add root-array, NDJSON, and
   batch-JSON-lines modes while preserving the 2.1.1 batch default.
 - **Streaming JSON contracts** — sources stream root arrays and multiple
-  top-level values, enforce strict null handling, depth, and framed-record
-  limits, and expose complete source-generated metadata paths.
+  top-level values, enforce strict null handling and depth limits on both
+  reflection and source-generated paths, and expose complete source-generated
+  metadata paths. Line-framed records and unframed documents have separate
+  encoded-size limits.
+- **Framed recovery** — `SkipAndLog` is available only at safe line boundaries
+  (`Ndjson` and `BatchJsonLines` records); root arrays and other unframed
+  document streams remain throw-only.
+- **Append framing** — JSON and dead-letter sinks preserve an existing partial
+  final row and insert a missing LF before the next appended record.
 - **Dead-letter write integrity** — the sink serializes once through Core's
   `IDeadLetterSerializer<T>`, uses deterministic retry timing, idempotent
-  lifecycle state, seekable rollback, and reports possible partial
-  non-seekable writes.
+  lifecycle state, and requires readable, seekable append destinations so a
+  failed record can roll back to its checkpoint.
+- **Sink disposal coordination** — concurrent and reentrant `DisposeAsync`
+  callers share one completion task, including disposal failures.
 
 - **SmartPipe.Extensions.Json** — dedicated package for System.Text.Json file
   sources and sinks, transforms, and JSON dead-letter persistence.
@@ -35,11 +44,22 @@ preserving the SmartPipe.Extensions 2.x compatibility contract.
   type forwarders and a transitive JSON dependency throughout the 2.x line.
 - **Release train** — Core, JSON Extensions, and Extensions use version 2.1.2;
   validation and tag publishing cover all three packages in dependency order.
+- **Runtime time semantics** — default `CircuitBreaker` construction uses
+  `TimeProvider.System` monotonic timestamps. The options-based constructor
+  requires an explicit, non-null `TimeProvider`; the six `TimeProvider`-first constructors published
+  in 2.1.1 remain as compatibility overloads. Buffered observer write timeouts
+  use the runtime provider when `TimeProviderPipelineClock` is configured.
 
 ### Compatibility
 
-- Existing namespaces, public signatures, defaults, file bytes, retry delays,
-  exceptions, and lifecycle behavior are preserved.
+- Existing JSON namespaces are unchanged. `SmartPipe.Extensions` 2.1.2 keeps a
+  dependency on `SmartPipe.Extensions.Json` and type-forwards the JSON types
+  that existed in 2.1.1, preserving source and binary resolution for those
+  consumers.
+- 2.1.2 intentionally adds format, limit, recovery, open-mode, sink, and
+  circuit-breaker options/APIs. Append-capable injected streams now fail fast
+  unless they are readable, seekable, and writable; append framing and shared
+  disposal can change exception timing and lifecycle observations.
 - `JsonFileSink<T>` output is documented as batch JSON Lines: one JSON array
   per flushed line, not conventional one-object-per-line NDJSON.
 - `JsonLinesDeadLetterSerializer<T>` remains in `SmartPipe.Core`.

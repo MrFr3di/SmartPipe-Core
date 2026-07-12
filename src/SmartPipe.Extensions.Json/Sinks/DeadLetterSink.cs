@@ -5,6 +5,7 @@ using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SmartPipe.Core;
+using SmartPipe.Extensions;
 
 namespace SmartPipe.Extensions.Sinks;
 
@@ -20,6 +21,7 @@ public partial class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         Active,
         Disposing,
         Disposed,
+        Faulted,
     }
 
     private readonly string _path;
@@ -28,10 +30,9 @@ public partial class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     private readonly TimeSpan[] _retryDelays;
     private readonly TimeProvider _timeProvider;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly object _disposeTaskGate = new();
+    private readonly SharedAsyncDisposeState _dispose = new();
     private IDeadLetterLineWriter? _lineWriter;
-    private SinkLifecycleState _state;
-    private Task? _disposeTask;
+    private int _state;
 
     /// <summary>Create a sink with the default path and reflection-based STJ serializer.</summary>
     [RequiresUnreferencedCode("Reflection-based dead-letter JSON serialization is not trimming-safe. Use a JsonTypeInfo constructor.")]
@@ -158,11 +159,14 @@ public partial class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     /// <inheritdoc />
     public async ValueTask InitializeAsync(CancellationToken ct = default)
     {
+        ThrowIfNotActive();
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             ThrowIfNotActive();
-            EnsureWriter();
+            var writer = EnsureWriter();
+            if (writer is StreamDeadLetterLineWriter streamWriter)
+                streamWriter.EnsureAppendCapabilities();
         }
         finally
         {
@@ -175,6 +179,7 @@ public partial class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         ProcessingEnvelope<DeadLetterEnvelope<T>> envelope,
         CancellationToken ct = default)
     {
+        ThrowIfNotActive();
         if (envelope.Payload is null)
             return;
 
@@ -195,34 +200,34 @@ public partial class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
-        Task disposeTask;
-        lock (_disposeTaskGate)
-        {
-            if (_disposeTask == null)
-            {
-                _state = SinkLifecycleState.Disposing;
-                _disposeTask = DisposeCoreAsync();
-            }
-            disposeTask = _disposeTask;
-        }
-        return new ValueTask(disposeTask);
+        Interlocked.CompareExchange(
+            ref _state,
+            (int)SinkLifecycleState.Disposing,
+            (int)SinkLifecycleState.Active);
+        return new ValueTask(_dispose.GetOrStart(DisposeCoreAsync));
     }
 
     private async Task DisposeCoreAsync()
     {
-        await _gate.WaitAsync().ConfigureAwait(false);
+        var acquired = false;
+        var succeeded = false;
         try
         {
-            if (_lineWriter != null)
-            {
-                await _lineWriter.DisposeAsync().ConfigureAwait(false);
-                _lineWriter = null;
-            }
-            _state = SinkLifecycleState.Disposed;
+            await _gate.WaitAsync().ConfigureAwait(false);
+            acquired = true;
+            var writer = _lineWriter;
+            _lineWriter = null;
+            if (writer != null)
+                await writer.DisposeAsync().ConfigureAwait(false);
+            succeeded = true;
         }
         finally
         {
-            _gate.Release();
+            Volatile.Write(
+                ref _state,
+                (int)(succeeded ? SinkLifecycleState.Disposed : SinkLifecycleState.Faulted));
+            if (acquired)
+                _gate.Release();
         }
     }
 
@@ -243,7 +248,7 @@ public partial class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         byte[] record,
         CancellationToken ct)
     {
-        IOException? lastException = null;
+        Exception? lastException = null;
         var mayContainPartialRecord = false;
         var attempts = _retryDelays.Length + 1;
         var attemptsMade = 0;
@@ -258,7 +263,7 @@ public partial class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
             }
             catch (DeadLetterRecordWriteException ex)
             {
-                lastException = ex.InnerIOException;
+                lastException = ex.OriginalException;
                 mayContainPartialRecord = ex.MayContainPartialRecord;
             }
             catch (IOException ex)
@@ -267,7 +272,7 @@ public partial class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
                 mayContainPartialRecord = false;
             }
 
-            if (mayContainPartialRecord || attempt >= attempts)
+            if (mayContainPartialRecord || lastException is not IOException || attempt >= attempts)
                 break;
 
             var delay = _retryDelays[attempt - 1];
@@ -295,7 +300,7 @@ public partial class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
         var stream = new FileStream(
             _path,
             FileMode.OpenOrCreate,
-            FileAccess.Write,
+            FileAccess.ReadWrite,
             FileShare.Read,
             4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
@@ -306,7 +311,7 @@ public partial class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
 
     private void ThrowIfNotActive()
     {
-        if (_state != SinkLifecycleState.Active)
+        if (Volatile.Read(ref _state) != (int)SinkLifecycleState.Active)
             throw new ObjectDisposedException(nameof(DeadLetterSink<T>));
     }
 
@@ -331,7 +336,7 @@ public partial class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     [LoggerMessage(1, LogLevel.Warning, "IOException on attempt {Attempt}/{MaxAttempts} writing to dead letter file {Path}. Retrying in {DelayMilliseconds}ms.")]
     private static partial void LogRetry(
         ILogger logger,
-        IOException exception,
+        Exception exception,
         int attempt,
         int maxAttempts,
         string path,
@@ -340,7 +345,7 @@ public partial class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     [LoggerMessage(2, LogLevel.Error, "Failed to write to dead letter file {Path} after {Attempts} attempts.")]
     private static partial void LogFailure(
         ILogger logger,
-        IOException exception,
+        Exception exception,
         string path,
         int attempts);
 }
@@ -354,6 +359,7 @@ internal sealed class StreamDeadLetterLineWriter : IDeadLetterLineWriter
 {
     private readonly Stream _stream;
     private readonly bool _leaveOpen;
+    private bool _appendBoundaryChecked;
 
     public StreamDeadLetterLineWriter(Stream stream, bool leaveOpen)
     {
@@ -366,26 +372,41 @@ internal sealed class StreamDeadLetterLineWriter : IDeadLetterLineWriter
         bool flushEachWrite,
         CancellationToken ct)
     {
-        var checkpoint = _stream.CanSeek ? _stream.Length : (long?)null;
-        if (checkpoint.HasValue)
-            _stream.Position = checkpoint.Value;
+        EnsureAppendCapabilities();
+        var prefixLineFeed = !_appendBoundaryChecked
+            && await AppendFraming.RequiresLineSeparatorAsync(_stream, ct).ConfigureAwait(false);
+        var checkpoint = _stream.Length;
+        _stream.Position = checkpoint;
         try
         {
+            if (prefixLineFeed)
+                await _stream.WriteAsync("\n"u8.ToArray(), ct).ConfigureAwait(false);
             await _stream.WriteAsync(record, ct).ConfigureAwait(false);
             if (flushEachWrite)
                 await _stream.FlushAsync(ct).ConfigureAwait(false);
+            _appendBoundaryChecked = true;
         }
-        catch (IOException ex)
+        catch (Exception original)
         {
-            if (checkpoint.HasValue)
+            try
             {
-                _stream.SetLength(checkpoint.Value);
-                _stream.Position = checkpoint.Value;
-                throw new DeadLetterRecordWriteException(ex, mayContainPartialRecord: false);
+                _stream.SetLength(checkpoint);
+                _stream.Position = checkpoint;
             }
-            throw new DeadLetterRecordWriteException(ex, mayContainPartialRecord: true);
+            catch (Exception rollback)
+            {
+                throw new DeadLetterRecordWriteException(
+                    new AggregateException("Dead-letter append failed and rollback also failed.", original, rollback),
+                    mayContainPartialRecord: true);
+            }
+
+            if (original is OperationCanceledException)
+                throw;
+            throw new DeadLetterRecordWriteException(original, mayContainPartialRecord: false);
         }
     }
+
+    internal void EnsureAppendCapabilities() => AppendFraming.EnsureReadableAndSeekable(_stream);
 
     public async ValueTask DisposeAsync()
     {
@@ -397,14 +418,14 @@ internal sealed class StreamDeadLetterLineWriter : IDeadLetterLineWriter
 
 internal sealed class DeadLetterRecordWriteException : IOException
 {
-    public DeadLetterRecordWriteException(IOException innerException, bool mayContainPartialRecord)
-        : base(innerException.Message, innerException)
+    public DeadLetterRecordWriteException(Exception originalException, bool mayContainPartialRecord)
+        : base(originalException.Message, originalException)
     {
-        InnerIOException = innerException;
+        OriginalException = originalException;
         MayContainPartialRecord = mayContainPartialRecord;
     }
 
-    public IOException InnerIOException { get; }
+    public Exception OriginalException { get; }
     public bool MayContainPartialRecord { get; }
 }
 

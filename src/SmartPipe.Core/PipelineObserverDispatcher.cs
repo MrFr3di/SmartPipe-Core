@@ -46,12 +46,21 @@ internal static class PipelineObserverDispatcher
         IPipelineClock clock,
         Action<PipelineEvent>? onObserverEventDropped = null
     )
+        => Create(observers, options, clock, new PipelineTime(clock), onObserverEventDropped);
+
+    public static IPipelineObserverDispatcher Create(
+        IReadOnlyList<PipelineObserverRegistration> observers,
+        ObserverDispatchOptions options,
+        IPipelineClock clock,
+        PipelineTime time,
+        Action<PipelineEvent>? onObserverEventDropped = null
+    )
     {
         options.Validate();
         ArgumentNullException.ThrowIfNull(clock);
         return options.Mode == ObserverDispatchMode.Inline
             ? new InlinePipelineObserverDispatcher(observers, options, clock)
-            : new BufferedPipelineObserverDispatcher(observers, options, clock, onObserverEventDropped);
+            : new BufferedPipelineObserverDispatcher(observers, options, clock, time, onObserverEventDropped);
     }
 }
 
@@ -158,6 +167,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
     private readonly ActiveObserverRegistration[] _observers;
     private readonly ObserverDispatchOptions _options;
     private readonly IPipelineClock _clock;
+    private readonly PipelineTime _time;
     private readonly Action<PipelineEvent>? _onObserverEventDropped;
     private readonly Channel<ObserverDispatchMessage> _events;
     private readonly CancellationTokenSource _cts = new();
@@ -173,12 +183,14 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         IReadOnlyList<PipelineObserverRegistration> observers,
         ObserverDispatchOptions options,
         IPipelineClock clock,
+        PipelineTime time,
         Action<PipelineEvent>? onObserverEventDropped
     )
     {
         _observers = ObserverRegistrationState.CreateActiveObservers(observers);
         _options = options;
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _time = time;
         _onObserverEventDropped = onObserverEventDropped;
         _events = PipelineChannelFactory.CreateObserverBuffer<ObserverDispatchMessage>(
             options.Capacity,
@@ -201,8 +213,11 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
 
             if (_options.FullMode == BoundedChannelFullMode.Wait)
             {
-                using var timeoutCts = new CancellationTokenSource(_options.BestEffortWriteTimeout);
-                using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+                using var timeoutCts = _time.CreateCancellationTokenSource(_options.BestEffortWriteTimeout);
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+                    ct,
+                    timeoutCts.Token,
+                    _cts.Token);
                 try
                 {
                     await _events.Writer.WriteAsync(
@@ -210,9 +225,22 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
                             linked.Token)
                         .ConfigureAwait(false);
                 }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (OperationCanceledException) when (
+                    _cts.IsCancellationRequested || Volatile.Read(ref _completed) != 0)
+                {
+                    // Disposal cancellation is not an observer drop.
+                }
                 catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
                 {
                     RecordDroppedEvent(pipelineEvent);
+                }
+                catch (ChannelClosedException) when (Volatile.Read(ref _completed) != 0)
+                {
+                    // Dispatcher teardown closed the buffer; this is not an observer drop.
                 }
             }
             else

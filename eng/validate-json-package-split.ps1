@@ -5,7 +5,13 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $Version,
 
-    [string] $DependencyPackageDirectory
+    [string] $DependencyPackageDirectory,
+
+    [switch] $ManifestOnly,
+
+    [switch] $KeepTemporaryFiles,
+
+    [string] $ValidationRoot
 )
 
 $ErrorActionPreference = 'Stop'
@@ -76,6 +82,18 @@ function Invoke-DotNet([string] $workingDirectory, [string[]] $arguments) {
     }
 }
 
+if ([string]::IsNullOrWhiteSpace($ValidationRoot)) {
+    $validationParent = Split-Path -Parent $packageRoot
+    $validationRoot = Join-Path $validationParent "package-split-validation-$([Guid]::NewGuid().ToString('N'))"
+}
+else {
+    $validationRoot = [System.IO.Path]::GetFullPath($ValidationRoot)
+}
+
+$validationSucceeded = $false
+try {
+New-Item -ItemType Directory -Path $validationRoot | Out-Null
+
 $corePackage = Get-PackagePath 'SmartPipe.Core'
 $jsonPackage = Get-PackagePath 'SmartPipe.Extensions.Json'
 $extensionsPackage = Get-PackagePath 'SmartPipe.Extensions'
@@ -85,6 +103,9 @@ Get-PackagePath 'SmartPipe.Extensions' 'snupkg' | Out-Null
 
 $jsonDependencies = Get-Dependencies (Read-Nuspec $jsonPackage)
 Assert-Dependency $jsonDependencies 'SmartPipe.Core'
+if ($null -eq ($jsonDependencies | Where-Object id -EQ 'Microsoft.Extensions.Logging.Abstractions' | Select-Object -First 1)) {
+    throw 'Missing package dependency: Microsoft.Extensions.Logging.Abstractions'
+}
 $forbiddenJsonDependencies = @(
     'SmartPipe.Extensions',
     'CsvHelper',
@@ -95,7 +116,6 @@ $forbiddenJsonDependencies = @(
     'Microsoft.Extensions.Hosting.Abstractions',
     'Microsoft.Extensions.Http',
     'Microsoft.Extensions.Resilience',
-    'System.Text.Json',
     'Newtonsoft.Json'
 )
 foreach ($packageId in $forbiddenJsonDependencies) {
@@ -107,10 +127,29 @@ foreach ($packageId in $forbiddenJsonDependencies) {
 $extensionsDependencies = Get-Dependencies (Read-Nuspec $extensionsPackage)
 Assert-Dependency $extensionsDependencies 'SmartPipe.Core'
 Assert-Dependency $extensionsDependencies 'SmartPipe.Extensions.Json'
+$requiredExtensionsDependencies = @(
+    'CsvHelper',
+    'Dapper',
+    'Mapster',
+    'Microsoft.EntityFrameworkCore',
+    'Microsoft.Extensions.Diagnostics.HealthChecks',
+    'Microsoft.Extensions.Hosting.Abstractions',
+    'Microsoft.Extensions.Http',
+    'Microsoft.Extensions.Logging.Abstractions',
+    'Microsoft.Extensions.Resilience'
+)
+foreach ($packageId in $requiredExtensionsDependencies) {
+    if ($extensionsDependencies.id -notcontains $packageId) {
+        throw "Missing package dependency: $packageId"
+    }
+}
 
-$validationParent = Split-Path -Parent $packageRoot
-$validationRoot = Join-Path $validationParent "package-split-validation-$([Guid]::NewGuid().ToString('N'))"
-New-Item -ItemType Directory -Path $validationRoot | Out-Null
+if ($ManifestOnly) {
+    $validationSucceeded = $true
+    Write-Output "SmartPipe JSON package manifest validation passed for $Version."
+    return
+}
+
 $validationPackages = [System.Security.SecurityElement]::Escape((Join-Path $validationRoot 'packages'))
 $escapedPackageRoot = [System.Security.SecurityElement]::Escape($packageRoot)
 $dependencySource = ''
@@ -251,6 +290,8 @@ public static class LegacyProbe
         typeof(DeadLetterSource<>).Assembly.GetName().Name!,
         typeof(JsonFileSink<>).Assembly.GetName().Name!,
         typeof(DeadLetterSink<>).Assembly.GetName().Name!,
+        typeof(DeadLetterWriteFailureMode).Assembly.GetName().Name!,
+        typeof(DeadLetterWriteException).Assembly.GetName().Name!,
         typeof(JsonTransform<,>).Assembly.GetName().Name!,
     ];
 }
@@ -288,4 +329,16 @@ Console.WriteLine("SmartPipe.Extensions 2.1.1 binary compatibility consumer pass
 '@
 Invoke-DotNet $legacyHost @('run', '--configuration', 'Release', '--configfile', (Join-Path $validationRoot 'NuGet.Config'))
 
+$validationSucceeded = $true
 Write-Output "SmartPipe JSON package split validation passed for $Version."
+}
+finally {
+    if ($KeepTemporaryFiles -and -not $validationSucceeded) {
+        if (Test-Path -LiteralPath $validationRoot) {
+            Write-Warning "Package split validation failed; temporary files were kept at: $validationRoot"
+        }
+    }
+    elseif (Test-Path -LiteralPath $validationRoot) {
+        Remove-Item -LiteralPath $validationRoot -Recurse -Force
+    }
+}

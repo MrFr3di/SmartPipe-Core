@@ -246,18 +246,17 @@ public class DeadLetterSinkTests
     }
 
     [Fact]
-    public async Task WriteAsync_NonSeekablePartialFailure_IsNotRetriedAndIsReported()
+    public async Task WriteAsync_NonSeekableAppendStream_FailsFastWithoutWriting()
     {
         await using var stream = new NonSeekablePartialFailureStream();
         var sink = new DeadLetterSink<string>("dummy.json", logger: null, stream: stream);
 
-        var exception = await Assert.ThrowsAsync<DeadLetterWriteException>(async () =>
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await sink.WriteAsync(Envelope(CreateDeadLetter("payload", "partial", 126UL))));
         await sink.DisposeAsync();
 
-        exception.Attempts.Should().Be(1);
-        exception.MayContainPartialRecord.Should().BeTrue();
-        stream.WriteAttempts.Should().Be(1);
+        exception.Message.Should().Contain("readable and seekable");
+        stream.WriteAttempts.Should().Be(0);
     }
 
     [Fact]

@@ -24,6 +24,20 @@ internal readonly struct PipelineTime
             : Task.Delay(delay, _timeProvider, ct);
     }
 
+    public CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout)
+    {
+        if (timeout == TimeSpan.Zero)
+        {
+            var canceled = new CancellationTokenSource();
+            canceled.Cancel();
+            return canceled;
+        }
+
+        return _timeProvider is null
+            ? new CancellationTokenSource(timeout)
+            : new CancellationTokenSource(timeout, _timeProvider);
+    }
+
     public Task WaitAsync(Task task, TimeSpan timeout, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(task);

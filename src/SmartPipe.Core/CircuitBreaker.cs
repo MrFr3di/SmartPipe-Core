@@ -65,6 +65,25 @@ internal sealed class TimeProviderCircuitBreakerTimeSource : ICircuitBreakerTime
         _timeProvider.GetElapsedTime(startingTimestamp, endingTimestamp);
 }
 
+/// <summary>Configuration for a <see cref="CircuitBreaker" />.</summary>
+public sealed record CircuitBreakerOptions
+{
+    /// <summary>Gets the failure ratio threshold.</summary>
+    public double FailureRatio { get; init; } = 0.5;
+
+    /// <summary>Gets the sliding sampling window, or the default when null.</summary>
+    public TimeSpan? SamplingDuration { get; init; }
+
+    /// <summary>Gets the minimum request count before ratio evaluation.</summary>
+    public int MinimumThroughput { get; init; } = 10;
+
+    /// <summary>Gets the open-state duration, or the default when null.</summary>
+    public TimeSpan? BreakDuration { get; init; }
+
+    /// <summary>Gets the maximum number of concurrent half-open probes.</summary>
+    public int MaxHalfOpenRequests { get; init; } = 3;
+}
+
 /// <summary>
 /// Thread-safe circuit breaker with hybrid failure detection:
 /// EWMA for fast reaction + Sliding window for accurate threshold decisions.
@@ -110,7 +129,7 @@ public class CircuitBreaker
             minimumThroughput: 10,
             breakDuration: null,
             maxHalfOpenRequests: 3,
-            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+            new TimeProviderCircuitBreakerTimeSource(TimeProvider.System))
     {
     }
 
@@ -124,7 +143,7 @@ public class CircuitBreaker
             minimumThroughput: 10,
             breakDuration: null,
             maxHalfOpenRequests: 3,
-            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+            new TimeProviderCircuitBreakerTimeSource(TimeProvider.System))
     {
     }
 
@@ -139,7 +158,7 @@ public class CircuitBreaker
             minimumThroughput,
             breakDuration: null,
             maxHalfOpenRequests: 3,
-            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+            new TimeProviderCircuitBreakerTimeSource(TimeProvider.System))
     {
     }
 
@@ -159,7 +178,7 @@ public class CircuitBreaker
             minimumThroughput,
             breakDuration,
             maxHalfOpenRequests: 3,
-            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+            new TimeProviderCircuitBreakerTimeSource(TimeProvider.System))
     {
     }
 
@@ -181,7 +200,7 @@ public class CircuitBreaker
             minimumThroughput,
             breakDuration,
             maxHalfOpenRequests,
-            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+            new TimeProviderCircuitBreakerTimeSource(TimeProvider.System))
     {
     }
 
@@ -191,7 +210,11 @@ public class CircuitBreaker
     /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
     /// <param name="breakDuration">Duration to stay open before half-open.</param>
     /// <param name="maxHalfOpenRequests">Max requests in half-open state.</param>
-    /// <param name="clock">Optional clock for testability (defaults to TimeProviderClock()).</param>
+    /// <param name="clock">
+    /// Legacy clock used exactly as supplied. When null, the breaker uses <see cref="TimeProvider.System" />
+    /// and its monotonic timestamp source. Custom UTC-based clocks remain responsible for elapsed-time
+    /// semantics; new code should prefer <see cref="CircuitBreaker(CircuitBreakerOptions, TimeProvider)" />.
+    /// </param>
 #pragma warning disable RS0027 // Existing 2.1.0 optional constructor preserved for source compatibility.
     public CircuitBreaker(
         double failureRatio = 0.5,
@@ -207,105 +230,76 @@ public class CircuitBreaker
             minimumThroughput,
             breakDuration,
             maxHalfOpenRequests,
-            new ClockCircuitBreakerTimeSource(clock ?? new TimeProviderClock()))
+            clock is null
+                ? new TimeProviderCircuitBreakerTimeSource(TimeProvider.System)
+                : new ClockCircuitBreakerTimeSource(clock))
     {
     }
 #pragma warning restore RS0027
 
-    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
-    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
+    /// <summary>Creates a new circuit breaker from options and a time provider.</summary>
+    /// <param name="options">Circuit breaker configuration.</param>
+    /// <param name="timeProvider">Time provider used for monotonic elapsed time.</param>
+#pragma warning disable RS0027 // Intentional single options-based overload approved before release.
+    public CircuitBreaker(CircuitBreakerOptions options, TimeProvider timeProvider)
+        : this(
+            (options ?? throw new ArgumentNullException(nameof(options))).FailureRatio,
+            options.SamplingDuration,
+            options.MinimumThroughput,
+            options.BreakDuration,
+            options.MaxHalfOpenRequests,
+            new TimeProviderCircuitBreakerTimeSource(timeProvider ?? throw new ArgumentNullException(nameof(timeProvider))))
+    {
+    }
+#pragma warning restore RS0027
+
+    /// <summary>Creates a compatibility circuit breaker backed by the supplied time provider.</summary>
     public CircuitBreaker(TimeProvider timeProvider)
-        : this(
-            failureRatio: 0.5,
-            samplingDuration: null,
-            minimumThroughput: 10,
-            breakDuration: null,
-            maxHalfOpenRequests: 3,
-            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+        : this(new CircuitBreakerOptions(), timeProvider)
     {
     }
 
-    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
-    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
-    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
+    /// <summary>Creates a compatibility circuit breaker backed by the supplied time provider.</summary>
     public CircuitBreaker(TimeProvider timeProvider, double failureRatio)
-        : this(
-            failureRatio,
-            samplingDuration: null,
-            minimumThroughput: 10,
-            breakDuration: null,
-            maxHalfOpenRequests: 3,
-            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+        : this(new CircuitBreakerOptions { FailureRatio = failureRatio }, timeProvider)
     {
     }
 
-    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
-    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
-    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
-    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
-    public CircuitBreaker(
-        TimeProvider timeProvider,
-        double failureRatio,
-        TimeSpan? samplingDuration)
-        : this(
-            failureRatio,
-            samplingDuration,
-            minimumThroughput: 10,
-            breakDuration: null,
-            maxHalfOpenRequests: 3,
-            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+    /// <summary>Creates a compatibility circuit breaker backed by the supplied time provider.</summary>
+    public CircuitBreaker(TimeProvider timeProvider, double failureRatio, TimeSpan? samplingDuration)
+        : this(new CircuitBreakerOptions { FailureRatio = failureRatio, SamplingDuration = samplingDuration }, timeProvider)
     {
     }
 
-    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
-    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
-    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
-    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
-    /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
-    public CircuitBreaker(
-        TimeProvider timeProvider,
-        double failureRatio,
-        TimeSpan? samplingDuration,
-        int minimumThroughput)
-        : this(
-            failureRatio,
-            samplingDuration,
-            minimumThroughput,
-            breakDuration: null,
-            maxHalfOpenRequests: 3,
-            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+    /// <summary>Creates a compatibility circuit breaker backed by the supplied time provider.</summary>
+    public CircuitBreaker(TimeProvider timeProvider, double failureRatio, TimeSpan? samplingDuration, int minimumThroughput)
+        : this(new CircuitBreakerOptions
+        {
+            FailureRatio = failureRatio,
+            SamplingDuration = samplingDuration,
+            MinimumThroughput = minimumThroughput,
+        }, timeProvider)
     {
     }
 
-    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
-    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
-    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
-    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
-    /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
-    /// <param name="breakDuration">Duration to stay open before half-open.</param>
+    /// <summary>Creates a compatibility circuit breaker backed by the supplied time provider.</summary>
     public CircuitBreaker(
         TimeProvider timeProvider,
         double failureRatio,
         TimeSpan? samplingDuration,
         int minimumThroughput,
         TimeSpan? breakDuration)
-        : this(
-            failureRatio,
-            samplingDuration,
-            minimumThroughput,
-            breakDuration,
-            maxHalfOpenRequests: 3,
-            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+        : this(new CircuitBreakerOptions
+        {
+            FailureRatio = failureRatio,
+            SamplingDuration = samplingDuration,
+            MinimumThroughput = minimumThroughput,
+            BreakDuration = breakDuration,
+        }, timeProvider)
     {
     }
 
-    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
-    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
-    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
-    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
-    /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
-    /// <param name="breakDuration">Duration to stay open before half-open.</param>
-    /// <param name="maxHalfOpenRequests">Max requests in half-open state.</param>
+    /// <summary>Creates a compatibility circuit breaker backed by the supplied time provider.</summary>
     public CircuitBreaker(
         TimeProvider timeProvider,
         double failureRatio,
@@ -313,13 +307,14 @@ public class CircuitBreaker
         int minimumThroughput,
         TimeSpan? breakDuration,
         int maxHalfOpenRequests)
-        : this(
-            failureRatio,
-            samplingDuration,
-            minimumThroughput,
-            breakDuration,
-            maxHalfOpenRequests,
-            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+        : this(new CircuitBreakerOptions
+        {
+            FailureRatio = failureRatio,
+            SamplingDuration = samplingDuration,
+            MinimumThroughput = minimumThroughput,
+            BreakDuration = breakDuration,
+            MaxHalfOpenRequests = maxHalfOpenRequests,
+        }, timeProvider)
     {
     }
 

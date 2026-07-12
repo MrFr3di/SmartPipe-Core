@@ -9,6 +9,11 @@ internal static class JsonInputOptionsValidator
         ArgumentNullException.ThrowIfNull(options);
         ValidateCommon(options.Format, options.InvalidRecordBehavior, options.MaxDepth,
             options.MaxRecordSizeBytes, options.MaxDocumentSizeBytes, logger, nameof(options));
+        if (options.InvalidRecordBehavior == InvalidJsonRecordBehavior.SkipAndLog
+            && options.Format is not (JsonFileFormat.Ndjson or JsonFileFormat.BatchJsonLines))
+            throw new ArgumentException(
+                "SkipAndLog requires an explicit Ndjson or BatchJsonLines format with independently framed JSON records.",
+                nameof(options));
         return options with { };
     }
 

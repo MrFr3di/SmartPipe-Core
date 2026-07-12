@@ -31,7 +31,7 @@ The related `JsonLinesDeadLetterSerializer<T>` remains part of
 
 The package uses `System.Text.Json` from the .NET 10 shared framework, so an
 additional `System.Text.Json` NuGet dependency is neither required nor pinned.
-Newtonsoft.Json is intentionally not a dependency and is not selected at runtime.
+Newtonsoft.Json is not a dependency and is not selected at runtime.
 
 ## Trimming and NativeAOT
 
@@ -47,13 +47,34 @@ choose an explicit format because a leading array is ambiguous. Existing sink
 constructors preserve the SmartPipe 2.1.1 default: append one array per flushed
 line.
 
-Reads are strict by default. `MaxDepth` defaults to 64 and independently framed
-records default to a 16 MiB encoded limit. `SkipAndLog` is available only when
-a logger is supplied, so invalid records cannot disappear silently.
+Reads are strict by default. `MaxDepth` defaults to 64 for reflection and
+source-generated paths. Explicitly line-framed records have a separate 16 MiB
+encoded limit; root arrays and unframed document streams have a 256 MiB limit.
+`SkipAndLog` requires a logger and is supported only when the source is reading
+independently line-framed records. `JsonFileSource<T>` requires explicit
+`Ndjson` or `BatchJsonLines`; dead-letter `Auto` recovery depends on whether it
+detects a framed stream rather than a root array.
+
+Append mode preserves existing bytes. If a non-empty destination has no final
+LF, the sink inserts one before the next record; an existing partial row is not
+rewritten, and its later replay behavior is determined by the source format and
+invalid-record policy.
+
+Injected append streams must be readable, seekable, and writable and are
+validated during initialization before any record is written. Boundary checks
+restore the incoming position, then writes append at the stream end. Success
+leaves the position at the new end; successful rollback restores the old end.
+Injected streams remain open on sink disposal, while path-owned streams are
+disposed.
 
 `DeadLetterSink<T>` serializes through Core's `IDeadLetterSerializer<T>`.
-Seekable destinations roll back failed writes; a possibly partial
-non-seekable write is not retried.
+Append destinations must also be writable. Failed writes roll back to
+the pre-record checkpoint; if rollback itself fails, the error reports that the
+destination may contain a partial record.
+
+Concurrent or reentrant disposal calls share the same asynchronous completion,
+so the underlying stream is finalized once and every caller observes the same
+result.
 
 ## Migration from SmartPipe.Extensions
 

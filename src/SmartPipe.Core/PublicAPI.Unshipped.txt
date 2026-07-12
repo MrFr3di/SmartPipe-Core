@@ -1,4 +1,24 @@
 #nullable enable
+SmartPipe.Core.CircuitBreaker.CircuitBreaker(SmartPipe.Core.CircuitBreakerOptions! options, System.TimeProvider! timeProvider) -> void
+SmartPipe.Core.CircuitBreakerOptions
+SmartPipe.Core.CircuitBreakerOptions.CircuitBreakerOptions() -> void
+SmartPipe.Core.CircuitBreakerOptions.<Clone>$() -> SmartPipe.Core.CircuitBreakerOptions!
+SmartPipe.Core.CircuitBreakerOptions.BreakDuration.get -> System.TimeSpan?
+SmartPipe.Core.CircuitBreakerOptions.BreakDuration.init -> void
+SmartPipe.Core.CircuitBreakerOptions.FailureRatio.get -> double
+SmartPipe.Core.CircuitBreakerOptions.FailureRatio.init -> void
+SmartPipe.Core.CircuitBreakerOptions.Equals(SmartPipe.Core.CircuitBreakerOptions? other) -> bool
+override SmartPipe.Core.CircuitBreakerOptions.Equals(object? obj) -> bool
+override SmartPipe.Core.CircuitBreakerOptions.GetHashCode() -> int
+SmartPipe.Core.CircuitBreakerOptions.MaxHalfOpenRequests.get -> int
+SmartPipe.Core.CircuitBreakerOptions.MaxHalfOpenRequests.init -> void
+SmartPipe.Core.CircuitBreakerOptions.MinimumThroughput.get -> int
+SmartPipe.Core.CircuitBreakerOptions.MinimumThroughput.init -> void
+SmartPipe.Core.CircuitBreakerOptions.SamplingDuration.get -> System.TimeSpan?
+SmartPipe.Core.CircuitBreakerOptions.SamplingDuration.init -> void
+override SmartPipe.Core.CircuitBreakerOptions.ToString() -> string!
+static SmartPipe.Core.CircuitBreakerOptions.operator !=(SmartPipe.Core.CircuitBreakerOptions? left, SmartPipe.Core.CircuitBreakerOptions? right) -> bool
+static SmartPipe.Core.CircuitBreakerOptions.operator ==(SmartPipe.Core.CircuitBreakerOptions? left, SmartPipe.Core.CircuitBreakerOptions? right) -> bool
 SmartPipe.Core.AdaptiveParallelismOptions.AdjustmentCooldown.get -> System.TimeSpan
 SmartPipe.Core.AdaptiveParallelismOptions.AdjustmentCooldown.init -> void
 SmartPipe.Core.AdaptiveParallelismOptions.EvaluationInterval.get -> System.TimeSpan
@@ -13,12 +33,6 @@ SmartPipe.Core.CircuitBreaker.CircuitBreaker(double failureRatio, System.TimeSpa
 SmartPipe.Core.CircuitBreaker.CircuitBreaker(double failureRatio, System.TimeSpan? samplingDuration, int minimumThroughput) -> void
 SmartPipe.Core.CircuitBreaker.CircuitBreaker(double failureRatio, System.TimeSpan? samplingDuration) -> void
 SmartPipe.Core.CircuitBreaker.CircuitBreaker(double failureRatio) -> void
-SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio, System.TimeSpan? samplingDuration, int minimumThroughput, System.TimeSpan? breakDuration, int maxHalfOpenRequests) -> void
-SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio, System.TimeSpan? samplingDuration, int minimumThroughput, System.TimeSpan? breakDuration) -> void
-SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio, System.TimeSpan? samplingDuration, int minimumThroughput) -> void
-SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio, System.TimeSpan? samplingDuration) -> void
-SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider, double failureRatio) -> void
-SmartPipe.Core.CircuitBreaker.CircuitBreaker(System.TimeProvider! timeProvider) -> void
 SmartPipe.Core.CircuitBreakerPermit
 SmartPipe.Core.CircuitBreakerPermit.CircuitBreakerPermit() -> void
 SmartPipe.Core.CircuitBreakerPermit.Dispose() -> void
