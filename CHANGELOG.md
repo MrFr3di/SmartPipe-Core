@@ -42,6 +42,15 @@ preserving the SmartPipe.Extensions 2.x compatibility contract.
   `JsonTransform<TInput,TOutput>` now live in `SmartPipe.Extensions.Json`.
 - **SmartPipe.Extensions compatibility bridge** — the broad package retains
   type forwarders and a transitive JSON dependency throughout the 2.x line.
+- **JSON input limit contract clarified** — the unframed input cap is renamed
+  from `MaxDocumentSizeBytes` to `MaxUnframedInputSizeBytes` (default 256 MiB).
+  Framed formats (`Ndjson`, `BatchJsonLines`) keep an independent per-record cap
+  (`MaxRecordSizeBytes`); root arrays and auto-detected legacy top-level value
+  sequences use the shared unframed input cap. `MaxDepth` now applies uniformly
+  to reflection constructors, source-generated constructors, the framed-record
+  validator, the root-array validator, and the legacy unframed stream. A
+  separate per-top-level-value reader (`TopLevelJsonValueReader`) is intentionally
+  deferred to 2.2.
 - **Release train** — Core, JSON Extensions, and Extensions use version 2.1.2;
   validation and tag publishing cover all three packages in dependency order.
 - **Runtime time semantics** — default `CircuitBreaker` construction uses

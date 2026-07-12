@@ -48,8 +48,10 @@ constructors preserve the SmartPipe 2.1.1 default: append one array per flushed
 line.
 
 Reads are strict by default. `MaxDepth` defaults to 64 for reflection and
-source-generated paths. Explicitly line-framed records have a separate 16 MiB
-encoded limit; root arrays and unframed document streams have a 256 MiB limit.
+source-generated paths. Explicitly line-framed records (`Ndjson`,
+`BatchJsonLines`) have a separate 16 MiB per-record limit
+(`MaxRecordSizeBytes`); root arrays and auto-detected legacy top-level value
+sequences use a 256 MiB unframed input limit (`MaxUnframedInputSizeBytes`).
 `SkipAndLog` requires a logger and is supported only when the source is reading
 independently line-framed records. `JsonFileSource<T>` requires explicit
 `Ndjson` or `BatchJsonLines`; dead-letter `Auto` recovery depends on whether it

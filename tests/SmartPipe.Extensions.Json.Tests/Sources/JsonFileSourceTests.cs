@@ -34,7 +34,7 @@ public class JsonFileSourceTests
             {
                 Format = JsonFileFormat.Array,
                 MaxRecordSizeBytes = 1,
-                MaxDocumentSizeBytes = 4,
+                MaxUnframedInputSizeBytes = 4,
             });
 
         var exception = await Assert.ThrowsAsync<JsonException>(async () =>

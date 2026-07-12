@@ -50,6 +50,20 @@ public class DeadLetterSource<T> : IPipelineSource<T>
         _deserializeValue = element => element.Deserialize(valueTypeInfo);
     }
 
+    /// <summary>Create a source using source-generated JSON metadata with explicit options.</summary>
+    /// <param name="path">Path to dead letter JSON file.</param>
+    /// <param name="valueTypeInfo">Source-generated type information for replayed values.</param>
+    /// <param name="options">Input layout, depth, and size limits.</param>
+    /// <exception cref="ArgumentNullException">Thrown when path or type information is null.</exception>
+    public DeadLetterSource(string path, JsonTypeInfo<T> valueTypeInfo, DeadLetterSourceOptions options)
+    {
+        _path = path ?? throw new ArgumentNullException(nameof(path));
+        ArgumentNullException.ThrowIfNull(valueTypeInfo);
+        _deserializeValue = element => element.Deserialize(valueTypeInfo);
+        _sourceOptions = JsonInputOptionsValidator.Validate(options, logger: null);
+    }
+
+
     /// <summary>Create an AOT-safe streaming source using envelope metadata.</summary>
     public DeadLetterSource(
         string path,
@@ -159,13 +173,15 @@ public class DeadLetterSource<T> : IPipelineSource<T>
         if (firstByte == null)
             yield break;
         var topLevelValues = firstByte != (byte)'[';
-        using var limitedLegacyStream = new JsonDocumentLimitStream(
+        using var limitedLegacyStream = new JsonUnframedInputLimitStream(
             legacyStream,
-            _sourceOptions.MaxDocumentSizeBytes,
+            _sourceOptions.MaxUnframedInputSizeBytes,
             _path);
+        var legacyOptions = new JsonSerializerOptions { MaxDepth = _sourceOptions.MaxDepth };
+        var legacyContext = new JsonInfrastructureContext(legacyOptions);
         await foreach (var element in JsonSerializer.DeserializeAsyncEnumerable(
             limitedLegacyStream,
-            JsonInfrastructureContext.Default.JsonElement,
+            legacyContext.JsonElement,
             topLevelValues,
             ct).ConfigureAwait(false))
         {
@@ -180,14 +196,14 @@ public class DeadLetterSource<T> : IPipelineSource<T>
         [EnumeratorCancellation] CancellationToken ct)
     {
         var start = stream.Position;
-        using (var validationStream = new JsonDocumentLimitStream(
-            stream, _sourceOptions.MaxDocumentSizeBytes, _path))
+        using (var validationStream = new JsonUnframedInputLimitStream(
+            stream, _sourceOptions.MaxUnframedInputSizeBytes, _path))
             await JsonDocumentValidator.ValidateAsync(
                 validationStream, _sourceOptions.MaxDepth, _path, ct);
         stream.Position = start;
-        using var limitedStream = new JsonDocumentLimitStream(
+        using var limitedStream = new JsonUnframedInputLimitStream(
             stream,
-            _sourceOptions.MaxDocumentSizeBytes,
+            _sourceOptions.MaxUnframedInputSizeBytes,
             _path);
         await foreach (var envelope in _serializer!.ReadAsync(limitedStream, ct).ConfigureAwait(false))
             yield return envelope;

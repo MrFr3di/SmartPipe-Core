@@ -29,7 +29,7 @@ public class DeadLetterSourceTests
                     MaxRecordSizeBytes = Math.Max(
                         System.Text.Encoding.UTF8.GetByteCount(first),
                         System.Text.Encoding.UTF8.GetByteCount(second)),
-                    MaxDocumentSizeBytes = 1,
+                    MaxUnframedInputSizeBytes = 1,
                 });
             Assert.Equal(2, (await ReadAllAsync(source)).Count);
         }
@@ -49,7 +49,7 @@ public class DeadLetterSourceTests
                 {
                     Format = JsonFileFormat.Array,
                     MaxRecordSizeBytes = 1,
-                    MaxDocumentSizeBytes = System.Text.Encoding.UTF8.GetByteCount(content),
+                    MaxUnframedInputSizeBytes = System.Text.Encoding.UTF8.GetByteCount(content),
                 });
             Assert.Single(await ReadAllAsync(source));
         }
@@ -69,9 +69,33 @@ public class DeadLetterSourceTests
                 {
                     Format = JsonFileFormat.Ndjson,
                     MaxRecordSizeBytes = System.Text.Encoding.UTF8.GetByteCount(content),
-                    MaxDocumentSizeBytes = 1,
+                    MaxUnframedInputSizeBytes = 1,
                 });
             Assert.Single(await ReadAllAsync(source));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task DeadLetterSource_Ndjson_UsesPerRecordLimit()
+    {
+        var first = JsonSerializer.Serialize(CreateDeadLetter("one", 1));
+        var second = JsonSerializer.Serialize(CreateDeadLetter("two", 2));
+        var content = $"{first}\n{second}\n";
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, content, TestContext.Current.CancellationToken);
+            var source = new DeadLetterSource<string>(path, new JsonLinesDeadLetterSerializer<string>(),
+                new DeadLetterSourceOptions
+                {
+                    Format = JsonFileFormat.Ndjson,
+                    MaxRecordSizeBytes = Math.Max(
+                        System.Text.Encoding.UTF8.GetByteCount(first),
+                        System.Text.Encoding.UTF8.GetByteCount(second)),
+                    MaxUnframedInputSizeBytes = 1,
+                });
+            Assert.Equal(2, (await ReadAllAsync(source)).Count);
         }
         finally { File.Delete(path); }
     }
@@ -447,6 +471,7 @@ public class DeadLetterSourceTests
 
 public sealed record AotDeadLetterSourceItem(int Id, string Name);
 
+[System.Text.Json.Serialization.JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(AotDeadLetterSourceItem))]
 [JsonSerializable(typeof(DeadLetterEnvelope<AotDeadLetterSourceItem>))]
 internal sealed partial class DeadLetterSourceTestJsonContext : JsonSerializerContext;

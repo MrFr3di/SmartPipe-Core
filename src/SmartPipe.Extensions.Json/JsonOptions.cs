@@ -42,10 +42,11 @@ public sealed record JsonFileSourceOptions
     public InvalidJsonRecordBehavior InvalidRecordBehavior { get; init; } = InvalidJsonRecordBehavior.Throw;
     /// <summary>Gets the maximum JSON nesting depth.</summary>
     public int MaxDepth { get; init; } = 64;
-    /// <summary>Gets the maximum encoded size of one logical record.</summary>
+    /// <summary>Gets the maximum encoded size of one framed logical record.</summary>
     public int MaxRecordSizeBytes { get; init; } = 16 * 1024 * 1024;
-    /// <summary>Gets the maximum encoded size of one unframed JSON document.</summary>
-    public long MaxDocumentSizeBytes { get; init; } = 256L * 1024 * 1024;
+    /// <summary>Gets the maximum encoded size of one complete unframed JSON input
+    /// (a root array, or an auto-detected legacy top-level value sequence).</summary>
+    public long MaxUnframedInputSizeBytes { get; init; } = 256L * 1024 * 1024;
 }
 
 /// <summary>Options for <see cref="Sinks.JsonFileSink{T}"/>.</summary>
@@ -68,10 +69,11 @@ public sealed record DeadLetterSourceOptions
     public InvalidJsonRecordBehavior InvalidRecordBehavior { get; init; } = InvalidJsonRecordBehavior.Throw;
     /// <summary>Gets the maximum JSON nesting depth.</summary>
     public int MaxDepth { get; init; } = 64;
-    /// <summary>Gets the maximum encoded size of one logical record.</summary>
+    /// <summary>Gets the maximum encoded size of one framed logical record.</summary>
     public int MaxRecordSizeBytes { get; init; } = 16 * 1024 * 1024;
-    /// <summary>Gets the maximum encoded size of one unframed JSON document.</summary>
-    public long MaxDocumentSizeBytes { get; init; } = 256L * 1024 * 1024;
+    /// <summary>Gets the maximum encoded size of one complete unframed JSON input
+    /// (a root array, or an auto-detected legacy top-level value sequence).</summary>
+    public long MaxUnframedInputSizeBytes { get; init; } = 256L * 1024 * 1024;
 }
 
 /// <summary>Options for <see cref="DeadLetterSink{T}"/>.</summary>

@@ -47,7 +47,7 @@ public sealed class JsonFileSourceLimitTests
             {
                 Format = JsonFileFormat.Array,
                 MaxRecordSizeBytes = 2,
-                MaxDocumentSizeBytes = 8,
+                MaxUnframedInputSizeBytes = 8,
             });
             var exception = await Assert.ThrowsAsync<JsonException>(() => ReadAllAsync(source));
             Assert.Contains(path, exception.Message, StringComparison.Ordinal);
@@ -135,6 +135,143 @@ public sealed class JsonFileSourceLimitTests
             Assert.Contains("record 2", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
         finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task RootArray_AboveUnframedInputLimit_Throws()
+    {
+        var path = await WriteTempAsync("[123456]");
+        try
+        {
+            var source = new JsonFileSource<int>(path, new JsonFileSourceOptions
+            {
+                Format = JsonFileFormat.Array,
+                MaxUnframedInputSizeBytes = 4,
+            });
+            var exception = await Assert.ThrowsAsync<JsonException>(() => ReadAllAsync(source));
+            Assert.Contains(path, exception.Message, StringComparison.Ordinal);
+            Assert.Contains("configured 4-byte limit", exception.Message, StringComparison.Ordinal);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task LegacyTopLevelSequence_TotalAboveLimit_Throws()
+    {
+        var path = await WriteTempAsync("[1,2]");
+        try
+        {
+            var source = new JsonFileSource<int>(path, new JsonFileSourceOptions
+            {
+                Format = JsonFileFormat.Auto,
+                MaxUnframedInputSizeBytes = 4,
+            });
+            var exception = await Assert.ThrowsAsync<JsonException>(() => ReadAllAsync(source));
+            Assert.Contains(path, exception.Message, StringComparison.Ordinal);
+            Assert.Contains("configured 4-byte limit", exception.Message, StringComparison.Ordinal);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task Ndjson_TotalAboveInputLimit_ButEachRecordBelowRecordLimit_Succeeds()
+    {
+        var path = await WriteTempAsync("123\n456\n789\n");
+        try
+        {
+            var source = new JsonFileSource<int>(path, new JsonFileSourceOptions
+            {
+                Format = JsonFileFormat.Ndjson,
+                MaxRecordSizeBytes = 16,
+                MaxUnframedInputSizeBytes = 4,
+            });
+            var values = new List<int>();
+            await foreach (var envelope in source.ReadEnvelopesAsync())
+                values.Add(envelope.Payload);
+            Assert.Equal([123, 456, 789], values);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task BatchLines_TotalAboveInputLimit_ButEachLineBelowRecordLimit_Succeeds()
+    {
+        var path = await WriteTempAsync("[1]\n[2]\n[3]\n");
+        try
+        {
+            var source = new JsonFileSource<int>(path, new JsonFileSourceOptions
+            {
+                Format = JsonFileFormat.BatchJsonLines,
+                MaxRecordSizeBytes = 16,
+                MaxUnframedInputSizeBytes = 4,
+            });
+            var values = new List<int>();
+            await foreach (var envelope in source.ReadEnvelopesAsync())
+                values.Add(envelope.Payload);
+            Assert.Equal([1, 2, 3], values);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task RootArray_ExactlyAtUnframedInputLimit_Succeeds()
+    {
+        var path = await WriteTempAsync("[1]");
+        try
+        {
+            var source = new JsonFileSource<int>(path, new JsonFileSourceOptions
+            {
+                Format = JsonFileFormat.Array,
+                MaxUnframedInputSizeBytes = 3,
+            });
+            var values = new List<int>();
+            await foreach (var envelope in source.ReadEnvelopesAsync())
+                values.Add(envelope.Payload);
+            Assert.Equal([1], values);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task EmptyStream_ReturnsNoItems()
+    {
+        var path = await WriteTempAsync(string.Empty);
+        try
+        {
+            var source = new JsonFileSource<int>(path, new JsonFileSourceOptions
+            {
+                Format = JsonFileFormat.Auto,
+                MaxUnframedInputSizeBytes = 4,
+            });
+            var values = new List<int>();
+            await foreach (var envelope in source.ReadEnvelopesAsync())
+                values.Add(envelope.Payload);
+            Assert.Empty(values);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task BomPlusPayload_CountsBomTowardUnframedInputLimit()
+    {
+        await using var stream = new MemoryStream("\uFEFF[]"u8.ToArray());
+        var source = new JsonFileSource<string>(
+            "bom-array.json",
+            stream,
+            new JsonFileSourceOptions
+            {
+                Format = JsonFileFormat.Array,
+                MaxRecordSizeBytes = 1,
+                MaxUnframedInputSizeBytes = 4,
+            });
+
+        var exception = await Assert.ThrowsAsync<JsonException>(async () =>
+        {
+            await foreach (var _ in source.ReadEnvelopesAsync()) { }
+        });
+
+        Assert.Contains("configured 4-byte limit", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("bom-array.json", exception.Message, StringComparison.Ordinal);
     }
 
     private static async Task ReadAllAsync<T>(JsonFileSource<T> source)

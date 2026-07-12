@@ -1,6 +1,7 @@
 #nullable enable
 SmartPipe.Extensions.Selectors.DeadLetterSource<T>
 SmartPipe.Extensions.Selectors.DeadLetterSource<T>.DeadLetterSource(string! path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! valueTypeInfo) -> void
+SmartPipe.Extensions.Selectors.DeadLetterSource<T>.DeadLetterSource(string! path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! valueTypeInfo, SmartPipe.Extensions.DeadLetterSourceOptions! options) -> void
 SmartPipe.Extensions.Selectors.DeadLetterSource<T>.DeadLetterSource(string! path) -> void
 SmartPipe.Extensions.Selectors.DeadLetterSource<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
 SmartPipe.Extensions.Selectors.DeadLetterSource<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
@@ -81,8 +82,8 @@ SmartPipe.Extensions.DeadLetterSourceOptions.Format.get -> SmartPipe.Extensions.
 SmartPipe.Extensions.DeadLetterSourceOptions.Format.init -> void
 SmartPipe.Extensions.DeadLetterSourceOptions.MaxDepth.get -> int
 SmartPipe.Extensions.DeadLetterSourceOptions.MaxDepth.init -> void
-SmartPipe.Extensions.DeadLetterSourceOptions.MaxDocumentSizeBytes.get -> long
-SmartPipe.Extensions.DeadLetterSourceOptions.MaxDocumentSizeBytes.init -> void
+SmartPipe.Extensions.DeadLetterSourceOptions.MaxUnframedInputSizeBytes.get -> long
+SmartPipe.Extensions.DeadLetterSourceOptions.MaxUnframedInputSizeBytes.init -> void
 SmartPipe.Extensions.DeadLetterSourceOptions.MaxRecordSizeBytes.get -> int
 SmartPipe.Extensions.DeadLetterSourceOptions.MaxRecordSizeBytes.init -> void
 SmartPipe.Extensions.InvalidJsonRecordBehavior
@@ -116,8 +117,8 @@ SmartPipe.Extensions.JsonFileSourceOptions.InvalidRecordBehavior.init -> void
 SmartPipe.Extensions.JsonFileSourceOptions.JsonFileSourceOptions() -> void
 SmartPipe.Extensions.JsonFileSourceOptions.MaxDepth.get -> int
 SmartPipe.Extensions.JsonFileSourceOptions.MaxDepth.init -> void
-SmartPipe.Extensions.JsonFileSourceOptions.MaxDocumentSizeBytes.get -> long
-SmartPipe.Extensions.JsonFileSourceOptions.MaxDocumentSizeBytes.init -> void
+SmartPipe.Extensions.JsonFileSourceOptions.MaxUnframedInputSizeBytes.get -> long
+SmartPipe.Extensions.JsonFileSourceOptions.MaxUnframedInputSizeBytes.init -> void
 SmartPipe.Extensions.JsonFileSourceOptions.MaxRecordSizeBytes.get -> int
 SmartPipe.Extensions.JsonFileSourceOptions.MaxRecordSizeBytes.init -> void
 SmartPipe.Extensions.Selectors.DeadLetterSource<T>.DeadLetterSource(string! path, SmartPipe.Core.IDeadLetterSerializer<T>! serializer, SmartPipe.Extensions.DeadLetterSourceOptions! options) -> void

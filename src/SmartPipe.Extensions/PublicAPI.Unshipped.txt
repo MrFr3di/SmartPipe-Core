@@ -1,1 +1,2 @@
 #nullable enable
+SmartPipe.Extensions.Selectors.DeadLetterSource<T>.DeadLetterSource(string! path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! valueTypeInfo, SmartPipe.Extensions.DeadLetterSourceOptions! options) -> void (forwarded, contained in SmartPipe.Extensions.Json)

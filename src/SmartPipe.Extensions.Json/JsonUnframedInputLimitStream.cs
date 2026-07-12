@@ -2,18 +2,18 @@ using System.Text.Json;
 
 namespace SmartPipe.Extensions;
 
-internal sealed class JsonDocumentLimitStream : Stream
+internal sealed class JsonUnframedInputLimitStream : Stream
 {
     private readonly Stream _inner;
-    private readonly long _maxDocumentSizeBytes;
+    private readonly long _maxUnframedInputSizeBytes;
     private readonly string _path;
     private readonly long _initialPosition;
     private long _bytesRead;
 
-    public JsonDocumentLimitStream(Stream inner, long maxDocumentSizeBytes, string path)
+    public JsonUnframedInputLimitStream(Stream inner, long maxUnframedInputSizeBytes, string path)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
-        _maxDocumentSizeBytes = maxDocumentSizeBytes;
+        _maxUnframedInputSizeBytes = maxUnframedInputSizeBytes;
         _path = path;
         _initialPosition = inner.CanSeek ? inner.Position : 0;
         _bytesRead = _initialPosition;
@@ -51,8 +51,8 @@ internal sealed class JsonDocumentLimitStream : Stream
     private void Count(int read)
     {
         _bytesRead += read;
-        if (_bytesRead > _maxDocumentSizeBytes)
-            throw new JsonException($"JSON document in '{_path}' exceeds the {_maxDocumentSizeBytes}-byte limit.");
+        if (_bytesRead > _maxUnframedInputSizeBytes)
+            throw new JsonException($"Unframed JSON input '{_path}' exceeds the configured {_maxUnframedInputSizeBytes}-byte limit.");
     }
 
     public override void Flush() => throw new NotSupportedException();

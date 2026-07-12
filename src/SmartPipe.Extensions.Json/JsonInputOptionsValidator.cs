@@ -8,7 +8,7 @@ internal static class JsonInputOptionsValidator
     {
         ArgumentNullException.ThrowIfNull(options);
         ValidateCommon(options.Format, options.InvalidRecordBehavior, options.MaxDepth,
-            options.MaxRecordSizeBytes, options.MaxDocumentSizeBytes, logger, nameof(options));
+            options.MaxRecordSizeBytes, options.MaxUnframedInputSizeBytes, logger, nameof(options));
         if (options.InvalidRecordBehavior == InvalidJsonRecordBehavior.SkipAndLog
             && options.Format is not (JsonFileFormat.Ndjson or JsonFileFormat.BatchJsonLines))
             throw new ArgumentException(
@@ -21,7 +21,7 @@ internal static class JsonInputOptionsValidator
     {
         ArgumentNullException.ThrowIfNull(options);
         ValidateCommon(options.Format, options.InvalidRecordBehavior, options.MaxDepth,
-            options.MaxRecordSizeBytes, options.MaxDocumentSizeBytes, logger, nameof(options));
+            options.MaxRecordSizeBytes, options.MaxUnframedInputSizeBytes, logger, nameof(options));
         if (options.Format == JsonFileFormat.BatchJsonLines)
             throw new ArgumentException("BatchJsonLines is not supported by DeadLetterSource.", nameof(options));
         if (options.Format == JsonFileFormat.Array
@@ -37,7 +37,7 @@ internal static class JsonInputOptionsValidator
         InvalidJsonRecordBehavior invalidRecordBehavior,
         int maxDepth,
         int maxRecordSizeBytes,
-        long maxDocumentSizeBytes,
+        long maxUnframedInputSizeBytes,
         ILogger? logger,
         string parameterName)
     {
@@ -49,8 +49,8 @@ internal static class JsonInputOptionsValidator
             throw new ArgumentOutOfRangeException(parameterName, maxDepth, "MaxDepth must be greater than zero.");
         if (maxRecordSizeBytes <= 0)
             throw new ArgumentOutOfRangeException(parameterName, maxRecordSizeBytes, "MaxRecordSizeBytes must be greater than zero.");
-        if (maxDocumentSizeBytes <= 0)
-            throw new ArgumentOutOfRangeException(parameterName, maxDocumentSizeBytes, "MaxDocumentSizeBytes must be greater than zero.");
+        if (maxUnframedInputSizeBytes <= 0)
+            throw new ArgumentOutOfRangeException(parameterName, maxUnframedInputSizeBytes, "MaxUnframedInputSizeBytes must be greater than zero.");
         if (invalidRecordBehavior == InvalidJsonRecordBehavior.SkipAndLog && logger == null)
             throw new ArgumentException("SkipAndLog requires a logger.", parameterName);
     }

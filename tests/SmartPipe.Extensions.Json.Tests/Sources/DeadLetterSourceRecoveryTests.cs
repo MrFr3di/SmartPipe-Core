@@ -133,13 +133,81 @@ public sealed class DeadLetterSourceRecoveryTests
     }
 
     [Fact]
-    public async Task DeadLetterSource_MaxDocumentSize_RejectsLimitPlusOneArray()
+    public async Task DeadLetterSource_RootArray_AboveUnframedInputLimit_Throws()
     {
         var json = "[" + Serialize("one", 1) + "]";
         var path = await WriteAsync(json);
         try
         {
-            await Assert.ThrowsAsync<JsonException>(async () => await CollectAsync(new(path, new JsonLinesDeadLetterSerializer<string>(), new() { Format = JsonFileFormat.Array, MaxDocumentSizeBytes = Encoding.UTF8.GetByteCount(json) - 1 })));
+            await Assert.ThrowsAsync<JsonException>(async () => await CollectAsync(new(path, new JsonLinesDeadLetterSerializer<string>(), new() { Format = JsonFileFormat.Array, MaxUnframedInputSizeBytes = Encoding.UTF8.GetByteCount(json) - 1 })));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task DeadLetterSource_LegacyTopLevelSequence_TotalAboveLimit_Throws()
+    {
+        var first = Serialize("one", 1);
+        var second = Serialize("two", 2);
+        var content = $"{first} {second}";
+        var path = await WriteAsync(content);
+        try
+        {
+            var source = new DeadLetterSource<string>(path, DeadLetterSourceTestJsonContext.Default.String, new DeadLetterSourceOptions
+            {
+                Format = JsonFileFormat.Auto,
+                MaxUnframedInputSizeBytes = 1,
+            });
+            var exception = await Assert.ThrowsAsync<JsonException>(async () => await CollectAsync(source));
+            Assert.Contains("configured 1-byte limit", exception.Message, StringComparison.Ordinal);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task DeadLetterSource_LegacyTopLevelSequence_ExactlyAtLimit_Succeeds()
+    {
+        var first = Serialize("one", 1);
+        var second = Serialize("two", 2);
+        var content = $"{first} {second}";
+        var path = await WriteAsync(content);
+        try
+        {
+            var source = new DeadLetterSource<string>(path, DeadLetterSourceTestJsonContext.Default.String, new DeadLetterSourceOptions
+            {
+                Format = JsonFileFormat.Auto,
+                MaxUnframedInputSizeBytes = Encoding.UTF8.GetByteCount(content),
+            });
+            Assert.Equal(2, (await CollectAsync(source)).Count);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task DeadLetterSource_LegacyUnframedStream_EnforcesMaxDepth()
+    {
+        var content = Serialize("one", 1);
+        var path = await WriteAsync(content);
+        try
+        {
+            var source = new DeadLetterSource<string>(path, DeadLetterSourceTestJsonContext.Default.String, new DeadLetterSourceOptions
+            {
+                Format = JsonFileFormat.Auto,
+                MaxDepth = 1,
+            });
+            await Assert.ThrowsAsync<JsonException>(async () => await CollectAsync(source));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task DeadLetterSource_MaxUnframedInputSize_RejectsLimitPlusOneArray()
+    {
+        var json = "[" + Serialize("one", 1) + "]";
+        var path = await WriteAsync(json);
+        try
+        {
+            await Assert.ThrowsAsync<JsonException>(async () => await CollectAsync(new(path, new JsonLinesDeadLetterSerializer<string>(), new() { Format = JsonFileFormat.Array, MaxUnframedInputSizeBytes = Encoding.UTF8.GetByteCount(json) - 1 })));
         }
         finally { File.Delete(path); }
     }
@@ -284,7 +352,7 @@ public sealed class DeadLetterSourceRecoveryTests
             {
                 Format = JsonFileFormat.Auto,
                 MaxRecordSizeBytes = content.Length,
-                MaxDocumentSizeBytes = 1,
+                MaxUnframedInputSizeBytes = 1,
             });
             Assert.Equal(payload, Assert.Single(await CollectAsync(source)).Payload);
         }
