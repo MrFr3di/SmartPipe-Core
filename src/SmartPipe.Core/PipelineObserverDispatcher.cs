@@ -238,9 +238,12 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
                 {
                     RecordDroppedEvent(pipelineEvent);
                 }
-                catch (ChannelClosedException) when (Volatile.Read(ref _completed) != 0)
+                catch (ChannelClosedException)
                 {
-                    // Dispatcher teardown closed the buffer; this is not an observer drop.
+                    ThrowPipelineFaultIfRecorded();
+
+                    if (Volatile.Read(ref _completed) == 0)
+                        throw;
                 }
             }
             else

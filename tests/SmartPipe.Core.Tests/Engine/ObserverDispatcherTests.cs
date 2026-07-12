@@ -101,6 +101,172 @@ public sealed class ObserverDispatcherTests
         await fixture.Dispatcher.DisposeAsync();
     }
 
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task BufferedBestEffort_ChannelClosedWithRecordedFault_ThrowsOriginalObserverException()
+    {
+        var expectedException = new InvalidOperationException("observer failure");
+        var observer = new ReleasableThrowingObserver(expectedException);
+
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [
+                new PipelineObserverRegistration(
+                    observer,
+                    ObserverReliability.BestEffort,
+                    ObserverFailurePolicy.FaultPipeline),
+            ],
+            new ObserverDispatchOptions
+            {
+                Mode = ObserverDispatchMode.BufferedBestEffort,
+                Capacity = 1,
+                FullMode = BoundedChannelFullMode.Wait,
+                FailureMode = ObserverFailureMode.UseRegistrationPolicy,
+                FlushOnCompletion = false,
+                BestEffortWriteTimeout = TimeSpan.FromSeconds(30),
+            },
+            SystemPipelineClock.Instance);
+
+        await dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None);
+        await observer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Second event fills the single-item buffer while the worker is still
+        // processing the first event; the third event then blocks in WriteAsync.
+        await dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None);
+
+        var blockedEmit = dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None).AsTask();
+
+        observer.Release();
+
+        var act = async () => await blockedEmit;
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Should().BeSameAs(expectedException);
+        exception.Which.Should().NotBeOfType<ChannelClosedException>();
+
+        await dispatcher.DisposeAsync();
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task BufferedBestEffort_NormalDisposeDoesNotThrow()
+    {
+        var observer = new ReleasableObserver();
+        var dropped = 0;
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [new PipelineObserverRegistration(observer)],
+            new ObserverDispatchOptions
+            {
+                Mode = ObserverDispatchMode.BufferedBestEffort,
+                Capacity = 1,
+                FullMode = BoundedChannelFullMode.Wait,
+                FailureMode = ObserverFailureMode.UseRegistrationPolicy,
+                FlushOnCompletion = false,
+            },
+            SystemPipelineClock.Instance,
+            _ => Interlocked.Increment(ref dropped));
+
+        await dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None);
+        await observer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var blockedEmit = dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None).AsTask();
+        var dispose = dispatcher.DisposeAsync().AsTask();
+
+        observer.Release();
+        await dispose;
+
+        var act = async () => await blockedEmit;
+        await act.Should().NotThrowAsync();
+        Volatile.Read(ref dropped).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task BufferedBestEffort_TimeoutStillRecordsDrop()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var fixture = await CreateSaturatedBestEffortDispatcherAsync(timeProvider, TimeSpan.FromSeconds(2));
+
+        var emit = fixture.Dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None).AsTask();
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await emit;
+
+        fixture.Dropped().Should().Be(1);
+        fixture.Observer.Release();
+        await fixture.Dispatcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task BufferedBestEffort_CallerCancellationStillThrowsOperationCanceledException()
+    {
+        var fixture = await CreateSaturatedBestEffortDispatcherAsync(
+            new FakeTimeProvider(), TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource();
+        var emit = fixture.Dispatcher.EmitAsync(NewStartedEvent(), cts.Token).AsTask();
+        cts.Cancel();
+
+        var act = async () => await emit;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        fixture.Dropped().Should().Be(0);
+        fixture.Observer.Release();
+        await fixture.Dispatcher.DisposeAsync();
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task BufferedBestEffort_DisposalCancellationDoesNotRecordDrop()
+    {
+        var fixture = await CreateSaturatedBestEffortDispatcherAsync(
+            new FakeTimeProvider(), TimeSpan.FromSeconds(30));
+        var emit = fixture.Dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None).AsTask();
+
+        var dispose = fixture.Dispatcher.DisposeAsync().AsTask();
+        await emit;
+
+        fixture.Dropped().Should().Be(0);
+        await dispose;
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task BufferedReliable_ChannelClosedWithFault_StillThrowsOriginalFault()
+    {
+        var expectedException = new InvalidOperationException("observer failure");
+        var observer = new ReleasableThrowingObserver(expectedException);
+
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [
+                new PipelineObserverRegistration(
+                    observer,
+                    ObserverReliability.BestEffort,
+                    ObserverFailurePolicy.FaultPipeline),
+            ],
+            new ObserverDispatchOptions
+            {
+                Mode = ObserverDispatchMode.BufferedReliable,
+                Capacity = 1,
+                FullMode = BoundedChannelFullMode.Wait,
+                FailureMode = ObserverFailureMode.UseRegistrationPolicy,
+                FlushOnCompletion = true,
+            },
+            SystemPipelineClock.Instance);
+
+        await dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None);
+        await observer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Second event fills the single-item buffer while the worker is still
+        // processing the first event; the third event then blocks in WriteAsync.
+        await dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None);
+
+        var blockedEmit = dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None).AsTask();
+
+        observer.Release();
+
+        var act = async () => await blockedEmit;
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Should().BeSameAs(expectedException);
+        exception.Which.Should().NotBeOfType<ChannelClosedException>();
+
+        await dispatcher.DisposeAsync();
+    }
+
     private static PipelineStartedEvent NewStartedEvent() =>
         new("pipeline", "run", DateTimeOffset.UnixEpoch);
 
@@ -1271,6 +1437,30 @@ public sealed class ObserverDispatcherTests
             Entered.TrySetResult();
             await _release.Task.WaitAsync(ct).ConfigureAwait(false);
             throw Exception;
+        }
+    }
+
+    private sealed class ReleasableThrowingObserver : IPipelineObserver
+    {
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly Exception _exception;
+
+        public ReleasableThrowingObserver(Exception exception)
+        {
+            _exception = exception;
+        }
+
+        public TaskCompletionSource Entered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release() => _release.TrySetResult();
+
+        public async ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            Entered.TrySetResult();
+            await _release.Task.WaitAsync(ct).ConfigureAwait(false);
+            throw _exception;
         }
     }
 
