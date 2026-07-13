@@ -64,6 +64,9 @@ jobs:
   publish:
     needs: [version, validation]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     environment: nuget-production
 
     steps:
@@ -73,10 +76,16 @@ jobs:
           name: ${{ needs.version.outputs.artifact-name }}
           path: artifacts/packages
 
+      - name: NuGet login
+        id: nuget-login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
       - name: Publish packages in dependency order
         shell: bash
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
           PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
           RECOVERABLE_RERUN: ${{ github.event_name == 'workflow_dispatch' && inputs.recoverable-rerun }}
         run: |
