@@ -149,11 +149,12 @@ public class JsonFileSource<T> : IPipelineSource<T>
         var autoDetectedArray = false;
         if (format == JsonFileFormat.Auto)
         {
-            var firstByte = await ReadFirstJsonByteAsync(stream, ct).ConfigureAwait(false);
-            if (firstByte == null)
+            var probe = await JsonStreamProbe.ProbeAsync(stream, ct).ConfigureAwait(false);
+            stream.Position = probe.ContentStartOffset;
+            if (probe.FirstSignificantByte == null)
                 yield break;
 
-            if (firstByte == (byte)'[')
+            if (probe.FirstSignificantByte == (byte)'[')
             {
                 if (IsAmbiguousCollectionType())
                     throw new JsonException("Auto format is ambiguous for collection-valued T. Specify Array, Ndjson, or BatchJsonLines explicitly.");
@@ -318,33 +319,6 @@ public class JsonFileSource<T> : IPipelineSource<T>
         if (_options.InvalidRecordBehavior == InvalidJsonRecordBehavior.Throw)
             throw new JsonException($"JSON record {recordIndex} in '{_path}' deserialized to null.");
         _logger!.LogWarning("Skipping null JSON record {RecordIndex} in {Path}.", recordIndex, _path);
-    }
-
-    private static async ValueTask<byte?> ReadFirstJsonByteAsync(Stream stream, CancellationToken ct)
-    {
-        var prefix = new byte[3];
-        var read = 0;
-        while (read < prefix.Length)
-        {
-            var count = await stream.ReadAsync(prefix.AsMemory(read), ct).ConfigureAwait(false);
-            if (count == 0)
-                break;
-            read += count;
-        }
-        stream.Position = 0;
-        var offset = read >= 3 && prefix[0] == 0xEF && prefix[1] == 0xBB && prefix[2] == 0xBF ? 3L : 0L;
-        stream.Position = offset;
-        var buffer = new byte[1];
-        while (await stream.ReadAsync(buffer, ct).ConfigureAwait(false) == 1)
-        {
-            if (buffer[0] is not ((byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n'))
-            {
-                stream.Position = offset;
-                return buffer[0];
-            }
-        }
-        stream.Position = offset;
-        return null;
     }
 
     private static bool IsAmbiguousCollectionType()

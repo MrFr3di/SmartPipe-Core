@@ -135,11 +135,12 @@ public class DeadLetterSource<T> : IPipelineSource<T>
                 FileShare.ReadWrite,
                 4096,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var serializerFirstByte = await ReadFirstJsonByteAsync(stream, ct).ConfigureAwait(false);
-            if (serializerFirstByte is null)
+            var serializerProbe = await JsonStreamProbe.ProbeAsync(stream, ct).ConfigureAwait(false);
+            stream.Position = serializerProbe.ContentStartOffset;
+            if (serializerProbe.FirstSignificantByte is null)
                 yield break;
             var array = _sourceOptions.Format == JsonFileFormat.Array
-                || (_sourceOptions.Format == JsonFileFormat.Auto && serializerFirstByte == (byte)'[');
+                || (_sourceOptions.Format == JsonFileFormat.Auto && serializerProbe.FirstSignificantByte == (byte)'[');
             if (array && _sourceOptions.InvalidRecordBehavior == InvalidJsonRecordBehavior.SkipAndLog)
                 throw new ArgumentException("SkipAndLog is supported only for independently framed JSON records.");
             var envelopes = array
@@ -169,10 +170,11 @@ public class DeadLetterSource<T> : IPipelineSource<T>
             FileShare.ReadWrite,
             4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var firstByte = await ReadFirstJsonByteAsync(legacyStream, ct).ConfigureAwait(false);
-        if (firstByte == null)
+        var legacyProbe = await JsonStreamProbe.ProbeAsync(legacyStream, ct).ConfigureAwait(false);
+        legacyStream.Position = legacyProbe.ContentStartOffset;
+        if (legacyProbe.FirstSignificantByte == null)
             yield break;
-        var topLevelValues = firstByte != (byte)'[';
+        var topLevelValues = legacyProbe.FirstSignificantByte != (byte)'[';
         using var limitedLegacyStream = new JsonUnframedInputLimitStream(
             legacyStream,
             _sourceOptions.MaxUnframedInputSizeBytes,
@@ -281,33 +283,6 @@ public class DeadLetterSource<T> : IPipelineSource<T>
         }
 
         return values.Count == 0 ? MetadataBag.Empty : MetadataBag.From(values);
-    }
-
-    private static async ValueTask<byte?> ReadFirstJsonByteAsync(Stream stream, CancellationToken ct)
-    {
-        var prefix = new byte[3];
-        var read = 0;
-        while (read < prefix.Length)
-        {
-            var count = await stream.ReadAsync(prefix.AsMemory(read), ct).ConfigureAwait(false);
-            if (count == 0)
-                break;
-            read += count;
-        }
-        var bomLength = read >= 3 && prefix[0] == 0xEF && prefix[1] == 0xBB && prefix[2] == 0xBF ? 3 : 0;
-        var offset = bomLength;
-        stream.Position = offset;
-        var buffer = new byte[1];
-        while (await stream.ReadAsync(buffer, ct).ConfigureAwait(false) == 1)
-        {
-            if (buffer[0] is not ((byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n'))
-            {
-                stream.Position = offset;
-                return buffer[0];
-            }
-        }
-        stream.Position = offset;
-        return null;
     }
 
     /// <inheritdoc />
