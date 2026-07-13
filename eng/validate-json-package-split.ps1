@@ -11,7 +11,9 @@ param(
 
     [switch] $KeepTemporaryFiles,
 
-    [string] $ValidationRoot
+    [string] $ValidationRoot,
+
+    [string] $DotNetCommand = 'dotnet'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -72,13 +74,46 @@ function Assert-Dependency($dependencies, [string] $packageId) {
 function Invoke-DotNet([string] $workingDirectory, [string[]] $arguments) {
     Push-Location $workingDirectory
     try {
-        & dotnet @arguments
+        & $DotNetCommand @arguments
         if ($LASTEXITCODE -ne 0) {
             throw "dotnet $($arguments -join ' ') failed with exit code $LASTEXITCODE in $workingDirectory"
         }
     }
     finally {
         Pop-Location
+    }
+}
+
+function Assert-LocalPackageResolution([string] $projectDirectory, [string[]] $packageIds) {
+    $assetsPath = Join-Path $projectDirectory 'obj/project.assets.json'
+    if (-not (Test-Path -LiteralPath $assetsPath -PathType Leaf)) {
+        throw "project.assets.json was not produced for $projectDirectory"
+    }
+
+    $assets = Get-Content -Raw -LiteralPath $assetsPath | ConvertFrom-Json
+    $packageFolder = $assets.packageFolders.PSObject.Properties.Name | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($packageFolder)) {
+        throw "Global packages folder was not recorded in $projectDirectory"
+    }
+
+    foreach ($packageId in $packageIds) {
+        $libraryKey = "$packageId/$Version"
+        $library = $assets.libraries.$libraryKey
+        if ($null -eq $library) {
+            throw "Package $packageId was not resolved for $projectDirectory"
+        }
+
+        $metadataPath = Join-Path $packageFolder (Join-Path $library.path '.nupkg.metadata')
+        if (-not (Test-Path -LiteralPath $metadataPath -PathType Leaf)) {
+            throw "Package metadata was not found for $packageId in $projectDirectory"
+        }
+
+        $metadata = Get-Content -Raw -LiteralPath $metadataPath | ConvertFrom-Json
+        $source = [System.IO.Path]::GetFullPath($metadata.source)
+        $expectedSource = [System.IO.Path]::GetFullPath($packageRoot)
+        if ($source -ne $expectedSource) {
+            throw "Package $packageId was resolved from '$source' instead of the local source '$expectedSource' for $projectDirectory"
+        }
     }
 }
 
@@ -154,6 +189,7 @@ $validationPackages = [System.Security.SecurityElement]::Escape((Join-Path $vali
 $escapedPackageRoot = [System.Security.SecurityElement]::Escape($packageRoot)
 $dependencySource = ''
 $nugetSource = '    <add key="nuget" value="https://api.nuget.org/v3/index.json" />'
+$fallbackMappingSource = "    <packageSource key=`"nuget`">`n      <package pattern=`"*`" />`n    </packageSource>"
 if (-not [string]::IsNullOrWhiteSpace($DependencyPackageDirectory)) {
     $dependencyRoot = [System.IO.Path]::GetFullPath($DependencyPackageDirectory)
     if (-not (Test-Path -LiteralPath $dependencyRoot -PathType Container)) {
@@ -163,6 +199,7 @@ if (-not [string]::IsNullOrWhiteSpace($DependencyPackageDirectory)) {
     $escapedDependencyRoot = [System.Security.SecurityElement]::Escape($dependencyRoot)
     $dependencySource = "    <add key=`"offline-dependencies`" value=`"$escapedDependencyRoot`" />"
     $nugetSource = ''
+    $fallbackMappingSource = "    <packageSource key=`"offline-dependencies`">`n      <package pattern=`"*`" />`n    </packageSource>"
 }
 $localNuGetConfig = @"
 <?xml version="1.0" encoding="utf-8"?>
@@ -176,9 +213,16 @@ $localNuGetConfig = @"
 $dependencySource
 $nugetSource
   </packageSources>
+  <packageSourceMapping>
+    <packageSource key="smartpipe-local">
+      <package pattern="SmartPipe.*" />
+    </packageSource>
+$fallbackMappingSource
+  </packageSourceMapping>
 </configuration>
 "@
 Set-Content -LiteralPath (Join-Path $validationRoot 'NuGet.Config') -Value $localNuGetConfig -Encoding utf8NoBOM
+$nugetConfig = Join-Path $validationRoot 'NuGet.Config'
 
 $directJson = Join-Path $validationRoot 'DirectJson'
 New-Item -ItemType Directory -Path $directJson | Out-Null
@@ -221,7 +265,9 @@ if (jsonTypes.Any(type => type.Assembly.GetName().Name != "SmartPipe.Extensions.
     throw new InvalidOperationException("A JSON integration type is not owned by SmartPipe.Extensions.Json.");
 Console.WriteLine("Direct JSON package consumer passed.");
 '@
-Invoke-DotNet $directJson @('run', '--configuration', 'Release', '--configfile', (Join-Path $validationRoot 'NuGet.Config'))
+Invoke-DotNet $directJson @('restore', '--configfile', $nugetConfig, '--disable-parallel')
+Assert-LocalPackageResolution $directJson @('SmartPipe.Core', 'SmartPipe.Extensions.Json')
+Invoke-DotNet $directJson @('run', '--configuration', 'Release', '--no-restore')
 
 $extensionsOnly = Join-Path $validationRoot 'ExtensionsOnly'
 New-Item -ItemType Directory -Path $extensionsOnly | Out-Null
@@ -258,7 +304,9 @@ if (forwardedTypes.Any(type => type.Assembly.GetName().Name != "SmartPipe.Extens
     throw new InvalidOperationException("SmartPipe.Extensions did not resolve a forwarded JSON type.");
 Console.WriteLine("Extensions-only forwarding consumer passed.");
 '@
-Invoke-DotNet $extensionsOnly @('run', '--configuration', 'Release', '--configfile', (Join-Path $validationRoot 'NuGet.Config'))
+Invoke-DotNet $extensionsOnly @('restore', '--configfile', $nugetConfig, '--disable-parallel')
+Assert-LocalPackageResolution $extensionsOnly @('SmartPipe.Core', 'SmartPipe.Extensions.Json', 'SmartPipe.Extensions')
+Invoke-DotNet $extensionsOnly @('run', '--configuration', 'Release', '--no-restore')
 
 $legacyLibrary = Join-Path $validationRoot 'LegacyLibrary'
 New-Item -ItemType Directory -Path $legacyLibrary | Out-Null
@@ -296,10 +344,12 @@ public static class LegacyProbe
     ];
 }
 '@
-Invoke-DotNet $legacyLibrary @('build', '--configuration', 'Release', '--configfile', (Join-Path $validationRoot 'NuGet.Config'))
-$legacyAssets = Get-Content -Raw -LiteralPath (Join-Path $legacyLibrary 'obj/project.assets.json')
-if ($legacyAssets -notmatch '"SmartPipe\.Extensions/2\.1\.1"') {
-    throw 'Legacy compatibility library was not compiled against SmartPipe.Extensions 2.1.1.'
+Invoke-DotNet $legacyLibrary @('restore', '--configfile', $nugetConfig, '--disable-parallel')
+Assert-LocalPackageResolution $legacyLibrary @('SmartPipe.Core', 'SmartPipe.Extensions.Json', 'SmartPipe.Extensions')
+Invoke-DotNet $legacyLibrary @('build', '--configuration', 'Release', '--no-restore')
+$legacyProject = Get-Content -Raw -LiteralPath (Join-Path $legacyLibrary 'LegacyLibrary.csproj')
+if ($legacyProject -notmatch 'Include\s*=\s*"SmartPipe\.Extensions"\s*Version\s*=\s*"2\.1\.1"') {
+    throw 'Legacy compatibility library project does not reference SmartPipe.Extensions 2.1.1.'
 }
 
 $legacyHost = Join-Path $validationRoot 'LegacyHost'
@@ -327,15 +377,17 @@ if (assemblyNames.Any(name => name != "SmartPipe.Extensions.Json"))
     throw new InvalidOperationException("A consumer compiled against SmartPipe.Extensions 2.1.1 did not follow the 2.1.2 type forwarders.");
 Console.WriteLine("SmartPipe.Extensions 2.1.1 binary compatibility consumer passed.");
 '@
-Invoke-DotNet $legacyHost @('run', '--configuration', 'Release', '--configfile', (Join-Path $validationRoot 'NuGet.Config'))
+Invoke-DotNet $legacyHost @('restore', '--configfile', $nugetConfig, '--disable-parallel')
+Assert-LocalPackageResolution $legacyHost @('SmartPipe.Core', 'SmartPipe.Extensions.Json', 'SmartPipe.Extensions')
+Invoke-DotNet $legacyHost @('run', '--configuration', 'Release', '--no-restore')
 
 $validationSucceeded = $true
 Write-Output "SmartPipe JSON package split validation passed for $Version."
 }
 finally {
-    if ($KeepTemporaryFiles -and -not $validationSucceeded) {
+    if ($KeepTemporaryFiles) {
         if (Test-Path -LiteralPath $validationRoot) {
-            Write-Warning "Package split validation failed; temporary files were kept at: $validationRoot"
+            Write-Warning "Temporary files were kept at: $validationRoot"
         }
     }
     elseif (Test-Path -LiteralPath $validationRoot) {
