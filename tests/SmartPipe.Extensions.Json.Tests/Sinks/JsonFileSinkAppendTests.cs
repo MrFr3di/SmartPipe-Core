@@ -106,6 +106,16 @@ public sealed class JsonFileSinkAppendTests
     }
 
     [Fact]
+    public async Task AppendFraming_BomOnly_WithPartialReads_DoesNotRequireSeparator()
+    {
+        await using var stream = new OneByteReadStream(Encoding.UTF8.GetPreamble());
+        var originalPosition = stream.Position;
+        var result = await AppendFraming.RequiresLineSeparatorAsync(stream, TestContext.Current.CancellationToken);
+        Assert.False(result);
+        Assert.Equal(originalPosition, stream.Position);
+    }
+
+    [Fact]
     public async Task AppendFraming_ReadFailure_RestoresOriginalPosition()
     {
         await using var stream = new ReadFailingStream(Encoding.UTF8.GetBytes("existing")) { Position = 2 };
@@ -283,5 +293,11 @@ public sealed class JsonFileSinkAppendTests
             }
             await base.WriteAsync(buffer, cancellationToken);
         }
+    }
+
+    private sealed class OneByteReadStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            base.ReadAsync(buffer[..Math.Min(1, buffer.Length)], cancellationToken);
     }
 }

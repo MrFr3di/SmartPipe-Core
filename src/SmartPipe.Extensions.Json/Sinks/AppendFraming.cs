@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace SmartPipe.Extensions.Sinks;
 
 internal static class AppendFraming
@@ -21,8 +23,8 @@ internal static class AppendFraming
             {
                 stream.Position = 0;
                 var bom = new byte[3];
-                var bomRead = await stream.ReadAsync(bom, ct).ConfigureAwait(false);
-                if (bomRead == 3 && bom.AsSpan().SequenceEqual("\uFEFF"u8))
+                await stream.ReadExactlyAsync(bom.AsMemory(), ct).ConfigureAwait(false);
+                if (bom.AsSpan().SequenceEqual(Encoding.UTF8.Preamble))
                     return false;
             }
 
