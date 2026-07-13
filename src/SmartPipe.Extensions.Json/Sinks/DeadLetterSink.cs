@@ -410,9 +410,30 @@ internal sealed class StreamDeadLetterLineWriter : IDeadLetterLineWriter
 
     public async ValueTask DisposeAsync()
     {
-        await _stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+        Exception? flushFailure = null;
+        Exception? cleanupFailure = null;
+        try
+        {
+            await _stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            flushFailure = exception;
+        }
+
         if (!_leaveOpen)
-            await _stream.DisposeAsync().ConfigureAwait(false);
+        {
+            try
+            {
+                await _stream.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                cleanupFailure = exception;
+            }
+        }
+
+        SharedAsyncDisposeState.ThrowIfFailed(flushFailure, cleanupFailure);
     }
 }
 

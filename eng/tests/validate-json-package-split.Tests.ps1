@@ -66,6 +66,9 @@ if (`$command -eq 'restore') {
         'SmartPipe.Extensions.Json/2.1.2-rc.1' = @{ type = 'package'; path = 'smartpipe.extensions.json/2.1.2-rc.1' }
         'SmartPipe.Extensions/2.1.2-rc.1' = @{ type = 'package'; path = 'smartpipe.extensions/2.1.2-rc.1' }
     }
+    if ((Split-Path -Leaf `$PWD) -eq 'LegacyLibrary') {
+        `$localPackages.Remove('SmartPipe.Extensions/2.1.2-rc.1')
+    }
     if (`$env:SMARTPIPE_MOCK_OMIT_PACKAGES) {
         foreach (`$packageId in (`$env:SMARTPIPE_MOCK_OMIT_PACKAGES -split ',')) {
             `$localPackages.Remove(`$packageId.Trim() + '/2.1.2-rc.1')
@@ -284,6 +287,20 @@ try {
     $nugetConfig = Get-Content -Raw -LiteralPath $nugetConfigPath
     if ($nugetConfig -notmatch '<packageSource key="smartpipe-local">[\s\S]*<package pattern="SmartPipe\.\*" />') {
         throw 'NuGet.Config does not map SmartPipe.* packages to smartpipe-local source.'
+    }
+    if ($nugetConfig -notmatch '<packageSource key="nuget">[\s\S]*<package pattern="SmartPipe\.Core" />[\s\S]*<package pattern="SmartPipe\.Extensions" />') {
+        throw 'NuGet.Config does not allow the exact legacy SmartPipe package graph from NuGet.org.'
+    }
+    $extensionsOnlySource = Get-Content -Raw -LiteralPath (Join-Path $result.ValidationRoot 'ExtensionsOnly/Program.cs')
+    $legacyLibrarySource = Get-Content -Raw -LiteralPath (Join-Path $result.ValidationRoot 'LegacyLibrary/LegacyProbe.cs')
+    $legacyHostSource = Get-Content -Raw -LiteralPath (Join-Path $result.ValidationRoot 'LegacyHost/Program.cs')
+    foreach ($source in @($extensionsOnlySource, $legacyLibrarySource)) {
+        if ($source -notmatch 'new SmartPipe\.Extensions\.Sinks\.JsonFileSink<string>\("output\.json", null!\)') {
+            throw 'A package consumer is missing the shared legacy null-metadata source-compatibility probe.'
+        }
+    }
+    if ($legacyHostSource -notmatch 'JsonFileSinkLegacyNullMetadataProbe\.Verify\(\)') {
+        throw 'The legacy binary-compatibility host does not execute the null-metadata source probe.'
     }
 
     Invoke-ConsumerCase -Name 'ValidationScript_FailsWhenRequiredLocalPackageIsMissing' -ShouldPass $false -ExpectedError 'Package SmartPipe.Core was not resolved' -Environment @{

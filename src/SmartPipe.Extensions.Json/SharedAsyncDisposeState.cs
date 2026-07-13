@@ -1,3 +1,5 @@
+using System.Runtime.ExceptionServices;
+
 namespace SmartPipe.Extensions;
 
 internal sealed class SharedAsyncDisposeState
@@ -26,6 +28,21 @@ internal sealed class SharedAsyncDisposeState
             _ = RunAsync(starter, disposeCore);
 
         return task;
+    }
+
+    public static void ThrowIfFailed(Exception? primaryFailure, Exception? cleanupFailure)
+    {
+        if (primaryFailure is not null && cleanupFailure is not null)
+        {
+            throw new AggregateException(
+                "Async finalization failed and resource cleanup also failed.",
+                primaryFailure,
+                cleanupFailure);
+        }
+
+        var failure = primaryFailure ?? cleanupFailure;
+        if (failure is not null)
+            ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
     private static async Task RunAsync(TaskCompletionSource completion, Func<Task> disposeCore)

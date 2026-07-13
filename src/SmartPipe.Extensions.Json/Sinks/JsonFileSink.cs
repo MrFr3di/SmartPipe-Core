@@ -37,7 +37,7 @@ public class JsonFileSink<T> : IPipelineSink<T>
     [RequiresUnreferencedCode("Reflection-based JSON file writing is not trimming-safe. Use a JsonTypeInfo constructor.")]
     [RequiresDynamicCode("Reflection-based JSON file writing may require runtime code generation. Use a JsonTypeInfo constructor for NativeAOT.")]
     public JsonFileSink(string path)
-        : this(path, new JsonFileSinkOptions())
+        : this(path, new JsonFileSinkOptions(), serializerOptions: null)
     {
     }
 
@@ -46,18 +46,10 @@ public class JsonFileSink<T> : IPipelineSink<T>
     [RequiresDynamicCode("Reflection-based JSON file writing may require runtime code generation. Use a JsonTypeInfo constructor for NativeAOT.")]
 #pragma warning disable RS0027 // Existing optional constructor preserved for source compatibility.
     public JsonFileSink(string path, int flushInterval = 1000)
-        : this(path, new JsonFileSinkOptions { FlushInterval = flushInterval })
+        : this(path, new JsonFileSinkOptions { FlushInterval = flushInterval }, serializerOptions: null)
     {
     }
 #pragma warning restore RS0027
-
-    /// <summary>Create a sink with an explicit output layout.</summary>
-    [RequiresUnreferencedCode("Reflection-based JSON file writing is not trimming-safe. Use a JsonTypeInfo constructor.")]
-    [RequiresDynamicCode("Reflection-based JSON file writing may require runtime code generation. Use a JsonTypeInfo constructor for NativeAOT.")]
-    public JsonFileSink(string path, JsonFileSinkOptions options)
-        : this(path, options, serializerOptions: null)
-    {
-    }
 
     /// <summary>Create a sink with explicit file and serializer options.</summary>
     [RequiresUnreferencedCode("JsonSerializerOptions-based JSON file writing may require reflection metadata.")]
@@ -117,10 +109,21 @@ public class JsonFileSink<T> : IPipelineSink<T>
     [RequiresUnreferencedCode("Reflection-based JSON file writing is not trimming-safe.")]
     [RequiresDynamicCode("Reflection-based JSON file writing may require runtime code generation.")]
     internal JsonFileSink(string path, Stream stream, int flushInterval, bool leaveOpen)
+        : this(
+            path,
+            stream,
+            new JsonFileSinkOptions { FlushInterval = flushInterval },
+            leaveOpen)
+    {
+    }
+
+    [RequiresUnreferencedCode("Reflection-based JSON file writing is not trimming-safe.")]
+    [RequiresDynamicCode("Reflection-based JSON file writing may require runtime code generation.")]
+    internal JsonFileSink(string path, Stream stream, JsonFileSinkOptions options, bool leaveOpen)
     {
         _path = ValidatePath(path);
         ArgumentNullException.ThrowIfNull(stream);
-        _options = ValidateOptions(new JsonFileSinkOptions { FlushInterval = flushInterval });
+        _options = ValidateOptions(options);
         var frozenOptions = FreezeOptions(null);
         _serializeBatch = batch => JsonSerializer.SerializeToUtf8Bytes(batch, frozenOptions);
         _serializeItem = item => JsonSerializer.SerializeToUtf8Bytes(item, frozenOptions);
@@ -184,18 +187,37 @@ public class JsonFileSink<T> : IPipelineSink<T>
             await _flushGate.WaitAsync().ConfigureAwait(false);
             acquired = true;
 
-            await FlushBufferedCoreAsync(force: true, CancellationToken.None).ConfigureAwait(false);
-            if (_options.Format == JsonFileFormat.Array)
-                await CompleteArrayAsync(CancellationToken.None).ConfigureAwait(false);
-
-            if (_stream != null)
+            Exception? finalizationFailure = null;
+            Exception? cleanupFailure = null;
+            try
             {
-                await _stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
-                if (!_leaveOpen)
-                    await _stream.DisposeAsync().ConfigureAwait(false);
+                await FlushBufferedCoreAsync(force: true, CancellationToken.None).ConfigureAwait(false);
+                if (_options.Format == JsonFileFormat.Array)
+                    await CompleteArrayAsync(CancellationToken.None).ConfigureAwait(false);
+
+                if (_stream != null)
+                    await _stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                finalizationFailure = exception;
+            }
+
+            var stream = _stream;
+            if (stream != null && !_leaveOpen)
+            {
+                try
+                {
+                    await stream.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    cleanupFailure = exception;
+                }
             }
 
             _stream = null;
+            SharedAsyncDisposeState.ThrowIfFailed(finalizationFailure, cleanupFailure);
             succeeded = true;
         }
         finally

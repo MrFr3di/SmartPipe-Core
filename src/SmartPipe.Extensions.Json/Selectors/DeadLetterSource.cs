@@ -188,13 +188,49 @@ public class DeadLetterSource<T> : IPipelineSource<T>
         legacyStream.Position = legacyProbe.ContentStartOffset;
         if (legacyProbe.FirstSignificantByte == null)
             yield break;
+
+        var legacyOptions = new JsonSerializerOptions { MaxDepth = _sourceOptions.MaxDepth };
+        var legacyContext = new JsonInfrastructureContext(legacyOptions);
+        if (_sourceOptions.Format == JsonFileFormat.Ndjson)
+        {
+            long recordIndex = 0;
+            await foreach (var record in Utf8LineRecordReader.ReadAsync(
+                legacyStream,
+                _sourceOptions.MaxRecordSizeBytes,
+                ct).ConfigureAwait(false))
+            {
+                recordIndex++;
+                if (record.TooLarge)
+                {
+                    throw new JsonException(
+                        $"JSON record {recordIndex} in '{_path}' exceeds MaxRecordSizeBytes ({_sourceOptions.MaxRecordSizeBytes}).");
+                }
+
+                JsonRecordValidator.Validate(
+                    record.Bytes,
+                    _sourceOptions.MaxDepth,
+                    _path,
+                    recordIndex);
+                var element = JsonSerializer.Deserialize(record.Bytes, legacyContext.JsonElement);
+                var context = ProcessElement(element);
+                if (context != null)
+                    yield return context;
+            }
+
+            yield break;
+        }
+
+        if (_sourceOptions.Format == JsonFileFormat.Array
+            && legacyProbe.FirstSignificantByte != (byte)'[')
+        {
+            throw new JsonException($"Expected a root JSON array in '{_path}'.");
+        }
+
         var topLevelValues = legacyProbe.FirstSignificantByte != (byte)'[';
         using var limitedLegacyStream = new JsonUnframedInputLimitStream(
             legacyStream,
             _sourceOptions.MaxUnframedInputSizeBytes,
             _path);
-        var legacyOptions = new JsonSerializerOptions { MaxDepth = _sourceOptions.MaxDepth };
-        var legacyContext = new JsonInfrastructureContext(legacyOptions);
         await foreach (var element in JsonSerializer.DeserializeAsyncEnumerable(
             limitedLegacyStream,
             legacyContext.JsonElement,

@@ -74,6 +74,53 @@ public sealed class DeadLetterSinkLifecycleTests
         await disposeTask;
     }
 
+    [Fact]
+    public async Task DisposeAsync_FlushFailureStillDisposesOwnedStream()
+    {
+        var expected = new IOException("flush failed");
+        var stream = new FaultingDisposeStream { FlushFailure = expected };
+        var writer = new StreamDeadLetterLineWriter(stream, leaveOpen: false);
+        var sink = new DeadLetterSink<string>("dummy.json", logger: null, writer);
+
+        var thrown = await Assert.ThrowsAsync<IOException>(() => sink.DisposeAsync().AsTask());
+
+        thrown.Should().BeSameAs(expected);
+        stream.DisposeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_DualFailureAggregatesFlushBeforeCleanup()
+    {
+        var flushFailure = new IOException("flush failed");
+        var disposeFailure = new InvalidOperationException("dispose failed");
+        var stream = new FaultingDisposeStream
+        {
+            FlushFailure = flushFailure,
+            DisposeFailure = disposeFailure,
+        };
+        var writer = new StreamDeadLetterLineWriter(stream, leaveOpen: false);
+        var sink = new DeadLetterSink<string>("dummy.json", logger: null, writer);
+
+        var thrown = await Assert.ThrowsAsync<AggregateException>(() => sink.DisposeAsync().AsTask());
+
+        thrown.InnerExceptions.Should().Equal(flushFailure, disposeFailure);
+        stream.DisposeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_FlushFailureLeavesInjectedStreamOpen()
+    {
+        var expected = new IOException("flush failed");
+        var stream = new FaultingDisposeStream { FlushFailure = expected };
+        var writer = new StreamDeadLetterLineWriter(stream, leaveOpen: true);
+        var sink = new DeadLetterSink<string>("dummy.json", logger: null, writer);
+
+        var thrown = await Assert.ThrowsAsync<IOException>(() => sink.DisposeAsync().AsTask());
+
+        thrown.Should().BeSameAs(expected);
+        stream.DisposeCount.Should().Be(0);
+    }
+
     private static ProcessingEnvelope<DeadLetterEnvelope<string>> Envelope(string payload) =>
         ProcessingEnvelope<DeadLetterEnvelope<string>>.Create(
             new DeadLetterEnvelope<string>
@@ -121,5 +168,27 @@ public sealed class DeadLetterSinkLifecycleTests
         }
 
         public void ReleaseDispose() => DisposeRelease.TrySetResult();
+    }
+
+    private sealed class FaultingDisposeStream : MemoryStream
+    {
+        public Exception? FlushFailure { get; set; }
+        public Exception? DisposeFailure { get; set; }
+        public int DisposeCount { get; private set; }
+
+        public override Task FlushAsync(CancellationToken cancellationToken) =>
+            FlushFailure is null
+                ? Task.CompletedTask
+                : Task.FromException(FlushFailure);
+
+        public override ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            base.Dispose(true);
+            GC.SuppressFinalize(this);
+            return DisposeFailure is null
+                ? ValueTask.CompletedTask
+                : ValueTask.FromException(DisposeFailure);
+        }
     }
 }

@@ -48,7 +48,7 @@ public sealed class JsonFileRoundTripTests
                 OpenMode = JsonFileOpenMode.Create,
                 FlushInterval = 2,
             };
-            var sink = new JsonFileSink<RoundTripItem>(path, sinkOptions);
+            var sink = new JsonFileSink<RoundTripItem>(path, sinkOptions, serializerOptions: null);
             await sink.WriteAsync(ProcessingEnvelope<RoundTripItem>.Create(new(1)));
             await sink.WriteAsync(ProcessingEnvelope<RoundTripItem>.Create(new(2)));
             await sink.WriteAsync(ProcessingEnvelope<RoundTripItem>.Create(new(3)));
@@ -78,7 +78,7 @@ public sealed class JsonFileRoundTripTests
             OpenMode = JsonFileOpenMode.Append,
         };
 
-        Assert.Throws<ArgumentException>(() => new JsonFileSink<RoundTripItem>("items.json", options));
+        Assert.Throws<ArgumentException>(() => new JsonFileSink<RoundTripItem>("items.json", options, serializerOptions: null));
     }
 
     public sealed record RoundTripItem(int Value);

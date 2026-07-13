@@ -20,17 +20,17 @@ permissions:
 jobs:
   build-test-pack:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         persist-credentials: false
-    
+
     - name: Setup .NET
       uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
       with:
         dotnet-version: '10.0.x'
-    
+
     - name: Restore locked
       run: dotnet restore SmartPipe.Core.slnx --locked-mode
 
@@ -51,7 +51,7 @@ jobs:
 
     - name: Format verify
       run: dotnet format SmartPipe.Core.slnx --verify-no-changes --no-restore
-    
+
     - name: Build
       run: dotnet build SmartPipe.Core.slnx --no-restore -c Release -warnaserror
 
@@ -81,7 +81,7 @@ jobs:
           dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.ChannelMergeTests --minimum-expected-tests 1
           dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests --minimum-expected-tests 1
         done
-    
+
     - name: Core tests with coverage
       timeout-minutes: 15
       run: dotnet run --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release -- --filter-not-trait Category=Stress --timeout 15m --coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml

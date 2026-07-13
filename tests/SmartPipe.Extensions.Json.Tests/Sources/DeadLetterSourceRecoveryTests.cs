@@ -201,6 +201,118 @@ public sealed class DeadLetterSourceRecoveryTests
     }
 
     [Fact]
+    public async Task LegacyValueTypeInfo_ExplicitArray_NonArrayInput_Throws()
+    {
+        var path = await WriteAsync(Serialize("one", 1));
+        try
+        {
+            var source = new DeadLetterSource<string>(
+                path,
+                DeadLetterSourceTestJsonContext.Default.String,
+                new() { Format = JsonFileFormat.Array });
+
+            var exception = await Assert.ThrowsAsync<JsonException>(
+                async () => await CollectAsync(source));
+
+            Assert.Contains("root JSON array", exception.Message, StringComparison.Ordinal);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task LegacyValueTypeInfo_ExplicitArray_ArrayInput_Succeeds()
+    {
+        var path = await WriteAsync("[" + Serialize("one", 1) + "]");
+        try
+        {
+            var source = new DeadLetterSource<string>(
+                path,
+                DeadLetterSourceTestJsonContext.Default.String,
+                new() { Format = JsonFileFormat.Array });
+
+            Assert.Equal("one", Assert.Single(await CollectAsync(source)).Payload);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task LegacyValueTypeInfo_Ndjson_UsesPerRecordLimit()
+    {
+        var line = Serialize("one", 1);
+        var exactSize = Encoding.UTF8.GetByteCount(line);
+        var exactPath = await WriteAsync(line);
+        var oversizedPath = await WriteAsync(line + " ");
+        try
+        {
+            var exactSource = new DeadLetterSource<string>(
+                exactPath,
+                DeadLetterSourceTestJsonContext.Default.String,
+                new()
+                {
+                    Format = JsonFileFormat.Ndjson,
+                    MaxRecordSizeBytes = exactSize,
+                });
+            var oversizedSource = new DeadLetterSource<string>(
+                oversizedPath,
+                DeadLetterSourceTestJsonContext.Default.String,
+                new()
+                {
+                    Format = JsonFileFormat.Ndjson,
+                    MaxRecordSizeBytes = exactSize,
+                });
+
+            Assert.Equal("one", Assert.Single(await CollectAsync(exactSource)).Payload);
+            await Assert.ThrowsAsync<JsonException>(async () => await CollectAsync(oversizedSource));
+        }
+        finally
+        {
+            File.Delete(exactPath);
+            File.Delete(oversizedPath);
+        }
+    }
+
+    [Fact]
+    public async Task LegacyValueTypeInfo_Ndjson_IgnoresSmallUnframedLimit()
+    {
+        var path = await WriteAsync(Serialize("one", 1));
+        try
+        {
+            var source = new DeadLetterSource<string>(
+                path,
+                DeadLetterSourceTestJsonContext.Default.String,
+                new()
+                {
+                    Format = JsonFileFormat.Ndjson,
+                    MaxRecordSizeBytes = 1024,
+                    MaxUnframedInputSizeBytes = 1,
+                });
+
+            Assert.Equal("one", Assert.Single(await CollectAsync(source)).Payload);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task LegacyValueTypeInfo_Ndjson_BomCrLfAndLastLineWithoutLf_Succeeds()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var content = Encoding.UTF8.GetPreamble()
+                .Concat(Encoding.UTF8.GetBytes($"{Serialize("one", 1)}\r\n{Serialize("two", 2)}"))
+                .ToArray();
+            await File.WriteAllBytesAsync(path, content, TestContext.Current.CancellationToken);
+            var source = new DeadLetterSource<string>(
+                path,
+                DeadLetterSourceTestJsonContext.Default.String,
+                new() { Format = JsonFileFormat.Ndjson });
+
+            Assert.Equal(["one", "two"], (await CollectAsync(source)).Select(item => item.Payload));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public async Task DeadLetterSource_MaxUnframedInputSize_RejectsLimitPlusOneArray()
     {
         var json = "[" + Serialize("one", 1) + "]";

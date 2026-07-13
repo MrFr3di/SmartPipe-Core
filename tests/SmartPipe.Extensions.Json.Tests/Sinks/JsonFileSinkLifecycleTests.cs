@@ -96,12 +96,69 @@ public sealed class JsonFileSinkLifecycleTests
     {
         var ct = TestContext.Current.CancellationToken;
         var stream = new ReentrantDisposeStream { FailWriteAfterBytes = 3 };
-        var sink = new JsonFileSink<string>("dummy.json", stream, flushInterval: 10);
+        var sink = new JsonFileSink<string>("dummy.json", stream, flushInterval: 10, leaveOpen: false);
         await sink.WriteAsync(Envelope("buffered"), ct);
 
         await Assert.ThrowsAsync<IOException>(() => sink.DisposeAsync().AsTask());
 
         stream.ToArray().Should().BeEmpty();
+        stream.DisposeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_ArrayFinalizationFailureStillDisposesOwnedStream()
+    {
+        var expected = new IOException("array finalization failed");
+        var stream = new ReentrantDisposeStream
+        {
+            FailWriteAfterBytes = 1,
+            WriteFailure = expected,
+        };
+        var sink = new JsonFileSink<string>(
+            "dummy.json",
+            stream,
+            new JsonFileSinkOptions
+            {
+                Format = JsonFileFormat.Array,
+                OpenMode = JsonFileOpenMode.Create,
+            },
+            leaveOpen: false);
+
+        var thrown = await Assert.ThrowsAsync<IOException>(() => sink.DisposeAsync().AsTask());
+
+        thrown.Should().BeSameAs(expected);
+        stream.DisposeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_FlushFailureStillDisposesOwnedStream()
+    {
+        var expected = new IOException("flush failed");
+        var stream = new ReentrantDisposeStream { FlushFailure = expected };
+        var sink = new JsonFileSink<string>("dummy.json", stream, flushInterval: 10, leaveOpen: false);
+
+        var thrown = await Assert.ThrowsAsync<IOException>(() => sink.DisposeAsync().AsTask());
+
+        thrown.Should().BeSameAs(expected);
+        stream.DisposeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_DualFailureAggregatesFinalizationBeforeCleanup()
+    {
+        var flushFailure = new IOException("flush failed");
+        var disposeFailure = new InvalidOperationException("dispose failed");
+        var stream = new ReentrantDisposeStream
+        {
+            FlushFailure = flushFailure,
+            DisposeFailure = disposeFailure,
+        };
+        var sink = new JsonFileSink<string>("dummy.json", stream, flushInterval: 10, leaveOpen: false);
+
+        var thrown = await Assert.ThrowsAsync<AggregateException>(() => sink.DisposeAsync().AsTask());
+
+        thrown.InnerExceptions.Should().Equal(flushFailure, disposeFailure);
+        stream.DisposeCount.Should().Be(1);
     }
 
     [Fact]
@@ -132,6 +189,8 @@ public sealed class JsonFileSinkLifecycleTests
         public Action? OnDispose { get; set; }
         public Task? ReentrantTask { get; set; }
         public Exception? FlushFailure { get; set; }
+        public Exception? DisposeFailure { get; set; }
+        public Exception? WriteFailure { get; set; }
         public int? FailWriteAfterBytes { get; set; }
         public int FlushCount { get; private set; }
         public int DisposeCount { get; private set; }
@@ -147,7 +206,7 @@ public sealed class JsonFileSinkLifecycleTests
             {
                 _writeFailed = true;
                 Write(buffer.Span[..Math.Min(bytes, buffer.Length)]);
-                throw new IOException("partial write failed");
+                throw WriteFailure ?? new IOException("partial write failed");
             }
 
             return base.WriteAsync(buffer, cancellationToken);
@@ -172,6 +231,8 @@ public sealed class JsonFileSinkLifecycleTests
             OnDispose?.Invoke();
             base.Dispose(true);
             GC.SuppressFinalize(this);
+            if (DisposeFailure is not null)
+                return ValueTask.FromException(DisposeFailure);
             return ValueTask.CompletedTask;
         }
     }

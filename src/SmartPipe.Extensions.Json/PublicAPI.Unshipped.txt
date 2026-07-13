@@ -133,7 +133,6 @@ SmartPipe.Extensions.Selectors.JsonFileSource<T>.JsonFileSource(string! path, Sy
 SmartPipe.Extensions.Sinks.DeadLetterSink<T>.DeadLetterSink(string! path, SmartPipe.Core.IDeadLetterSerializer<T>! serializer, SmartPipe.Extensions.DeadLetterSinkOptions! options, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Sinks.DeadLetterSink<T>!>? logger, System.IO.Stream? stream) -> void
 SmartPipe.Extensions.Sinks.DeadLetterWriteException.DeadLetterWriteException(string! path, int attempts, System.Exception! innerException, bool mayContainPartialRecord) -> void
 SmartPipe.Extensions.Sinks.DeadLetterWriteException.MayContainPartialRecord.get -> bool
-SmartPipe.Extensions.Sinks.JsonFileSink<T>.JsonFileSink(string! path, SmartPipe.Extensions.JsonFileSinkOptions! options) -> void
 SmartPipe.Extensions.Sinks.JsonFileSink<T>.JsonFileSink(string! path, SmartPipe.Extensions.JsonFileSinkOptions! options, System.Text.Json.JsonSerializerOptions? serializerOptions) -> void
 SmartPipe.Extensions.Sinks.JsonFileSink<T>.JsonFileSink(string! path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! itemTypeInfo, System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Generic.List<T>!>! batchTypeInfo, SmartPipe.Extensions.JsonFileSinkOptions! options) -> void
 static SmartPipe.Extensions.DeadLetterSinkOptions.operator !=(SmartPipe.Extensions.DeadLetterSinkOptions? left, SmartPipe.Extensions.DeadLetterSinkOptions? right) -> bool

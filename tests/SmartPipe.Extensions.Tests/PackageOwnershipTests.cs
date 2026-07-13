@@ -50,4 +50,18 @@ public sealed class PackageOwnershipTests
     {
         Assert.Equal("SmartPipe.Core", typeof(JsonLinesDeadLetterSerializer<>).Assembly.GetName().Name);
     }
+
+    [Fact]
+    public void JsonFileSink_LegacyNullMetadataCallSites_RemainUnambiguous()
+    {
+        var nullException = Assert.Throws<ArgumentNullException>(
+            () => new JsonFileSink<string>("output.json", null!));
+        var defaultException = Assert.Throws<ArgumentNullException>(
+            () => new JsonFileSink<string>(
+                "output.json",
+                default(System.Text.Json.Serialization.Metadata.JsonTypeInfo<List<string>>)!));
+
+        Assert.Equal("batchTypeInfo", nullException.ParamName);
+        Assert.Equal("batchTypeInfo", defaultException.ParamName);
+    }
 }

@@ -198,7 +198,10 @@ public sealed class JsonFileSinkAppendTests
 
     private static async Task WritePathAsync(string path, JsonFileFormat format, string value)
     {
-        var sink = new JsonFileSink<Item>(path, new JsonFileSinkOptions { Format = format, OpenMode = JsonFileOpenMode.Append, FlushInterval = 1 });
+        var sink = new JsonFileSink<Item>(
+            path,
+            new JsonFileSinkOptions { Format = format, OpenMode = JsonFileOpenMode.Append, FlushInterval = 1 },
+            serializerOptions: null);
         await sink.WriteAsync(Envelope(value));
         await sink.DisposeAsync();
     }
