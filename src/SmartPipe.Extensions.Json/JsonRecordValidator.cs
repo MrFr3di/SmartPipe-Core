@@ -14,7 +14,11 @@ internal static class JsonRecordValidator
                 CommentHandling = JsonCommentHandling.Disallow,
                 AllowTrailingCommas = false,
             });
-            while (reader.Read()) { }
+            while (reader.Read())
+            {
+                // Exhaust the reader to validate the complete JSON value,
+                // including trailing and structural errors.
+            }
         }
         catch (JsonException exception)
         {

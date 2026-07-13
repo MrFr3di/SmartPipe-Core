@@ -128,41 +128,55 @@ public class DeadLetterSource<T> : IPipelineSource<T>
     {
         if (_serializer != null)
         {
-            await using var stream = new FileStream(
-                _path,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite,
-                4096,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var serializerProbe = await JsonStreamProbe.ProbeAsync(stream, ct).ConfigureAwait(false);
-            stream.Position = serializerProbe.ContentStartOffset;
-            if (serializerProbe.FirstSignificantByte is null)
-                yield break;
-            var array = _sourceOptions.Format == JsonFileFormat.Array
-                || (_sourceOptions.Format == JsonFileFormat.Auto && serializerProbe.FirstSignificantByte == (byte)'[');
-            if (array && _sourceOptions.InvalidRecordBehavior == InvalidJsonRecordBehavior.SkipAndLog)
-                throw new ArgumentException("SkipAndLog is supported only for independently framed JSON records.");
-            var envelopes = array
-                ? ReadDocumentEnvelopesAsync(stream, ct)
-                : new DeadLetterRecordReader<T>().ReadFramedAsync(
-                    stream, _serializer, _sourceOptions, _logger, _path, ct);
-            await foreach (var envelope in envelopes.ConfigureAwait(false))
-            {
-                if (envelope.OriginalPayload is null)
-                    throw new JsonException($"Dead-letter record in '{_path}' has a null OriginalPayload.");
-
-                yield return ProcessingEnvelope<T>.Create(
-                    envelope.OriginalPayload,
-                    envelope.PipelineId,
-                    envelope.RunId,
-                    envelope.TraceId,
-                    envelope.Metadata,
-                    envelope.FailedAtUtc);
-            }
+            await foreach (var envelope in ReadCustomSerializerPathAsync(ct).ConfigureAwait(false))
+                yield return envelope;
             yield break;
         }
 
+        await foreach (var envelope in ReadLegacyPathAsync(ct).ConfigureAwait(false))
+            yield return envelope;
+    }
+
+    private async IAsyncEnumerable<ProcessingEnvelope<T>> ReadCustomSerializerPathAsync(
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        await using var stream = new FileStream(
+            _path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite,
+            4096,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var serializerProbe = await JsonStreamProbe.ProbeAsync(stream, ct).ConfigureAwait(false);
+        stream.Position = serializerProbe.ContentStartOffset;
+        if (serializerProbe.FirstSignificantByte is null)
+            yield break;
+        var array = _sourceOptions.Format == JsonFileFormat.Array
+            || (_sourceOptions.Format == JsonFileFormat.Auto && serializerProbe.FirstSignificantByte == (byte)'[');
+        if (array && _sourceOptions.InvalidRecordBehavior == InvalidJsonRecordBehavior.SkipAndLog)
+            throw new ArgumentException("SkipAndLog is supported only for independently framed JSON records.");
+        var envelopes = array
+            ? ReadDocumentEnvelopesAsync(stream, ct)
+            : new DeadLetterRecordReader<T>().ReadFramedAsync(
+                stream, _serializer!, _sourceOptions, _logger, _path, ct);
+        await foreach (var envelope in envelopes.ConfigureAwait(false))
+        {
+            if (envelope.OriginalPayload is null)
+                throw new JsonException($"Dead-letter record in '{_path}' has a null OriginalPayload.");
+
+            yield return ProcessingEnvelope<T>.Create(
+                envelope.OriginalPayload,
+                envelope.PipelineId,
+                envelope.RunId,
+                envelope.TraceId,
+                envelope.Metadata,
+                envelope.FailedAtUtc);
+        }
+    }
+
+    private async IAsyncEnumerable<ProcessingEnvelope<T>> ReadLegacyPathAsync(
+        [EnumeratorCancellation] CancellationToken ct)
+    {
         await using var legacyStream = new FileStream(
             _path,
             FileMode.Open,

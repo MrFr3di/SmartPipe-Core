@@ -257,29 +257,13 @@ public class JsonFileSource<T> : IPipelineSource<T>
             recordIndex++;
             if (record.TooLarge)
             {
-                var exception = new JsonException(
-                    $"JSON record {recordIndex} in '{_path}' exceeds the {_options.MaxRecordSizeBytes}-byte limit.");
+                var exception = CreateOversizedRecordException(recordIndex);
                 if (!HandleInvalidRecord(recordIndex, exception))
                     throw exception;
                 continue;
             }
 
-            TRecord? value;
-            try
-            {
-                JsonRecordValidator.Validate(record.Bytes, _options.MaxDepth, _path, recordIndex);
-                value = deserialize(record.Bytes);
-            }
-            catch (JsonException ex)
-            {
-                var contextual = ex.Message.Contains(_path, StringComparison.Ordinal)
-                    ? ex
-                    : new JsonException($"Invalid JSON record {recordIndex} in '{_path}': {ex.Message}", ex);
-                if (!HandleInvalidRecord(recordIndex, contextual))
-                    throw contextual;
-                continue;
-            }
-
+            var value = TryDeserializeRecord(deserialize, record.Bytes, recordIndex);
             if (value is null)
             {
                 HandleInvalidNull(recordIndex);
@@ -299,6 +283,30 @@ public class JsonFileSource<T> : IPipelineSource<T>
             recordIndex,
             _path);
         return true;
+    }
+
+    private JsonException CreateOversizedRecordException(long recordIndex) =>
+        new($"JSON record {recordIndex} in '{_path}' exceeds the {_options.MaxRecordSizeBytes}-byte limit.");
+
+    private TRecord? TryDeserializeRecord<TRecord>(
+        Func<byte[], TRecord?> deserialize,
+        byte[] bytes,
+        long recordIndex)
+    {
+        try
+        {
+            JsonRecordValidator.Validate(bytes, _options.MaxDepth, _path, recordIndex);
+            return deserialize(bytes);
+        }
+        catch (JsonException ex)
+        {
+            var contextual = ex.Message.Contains(_path, StringComparison.Ordinal)
+                ? ex
+                : new JsonException($"Invalid JSON record {recordIndex} in '{_path}': {ex.Message}", ex);
+            if (!HandleInvalidRecord(recordIndex, contextual))
+                throw contextual;
+            return default;
+        }
     }
 
     private static FileStream OpenFile(string path) => new(

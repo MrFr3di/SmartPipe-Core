@@ -27,7 +27,7 @@ public class JsonFileSink<T> : IPipelineSink<T>
     private readonly SharedAsyncDisposeState _dispose = new();
     private readonly SemaphoreSlim _flushGate = new(1, 1);
     private Stream? _stream;
-    private bool _leaveOpen;
+    private readonly bool _leaveOpen;
     private bool _arrayStarted;
     private bool _arrayHasItems;
     private bool _appendBoundaryChecked;
@@ -69,6 +69,7 @@ public class JsonFileSink<T> : IPipelineSink<T>
     {
         _path = ValidatePath(path);
         _options = ValidateOptions(options);
+        _leaveOpen = false;
         var frozenOptions = FreezeOptions(serializerOptions);
         _serializeBatch = batch => JsonSerializer.SerializeToUtf8Bytes(batch, frozenOptions);
         _serializeItem = item => JsonSerializer.SerializeToUtf8Bytes(item, frozenOptions);
@@ -85,6 +86,7 @@ public class JsonFileSink<T> : IPipelineSink<T>
     {
         _path = ValidatePath(path);
         ArgumentNullException.ThrowIfNull(batchTypeInfo);
+        _leaveOpen = false;
         _options = ValidateOptions(new JsonFileSinkOptions { FlushInterval = flushInterval });
         _serializeBatch = batch => JsonSerializer.SerializeToUtf8Bytes(batch, batchTypeInfo);
     }
@@ -99,6 +101,7 @@ public class JsonFileSink<T> : IPipelineSink<T>
         _path = ValidatePath(path);
         ArgumentNullException.ThrowIfNull(itemTypeInfo);
         ArgumentNullException.ThrowIfNull(batchTypeInfo);
+        _leaveOpen = false;
         _options = ValidateOptions(options);
         _serializeBatch = batch => JsonSerializer.SerializeToUtf8Bytes(batch, batchTypeInfo);
         _serializeItem = item => JsonSerializer.SerializeToUtf8Bytes(item, itemTypeInfo);
@@ -368,7 +371,7 @@ public class JsonFileSink<T> : IPipelineSink<T>
         var offset = 0;
         foreach (var part in parts)
         {
-            part.CopyTo(result, offset);
+            part.AsMemory().CopyTo(result.AsMemory(offset));
             offset += part.Length;
         }
         return result;

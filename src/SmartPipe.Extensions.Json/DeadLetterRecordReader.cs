@@ -30,16 +30,7 @@ internal sealed class DeadLetterRecordReader<T>
             {
                 try
                 {
-                    JsonRecordValidator.Validate(record.Bytes, options.MaxDepth, path, recordIndex);
-                    await using var recordStream = new MemoryStream(record.Bytes, writable: false);
-                    await using var enumerator = serializer.ReadAsync(recordStream, ct).GetAsyncEnumerator(ct);
-                    if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
-                        throw new JsonException($"Dead-letter record {recordIndex} in '{path}' produced no envelopes.");
-                    envelope = enumerator.Current;
-                    if (await enumerator.MoveNextAsync().ConfigureAwait(false))
-                        throw new JsonException($"Dead-letter record {recordIndex} in '{path}' produced more than one envelope.");
-                    if (envelope.OriginalPayload is null)
-                        throw new JsonException($"Dead-letter record {recordIndex} in '{path}' has a null OriginalPayload.");
+                    envelope = await ReadAndValidateRecordAsync(serializer, record.Bytes, options.MaxDepth, path, recordIndex, ct).ConfigureAwait(false);
                 }
                 catch (JsonException exception)
                 {
@@ -57,5 +48,35 @@ internal sealed class DeadLetterRecordReader<T>
 
             yield return envelope!;
         }
+    }
+
+    private static async ValueTask<DeadLetterEnvelope<T>> ReadAndValidateRecordAsync(
+        IDeadLetterSerializer<T> serializer,
+        byte[] bytes,
+        int maxDepth,
+        string path,
+        long recordIndex,
+        CancellationToken ct)
+    {
+        JsonRecordValidator.Validate(bytes, maxDepth, path, recordIndex);
+        await using var recordStream = new MemoryStream(bytes, writable: false);
+        await using var enumerator = serializer.ReadAsync(recordStream, ct).GetAsyncEnumerator(ct);
+        return await EnsureSingleEnvelopeAsync(enumerator, recordIndex, path, ct).ConfigureAwait(false);
+    }
+
+    private static async ValueTask<DeadLetterEnvelope<T>> EnsureSingleEnvelopeAsync(
+        IAsyncEnumerator<DeadLetterEnvelope<T>> enumerator,
+        long recordIndex,
+        string path,
+        CancellationToken ct)
+    {
+        if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
+            throw new JsonException($"Dead-letter record {recordIndex} in '{path}' produced no envelopes.");
+        var envelope = enumerator.Current;
+        if (await enumerator.MoveNextAsync().ConfigureAwait(false))
+            throw new JsonException($"Dead-letter record {recordIndex} in '{path}' produced more than one envelope.");
+        if (envelope.OriginalPayload is null)
+            throw new JsonException($"Dead-letter record {recordIndex} in '{path}' has a null OriginalPayload.");
+        return envelope;
     }
 }
