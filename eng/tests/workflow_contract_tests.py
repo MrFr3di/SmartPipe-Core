@@ -23,6 +23,7 @@ FILES = {
     name: WORKFLOWS / name
     for name in (
         "ci.yml",
+        "codeql.yml",
         "reusable-release-validation.yml",
         "publish-nuget.yml",
     )
@@ -95,6 +96,24 @@ def assert_persist_credentials_disabled(documents: dict[str, dict]) -> None:
                             and with_block.get("persist-credentials") is False,
                             f"{file_name}:{job_name} read-only checkout must set "
                             "persist-credentials: false.")
+
+
+def assert_setup_dotnet_uses_global_json(documents: dict[str, dict]) -> None:
+    setup_steps = []
+    for file_name, document in documents.items():
+        for job_name, job in document["jobs"].items():
+            for step in job.get("steps", []):
+                if str(step.get("uses", "")).startswith("actions/setup-dotnet"):
+                    setup_steps.append((file_name, job_name, step))
+
+    require(bool(setup_steps), "Release workflows must contain setup-dotnet steps.")
+    for file_name, job_name, step in setup_steps:
+        with_block = step.get("with")
+        require(isinstance(with_block, dict)
+                and with_block.get("global-json-file") == "global.json",
+                f"{file_name}:{job_name} setup-dotnet must use global.json as the SDK source.")
+        require("dotnet-version" not in with_block,
+                f"{file_name}:{job_name} setup-dotnet must not duplicate the SDK version.")
 
 
 def assert_link_check_exclusion_scoped() -> None:
@@ -215,6 +234,7 @@ def validate(documents: dict[str, dict]) -> None:
             "SmartPipe.Extensions must be built before it is packed with --no-build.")
 
     assert_persist_credentials_disabled(documents)
+    assert_setup_dotnet_uses_global_json(documents)
     assert_link_check_exclusion_scoped()
 
     version = publish["jobs"].get("version")
@@ -268,6 +288,16 @@ def _strip_minimum_expected_from_windows(documents: dict[str, dict]) -> None:
             step["run"] = str(step["run"]).replace("--minimum-expected-tests 1", "")
 
 
+def _restore_floating_sdk_selection(documents: dict[str, dict]) -> None:
+    for document in documents.values():
+        for job in document["jobs"].values():
+            for step in job.get("steps", []):
+                if str(step.get("uses", "")).startswith("actions/setup-dotnet"):
+                    with_block = step.setdefault("with", {})
+                    with_block.pop("global-json-file", None)
+                    with_block["dotnet-version"] = "10.0.x"
+
+
 def assert_mutation_rejected(documents: dict[str, dict], mutate, expected: str) -> None:
     mutated = copy.deepcopy(documents)
     mutate(mutated)
@@ -313,7 +343,13 @@ def main() -> int:
         _strip_minimum_expected_from_windows,
         "--minimum-expected-tests 1",
     )
-    print("Workflow contract tests passed (YAML 1.2 structure, graph, artifact flow, ordering, immutable refs, RED mutations).")
+    assert_mutation_rejected(
+        documents,
+        _restore_floating_sdk_selection,
+        "global.json as the SDK source",
+    )
+    print("Workflow contract tests passed (YAML 1.2 structure, SDK pinning, graph, artifact flow, "
+          "ordering, immutable refs, RED mutations).")
     return 0
 
 
