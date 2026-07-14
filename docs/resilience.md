@@ -63,6 +63,29 @@ break duration expires, and then counts admitted half-open requests up to
 `maxHalfOpenRequests`. It does not return a lease and does not release an
 active half-open slot after operation completion.
 
+Default `CircuitBreaker` constructors use `TimeProvider.System` monotonic
+timestamps for sampling and break durations. New code that needs configurable
+or test time should use the options-based overload:
+
+```csharp
+var breaker = new CircuitBreaker(
+    new CircuitBreakerOptions
+    {
+        FailureRatio = 0.5,
+        MinimumThroughput = 10,
+        BreakDuration = TimeSpan.FromSeconds(30),
+    },
+    timeProvider);
+```
+
+The legacy constructor's optional `IClock` remains source compatible and uses
+the supplied clock exactly as provided. A custom `IClock` is responsible for
+its own elapsed-time semantics; passing `null` selects the monotonic system
+provider. `CircuitBreakerOptions` plus an explicit, non-null `TimeProvider` is
+the preferred API for new callers. The six `TimeProvider`-first constructor overloads published in
+2.1.1 remain available as binary-compatibility entry points and delegate to the
+same monotonic provider-backed implementation.
+
 ## Dead Letter
 
 Use `FailureAction.DeadLetter` with `StageDeadLetterOptions<T>`:
@@ -82,10 +105,14 @@ the file with append semantics and use a seekable `FileStream`. Before each
 record write, the sink checkpoints the file length, writes UTF-8 bytes directly,
 and flushes by default through `FlushEachWrite = true`. If an in-process write
 throws, a seekable stream is truncated back to the checkpoint before retry.
-Injected non-seekable streams can still be used, but they do not provide this
-in-process rollback guarantee. This is not crash-atomic persistence; durability
-after process or machine failure depends on the configured stream, file system,
-and storage.
+Injected streams must be readable, seekable, and writable; initialization fails
+before the first record when those append capabilities are unavailable. The
+boundary check restores the injected stream's incoming position, then each
+write starts at the current end. Success leaves the position at the new end;
+successful rollback restores the old end. Injected streams remain open when the
+sink is disposed, while path-owned streams are disposed. This is not
+crash-atomic persistence; durability after process or machine failure depends
+on the configured stream, file system, and storage.
 
 Dead-letter writes make at most four attempts. The retry backoff before attempts
 2, 3, and 4 is 100ms, 200ms, and 400ms. After attempts are exhausted, the

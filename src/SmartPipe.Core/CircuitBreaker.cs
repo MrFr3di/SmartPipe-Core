@@ -65,6 +65,25 @@ internal sealed class TimeProviderCircuitBreakerTimeSource : ICircuitBreakerTime
         _timeProvider.GetElapsedTime(startingTimestamp, endingTimestamp);
 }
 
+/// <summary>Configuration for a <see cref="CircuitBreaker" />.</summary>
+public sealed record CircuitBreakerOptions
+{
+    /// <summary>Gets the failure ratio threshold.</summary>
+    public double FailureRatio { get; init; } = 0.5;
+
+    /// <summary>Gets the sliding sampling window, or the default when null.</summary>
+    public TimeSpan? SamplingDuration { get; init; }
+
+    /// <summary>Gets the minimum request count before ratio evaluation.</summary>
+    public int MinimumThroughput { get; init; } = 10;
+
+    /// <summary>Gets the open-state duration, or the default when null.</summary>
+    public TimeSpan? BreakDuration { get; init; }
+
+    /// <summary>Gets the maximum number of concurrent half-open probes.</summary>
+    public int MaxHalfOpenRequests { get; init; } = 3;
+}
+
 /// <summary>
 /// Thread-safe circuit breaker with hybrid failure detection:
 /// EWMA for fast reaction + Sliding window for accurate threshold decisions.
@@ -96,6 +115,7 @@ public class CircuitBreaker
     // Hybrid: EWMA for early warning + Sliding window for decisions
     private double _ewmaFailureRate;
     private readonly ConcurrentQueue<(long Timestamp, bool IsSuccess)> _window = new();
+    private readonly object _windowGate = new();
 
     /// <summary>Gets the current circuit state.</summary>
     public CircuitState State => Volatile.Read(ref _snapshot).State;
@@ -109,7 +129,7 @@ public class CircuitBreaker
             minimumThroughput: 10,
             breakDuration: null,
             maxHalfOpenRequests: 3,
-            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+            new TimeProviderCircuitBreakerTimeSource(TimeProvider.System))
     {
     }
 
@@ -123,7 +143,7 @@ public class CircuitBreaker
             minimumThroughput: 10,
             breakDuration: null,
             maxHalfOpenRequests: 3,
-            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+            new TimeProviderCircuitBreakerTimeSource(TimeProvider.System))
     {
     }
 
@@ -138,7 +158,7 @@ public class CircuitBreaker
             minimumThroughput,
             breakDuration: null,
             maxHalfOpenRequests: 3,
-            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+            new TimeProviderCircuitBreakerTimeSource(TimeProvider.System))
     {
     }
 
@@ -158,7 +178,7 @@ public class CircuitBreaker
             minimumThroughput,
             breakDuration,
             maxHalfOpenRequests: 3,
-            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+            new TimeProviderCircuitBreakerTimeSource(TimeProvider.System))
     {
     }
 
@@ -180,7 +200,7 @@ public class CircuitBreaker
             minimumThroughput,
             breakDuration,
             maxHalfOpenRequests,
-            new ClockCircuitBreakerTimeSource(new TimeProviderClock()))
+            new TimeProviderCircuitBreakerTimeSource(TimeProvider.System))
     {
     }
 
@@ -190,7 +210,11 @@ public class CircuitBreaker
     /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
     /// <param name="breakDuration">Duration to stay open before half-open.</param>
     /// <param name="maxHalfOpenRequests">Max requests in half-open state.</param>
-    /// <param name="clock">Optional clock for testability (defaults to TimeProviderClock()).</param>
+    /// <param name="clock">
+    /// Legacy clock used exactly as supplied. When null, the breaker uses <see cref="TimeProvider.System" />
+    /// and its monotonic timestamp source. Custom UTC-based clocks remain responsible for elapsed-time
+    /// semantics; new code should prefer <see cref="CircuitBreaker(CircuitBreakerOptions, TimeProvider)" />.
+    /// </param>
 #pragma warning disable RS0027 // Existing 2.1.0 optional constructor preserved for source compatibility.
     public CircuitBreaker(
         double failureRatio = 0.5,
@@ -206,105 +230,76 @@ public class CircuitBreaker
             minimumThroughput,
             breakDuration,
             maxHalfOpenRequests,
-            new ClockCircuitBreakerTimeSource(clock ?? new TimeProviderClock()))
+            clock is null
+                ? new TimeProviderCircuitBreakerTimeSource(TimeProvider.System)
+                : new ClockCircuitBreakerTimeSource(clock))
     {
     }
 #pragma warning restore RS0027
 
-    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
-    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
+    /// <summary>Creates a new circuit breaker from options and a time provider.</summary>
+    /// <param name="options">Circuit breaker configuration.</param>
+    /// <param name="timeProvider">Time provider used for monotonic elapsed time.</param>
+#pragma warning disable RS0027 // Intentional single options-based overload approved before release.
+    public CircuitBreaker(CircuitBreakerOptions options, TimeProvider timeProvider)
+        : this(
+            (options ?? throw new ArgumentNullException(nameof(options))).FailureRatio,
+            options.SamplingDuration,
+            options.MinimumThroughput,
+            options.BreakDuration,
+            options.MaxHalfOpenRequests,
+            new TimeProviderCircuitBreakerTimeSource(timeProvider ?? throw new ArgumentNullException(nameof(timeProvider))))
+    {
+    }
+#pragma warning restore RS0027
+
+    /// <summary>Creates a compatibility circuit breaker backed by the supplied time provider.</summary>
     public CircuitBreaker(TimeProvider timeProvider)
-        : this(
-            failureRatio: 0.5,
-            samplingDuration: null,
-            minimumThroughput: 10,
-            breakDuration: null,
-            maxHalfOpenRequests: 3,
-            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+        : this(new CircuitBreakerOptions(), timeProvider)
     {
     }
 
-    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
-    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
-    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
+    /// <summary>Creates a compatibility circuit breaker backed by the supplied time provider.</summary>
     public CircuitBreaker(TimeProvider timeProvider, double failureRatio)
-        : this(
-            failureRatio,
-            samplingDuration: null,
-            minimumThroughput: 10,
-            breakDuration: null,
-            maxHalfOpenRequests: 3,
-            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+        : this(new CircuitBreakerOptions { FailureRatio = failureRatio }, timeProvider)
     {
     }
 
-    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
-    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
-    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
-    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
-    public CircuitBreaker(
-        TimeProvider timeProvider,
-        double failureRatio,
-        TimeSpan? samplingDuration)
-        : this(
-            failureRatio,
-            samplingDuration,
-            minimumThroughput: 10,
-            breakDuration: null,
-            maxHalfOpenRequests: 3,
-            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+    /// <summary>Creates a compatibility circuit breaker backed by the supplied time provider.</summary>
+    public CircuitBreaker(TimeProvider timeProvider, double failureRatio, TimeSpan? samplingDuration)
+        : this(new CircuitBreakerOptions { FailureRatio = failureRatio, SamplingDuration = samplingDuration }, timeProvider)
     {
     }
 
-    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
-    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
-    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
-    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
-    /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
-    public CircuitBreaker(
-        TimeProvider timeProvider,
-        double failureRatio,
-        TimeSpan? samplingDuration,
-        int minimumThroughput)
-        : this(
-            failureRatio,
-            samplingDuration,
-            minimumThroughput,
-            breakDuration: null,
-            maxHalfOpenRequests: 3,
-            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+    /// <summary>Creates a compatibility circuit breaker backed by the supplied time provider.</summary>
+    public CircuitBreaker(TimeProvider timeProvider, double failureRatio, TimeSpan? samplingDuration, int minimumThroughput)
+        : this(new CircuitBreakerOptions
+        {
+            FailureRatio = failureRatio,
+            SamplingDuration = samplingDuration,
+            MinimumThroughput = minimumThroughput,
+        }, timeProvider)
     {
     }
 
-    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
-    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
-    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
-    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
-    /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
-    /// <param name="breakDuration">Duration to stay open before half-open.</param>
+    /// <summary>Creates a compatibility circuit breaker backed by the supplied time provider.</summary>
     public CircuitBreaker(
         TimeProvider timeProvider,
         double failureRatio,
         TimeSpan? samplingDuration,
         int minimumThroughput,
         TimeSpan? breakDuration)
-        : this(
-            failureRatio,
-            samplingDuration,
-            minimumThroughput,
-            breakDuration,
-            maxHalfOpenRequests: 3,
-            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+        : this(new CircuitBreakerOptions
+        {
+            FailureRatio = failureRatio,
+            SamplingDuration = samplingDuration,
+            MinimumThroughput = minimumThroughput,
+            BreakDuration = breakDuration,
+        }, timeProvider)
     {
     }
 
-    /// <summary>Creates a new circuit breaker backed by the supplied time provider.</summary>
-    /// <param name="timeProvider">Time provider used for UTC and monotonic elapsed time.</param>
-    /// <param name="failureRatio">Failure ratio threshold (0.0-1.0).</param>
-    /// <param name="samplingDuration">Window for sliding window evaluation.</param>
-    /// <param name="minimumThroughput">Minimum requests before evaluating ratio.</param>
-    /// <param name="breakDuration">Duration to stay open before half-open.</param>
-    /// <param name="maxHalfOpenRequests">Max requests in half-open state.</param>
+    /// <summary>Creates a compatibility circuit breaker backed by the supplied time provider.</summary>
     public CircuitBreaker(
         TimeProvider timeProvider,
         double failureRatio,
@@ -312,13 +307,14 @@ public class CircuitBreaker
         int minimumThroughput,
         TimeSpan? breakDuration,
         int maxHalfOpenRequests)
-        : this(
-            failureRatio,
-            samplingDuration,
-            minimumThroughput,
-            breakDuration,
-            maxHalfOpenRequests,
-            new TimeProviderCircuitBreakerTimeSource(timeProvider))
+        : this(new CircuitBreakerOptions
+        {
+            FailureRatio = failureRatio,
+            SamplingDuration = samplingDuration,
+            MinimumThroughput = minimumThroughput,
+            BreakDuration = breakDuration,
+            MaxHalfOpenRequests = maxHalfOpenRequests,
+        }, timeProvider)
     {
     }
 
@@ -503,7 +499,7 @@ public class CircuitBreaker
         if (isHalfOpenPermit && !IsCurrentHalfOpenGeneration(generation))
             return;
 
-        _window.Enqueue((_time.GetTimestamp(), true));
+        EnqueueWindowSample(isSuccess: true);
         CleanupWindow();
 
         double alpha = _ewmaFailureRate > 0.1 ? 0.5 : 0.2;
@@ -539,7 +535,7 @@ public class CircuitBreaker
         if (isHalfOpenPermit && !IsCurrentHalfOpenGeneration(generation))
             return;
 
-        _window.Enqueue((_time.GetTimestamp(), false));
+        EnqueueWindowSample(isSuccess: false);
         CleanupWindow();
         UpdateEwmaFailureRate();
         AddEarlyWarningToWindow();
@@ -567,22 +563,17 @@ public class CircuitBreaker
     {
         // Early warning: EWMA spike → pre-emptively add to window
         if (_ewmaFailureRate > _failureRatio * 1.5)
-            _window.Enqueue((_time.GetTimestamp(), false));
+            EnqueueWindowSample(isSuccess: false);
     }
 
     private void EvaluateSlidingWindow()
     {
-        int total = _window.Count;
-        if (total < _minimumThroughput)
+        var statistics = GetWindowStatistics();
+        if (statistics.Total < _minimumThroughput)
             return;
 
-        int failures = 0;
-        foreach (var (_, ok) in _window)
-            if (!ok)
-                failures++;
-
         var currentState = Volatile.Read(ref _snapshot).State;
-        if ((double)failures / total >= _failureRatio)
+        if ((double)statistics.Failures / statistics.Total >= _failureRatio)
             TransitionToOpenIfNeeded(currentState, expectedGeneration: null);
     }
 
@@ -619,7 +610,11 @@ public class CircuitBreaker
     /// <summary>Resets the circuit to Closed state and clears history.</summary>
     public void Reset()
     {
-        while (_window.TryDequeue(out _)) { }
+        lock (_windowGate)
+        {
+            while (_window.TryDequeue(out _)) { }
+        }
+
         ResetHalfOpenCounters();
         Interlocked.Exchange(ref _ewmaFailureRate, 0.0);
         UpdateSnapshot(current => current with
@@ -635,14 +630,11 @@ public class CircuitBreaker
     public double GetCurrentFailureRatio()
     {
         CleanupWindow();
-        int total = _window.Count;
-        if (total == 0)
+        var statistics = GetWindowStatistics();
+        if (statistics.Total == 0)
             return 0;
-        int failures = 0;
-        foreach (var (_, ok) in _window)
-            if (!ok)
-                failures++;
-        return (double)failures / total;
+
+        return (double)statistics.Failures / statistics.Total;
     }
 
     /// <summary>Export metrics for dashboard integration.</summary>
@@ -682,12 +674,53 @@ public class CircuitBreaker
     {
         var now = _time.GetTimestamp();
 
-        while (_window.TryPeek(out var item)
-            && _time.GetElapsedTime(item.Timestamp, now) > _samplingDuration)
+        while (true)
         {
-            _window.TryDequeue(out _);
+            (long Timestamp, bool IsSuccess) candidate;
+            lock (_windowGate)
+            {
+                if (!_window.TryPeek(out candidate))
+                    return;
+            }
+
+            if (_time.GetElapsedTime(candidate.Timestamp, now) <= _samplingDuration)
+                return;
+
+            lock (_windowGate)
+            {
+                if (!_window.TryPeek(out var current) || current != candidate)
+                    continue;
+
+                _ = _window.TryDequeue(out _);
+            }
         }
     }
+
+    private void EnqueueWindowSample(bool isSuccess)
+    {
+        var timestamp = _time.GetTimestamp();
+        lock (_windowGate)
+            _window.Enqueue((timestamp, isSuccess));
+    }
+
+    private WindowStatistics GetWindowStatistics()
+    {
+        lock (_windowGate)
+        {
+            var total = 0;
+            var failures = 0;
+            foreach (var (_, isSuccess) in _window)
+            {
+                total++;
+                if (!isSuccess)
+                    failures++;
+            }
+
+            return new WindowStatistics(total, failures);
+        }
+    }
+
+    private readonly record struct WindowStatistics(int Total, int Failures);
 
     private bool IsCurrentHalfOpenGeneration(int generation) =>
         Volatile.Read(ref _snapshot) is { State: CircuitState.HalfOpen } snapshot

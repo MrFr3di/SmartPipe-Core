@@ -456,6 +456,40 @@ public sealed class TypedPipelineLifecycleTests
     }
 
     [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task TypedPipeline_UnrequestedOperationCanceledException_IsFaulted()
+    {
+        var observer = new RecordingTerminalObserver();
+        var expected = new OperationCanceledException("source initialize cancelled unexpectedly");
+
+        var run = PipelineBuilder
+            .From(new ThrowingInitializeLifecycleSource<int>(expected))
+            .Transform(new PassThroughLifecycleTransformer<int>())
+            .WithObserver(observer)
+            .Run();
+
+        var completionException = await FluentActions
+            .Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<OperationCanceledException>();
+
+        completionException.Which.Should().BeSameAs(expected);
+        run.Completion.IsFaulted.Should().BeTrue();
+        run.Completion.IsCanceled.Should().BeFalse();
+        run.State.Should().Be(PipelineRunState.Faulted);
+
+        run.Outputs.Completion.IsFaulted.Should().BeTrue();
+        run.Outputs.Completion.IsCanceled.Should().BeFalse();
+        var outputException = await FluentActions
+            .Awaiting(() => run.Outputs.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<AggregateException>();
+        outputException.Which.InnerException.Should().BeSameAs(expected);
+
+        var faulted = observer.TerminalEvents.Should().ContainSingle()
+            .Which.Should().BeOfType<PipelineFaultedEvent>().Which;
+        faulted.Exception.Should().BeSameAs(expected);
+    }
+
+    [Fact]
     public async Task TypedPipeline_CompletionOutcome_IsConsistentWhenCancelled()
     {
         var observer = new RecordingTerminalObserver();
@@ -481,6 +515,10 @@ public sealed class TypedPipelineLifecycleTests
             .Should().ThrowAsync<OperationCanceledException>();
         await FluentActions.Awaiting(() => run.Outputs.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
             .Should().ThrowAsync<OperationCanceledException>();
+        run.Completion.IsCanceled.Should().BeTrue();
+        run.Completion.IsFaulted.Should().BeFalse();
+        run.Outputs.Completion.IsCanceled.Should().BeTrue();
+        run.Outputs.Completion.IsFaulted.Should().BeFalse();
         run.State.Should().Be(PipelineRunState.Cancelled);
         observer.TerminalEvents.Should().ContainSingle()
             .Which.Should().BeOfType<PipelineCancelledEvent>();
@@ -506,6 +544,10 @@ public sealed class TypedPipelineLifecycleTests
             .Should().ThrowAsync<OperationCanceledException>();
         await FluentActions.Awaiting(() => run.Outputs.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
             .Should().ThrowAsync<OperationCanceledException>();
+        run.Completion.IsCanceled.Should().BeTrue();
+        run.Completion.IsFaulted.Should().BeFalse();
+        run.Outputs.Completion.IsCanceled.Should().BeTrue();
+        run.Outputs.Completion.IsFaulted.Should().BeFalse();
         run.State.Should().Be(PipelineRunState.Aborted);
         observer.TerminalEvents.Should().ContainSingle()
             .Which.Should().BeOfType<PipelineCancelledEvent>();
@@ -942,8 +984,20 @@ internal sealed class TrackingLifecycleSink<T> : IPipelineSink<T>
 
 internal sealed class ThrowingInitializeLifecycleSource<T> : IPipelineSource<T>
 {
+    private readonly Exception _exception;
+
+    public ThrowingInitializeLifecycleSource()
+        : this(new InvalidOperationException("source initialize boom"))
+    {
+    }
+
+    public ThrowingInitializeLifecycleSource(Exception exception)
+    {
+        _exception = exception;
+    }
+
     public ValueTask InitializeAsync(CancellationToken ct = default) =>
-        throw new InvalidOperationException("source initialize boom");
+        throw _exception;
 
     public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
         [EnumeratorCancellation] CancellationToken ct = default)

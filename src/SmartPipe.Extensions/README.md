@@ -11,8 +11,8 @@ Ready-to-use integrations for SmartPipe.Core: file, HTTP, database, mapping, val
 | `EfCoreSelector<T>` | Entity Framework Core | Stream entities from database |
 | `DapperSelector<T>` | Dapper | High-performance SQL queries |
 | `CsvFileSource<T>` | CsvHelper | Read CSV files |
-| `JsonFileSource<T>` | System.Text.Json | Read JSON arrays and NDJSON |
-| `DeadLetterSource<T>` | System.Text.Json | Read persisted failed-item records |
+| `JsonFileSource<T>` | SmartPipe.Extensions.Json / System.Text.Json | Read JSON arrays and NDJSON |
+| `DeadLetterSource<T>` | SmartPipe.Extensions.Json / System.Text.Json | Read persisted failed-item records |
 
 `EfCoreSelector<T>` uses no-tracking queries by default for read-only pipeline
 source scenarios. Call `.WithTracking()` when returned entities must remain
@@ -29,7 +29,7 @@ connection.
 
 | Transform | Library | Description |
 |-----------|---------|-------------|
-| `JsonTransform<TIn,TOut>` | System.Text.Json | JSON serialization |
+| `JsonTransform<TIn,TOut>` | SmartPipe.Extensions.Json / System.Text.Json | JSON serialization |
 | `CsvTransform<TIn,TOut>` | CsvHelper | CSV parsing |
 | `MapsterTransform<TIn,TOut>` | Mapster | Runtime object mapping |
 | `CompressionTransform` | System.IO.Compression | Brotli/GZip compression |
@@ -44,11 +44,11 @@ connection.
 | Sink | Library | Description |
 |------|---------|-------------|
 | `LoggerSink<T>` | ILogger | Structured logging |
-| `DeadLetterSink<T>` | System.Text.Json | Persist failed items to JSON |
+| `DeadLetterSink<T>` | SmartPipe.Extensions.Json / System.Text.Json | Persist failed items to JSON |
 | `HttpSink<T>` | HttpClient + Polly | Send data to REST APIs |
 | `DbSink<T>` | Dapper | Insert into any database |
 | `CsvFileSink<T>` | CsvHelper | Write CSV files |
-| `JsonFileSink<T>` | System.Text.Json | Write JSON files |
+| `JsonFileSink<T>` | SmartPipe.Extensions.Json / System.Text.Json | Write JSON files |
 
 ## HTTP Integrations
 
@@ -104,13 +104,29 @@ token remains available.
 ## Installation
 
 ```bash
-dotnet add package SmartPipe.Extensions
+dotnet add package SmartPipe.Extensions --version 2.1.2
 ```
+
+For JSON-only integrations, prefer:
+
+```bash
+dotnet add package SmartPipe.Extensions.Json --version 2.1.2
+```
+
+## JSON Package Migration
+
+JSON file, transform, and JSON dead-letter implementations moved to
+`SmartPipe.Extensions.Json` in version 2.1.2. Public namespaces did not change.
+
+`SmartPipe.Extensions` 2.1.2 retains type forwarders and a transitive package
+dependency, so existing 2.x source and binary consumers remain compatible. New
+applications should reference `SmartPipe.Extensions.Json` directly. The bridge
+is planned for removal in SmartPipe 3.0.
 
 ## Requirements
 
 - .NET 10.0+
-- SmartPipe.Core 2.1.1 (included as dependency)
+- SmartPipe.Core 2.1.2 (included as dependency)
 - This package intentionally includes integration dependencies for the features below.
 - Individual features pull their own dependencies:
   - `HttpSelector` / `HttpSink` → Polly (via Microsoft.Extensions.Resilience)

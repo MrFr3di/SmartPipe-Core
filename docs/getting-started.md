@@ -2,6 +2,29 @@
 
 SmartPipe.Core has one runtime model: typed envelopes.
 
+## Choose the integration package
+
+```bash
+dotnet add package SmartPipe.Core
+```
+
+Use `SmartPipe.Extensions.Json` for JSON files, JSON transforms, and JSON
+dead-letter persistence:
+
+```bash
+dotnet add package SmartPipe.Extensions.Json
+```
+
+Use `SmartPipe.Extensions` for HTTP, database, CSV, mapping, resilience,
+hosting, and health-check integrations:
+
+```bash
+dotnet add package SmartPipe.Extensions
+```
+
+`SmartPipe.Extensions` forwards the JSON types for 2.x compatibility.
+Direct JSON package references are recommended for new applications.
+
 ```text
 IPipelineSource<TInput>
   -> ProcessingEnvelope<TInput>
@@ -75,16 +98,22 @@ remain sequential; cross-envelope output order is not guaranteed.
 
 ## Extensions
 
-`SmartPipe.Extensions` provides typed selectors, transforms, sinks, DI, hosting,
-and health-check integrations. Common components include:
+### SmartPipe.Extensions.Json
 
-- selectors: `HttpSelector<T>`, `JsonFileSource<T>`, `CsvFileSource<T>`,
-  `EfCoreSelector<T>`, `DapperSelector<T>`, `DeadLetterSource<T>`;
-- transforms: `JsonTransform<TInput,TOutput>`, `CsvTransform<TInput,TOutput>`,
-  `MapsterTransform<TInput,TOutput>`, `FilterTransform<T>`,
-  `ValidationTransform<T>`, `PollyResilienceTransform<T>`;
-- sinks: `LoggerSink<T>`, `HttpSink<T>`, `JsonFileSink<T>`, `CsvFileSink<T>`,
-  `DbSink<T>`, `DeadLetterSink<T>`.
+- `JsonFileSource<T>`
+- `DeadLetterSource<T>`
+- `JsonTransform<TInput,TOutput>`
+- `JsonFileSink<T>`
+- `DeadLetterSink<T>`
+
+### SmartPipe.Extensions
+
+- selectors: `HttpSelector<T>`, `CsvFileSource<T>`, `EfCoreSelector<T>`,
+  `DapperSelector<T>`;
+- transforms: `CsvTransform<TInput,TOutput>`, `MapsterTransform<TInput,TOutput>`,
+  `FilterTransform<T>`, `ValidationTransform<T>`,
+  `PollyResilienceTransform<T>`;
+- sinks: `LoggerSink<T>`, `HttpSink<T>`, `CsvFileSink<T>`, `DbSink<T>`.
 
 `MapsterTransform<TInput,TOutput>` uses Mapster runtime mapping and is not
 trim- or NativeAOT-safe. Use a hand-written mapper, a source-generated mapper,

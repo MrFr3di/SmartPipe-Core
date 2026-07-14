@@ -1,0 +1,5 @@
+# Temporary pre-publication exclusion for SmartPipe.Extensions.Json.
+# Remove after 2.1.2 is published.
+exclude = [
+  "^https://www\\.nuget\\.org/packages/SmartPipe\\.Extensions\\.Json/?$",
+]

@@ -586,7 +586,15 @@
           "Microsoft.Extensions.Http": "[10.0.8, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.8, )",
           "Microsoft.Extensions.Resilience": "[10.6.0, )",
-          "SmartPipe.Core": "[2.1.1, )"
+          "SmartPipe.Core": "[2.1.2, )",
+          "SmartPipe.Extensions.Json": "[2.1.2, )"
+        }
+      },
+      "smartpipe.extensions.json": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.8, )",
+          "SmartPipe.Core": "[2.1.2, )"
         }
       }
     }

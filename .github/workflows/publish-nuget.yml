@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      recoverable-rerun:
+        description: Allow already-published packages to be skipped when recovering a partial release
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -13,101 +20,101 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Build, test, pack and publish
+  version:
     runs-on: ubuntu-latest
-
+    outputs:
+      package-version: ${{ steps.version.outputs.package-version }}
+      artifact-name: ${{ steps.version.outputs.artifact-name }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
-      - name: Resolve package version from tag
+      - name: Require a release tag and resolve package version
         id: version
         shell: bash
         run: |
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            echo "Run this workflow against the release tag." >&2
+            exit 1
+          fi
           CORE_VERSION="$(dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo)"
+          JSON_VERSION="$(dotnet msbuild src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj -getProperty:Version -nologo)"
           EXT_VERSION="$(dotnet msbuild src/SmartPipe.Extensions/SmartPipe.Extensions.csproj -getProperty:Version -nologo)"
-          VERSION_OUTPUT="$(bash eng/validate-release-version.sh "${GITHUB_REF_NAME}" "$CORE_VERSION" "$EXT_VERSION")"
-          echo "$VERSION_OUTPUT"
-          PACKAGE_VERSION="$(echo "$VERSION_OUTPUT" | awk -F= '/^PACKAGE_VERSION=/{print $2}')"
-          BASE_VERSION="$(echo "$VERSION_OUTPUT" | awk -F= '/^BASE_VERSION=/{print $2}')"
+          VERSION_OUTPUT="$(bash eng/validate-release-version.sh "$GITHUB_REF_NAME" "$CORE_VERSION" "$JSON_VERSION" "$EXT_VERSION")"
+          PACKAGE_VERSION="$(awk -F= '/^PACKAGE_VERSION=/{print $2}' <<< "$VERSION_OUTPUT")"
+          echo "package-version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "artifact-name=nuget-packages-$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
 
-          echo "version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Publishing SmartPipe packages version: $PACKAGE_VERSION"
+  validation:
+    needs: version
+    uses: ./.github/workflows/reusable-release-validation.yml
+    permissions:
+      contents: read
+    with:
+      package-version: ${{ needs.version.outputs.package-version }}
+      artifact-name: ${{ needs.version.outputs.artifact-name }}
 
-      - name: Restore
-        run: dotnet restore SmartPipe.Core.slnx --locked-mode
+  publish:
+    needs: [version, validation]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment: nuget-production
 
-      - name: Verify tag matches project versions
-        shell: bash
-        run: |
-          CORE_VERSION="$(dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo)"
-          EXT_VERSION="$(dotnet msbuild src/SmartPipe.Extensions/SmartPipe.Extensions.csproj -getProperty:Version -nologo)"
-          bash eng/validate-release-version.sh "${GITHUB_REF_NAME}" "$CORE_VERSION" "$EXT_VERSION"
-
-      - name: Build Release
-        run: |
-          dotnet build SmartPipe.Core.slnx \
-            --configuration Release \
-            --no-restore \
-            -warnaserror \
-            /p:ContinuousIntegrationBuild=true
-
-      - name: Test Core
-        run: |
-          dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj \
-            --configuration Release \
-            --no-build \
-            --verbosity normal
-
-      - name: Test Extensions
-        run: |
-          dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj \
-            --configuration Release \
-            --no-build \
-            --verbosity normal
-
-      - name: Pack
-        run: |
-          rm -rf artifacts/packages
-          mkdir -p artifacts/packages
-
-          dotnet pack src/SmartPipe.Core/SmartPipe.Core.csproj \
-            --configuration Release \
-            --no-build \
-            --output artifacts/packages \
-            /p:PackageVersion=${{ steps.version.outputs.version }} \
-            /p:ContinuousIntegrationBuild=true
-
-          dotnet pack src/SmartPipe.Extensions/SmartPipe.Extensions.csproj \
-            --configuration Release \
-            --no-build \
-            --output artifacts/packages \
-            /p:PackageVersion=${{ steps.version.outputs.version }} \
-            /p:ContinuousIntegrationBuild=true
-
-      - name: List packages
-        run: ls -la artifacts/packages
-
-      - name: Upload package artifacts
-        uses: actions/upload-artifact@v7
+    steps:
+      - name: Download validated packages
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
-          name: nuget-packages-${{ steps.version.outputs.version }}
+          name: ${{ needs.version.outputs.artifact-name }}
           path: artifacts/packages
 
-      - name: Push packages to NuGet
+      - name: NuGet login
+        id: nuget-login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Publish packages in dependency order
+        shell: bash
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+          PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
+          RECOVERABLE_RERUN: ${{ github.event_name == 'workflow_dispatch' && inputs.recoverable-rerun }}
         run: |
-          dotnet nuget push "artifacts/packages/*.nupkg" \
-            --api-key "$NUGET_API_KEY" \
-            --source https://api.nuget.org/v3/index.json \
-            --skip-duplicate
+          skip_duplicate=()
+          if [[ "$RECOVERABLE_RERUN" == "true" ]]; then
+            skip_duplicate=(--skip-duplicate)
+          fi
+          dotnet nuget push "artifacts/packages/SmartPipe.Core.${PACKAGE_VERSION}.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json "${skip_duplicate[@]}"
+          dotnet nuget push "artifacts/packages/SmartPipe.Extensions.Json.${PACKAGE_VERSION}.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json "${skip_duplicate[@]}"
+          dotnet nuget push "artifacts/packages/SmartPipe.Extensions.${PACKAGE_VERSION}.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json "${skip_duplicate[@]}"
+
+      - name: Verify published package versions are available
+        shell: bash
+        env:
+          PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
+        run: |
+          for package in smartpipe.core smartpipe.extensions.json smartpipe.extensions; do
+            url="https://api.nuget.org/v3-flatcontainer/${package}/${PACKAGE_VERSION}/${package}.${PACKAGE_VERSION}.nupkg"
+            available=false
+            for attempt in {1..12}; do
+              if curl --fail --silent --show-error --head "$url" >/dev/null; then
+                available=true
+                break
+              fi
+              echo "Waiting for $package $PACKAGE_VERSION to become available (attempt $attempt/12)."
+              sleep 10
+            done
+            if [[ "$available" != true ]]; then
+              echo "$package $PACKAGE_VERSION is not available from NuGet after publication." >&2
+              exit 1
+            fi
+          done

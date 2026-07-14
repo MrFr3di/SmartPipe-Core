@@ -65,8 +65,14 @@ and `ToFactory` throw on instance pipelines; use `.Transform(instance)` and
 
 ## Extensions
 
-`SmartPipe.Extensions` provides typed selectors, transforms, sinks, DI
-registration, hosted service integration, and health-check support.
+`SmartPipe.Extensions.Json` owns `JsonFileSource<T>`, `DeadLetterSource<T>`,
+`JsonFileSink<T>`, `DeadLetterSink<T>`, `DeadLetterWriteFailureMode`,
+`DeadLetterWriteException`, and `JsonTransform<TInput,TOutput>`.
+
+`SmartPipe.Extensions` provides the remaining typed selectors, transforms,
+sinks, DI registration, hosted service integration, and health-check support.
+Version 2.1.2 forwards the JSON types to the dedicated package for 2.x
+compatibility; namespaces and public signatures are unchanged.
 
 - Factory-created `PipelineRun<TOutput>` instances preserve runtime controls, structured drain, and metrics while adding DI scope lifetime management.
 
@@ -94,6 +100,10 @@ Important selector and streaming contracts:
   and roll back in-process write exceptions by truncating to that checkpoint
   while keeping the batch buffered for retry. This is not a crash-atomicity
   guarantee.
+- Options-based JSON file APIs select `Array`, `Ndjson`, or `BatchJsonLines`;
+  `Auto` is source-only and collection-valued payloads require an explicit
+  format. Reads are strict by default, use a maximum depth of 64, and cap
+  independently framed records at 16 MiB unless configured otherwise.
 - `ChannelMerge.Merge(first, second, options, cancellationToken)` is the
   cancellation-aware overload for bounded or backpressure-sensitive merges. The
   compatibility overload without a cancellation token remains available.
@@ -103,6 +113,9 @@ Important selector and streaming contracts:
   backoff, and throws `DeadLetterWriteException` by default when attempts are
   exhausted. Set `FailureMode = DeadLetterWriteFailureMode.LogAndDrop` only for
   explicit drop-on-failure behavior. `FlushEachWrite` defaults to `true`.
+- Dead-letter writes serialize once through `IDeadLetterSerializer<T>` before
+  retry. `MayContainPartialRecord` identifies uncertain non-seekable failures,
+  which are not retried.
 
 ## Secret Scanning
 

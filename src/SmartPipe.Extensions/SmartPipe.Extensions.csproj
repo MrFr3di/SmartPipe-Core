@@ -6,7 +6,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>SmartPipe.Extensions</PackageId>
     <Authors>SmartPipe</Authors>
-    <Description>Extensions for SmartPipe.Core integrations including HTTP, EF Core, Dapper, JSON, CSV, Mapster, compression, resilience, validation, and dead-letter components.</Description>
+    <Description>Integrations for SmartPipe.Core including HTTP, EF Core, Dapper, CSV, Mapster, resilience, hosting, and health checks. Version 2.1.2 retains compatibility forwarding for JSON integrations moved to SmartPipe.Extensions.Json.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageIcon>icon.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -20,7 +20,7 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EnablePackageValidation>true</EnablePackageValidation>
-    <PackageValidationBaselineVersion>2.1.0</PackageValidationBaselineVersion>
+    <PackageValidationBaselineVersion>2.1.1</PackageValidationBaselineVersion>
     <ApiCompatEnableRuleCannotChangeParameterName>true</ApiCompatEnableRuleCannotChangeParameterName>
     <EnableStrictModeForCompatibleTfms>true</EnableStrictModeForCompatibleTfms>
   </PropertyGroup>
@@ -33,6 +33,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SmartPipe.Core\SmartPipe.Core.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.Json\SmartPipe.Extensions.Json.csproj" />
   </ItemGroup>
 
   <ItemGroup>

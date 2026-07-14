@@ -1,5 +1,79 @@
 # Changelog
 
+## [2.1.2] — Unreleased
+
+Patch release that separates JSON integrations into a dedicated package while
+preserving the SmartPipe.Extensions 2.x compatibility contract.
+
+### Added
+
+- **Explicit JSON layouts** — options-based APIs add root-array, NDJSON, and
+  batch-JSON-lines modes while preserving the 2.1.1 batch default.
+- **Streaming JSON contracts** — sources stream root arrays and multiple
+  top-level values, enforce strict null handling and depth limits on both
+  reflection and source-generated paths, and expose complete source-generated
+  metadata paths. Line-framed records and unframed documents have separate
+  encoded-size limits.
+- **Framed recovery** — `SkipAndLog` is available only at safe line boundaries
+  (`Ndjson` and `BatchJsonLines` records); root arrays and other unframed
+  document streams remain throw-only.
+- **Append framing** — JSON and dead-letter sinks preserve an existing partial
+  final row and insert a missing LF before the next appended record.
+- **Dead-letter write integrity** — the sink serializes once through Core's
+  `IDeadLetterSerializer<T>`, uses deterministic retry timing, idempotent
+  lifecycle state, and requires readable, seekable append destinations so a
+  failed record can roll back to its checkpoint.
+- **Sink disposal coordination** — concurrent and reentrant `DisposeAsync`
+  callers share one completion task, including disposal failures.
+
+- **SmartPipe.Extensions.Json** — dedicated package for System.Text.Json file
+  sources and sinks, transforms, and JSON dead-letter persistence.
+- **JSON package validation** — dedicated unit tests, direct-package and
+  Extensions-only consumers, a binary consumer compiled against 2.1.1, and
+  trimming/NativeAOT package smoke coverage.
+- **Migration documentation** — package selection, source-generated metadata,
+  file-format, and 3.0 bridge-removal guidance.
+
+### Changed
+
+- **JSON implementation ownership** — `JsonFileSource<T>`,
+  `DeadLetterSource<T>`, `JsonFileSink<T>`, `DeadLetterSink<T>`,
+  `DeadLetterWriteFailureMode`, `DeadLetterWriteException`, and
+  `JsonTransform<TInput,TOutput>` now live in `SmartPipe.Extensions.Json`.
+- **SmartPipe.Extensions compatibility bridge** — the broad package retains
+  type forwarders and a transitive JSON dependency throughout the 2.x line.
+- **JSON input limit contract clarified** — the unframed input cap is renamed
+  from `MaxDocumentSizeBytes` to `MaxUnframedInputSizeBytes` (default 256 MiB).
+  Framed formats (`Ndjson`, `BatchJsonLines`) keep an independent per-record cap
+  (`MaxRecordSizeBytes`); root arrays and auto-detected legacy top-level value
+  sequences use the shared unframed input cap. `MaxDepth` now applies uniformly
+  to reflection constructors, source-generated constructors, the framed-record
+  validator, the root-array validator, and the legacy unframed stream. A
+  separate per-top-level-value reader (`TopLevelJsonValueReader`) is intentionally
+  deferred to 2.2.
+- **Release train** — Core, JSON Extensions, and Extensions use version 2.1.2;
+  validation and tag publishing cover all three packages in dependency order.
+- **Runtime time semantics** — default `CircuitBreaker` construction uses
+  `TimeProvider.System` monotonic timestamps. The options-based constructor
+  requires an explicit, non-null `TimeProvider`; the six `TimeProvider`-first constructors published
+  in 2.1.1 remain as compatibility overloads. Buffered observer write timeouts
+  use the runtime provider when `TimeProviderPipelineClock` is configured.
+
+### Compatibility
+
+- Existing JSON namespaces are unchanged. `SmartPipe.Extensions` 2.1.2 keeps a
+  dependency on `SmartPipe.Extensions.Json` and type-forwards the JSON types
+  that existed in 2.1.1, preserving source and binary resolution for those
+  consumers.
+- 2.1.2 intentionally adds format, limit, recovery, open-mode, sink, and
+  circuit-breaker options/APIs. Append-capable injected streams now fail fast
+  unless they are readable, seekable, and writable; append framing and shared
+  disposal can change exception timing and lifecycle observations.
+- `JsonFileSink<T>` output is documented as batch JSON Lines: one JSON array
+  per flushed line, not conventional one-object-per-line NDJSON.
+- `JsonLinesDeadLetterSerializer<T>` remains in `SmartPipe.Core`.
+- Newtonsoft.Json is not introduced into the package graph.
+
 ## [2.1.1] — 2026-07-08
 
 Patch release for post-review correctness, compatibility, CI, and documentation

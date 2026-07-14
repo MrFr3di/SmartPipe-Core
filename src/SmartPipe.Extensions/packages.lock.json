@@ -312,6 +312,13 @@
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.8, )"
         }
+      },
+      "smartpipe.extensions.json": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.8, )",
+          "SmartPipe.Core": "[2.1.2, )"
+        }
       }
     }
   }

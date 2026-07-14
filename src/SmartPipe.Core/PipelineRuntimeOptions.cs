@@ -117,7 +117,10 @@ public sealed class ObserverDispatchOptions
     /// <summary>Gets the best-effort wait duration before an observer event is counted as dropped.</summary>
     public TimeSpan BestEffortWriteTimeout { get; init; } = TimeSpan.FromMilliseconds(100);
 
-    /// <summary>Gets a value indicating whether buffered dispatch should try to emit observer-drop events.</summary>
+    /// <summary>
+    /// Gets a value indicating whether buffered dispatch should emit best-effort, coalesced
+    /// observer-drop diagnostics. Drop callbacks and metrics remain exact for every dropped event.
+    /// </summary>
     public bool EmitDroppedObserverEvents { get; init; } = true;
 
     internal void Validate()

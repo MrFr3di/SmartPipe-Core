@@ -806,6 +806,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly SmartPipeMetricsRecorder _metrics;
     private readonly PipelineLifecycleController _lifecycle = new();
     private readonly IPipelineObserverDispatcher _observerDispatcher;
+    private readonly TaskCompletionSource<Task> _publicCompletionSource =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly Task _publicCompletion;
     private readonly CancellationTokenSource _cts;
     private readonly CancellationTokenSource _sourceCts;
     private readonly CancellationTokenSource _processingCts;
@@ -823,6 +826,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private int _drainRequested;
     private int _stopAcceptingRequested;
     private int _sourceStopReason;
+    private int _publicCancellationPending;
 
     public TypedPipelineExecutor(
         PipelineRuntime runtime,
@@ -831,6 +835,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         CancellationToken ct
     )
     {
+        _publicCompletion = _publicCompletionSource.Task.Unwrap();
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _spec = spec ?? throw new ArgumentNullException(nameof(spec));
         _sink = sink;
@@ -882,6 +887,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _spec.Observers,
             _options.ObserverDispatch,
             _clock,
+            _time,
             OnObserverEventDropped
         );
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -934,7 +940,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
         return new PipelineRun<TOutput>(
             _outputs.Reader,
-            runTask,
+            _publicCompletion,
             () => _lifecycle.State,
             CancelAsync,
             DrainAsync,
@@ -1123,7 +1129,20 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
     }
 
-    private async Task RunAsync()
+    private Task RunAsync()
+    {
+        var runTask = RunCoreAsync();
+        _ = runTask.ContinueWith(
+            static (task, state) =>
+                ((TypedPipelineExecutor<TInput, TOutput>)state!).CompleteUnexpectedPublicRun(task),
+            this,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+        return runTask;
+    }
+
+    private async Task RunCoreAsync()
     {
         using var activity = SmartPipeActivitySource.Source.StartActivity("Pipeline.Run", ActivityKind.Internal);
         activity?.SetTag("smartpipe.pipeline_id", _spec.PipelineId);
@@ -1183,7 +1202,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         var outcome = DetermineTerminalOutcome(primary, finalizationErrors);
 
         _lifecycle.MarkTerminal(outcome.State);
-        CompleteOutputs(outcome.Exception);
+        CompleteOutputs(outcome);
 
         // Terminal observer delivery and dispatcher teardown happen after the
         // public state/output outcome is published. They are cleanup diagnostics
@@ -1195,6 +1214,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         ]).ConfigureAwait(false);
 
         _sinkExecutor.Dispose();
+        CompletePublicRun(outcome);
         outcome.CompletionError?.Throw();
     }
 
@@ -1206,7 +1226,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         var completionError = CaptureTerminalException(primary, exception, componentCleanupErrors);
         var hasCleanupError = componentCleanupErrors.Count != 0;
         if (primary?.SourceException is not null
-            && primary.SourceException is not OperationCanceledException)
+            && (primary.SourceException is not OperationCanceledException
+                || !_cts.IsCancellationRequested))
         {
             return new TerminalOutcome(
                 PipelineRunState.Faulted,
@@ -1247,6 +1268,61 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         return new TerminalOutcome(PipelineRunState.Completed, null);
     }
 
+    private void CompletePublicRun(TerminalOutcome outcome)
+    {
+        switch (outcome.State)
+        {
+            case PipelineRunState.Completed:
+                _publicCompletionSource.TrySetResult(Task.CompletedTask);
+                break;
+            case PipelineRunState.Cancelled:
+            case PipelineRunState.Aborted:
+                Volatile.Write(ref _publicCancellationPending, 1);
+                break;
+            case PipelineRunState.Faulted:
+                _publicCompletionSource.TrySetResult(Task.FromException(
+                    outcome.Exception
+                    ?? new InvalidOperationException("Faulted pipeline run has no completion exception.")));
+                break;
+            default:
+                _publicCompletionSource.TrySetResult(Task.FromException(
+                    new InvalidOperationException($"Unsupported terminal state '{outcome.State}'.")));
+                break;
+        }
+    }
+
+    private void CompleteUnexpectedPublicRun(Task runTask)
+    {
+        if (_publicCompletionSource.Task.IsCompleted)
+            return;
+
+        if (Interlocked.Exchange(ref _publicCancellationPending, 0) != 0
+            && runTask.IsCanceled)
+        {
+            _publicCompletionSource.TrySetResult(runTask);
+            return;
+        }
+
+        if (runTask.Exception is { } exception)
+        {
+            var completion = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            completion.SetException(exception.InnerExceptions);
+            _publicCompletionSource.TrySetResult(completion.Task);
+            return;
+        }
+
+        if (runTask.IsCanceled)
+        {
+            _publicCompletionSource.TrySetResult(
+                Task.FromException(new TaskCanceledException(runTask)));
+            return;
+        }
+
+        _publicCompletionSource.TrySetResult(Task.FromException(
+            new InvalidOperationException("Pipeline run completed without publishing a terminal outcome.")));
+    }
+
     private static ExceptionDispatchInfo? CaptureTerminalException(
         ExceptionDispatchInfo? primary,
         Exception? exception,
@@ -1284,10 +1360,17 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         return new AggregateException(errors);
     }
 
-    private void CompleteOutputs(Exception? exception)
+    private void CompleteOutputs(TerminalOutcome outcome)
     {
+        var exception = outcome.Exception;
         if (exception is null)
             _outputs.Writer.TryComplete();
+        else if (outcome.State == PipelineRunState.Faulted
+            && exception is OperationCanceledException)
+        {
+            _outputs.Writer.TryComplete(
+                new AggregateException("Pipeline faulted with an unrequested cancellation exception.", exception));
+        }
         else
             _outputs.Writer.TryComplete(exception);
     }

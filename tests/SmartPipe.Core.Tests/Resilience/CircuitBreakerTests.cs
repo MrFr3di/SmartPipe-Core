@@ -9,6 +9,138 @@ namespace SmartPipe.Core.Tests.Resilience;
 public class CircuitBreakerTests
 {
     [Fact]
+    public void CircuitBreaker_OptionsConstructor_ValidatesNull()
+    {
+        var act = () => new CircuitBreaker((CircuitBreakerOptions)null!, TimeProvider.System);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
+    }
+
+    [Fact]
+    public void CircuitBreaker_OptionsConstructor_ValidatesTimeProviderNull()
+    {
+        var act = () => new CircuitBreaker(new CircuitBreakerOptions(), null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("timeProvider");
+    }
+
+    [Fact]
+    public void CircuitBreaker_BareNull_ResolvesToPublishedTimeProviderConstructor()
+    {
+        var act = () => new CircuitBreaker(null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("timeProvider");
+    }
+
+    [Fact]
+    public void CircuitBreaker_OptionsDefaults_MatchLegacyDefaults()
+    {
+        var options = new CircuitBreakerOptions();
+
+        options.FailureRatio.Should().Be(0.5);
+        options.SamplingDuration.Should().BeNull();
+        options.MinimumThroughput.Should().Be(10);
+        options.BreakDuration.Should().BeNull();
+        options.MaxHalfOpenRequests.Should().Be(3);
+    }
+
+    [Fact]
+    public void CircuitBreaker_OptionsConstructor_HasSingleNewPublicShape()
+    {
+        var overloads = typeof(CircuitBreaker).GetConstructors()
+            .Where(constructor => constructor.GetParameters().FirstOrDefault()?.ParameterType == typeof(CircuitBreakerOptions));
+
+        overloads.Should().ContainSingle();
+        overloads.Single().GetParameters().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void CircuitBreaker_PublishedTimeProviderConstructors_RemainAvailable()
+    {
+        var parameterTypes = typeof(CircuitBreaker).GetConstructors()
+            .Select(constructor => constructor.GetParameters().Select(parameter => parameter.ParameterType).ToArray())
+            .ToArray();
+
+        parameterTypes.Any(types => types.SequenceEqual(new[] { typeof(TimeProvider) })).Should().BeTrue();
+        parameterTypes.Any(types => types.SequenceEqual(new[] { typeof(TimeProvider), typeof(double) })).Should().BeTrue();
+        parameterTypes.Any(types => types.SequenceEqual(new[] { typeof(TimeProvider), typeof(double), typeof(TimeSpan?) })).Should().BeTrue();
+        parameterTypes.Any(types => types.SequenceEqual(new[] { typeof(TimeProvider), typeof(double), typeof(TimeSpan?), typeof(int) })).Should().BeTrue();
+        parameterTypes.Any(types => types.SequenceEqual(new[] { typeof(TimeProvider), typeof(double), typeof(TimeSpan?), typeof(int), typeof(TimeSpan?) })).Should().BeTrue();
+        parameterTypes.Any(types => types.SequenceEqual(new[] { typeof(TimeProvider), typeof(double), typeof(TimeSpan?), typeof(int), typeof(TimeSpan?), typeof(int) })).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CircuitBreaker_PublishedTimeProviderConstructor_UsesMonotonicElapsedTime()
+    {
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var breaker = new CircuitBreaker(timeProvider, 0.5, null, 1, TimeSpan.FromSeconds(10), 1);
+        breaker.RecordFailure();
+
+        timeProvider.JumpUtc(TimeSpan.FromDays(-1));
+        timeProvider.AdvanceTimestamp(TimeSpan.FromSeconds(11));
+
+        breaker.AcquirePermit().IsAllowed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void CircuitBreaker_DefaultTimeSource_UsesMonotonicTimestamp()
+    {
+        var breaker = new CircuitBreaker();
+        var field = typeof(CircuitBreaker).GetField("_time", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        var source = field.GetValue(breaker).Should().BeOfType<TimeProviderCircuitBreakerTimeSource>().Subject;
+        var providerField = typeof(TimeProviderCircuitBreakerTimeSource)
+            .GetField("_timeProvider", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        providerField.GetValue(source).Should().BeSameAs(TimeProvider.System);
+    }
+
+    [Fact]
+    public void CircuitBreaker_LegacyClockConstructor_RemainsCompatible()
+    {
+        var clock = new MutableManualClock(new DateTime(2026, 7, 12, 10, 0, 0, DateTimeKind.Utc));
+        var breaker = new CircuitBreaker(minimumThroughput: 1, breakDuration: TimeSpan.FromSeconds(10), clock: clock);
+        breaker.RecordFailure();
+
+        clock.Advance(TimeSpan.FromSeconds(11));
+
+        breaker.AcquirePermit().IsAllowed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void CircuitBreaker_SystemUtcJumpBackward_DoesNotExtendBreakDuration()
+    {
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var breaker = CreateTimeProviderBreaker(timeProvider);
+        breaker.RecordFailure();
+
+        timeProvider.JumpUtc(TimeSpan.FromDays(-1));
+        timeProvider.AdvanceTimestamp(TimeSpan.FromSeconds(11));
+
+        breaker.AcquirePermit().IsAllowed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void CircuitBreaker_SystemUtcJumpForward_DoesNotPrematurelyHalfOpen()
+    {
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var breaker = CreateTimeProviderBreaker(timeProvider);
+        breaker.RecordFailure();
+
+        timeProvider.JumpUtc(TimeSpan.FromDays(1));
+
+        breaker.AcquirePermit().IsAllowed.Should().BeFalse();
+    }
+
+    private static CircuitBreaker CreateTimeProviderBreaker(TimeProvider timeProvider) =>
+        new(new CircuitBreakerOptions
+        {
+            MinimumThroughput = 1,
+            BreakDuration = TimeSpan.FromSeconds(10),
+            MaxHalfOpenRequests = 1,
+        }, timeProvider);
+
+    [Fact]
     public void InitialState_ShouldBeClosed()
     {
         var cb = new CircuitBreaker();
@@ -534,13 +666,13 @@ public class CircuitBreakerTests
     {
         var timeProvider = new ManualTimeProvider(
             new DateTimeOffset(2026, 6, 22, 10, 0, 0, TimeSpan.Zero));
-        var cb = new CircuitBreaker(
-            timeProvider,
-            failureRatio: 0.5,
-            samplingDuration: null,
-            minimumThroughput: 1,
-            breakDuration: TimeSpan.FromSeconds(10),
-            maxHalfOpenRequests: 1);
+        var cb = new CircuitBreaker(new CircuitBreakerOptions
+        {
+            FailureRatio = 0.5,
+            MinimumThroughput = 1,
+            BreakDuration = TimeSpan.FromSeconds(10),
+            MaxHalfOpenRequests = 1,
+        }, timeProvider);
 
         cb.RecordFailure();
         cb.State.Should().Be(CircuitState.Open);
@@ -562,13 +694,14 @@ public class CircuitBreakerTests
     {
         var timeProvider = new ManualTimeProvider(
             new DateTimeOffset(2026, 6, 22, 10, 0, 0, TimeSpan.Zero));
-        var cb = new CircuitBreaker(
-            timeProvider,
-            failureRatio: 0.5,
-            samplingDuration: TimeSpan.FromSeconds(10),
-            minimumThroughput: 2,
-            breakDuration: TimeSpan.FromMinutes(1),
-            maxHalfOpenRequests: 1);
+        var cb = new CircuitBreaker(new CircuitBreakerOptions
+        {
+            FailureRatio = 0.5,
+            SamplingDuration = TimeSpan.FromSeconds(10),
+            MinimumThroughput = 2,
+            BreakDuration = TimeSpan.FromMinutes(1),
+            MaxHalfOpenRequests = 1,
+        }, timeProvider);
 
         cb.RecordFailure();
         cb.State.Should().Be(CircuitState.Closed);
@@ -656,6 +789,31 @@ public class CircuitBreakerTests
         InvokeCleanupWindow(cb);
 
         window.ToArray().Should().Equal(current1, current2);
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public void CircuitBreaker_CleanupWindow_InterleavedExpiredHead_DoesNotRemoveFreshSample()
+    {
+        var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
+        var timeSource = new ReentrantCleanupTimeSource(now.Ticks);
+        var cb = new CircuitBreaker(
+            failureRatio: 0.5,
+            samplingDuration: TimeSpan.FromMinutes(1),
+            minimumThroughput: 1,
+            breakDuration: TimeSpan.FromSeconds(30),
+            maxHalfOpenRequests: 1,
+            timeSource);
+        timeSource.Attach(cb);
+        var window = GetWindow(cb);
+        var expired = (now.AddMinutes(-2).Ticks, false);
+        var fresh = (now.AddSeconds(-5).Ticks, true);
+        window.Enqueue(expired);
+        window.Enqueue(fresh);
+
+        InvokeCleanupWindow(cb);
+
+        window.ToArray().Should().Equal(fresh);
     }
 
     private readonly ITestOutputHelper _output;
@@ -956,6 +1114,35 @@ public class CircuitBreakerTests
         public void AdvanceTimestamp(TimeSpan duration)
         {
             Interlocked.Add(ref _timestamp, duration.Ticks);
+        }
+    }
+
+    private sealed class ReentrantCleanupTimeSource : ICircuitBreakerTimeSource
+    {
+        private readonly long _now;
+        private CircuitBreaker? _breaker;
+        private int _reentered;
+
+        public ReentrantCleanupTimeSource(long now)
+        {
+            _now = now;
+        }
+
+        public DateTime UtcNow => new(_now, DateTimeKind.Utc);
+
+        public long GetTimestamp() => _now;
+
+        public TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp)
+        {
+            if (Interlocked.Exchange(ref _reentered, 1) == 0)
+                InvokeCleanupWindow(_breaker ?? throw new InvalidOperationException("Circuit breaker was not attached."));
+
+            return TimeSpan.FromTicks(endingTimestamp - startingTimestamp);
+        }
+
+        public void Attach(CircuitBreaker breaker)
+        {
+            _breaker = breaker;
         }
     }
 }
