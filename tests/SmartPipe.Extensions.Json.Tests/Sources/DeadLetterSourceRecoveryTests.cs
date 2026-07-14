@@ -201,6 +201,45 @@ public sealed class DeadLetterSourceRecoveryTests
     }
 
     [Fact]
+    public async Task DeadLetterSource_ExplicitNdjson_SingleElementRootArrayIsInvalid()
+    {
+        var path = await WriteAsync("[{}]\n");
+        try
+        {
+            var source = new DeadLetterSource<string>(
+                path,
+                new SingleSerializer(),
+                new() { Format = JsonFileFormat.Ndjson });
+
+            await Assert.ThrowsAsync<JsonException>(async () => await CollectAsync(source));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task DeadLetterSource_ExplicitNdjson_SkipAndLogSkipsRootArray()
+    {
+        var logger = new CapturingLogger<DeadLetterSource<string>>();
+        var path = await WriteAsync("[{}]\n{}\n");
+        try
+        {
+            var source = new DeadLetterSource<string>(
+                path,
+                new SingleSerializer(),
+                new()
+                {
+                    Format = JsonFileFormat.Ndjson,
+                    InvalidRecordBehavior = InvalidJsonRecordBehavior.SkipAndLog,
+                },
+                logger);
+
+            Assert.Single(await CollectAsync(source));
+            Assert.Single(logger.Messages);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public async Task LegacyValueTypeInfo_ExplicitArray_NonArrayInput_Throws()
     {
         var path = await WriteAsync(Serialize("one", 1));

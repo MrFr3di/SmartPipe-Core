@@ -158,17 +158,17 @@ public sealed class JsonFileSourceLimitTests
     [Fact]
     public async Task LegacyTopLevelSequence_TotalAboveLimit_Throws()
     {
-        var path = await WriteTempAsync("[1,2]");
+        var path = await WriteTempAsync("1 2");
         try
         {
             var source = new JsonFileSource<int>(path, new JsonFileSourceOptions
             {
                 Format = JsonFileFormat.Auto,
-                MaxUnframedInputSizeBytes = 4,
+                MaxUnframedInputSizeBytes = 2,
             });
             var exception = await Assert.ThrowsAsync<JsonException>(() => ReadAllAsync(source));
             Assert.Contains(path, exception.Message, StringComparison.Ordinal);
-            Assert.Contains("configured 4-byte limit", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("configured 2-byte limit", exception.Message, StringComparison.Ordinal);
         }
         finally { File.Delete(path); }
     }

@@ -58,7 +58,7 @@ internal sealed class DeadLetterRecordReader<T>
         long recordIndex,
         CancellationToken ct)
     {
-        JsonRecordValidator.Validate(bytes, maxDepth, path, recordIndex);
+        JsonRecordValidator.ValidateObject(bytes, maxDepth, path, recordIndex);
         await using var recordStream = new MemoryStream(bytes, writable: false);
         await using var enumerator = serializer.ReadAsync(recordStream, ct).GetAsyncEnumerator(ct);
         return await EnsureSingleEnvelopeAsync(enumerator, recordIndex, path, ct).ConfigureAwait(false);

@@ -167,7 +167,9 @@ public sealed class ObserverDispatcherTests
         await dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None);
         await observer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
+        await dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None);
         var blockedEmit = dispatcher.EmitAsync(NewStartedEvent(), CancellationToken.None).AsTask();
+        blockedEmit.IsCompleted.Should().BeFalse();
         var dispose = dispatcher.DisposeAsync().AsTask();
 
         observer.Release();

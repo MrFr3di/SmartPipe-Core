@@ -48,6 +48,17 @@ internal sealed class JsonUnframedInputLimitStream : Stream
         return read;
     }
 
+    public override async Task<int> ReadAsync(
+        byte[] buffer,
+        int offset,
+        int count,
+        CancellationToken cancellationToken)
+    {
+        var read = await _inner.ReadAsync(buffer, offset, count, cancellationToken).ConfigureAwait(false);
+        Count(read);
+        return read;
+    }
+
     private void Count(int read)
     {
         _bytesRead += read;
