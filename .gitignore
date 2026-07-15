@@ -3,6 +3,10 @@
 **/obj/
 **/artifacts/
 **/nuget
+!eng/SmartPipe.RepositoryChecks/NuGet/
+!eng/SmartPipe.RepositoryChecks/NuGet/**
+!tests/SmartPipe.RepositoryChecks.Tests/NuGet/
+!tests/SmartPipe.RepositoryChecks.Tests/NuGet/**
 
 # BenchmarkDotNet
 **/BenchmarkDotNet.Artifacts/
