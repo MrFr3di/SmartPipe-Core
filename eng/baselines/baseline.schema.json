@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MrFr3di/SmartPipe-Core/eng/baselines/baseline.schema.json",
+  "title": "SmartPipe reproducible baseline manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "baselineName",
+    "targetRelease",
+    "repository",
+    "packages",
+    "publicApi",
+    "packageAssets",
+    "packageDependencies",
+    "repositoryDependencies"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "baselineName": { "type": "string", "minLength": 1 },
+    "targetRelease": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "repository": { "$ref": "#/$defs/repository" },
+    "packages": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/package" }
+    },
+    "publicApi": { "$ref": "#/$defs/snapshot" },
+    "packageAssets": { "$ref": "#/$defs/snapshot" },
+    "packageDependencies": { "$ref": "#/$defs/snapshot" },
+    "repositoryDependencies": { "$ref": "#/$defs/snapshot" }
+  },
+  "$defs": {
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fullName", "defaultBranch", "commitSha", "sdkVersion", "solutionPath", "requiredWorkflows"],
+      "properties": {
+        "fullName": { "type": "string", "minLength": 1 },
+        "defaultBranch": { "type": "string", "minLength": 1 },
+        "commitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "sdkVersion": { "type": "string", "minLength": 1 },
+        "solutionPath": { "$ref": "#/$defs/relativePath" },
+        "requiredWorkflows": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/workflow" }
+        }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "runId", "url", "conclusion"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "runId": { "type": "integer", "minimum": 1 },
+        "url": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "conclusion": { "type": "string", "minLength": 1 }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "source", "fileName", "sha256", "requireRepositorySignature"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "fileName": { "type": "string", "pattern": "^[^/\\\\]+\\.nupkg$" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "requireRepositorySignature": { "type": "boolean" }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$)).+$" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "relativePath": {
+      "type": "string",
+      "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$)).+$"
+    }
+  }
+}
