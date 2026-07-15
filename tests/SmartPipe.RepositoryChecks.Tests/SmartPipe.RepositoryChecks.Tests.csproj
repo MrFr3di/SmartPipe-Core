@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj" />
+    <ProjectReference Include="..\SmartPipe.RepositoryChecks.ProcessFixture\SmartPipe.RepositoryChecks.ProcessFixture.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>

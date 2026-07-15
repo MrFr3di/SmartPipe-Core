@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Net;
 using SmartPipe.RepositoryChecks.Infrastructure;
 
@@ -20,23 +21,32 @@ internal interface INuGetRetryClock
     Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken);
 }
 
+internal interface INuGetPartialPathProvider
+{
+    string GetCandidatePath(string finalPath);
+}
+
 internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
 {
     public const long DefaultMaxPackageSizeBytes = 100L * 1024 * 1024;
 
     private const int MaximumAttempts = 3;
     private static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromSeconds(30);
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> PublicationGates =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private readonly HttpClient _httpClient;
     private readonly INuGetServiceIndexClient _serviceIndexClient;
     private readonly INuGetRetryClock _retryClock;
     private readonly long _maxPackageSizeBytes;
+    private readonly INuGetPartialPathProvider _partialPathProvider;
 
     public NuGetPackageFetcher(
         HttpClient httpClient,
         INuGetServiceIndexClient serviceIndexClient,
         INuGetRetryClock? retryClock = null,
-        long maxPackageSizeBytes = DefaultMaxPackageSizeBytes)
+        long maxPackageSizeBytes = DefaultMaxPackageSizeBytes,
+        INuGetPartialPathProvider? partialPathProvider = null)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(serviceIndexClient);
@@ -46,6 +56,7 @@ internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
         _serviceIndexClient = serviceIndexClient;
         _retryClock = retryClock ?? new SystemNuGetRetryClock();
         _maxPackageSizeBytes = maxPackageSizeBytes;
+        _partialPathProvider = partialPathProvider ?? new UniquePartialPathProvider();
     }
 
     public async Task<string> FetchAsync(
@@ -54,20 +65,24 @@ internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
         string destinationDirectory,
         CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(version);
-        ArgumentException.ThrowIfNullOrWhiteSpace(destinationDirectory);
+        ValidateIdentity(packageId, version);
+        var destinationFullPath = GetCanonicalDestinationPath(destinationDirectory);
+        var normalizedPackageId = packageId.ToLowerInvariant();
+        var normalizedVersion = version.ToLowerInvariant();
+        var finalPath = Path.GetFullPath(Path.Combine(
+            destinationFullPath,
+            $"{normalizedPackageId}.{normalizedVersion}.nupkg"));
+        EnsureContained(destinationFullPath, finalPath);
+        if (File.Exists(finalPath))
+        {
+            return finalPath;
+        }
 
-        Directory.CreateDirectory(destinationDirectory);
+        Directory.CreateDirectory(destinationFullPath);
         var packageBaseAddress = await _serviceIndexClient
             .GetPackageBaseAddressAsync(cancellationToken)
             .ConfigureAwait(false);
         var packageUri = BuildPackageUri(packageBaseAddress, packageId, version);
-        var normalizedPackageId = packageId.ToLowerInvariant();
-        var normalizedVersion = version.ToLowerInvariant();
-        var finalPath = Path.Combine(
-            destinationDirectory,
-            $"{normalizedPackageId}.{normalizedVersion}.nupkg");
 
         for (var attempt = 1; attempt <= MaximumAttempts; attempt++)
         {
@@ -92,6 +107,7 @@ internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
                     if (IsRetryable(response.StatusCode) && attempt < MaximumAttempts)
                     {
                         var delay = GetRetryDelay(response, attempt);
+                        response.Dispose();
                         await _retryClock.DelayAsync(delay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
@@ -117,8 +133,7 @@ internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
     internal static Uri BuildPackageUri(Uri packageBaseAddress, string packageId, string version)
     {
         ArgumentNullException.ThrowIfNull(packageBaseAddress);
-        ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(version);
+        ValidateIdentity(packageId, version);
 
         var normalizedPackageId = Uri.EscapeDataString(packageId.ToLowerInvariant());
         var normalizedVersion = Uri.EscapeDataString(version.ToLowerInvariant());
@@ -140,19 +155,15 @@ internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
             throw CreateIntegrityException(packageId, version, "declared size exceeds the 100 MiB safety limit");
         }
 
-        var partialPath = $"{finalPath}.{Guid.NewGuid():N}.partial";
+        string? ownedPartialPath = null;
         try
         {
             await using var source = await response.Content
                 .ReadAsStreamAsync(cancellationToken)
                 .ConfigureAwait(false);
-            await using var destination = new FileStream(
-                partialPath,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: 81920,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            var ownedPartial = OpenOwnedPartial(finalPath);
+            ownedPartialPath = ownedPartial.Path;
+            await using var destination = ownedPartial.Stream;
 
             var buffer = ArrayPool<byte>.Shared.Rent(81920);
             long totalBytes = 0;
@@ -182,13 +193,59 @@ internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
 
             await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
             destination.Close();
-            File.Move(partialPath, finalPath, overwrite: true);
+            var publicationGate = PublicationGates.GetOrAdd(finalPath, static _ => new SemaphoreSlim(1, 1));
+            await publicationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                File.Move(ownedPartialPath, finalPath, overwrite: true);
+            }
+            finally
+            {
+                publicationGate.Release();
+            }
+
             return finalPath;
         }
         finally
         {
-            File.Delete(partialPath);
+            if (ownedPartialPath is not null)
+            {
+                File.Delete(ownedPartialPath);
+            }
         }
+    }
+
+    private (string Path, FileStream Stream) OpenOwnedPartial(string finalPath)
+    {
+        const int maximumCandidateAttempts = 16;
+        var destinationDirectory = Path.GetDirectoryName(finalPath)!;
+        for (var attempt = 0; attempt < maximumCandidateAttempts; attempt++)
+        {
+            var candidate = Path.GetFullPath(_partialPathProvider.GetCandidatePath(finalPath));
+            EnsureContained(destinationDirectory, candidate);
+            if (string.Equals(candidate, finalPath, StringComparison.OrdinalIgnoreCase))
+            {
+                throw CreateConfigurationException("Partial package path must differ from the final path.");
+            }
+
+            try
+            {
+                var stream = new FileStream(
+                    candidate,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 81920,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+                return (candidate, stream);
+            }
+            catch (IOException) when (File.Exists(candidate))
+            {
+                // Another fetch owns this candidate. Generate a new one without deleting it.
+            }
+        }
+
+        throw CreateConfigurationException("Unable to allocate a unique partial package path.");
     }
 
     private TimeSpan GetRetryDelay(HttpResponseMessage response, int attempt)
@@ -237,6 +294,131 @@ internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
             $"NuGet package {packageId} {version} failed integrity validation: {detail}.");
     }
 
+    private static void ValidateIdentity(string packageId, string version)
+    {
+        if (!IsSafePackageId(packageId))
+        {
+            throw CreateConfigurationException("NuGet package ID has invalid or unsafe syntax.");
+        }
+
+        if (!IsSafeVersion(version))
+        {
+            throw CreateConfigurationException("NuGet package version has invalid or unsafe syntax.");
+        }
+    }
+
+    private static bool IsSafePackageId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || value.Length > 100
+            || Path.IsPathRooted(value)
+            || value is "." or ".."
+            || value.Contains("..", StringComparison.Ordinal)
+            || value[0] is '.' or '-' or '+'
+            || value[^1] is '.' or '-' or '+')
+        {
+            return false;
+        }
+
+        foreach (var character in value)
+        {
+            var isAsciiLetterOrDigit = character is >= 'a' and <= 'z'
+                or >= 'A' and <= 'Z'
+                or >= '0' and <= '9';
+            if (!isAsciiLetterOrDigit
+                && character is not '.' and not '-' and not '_')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsSafeVersion(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || value.Length > 100
+            || Path.IsPathRooted(value)
+            || value.Any(char.IsControl)
+            || value.Contains('/')
+            || value.Contains('\\'))
+        {
+            return false;
+        }
+
+        var buildSeparator = value.IndexOf('+');
+        if (buildSeparator != value.LastIndexOf('+'))
+        {
+            return false;
+        }
+
+        var versionAndPrerelease = buildSeparator < 0 ? value : value[..buildSeparator];
+        var buildMetadata = buildSeparator < 0 ? null : value[(buildSeparator + 1)..];
+        var prereleaseSeparator = versionAndPrerelease.IndexOf('-');
+        var numericVersion = prereleaseSeparator < 0
+            ? versionAndPrerelease
+            : versionAndPrerelease[..prereleaseSeparator];
+        var prerelease = prereleaseSeparator < 0
+            ? null
+            : versionAndPrerelease[(prereleaseSeparator + 1)..];
+        var numericParts = numericVersion.Split('.');
+        return numericParts.Length is >= 1 and <= 4
+            && numericParts.All(static part => part.Length > 0 && part.All(char.IsAsciiDigit))
+            && IsValidVersionLabel(prerelease)
+            && IsValidVersionLabel(buildMetadata);
+    }
+
+    private static bool IsValidVersionLabel(string? label)
+    {
+        if (label is null)
+        {
+            return true;
+        }
+
+        return label.Length > 0
+            && label.Split('.').All(static part =>
+                part.Length > 0
+                && part.All(static character => char.IsAsciiLetterOrDigit(character) || character == '-'));
+    }
+
+    private static string GetCanonicalDestinationPath(string destinationDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(destinationDirectory))
+        {
+            throw CreateConfigurationException("NuGet package destination directory is required.");
+        }
+
+        try
+        {
+            return Path.GetFullPath(destinationDirectory);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            throw new RepositoryCheckException(
+                ExitCodes.UsageOrConfigurationError,
+                "NuGet package destination directory is invalid.",
+                exception);
+        }
+    }
+
+    private static void EnsureContained(string destinationDirectory, string candidatePath)
+    {
+        var relativePath = Path.GetRelativePath(destinationDirectory, candidatePath);
+        if (Path.IsPathRooted(relativePath)
+            || relativePath == ".."
+            || relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+            || relativePath.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal))
+        {
+            throw CreateConfigurationException("NuGet package path escapes its destination directory.");
+        }
+    }
+
+    private static RepositoryCheckException CreateConfigurationException(string message)
+    {
+        return new RepositoryCheckException(ExitCodes.UsageOrConfigurationError, message);
+    }
+
     private sealed class SystemNuGetRetryClock : INuGetRetryClock
     {
         public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
@@ -244,6 +426,14 @@ internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
         public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
         {
             return Task.Delay(delay, cancellationToken);
+        }
+    }
+
+    private sealed class UniquePartialPathProvider : INuGetPartialPathProvider
+    {
+        public string GetCandidatePath(string finalPath)
+        {
+            return $"{finalPath}.{Guid.NewGuid():N}.partial";
         }
     }
 }

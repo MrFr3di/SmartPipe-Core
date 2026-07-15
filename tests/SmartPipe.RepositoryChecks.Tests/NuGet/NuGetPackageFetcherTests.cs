@@ -25,6 +25,36 @@ public sealed class NuGetPackageFetcherTests
         Assert.Equal(new Uri(PackageBaseAddress, expectedRelativePath), result);
     }
 
+    [Theory]
+    [InlineData("../escape", "1.0.0")]
+    [InlineData("package/name", "1.0.0")]
+    [InlineData("package\\name", "1.0.0")]
+    [InlineData("C:\\rooted", "1.0.0")]
+    [InlineData("package\nname", "1.0.0")]
+    [InlineData("package", "../1.0.0")]
+    [InlineData("package", "1/0/0")]
+    [InlineData("package", "1\\0\\0")]
+    [InlineData("package", "C:\\1.0.0")]
+    [InlineData("package", "1.0.0\r")]
+    [InlineData("package", "not-a-version")]
+    [InlineData("package", "1.0_beta")]
+    public async Task FetchAsync_RejectsUnsafeIdentityBeforeFileOrNetworkIo(string packageId, string version)
+    {
+        var serviceIndex = new StubServiceIndexClient();
+        using var httpClient = CreateHttpClient((_, _) =>
+            throw new InvalidOperationException("HTTP must not be reached."));
+        var fetcher = new NuGetPackageFetcher(httpClient, serviceIndex, new RecordingRetryClock());
+        using var directory = new TemporaryDirectory();
+        var missingDestination = System.IO.Path.Combine(directory.Path, "must-not-be-created");
+
+        var exception = await Assert.ThrowsAsync<RepositoryCheckException>(
+            () => fetcher.FetchAsync(packageId, version, missingDestination, TestContext.Current.CancellationToken));
+
+        Assert.Equal(ExitCodes.UsageOrConfigurationError, exception.ExitCode);
+        Assert.Equal(0, serviceIndex.Calls);
+        Assert.False(Directory.Exists(missingDestination));
+    }
+
     [Fact]
     public async Task FetchAsync_ThrowsExternalSourceErrorWithIdentity_AndDoesNotRetry404()
     {
@@ -179,6 +209,30 @@ public sealed class NuGetPackageFetcherTests
     }
 
     [Fact]
+    public async Task FetchAsync_DisposesRetryResponseBeforeDelay()
+    {
+        var attempts = 0;
+        var retryContent = new DisposalTrackingContent();
+        using var httpClient = CreateHttpClient((_, _) =>
+        {
+            attempts++;
+            return Task.FromResult(attempts == 1
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = retryContent }
+                : CreatePackageResponse("package bytes"));
+        });
+        var retryClock = new RecordingRetryClock
+        {
+            OnDelay = () => Assert.True(retryContent.IsDisposed),
+        };
+        var fetcher = CreateFetcher(httpClient, retryClock);
+        using var directory = new TemporaryDirectory();
+
+        await fetcher.FetchAsync("Package", "1.0.0", directory.Path, TestContext.Current.CancellationToken);
+
+        Assert.True(retryContent.IsDisposed);
+    }
+
+    [Fact]
     public async Task FetchAsync_ExhaustsThreeAttempts_AndLeavesNoFile()
     {
         var attempts = 0;
@@ -201,13 +255,15 @@ public sealed class NuGetPackageFetcherTests
     }
 
     [Fact]
-    public async Task FetchAsync_DoesNotTrustExistingFinalFile()
+    public async Task FetchAsync_ReturnsExistingFinalFileWithoutDownloadOrVerificationClaim()
     {
-        using var httpClient = CreateHttpClient((_, _) => Task.FromResult(CreatePackageResponse("fresh")));
-        var fetcher = CreateFetcher(httpClient);
         using var directory = new TemporaryDirectory();
         var finalPath = System.IO.Path.Combine(directory.Path, "package.1.0.0.nupkg");
         await File.WriteAllTextAsync(finalPath, "unverified", TestContext.Current.CancellationToken);
+        var serviceIndex = new StubServiceIndexClient();
+        using var httpClient = CreateHttpClient((_, _) =>
+            throw new InvalidOperationException("HTTP must not be reached."));
+        var fetcher = new NuGetPackageFetcher(httpClient, serviceIndex, new RecordingRetryClock());
 
         var result = await fetcher.FetchAsync(
             "Package",
@@ -216,7 +272,37 @@ public sealed class NuGetPackageFetcherTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(finalPath, result);
+        Assert.Equal("unverified", await File.ReadAllTextAsync(result, TestContext.Current.CancellationToken));
+        Assert.Equal(0, serviceIndex.Calls);
+    }
+
+    [Fact]
+    public async Task FetchAsync_RetriesPartialCollision_AndDeletesOnlyOwnedCandidate()
+    {
+        using var httpClient = CreateHttpClient((_, _) => Task.FromResult(CreatePackageResponse("fresh")));
+        using var directory = new TemporaryDirectory();
+        var finalPath = System.IO.Path.Combine(directory.Path, "package.1.0.0.nupkg");
+        var collidingPath = $"{finalPath}.collision.partial";
+        var ownedPath = $"{finalPath}.owned.partial";
+        await File.WriteAllTextAsync(collidingPath, "other fetch owns this", TestContext.Current.CancellationToken);
+        var candidates = new SequencePartialPathProvider(collidingPath, ownedPath);
+        var fetcher = new NuGetPackageFetcher(
+            httpClient,
+            new StubServiceIndexClient(),
+            new RecordingRetryClock(),
+            NuGetPackageFetcher.DefaultMaxPackageSizeBytes,
+            candidates);
+
+        var result = await fetcher.FetchAsync(
+            "Package",
+            "1.0.0",
+            directory.Path,
+            TestContext.Current.CancellationToken);
+
         Assert.Equal("fresh", await File.ReadAllTextAsync(result, TestContext.Current.CancellationToken));
+        Assert.Equal("other fetch owns this", await File.ReadAllTextAsync(collidingPath, TestContext.Current.CancellationToken));
+        Assert.False(File.Exists(ownedPath));
+        Assert.Equal(2, candidates.RequestCount);
     }
 
     [Fact]
@@ -277,8 +363,11 @@ public sealed class NuGetPackageFetcherTests
 
     private sealed class StubServiceIndexClient : INuGetServiceIndexClient
     {
+        public int Calls { get; private set; }
+
         public Task<Uri> GetPackageBaseAddressAsync(CancellationToken cancellationToken)
         {
+            Calls++;
             return Task.FromResult(PackageBaseAddress);
         }
     }
@@ -287,13 +376,45 @@ public sealed class NuGetPackageFetcherTests
     {
         public List<TimeSpan> Delays { get; } = [];
 
+        public Action? OnDelay { get; init; }
+
         public DateTimeOffset UtcNow => new(2026, 7, 15, 0, 0, 0, TimeSpan.Zero);
 
         public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            OnDelay?.Invoke();
             Delays.Add(delay);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class SequencePartialPathProvider(params string[] paths) : INuGetPartialPathProvider
+    {
+        private readonly Queue<string> _paths = new(paths);
+
+        public int RequestCount { get; private set; }
+
+        public string GetCandidatePath(string finalPath)
+        {
+            RequestCount++;
+            return _paths.Dequeue();
+        }
+    }
+
+    private sealed class DisposalTrackingContent : ByteArrayContent
+    {
+        public DisposalTrackingContent()
+            : base("retry"u8.ToArray())
+        {
+        }
+
+        public bool IsDisposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = true;
+            base.Dispose(disposing);
         }
     }
 

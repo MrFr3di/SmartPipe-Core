@@ -52,6 +52,7 @@ public sealed class NuGetPackageSignatureVerifierTests
     [InlineData((int)ProcessFailureKind.StartFailure)]
     [InlineData((int)ProcessFailureKind.Timeout)]
     [InlineData((int)ProcessFailureKind.Canceled)]
+    [InlineData((int)ProcessFailureKind.TerminationFailure)]
     public async Task VerifyAsync_ThrowsExternalToolError_WhenProcessCannotComplete(int failureKindValue)
     {
         var failureKind = (ProcessFailureKind)failureKindValue;

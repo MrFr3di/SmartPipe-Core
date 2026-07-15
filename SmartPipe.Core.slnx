@@ -11,6 +11,7 @@
     <Project Path="src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/SmartPipe.RepositoryChecks.ProcessFixture/SmartPipe.RepositoryChecks.ProcessFixture.csproj" />
     <Project Path="tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj" />
     <Project Path="tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj" />
