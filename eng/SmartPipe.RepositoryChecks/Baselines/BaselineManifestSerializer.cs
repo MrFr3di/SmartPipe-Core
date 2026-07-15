@@ -9,6 +9,7 @@ internal static class BaselineManifestSerializer
     public static string Serialize(BaselineManifest manifest)
     {
         ArgumentNullException.ThrowIfNull(manifest);
+        BaselineManifestValidator.Validate(manifest);
 
         var canonical = manifest with
         {
@@ -27,16 +28,25 @@ internal static class BaselineManifestSerializer
         return CanonicalJson.Serialize(canonical, BaselineJsonContext.Default.BaselineManifest);
     }
 
+    public static byte[] SerializeToUtf8Bytes(BaselineManifest manifest) =>
+        CanonicalText.ToUtf8Bytes(Serialize(manifest));
+
+    public static Task WriteAsync(
+        string path,
+        BaselineManifest manifest,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        return File.WriteAllBytesAsync(path, SerializeToUtf8Bytes(manifest), cancellationToken);
+    }
+
     public static BaselineManifest Deserialize(string json)
     {
         ArgumentNullException.ThrowIfNull(json);
 
         var manifest = JsonSerializer.Deserialize(json, BaselineJsonContext.Default.BaselineManifest)
             ?? throw new JsonException("Baseline manifest cannot be null.");
-        if (manifest.SchemaVersion != 1)
-        {
-            throw new JsonException($"Unsupported baseline schema version '{manifest.SchemaVersion}'.");
-        }
+        BaselineManifestValidator.Validate(manifest);
 
         return manifest;
     }

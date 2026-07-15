@@ -25,7 +25,45 @@
       "minItems": 3,
       "maxItems": 3,
       "uniqueItems": true,
-      "items": { "$ref": "#/$defs/package" }
+      "items": { "$ref": "#/$defs/package" },
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "id": { "const": "SmartPipe.Core" },
+              "version": { "const": "2.1.2" },
+              "requireRepositorySignature": { "const": true }
+            },
+            "required": ["id", "version", "requireRepositorySignature"]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "id": { "const": "SmartPipe.Extensions" },
+              "version": { "const": "2.1.2" },
+              "requireRepositorySignature": { "const": true }
+            },
+            "required": ["id", "version", "requireRepositorySignature"]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "id": { "const": "SmartPipe.Extensions.Json" },
+              "version": { "const": "2.1.2" },
+              "requireRepositorySignature": { "const": true }
+            },
+            "required": ["id", "version", "requireRepositorySignature"]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
     },
     "publicApi": { "$ref": "#/$defs/snapshot" },
     "packageAssets": { "$ref": "#/$defs/snapshot" },
@@ -45,6 +83,8 @@
         "solutionPath": { "$ref": "#/$defs/relativePath" },
         "requiredWorkflows": {
           "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
           "items": { "$ref": "#/$defs/workflow" }
         }
       }
@@ -57,7 +97,7 @@
         "name": { "type": "string", "minLength": 1 },
         "runId": { "type": "integer", "minimum": 1 },
         "url": { "type": "string", "format": "uri", "pattern": "^https://" },
-        "conclusion": { "type": "string", "minLength": 1 }
+        "conclusion": { "const": "success" }
       }
     },
     "package": {
@@ -78,13 +118,13 @@
       "additionalProperties": false,
       "required": ["path", "sha256"],
       "properties": {
-        "path": { "type": "string", "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$)).+$" },
+        "path": { "type": "string", "pattern": "^(?!/)(?!.*:)(?!.*//)(?!.*(?:^|/)\\.\\.?(?:/|$))[^\\\\]+$" },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
     "relativePath": {
       "type": "string",
-      "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$)).+$"
+      "pattern": "^(?!/)(?!.*:)(?!.*//)(?!.*(?:^|/)\\.\\.?(?:/|$))[^\\\\]+$"
     }
   }
 }

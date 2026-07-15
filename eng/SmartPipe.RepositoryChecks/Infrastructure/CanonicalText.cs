@@ -8,6 +8,12 @@ internal static class CanonicalText
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
 
+    public static byte[] ToUtf8Bytes(string input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        return StrictUtf8.GetBytes(input);
+    }
+
     public static byte[] ToUtf8Bytes(ReadOnlySpan<byte> input)
     {
         var text = StrictUtf8.GetString(input);

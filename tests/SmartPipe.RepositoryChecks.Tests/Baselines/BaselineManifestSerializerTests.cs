@@ -1,6 +1,8 @@
+using System.Text;
 using SmartPipe.RepositoryChecks.Baselines;
 using SmartPipe.RepositoryChecks.Tests.Baselines;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 public sealed class BaselineManifestSerializerTests
@@ -30,6 +32,36 @@ public sealed class BaselineManifestSerializerTests
         Assert.True(json.IndexOf("SmartPipe.Core", StringComparison.Ordinal) < json.IndexOf("SmartPipe.Extensions\"", StringComparison.Ordinal));
         Assert.True(json.IndexOf("SmartPipe.Extensions\"", StringComparison.Ordinal) < json.IndexOf("SmartPipe.Extensions.Json", StringComparison.Ordinal));
         Assert.True(json.IndexOf("\"ci\"", StringComparison.Ordinal) < json.IndexOf("\"release\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SerializeToUtf8Bytes_MatchesCanonicalStringWithoutBom()
+    {
+        var manifest = BaselineFixtures.CreateManifest();
+
+        var bytes = BaselineManifestSerializer.SerializeToUtf8Bytes(manifest);
+
+        Assert.False(bytes.AsSpan().StartsWith(Encoding.UTF8.Preamble));
+        Assert.Equal(BaselineManifestSerializer.Serialize(manifest), new UTF8Encoding(false, true).GetString(bytes));
+        Assert.Equal((byte)'\n', bytes[^1]);
+        Assert.NotEqual((byte)'\n', bytes[^2]);
+    }
+
+    [Fact]
+    public async Task WriteAsync_WritesCanonicalUtf8Bytes()
+    {
+        var manifest = BaselineFixtures.CreateManifest();
+        var path = Path.Combine(Path.GetTempPath(), $"smartpipe-manifest-{Guid.NewGuid():N}.json");
+        try
+        {
+            await BaselineManifestSerializer.WriteAsync(path, manifest, TestContext.Current.CancellationToken);
+
+            Assert.Equal(BaselineManifestSerializer.SerializeToUtf8Bytes(manifest), await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     [Fact]
@@ -64,6 +96,72 @@ public sealed class BaselineManifestSerializerTests
     }
 
     [Fact]
+    public void Serialize_RejectsDuplicatePackageIdentitiesIgnoringCase()
+    {
+        var manifest = BaselineFixtures.CreateManifest();
+        var packages = manifest.Packages.ToArray();
+        packages[1] = packages[1] with { Id = "smartpipe.extensions.json" };
+
+        Assert.Throws<JsonException>(() => BaselineManifestSerializer.Serialize(manifest with { Packages = packages }));
+    }
+
+    [Fact]
+    public void Deserialize_RejectsMissingAndNullRequiredObjects()
+    {
+        AssertInvalid(root => root.Remove("repository"));
+        AssertInvalid(root => root["repository"] = null);
+        AssertInvalid(root => root["publicApi"] = null);
+        AssertInvalid(root => root["packages"] = null);
+        AssertInvalid(root => root["repository"]!["requiredWorkflows"] = null);
+        AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0] = null);
+        AssertInvalid(root => root["packages"]![0] = null);
+    }
+
+    [Fact]
+    public void Deserialize_RejectsInvalidRepositoryAndWorkflowEvidence()
+    {
+        AssertInvalid(root => root["baselineName"] = " ");
+        AssertInvalid(root => root["targetRelease"] = "2.2");
+        AssertInvalid(root => root["repository"]!["fullName"] = " ");
+        AssertInvalid(root => root["repository"]!["defaultBranch"] = "");
+        AssertInvalid(root => root["repository"]!["commitSha"] = new string('A', 40));
+        AssertInvalid(root => root["repository"]!["sdkVersion"] = " ");
+        AssertInvalid(root => root["repository"]!["solutionPath"] = "../SmartPipe.Core.slnx");
+        AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!["name"] = " ");
+        AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!["runId"] = 0);
+        AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!["url"] = "http://github.com/run/1");
+        AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!["url"] = "/actions/runs/1");
+        AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!["conclusion"] = "failure");
+        AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!["name"] = "RELEASE");
+    }
+
+    [Fact]
+    public void Deserialize_RejectsInvalidPackageContract()
+    {
+        AssertInvalid(root => root["packages"]!.AsArray().RemoveAt(2));
+        AssertInvalid(root => root["packages"]![0]!["id"] = "smartpipe.core");
+        AssertInvalid(root => root["packages"]![0]!["version"] = "2.1.1");
+        AssertInvalid(root => root["packages"]![0]!["requireRepositorySignature"] = false);
+        AssertInvalid(root => root["packages"]![0]!["fileName"] = "other.nupkg");
+        AssertInvalid(root => root["packages"]![0]!["sha256"] = new string('A', 64));
+        AssertInvalid(root => root["packages"]![0]!["source"] = "http://api.nuget.org/v3/index.json");
+        AssertInvalid(root => root["packages"]![0]!["source"] = "api.nuget.org/v3/index.json");
+        AssertInvalid(root => root["packages"]![1]!["id"] = "SmartPipe.Core");
+        AssertInvalid(root => root["publicApi"]!["sha256"] = new string('A', 64));
+    }
+
+    [Theory]
+    [InlineData("/eng/baselines/public-api.json")]
+    [InlineData("C:/eng/baselines/public-api.json")]
+    [InlineData("eng/../public-api.json")]
+    [InlineData("eng\\baselines\\public-api.json")]
+    [InlineData("eng//baselines/public-api.json")]
+    public void Deserialize_RejectsUnsafeOrNonCanonicalSnapshotPaths(string path)
+    {
+        AssertInvalid(root => root["publicApi"]!["path"] = path);
+    }
+
+    [Fact]
     public void Schema_DefinesRequiredFailClosedManifestContracts()
     {
         using var schema = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "baseline.schema.json")));
@@ -87,9 +185,26 @@ public sealed class BaselineManifestSerializerTests
         var sourcePattern = GetPattern(definitions, "package", "source");
         Assert.Matches(sourcePattern, "https://api.nuget.org/v3/index.json");
         Assert.DoesNotMatch(sourcePattern, "http://api.nuget.org/v3/index.json");
+        Assert.Equal("success", definitions.GetProperty("workflow").GetProperty("properties").GetProperty("conclusion").GetProperty("const").GetString());
 
         Assert.Equal(3, root.GetProperty("properties").GetProperty("packages").GetProperty("minItems").GetInt32());
         Assert.Equal(3, root.GetProperty("properties").GetProperty("packages").GetProperty("maxItems").GetInt32());
+        var packageSet = root.GetProperty("properties").GetProperty("packages").GetProperty("allOf");
+        var expectedPackages = new[] { "SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Json" };
+        Assert.Equal(expectedPackages.Length, packageSet.GetArrayLength());
+        Assert.Equal(
+            expectedPackages,
+            packageSet.EnumerateArray()
+                .Select(item => item.GetProperty("contains").GetProperty("properties").GetProperty("id").GetProperty("const").GetString())
+                .ToArray());
+        Assert.All(packageSet.EnumerateArray(), item =>
+        {
+            var properties = item.GetProperty("contains").GetProperty("properties");
+            Assert.Equal("2.1.2", properties.GetProperty("version").GetProperty("const").GetString());
+            Assert.True(properties.GetProperty("requireRepositorySignature").GetProperty("const").GetBoolean());
+            Assert.Equal(1, item.GetProperty("minContains").GetInt32());
+            Assert.Equal(1, item.GetProperty("maxContains").GetInt32());
+        });
 
         var pathPattern = GetPattern(definitions, "snapshot", "path");
         Assert.Matches(pathPattern, "eng/baselines/public-api.json");
@@ -110,4 +225,12 @@ public sealed class BaselineManifestSerializerTests
             .GetProperty(property)
             .GetProperty("pattern")
             .GetString()!;
+
+    private static void AssertInvalid(Action<JsonObject> mutate)
+    {
+        var root = JsonNode.Parse(BaselineManifestSerializer.Serialize(BaselineFixtures.CreateManifest()))!.AsObject();
+        mutate(root);
+
+        Assert.Throws<JsonException>(() => BaselineManifestSerializer.Deserialize(root.ToJsonString()));
+    }
 }
