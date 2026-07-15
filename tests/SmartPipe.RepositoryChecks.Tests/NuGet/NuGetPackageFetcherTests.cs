@@ -306,6 +306,72 @@ public sealed class NuGetPackageFetcherTests
     }
 
     [Fact]
+    public async Task FetchAsync_RetriesCollisionEvenWhenCandidateDisappearsBeforeClassification()
+    {
+        using var httpClient = CreateHttpClient((_, _) => Task.FromResult(CreatePackageResponse("fresh")));
+        using var directory = new TemporaryDirectory();
+        var finalPath = System.IO.Path.Combine(directory.Path, "package.1.0.0.nupkg");
+        var vanishedCollision = $"{finalPath}.vanished.partial";
+        var ownedPath = $"{finalPath}.owned.partial";
+        var candidates = new SequencePartialPathProvider(vanishedCollision, ownedPath);
+        var creator = new DelegatePartialFileCreator((path, attempt) =>
+        {
+            if (attempt == 1)
+            {
+                File.WriteAllText(path, "collision");
+                File.Delete(path);
+                throw new PartialFileCollisionException(path, new IOException("Synthetic collision."));
+            }
+
+            return CreateRealPartial(path);
+        });
+        var fetcher = CreateFetcher(httpClient, candidates, creator);
+
+        var result = await fetcher.FetchAsync(
+            "Package",
+            "1.0.0",
+            directory.Path,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("fresh", await File.ReadAllTextAsync(result, TestContext.Current.CancellationToken));
+        Assert.False(File.Exists(vanishedCollision));
+        Assert.Equal(2, creator.Attempts);
+    }
+
+    [Fact]
+    public async Task FetchAsync_StopsAfterSixteenPartialCollisions()
+    {
+        using var httpClient = CreateHttpClient((_, _) => Task.FromResult(CreatePackageResponse("fresh")));
+        using var directory = new TemporaryDirectory();
+        var creator = new DelegatePartialFileCreator((path, _) =>
+            throw new PartialFileCollisionException(path, new IOException("Synthetic collision.")));
+        var fetcher = CreateFetcher(httpClient, new GuidPartialPathProvider(), creator);
+
+        var exception = await Assert.ThrowsAsync<RepositoryCheckException>(
+            () => fetcher.FetchAsync("Package", "1.0.0", directory.Path, TestContext.Current.CancellationToken));
+
+        Assert.Equal(ExitCodes.UsageOrConfigurationError, exception.ExitCode);
+        Assert.Equal(16, creator.Attempts);
+        Assert.Empty(Directory.EnumerateFiles(directory.Path));
+    }
+
+    [Fact]
+    public async Task FetchAsync_DoesNotRetryArbitraryPartialCreationIoFailure()
+    {
+        using var httpClient = CreateHttpClient((_, _) => Task.FromResult(CreatePackageResponse("fresh")));
+        using var directory = new TemporaryDirectory();
+        var expected = new IOException("Disk is unavailable.");
+        var creator = new DelegatePartialFileCreator((_, _) => throw expected);
+        var fetcher = CreateFetcher(httpClient, new GuidPartialPathProvider(), creator);
+
+        var actual = await Assert.ThrowsAsync<IOException>(
+            () => fetcher.FetchAsync("Package", "1.0.0", directory.Path, TestContext.Current.CancellationToken));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(1, creator.Attempts);
+    }
+
+    [Fact]
     public async Task FetchAsync_ConcurrentFetchesUseDistinctPartialFiles()
     {
         var gate = new ConcurrentResponseGate(expectedReaders: 2);
@@ -340,6 +406,20 @@ public sealed class NuGetPackageFetcherTests
             new StubServiceIndexClient(),
             retryClock ?? new RecordingRetryClock(),
             maxPackageSizeBytes);
+    }
+
+    private static NuGetPackageFetcher CreateFetcher(
+        HttpClient httpClient,
+        INuGetPartialPathProvider partialPathProvider,
+        INuGetPartialFileCreator partialFileCreator)
+    {
+        return new NuGetPackageFetcher(
+            httpClient,
+            new StubServiceIndexClient(),
+            new RecordingRetryClock(),
+            NuGetPackageFetcher.DefaultMaxPackageSizeBytes,
+            partialPathProvider,
+            partialFileCreator);
     }
 
     private static HttpClient CreateHttpClient(
@@ -400,6 +480,34 @@ public sealed class NuGetPackageFetcherTests
             RequestCount++;
             return _paths.Dequeue();
         }
+    }
+
+    private sealed class GuidPartialPathProvider : INuGetPartialPathProvider
+    {
+        public string GetCandidatePath(string finalPath) => $"{finalPath}.{Guid.NewGuid():N}.partial";
+    }
+
+    private sealed class DelegatePartialFileCreator(
+        Func<string, int, FileStream> create) : INuGetPartialFileCreator
+    {
+        public int Attempts { get; private set; }
+
+        public FileStream CreateNew(string path)
+        {
+            Attempts++;
+            return create(path, Attempts);
+        }
+    }
+
+    private static FileStream CreateRealPartial(string path)
+    {
+        return new FileStream(
+            path,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 81920,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
     }
 
     private sealed class DisposalTrackingContent : ByteArrayContent

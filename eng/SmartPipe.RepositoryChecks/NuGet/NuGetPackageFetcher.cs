@@ -26,6 +26,19 @@ internal interface INuGetPartialPathProvider
     string GetCandidatePath(string finalPath);
 }
 
+internal interface INuGetPartialFileCreator
+{
+    FileStream CreateNew(string path);
+}
+
+internal sealed class PartialFileCollisionException : IOException
+{
+    public PartialFileCollisionException(string path, IOException innerException)
+        : base($"Partial package path already exists: {Path.GetFileName(path)}", innerException)
+    {
+    }
+}
+
 internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
 {
     public const long DefaultMaxPackageSizeBytes = 100L * 1024 * 1024;
@@ -40,13 +53,15 @@ internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
     private readonly INuGetRetryClock _retryClock;
     private readonly long _maxPackageSizeBytes;
     private readonly INuGetPartialPathProvider _partialPathProvider;
+    private readonly INuGetPartialFileCreator _partialFileCreator;
 
     public NuGetPackageFetcher(
         HttpClient httpClient,
         INuGetServiceIndexClient serviceIndexClient,
         INuGetRetryClock? retryClock = null,
         long maxPackageSizeBytes = DefaultMaxPackageSizeBytes,
-        INuGetPartialPathProvider? partialPathProvider = null)
+        INuGetPartialPathProvider? partialPathProvider = null,
+        INuGetPartialFileCreator? partialFileCreator = null)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(serviceIndexClient);
@@ -57,6 +72,7 @@ internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
         _retryClock = retryClock ?? new SystemNuGetRetryClock();
         _maxPackageSizeBytes = maxPackageSizeBytes;
         _partialPathProvider = partialPathProvider ?? new UniquePartialPathProvider();
+        _partialFileCreator = partialFileCreator ?? new SystemPartialFileCreator();
     }
 
     public async Task<string> FetchAsync(
@@ -219,6 +235,7 @@ internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
     {
         const int maximumCandidateAttempts = 16;
         var destinationDirectory = Path.GetDirectoryName(finalPath)!;
+        PartialFileCollisionException? lastCollision = null;
         for (var attempt = 0; attempt < maximumCandidateAttempts; attempt++)
         {
             var candidate = Path.GetFullPath(_partialPathProvider.GetCandidatePath(finalPath));
@@ -230,22 +247,19 @@ internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
 
             try
             {
-                var stream = new FileStream(
-                    candidate,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.None,
-                    bufferSize: 81920,
-                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+                var stream = _partialFileCreator.CreateNew(candidate);
                 return (candidate, stream);
             }
-            catch (IOException) when (File.Exists(candidate))
+            catch (PartialFileCollisionException exception)
             {
-                // Another fetch owns this candidate. Generate a new one without deleting it.
+                lastCollision = exception;
             }
         }
 
-        throw CreateConfigurationException("Unable to allocate a unique partial package path.");
+        throw new RepositoryCheckException(
+            ExitCodes.UsageOrConfigurationError,
+            "Unable to allocate a unique partial package path after 16 collisions.",
+            lastCollision!);
     }
 
     private TimeSpan GetRetryDelay(HttpResponseMessage response, int attempt)
@@ -434,6 +448,40 @@ internal sealed class NuGetPackageFetcher : INuGetPackageFetcher
         public string GetCandidatePath(string finalPath)
         {
             return $"{finalPath}.{Guid.NewGuid():N}.partial";
+        }
+    }
+
+    private sealed class SystemPartialFileCreator : INuGetPartialFileCreator
+    {
+        private const int ErrorFileExists = unchecked((int)0x80070050);
+        private const int ErrorAlreadyExists = unchecked((int)0x800700B7);
+        private const int UnixExist = 17;
+        private const int UnixExistAsWin32HResult = unchecked((int)0x80070011);
+
+        public FileStream CreateNew(string path)
+        {
+            try
+            {
+                return new FileStream(
+                    path,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 81920,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+            }
+            catch (IOException exception) when (IsCollision(exception))
+            {
+                throw new PartialFileCollisionException(path, exception);
+            }
+        }
+
+        private static bool IsCollision(IOException exception)
+        {
+            return exception.HResult is ErrorFileExists
+                or ErrorAlreadyExists
+                or UnixExist
+                or UnixExistAsWin32HResult;
         }
     }
 }

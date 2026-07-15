@@ -26,6 +26,64 @@ public sealed class ProcessRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_RedactsOversizedUnterminatedQueryBeforeRetention()
+    {
+        var runner = new ProcessRunner(maximumRetainedOutputCharacters: 4096);
+
+        var result = await runner.RunAsync(
+            CreateFixtureRequest("long-query", TimeSpan.FromSeconds(10)),
+            TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("super-secret-token", result.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("oversized output line redacted", result.StandardOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task OutputCollector_RedactsQuerySplitAcrossReaderChunksBeforeRetention()
+    {
+        var reader = new ChunkedTextReader(
+            "prefix https://example.test/package?to",
+            "ken=split-secret",
+            "\nnext-line");
+        var collector = new BoundedRedactingOutputCollector(4096);
+
+        var result = await collector.CollectAsync(reader);
+
+        Assert.DoesNotContain("split-secret", result, StringComparison.Ordinal);
+        Assert.Contains("https://example.test/package?<redacted>", result, StringComparison.Ordinal);
+        Assert.EndsWith("next-line", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_BoundsNormalExitPipeObservation_AndDoesNotLeakDescendant()
+    {
+        var processIdPath = Path.Combine(Path.GetTempPath(), $"smartpipe-descendant-{Guid.NewGuid():N}.pid");
+        int? descendantProcessId = null;
+        try
+        {
+            var runner = new ProcessRunner(terminationObservationTimeout: TimeSpan.FromMilliseconds(250));
+
+            var exception = await Assert.ThrowsAsync<ProcessRunnerException>(
+                () => runner.RunAsync(
+                    CreateFixtureRequest(
+                        ["spawn-descendant", processIdPath],
+                        TimeSpan.FromSeconds(10)),
+                    TestContext.Current.CancellationToken));
+
+            Assert.Equal(ProcessFailureKind.TerminationFailure, exception.FailureKind);
+            descendantProcessId = int.Parse(
+                await File.ReadAllTextAsync(processIdPath, TestContext.Current.CancellationToken),
+                System.Globalization.CultureInfo.InvariantCulture);
+            Assert.False(IsProcessRunning(descendantProcessId.Value));
+        }
+        finally
+        {
+            await KillFixtureIfRunningAsync(descendantProcessId);
+            File.Delete(processIdPath);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_TimesOutBlockedChild_AndObservesItsExit()
     {
         var terminator = new RecordingTerminator();
@@ -120,9 +178,25 @@ public sealed class ProcessRunnerTests
         Assert.Equal(4, result.Split("<home>", StringSplitOptions.None).Length - 1);
     }
 
+    [Fact]
+    public void DiagnosticRedactor_DoesNotRedactSiblingWithHomePrefix()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).TrimEnd('\\', '/');
+        var sibling = home + "2" + Path.DirectorySeparatorChar + "diagnostic.txt";
+
+        var result = DiagnosticRedactor.Redact(sibling);
+
+        Assert.Equal(sibling, result);
+    }
+
     private static ProcessRequest CreateFixtureRequest(string mode, TimeSpan timeout)
     {
-        return new ProcessRequest(GetFixtureExecutablePath(), [mode], timeout);
+        return CreateFixtureRequest([mode], timeout);
+    }
+
+    private static ProcessRequest CreateFixtureRequest(IReadOnlyList<string> arguments, TimeSpan timeout)
+    {
+        return new ProcessRequest(GetFixtureExecutablePath(), arguments, timeout);
     }
 
     private static string GetFixtureExecutablePath()
@@ -201,6 +275,26 @@ public sealed class ProcessRunnerTests
             }
 
             throw new Win32Exception("Synthetic termination failure.");
+        }
+    }
+
+    private sealed class ChunkedTextReader(params string[] chunks) : TextReader
+    {
+        private int _index;
+
+        public override ValueTask<int> ReadAsync(
+            Memory<char> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_index == chunks.Length)
+            {
+                return ValueTask.FromResult(0);
+            }
+
+            var chunk = chunks[_index++];
+            chunk.AsSpan().CopyTo(buffer.Span);
+            return ValueTask.FromResult(chunk.Length);
         }
     }
 }

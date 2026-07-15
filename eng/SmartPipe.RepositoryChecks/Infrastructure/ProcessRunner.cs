@@ -103,8 +103,10 @@ internal sealed class ProcessRunner : IProcessRunner
                 exception);
         }
 
-        var standardOutputTask = DrainBoundedAsync(process.StandardOutput);
-        var standardErrorTask = DrainBoundedAsync(process.StandardError);
+        var standardOutputTask = new BoundedRedactingOutputCollector(_maximumRetainedOutputCharacters)
+            .CollectAsync(process.StandardOutput);
+        var standardErrorTask = new BoundedRedactingOutputCollector(_maximumRetainedOutputCharacters)
+            .CollectAsync(process.StandardError);
         using var timeout = new CancellationTokenSource(request.Timeout);
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
@@ -144,6 +146,8 @@ internal sealed class ProcessRunner : IProcessRunner
             var outputObserved = await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
             if (!outputObserved)
             {
+                await CloseInheritedOutputPipesAsync(process).ConfigureAwait(false);
+                await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
                 throw new ProcessRunnerException(
                     ProcessFailureKind.TerminationFailure,
                     "External process output streams did not close within the bounded shutdown interval.",
@@ -158,12 +162,23 @@ internal sealed class ProcessRunner : IProcessRunner
                 exception);
         }
 
+        var normalOutputObserved = await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
+        if (!normalOutputObserved)
+        {
+            var terminationException = await CloseInheritedOutputPipesAsync(process).ConfigureAwait(false);
+            await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
+            throw new ProcessRunnerException(
+                ProcessFailureKind.TerminationFailure,
+                "External process exited but inherited output pipes did not close within the bounded observation interval.",
+                terminationException ?? new TimeoutException("Redirected output observation timed out."));
+        }
+
         var standardOutput = await standardOutputTask.ConfigureAwait(false);
         var standardError = await standardErrorTask.ConfigureAwait(false);
         return new ProcessResult(
             process.ExitCode,
-            DiagnosticRedactor.Redact(standardOutput),
-            DiagnosticRedactor.Redact(standardError));
+            standardOutput,
+            standardError);
     }
 
     internal static ProcessStartInfo CreateStartInfo(ProcessRequest request)
@@ -224,30 +239,28 @@ internal sealed class ProcessRunner : IProcessRunner
                 .ConfigureAwait(false);
             return true;
         }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
+        catch (Exception exception) when (exception is IOException or TimeoutException or InvalidOperationException)
         {
             return false;
         }
     }
 
-    private async Task<string> DrainBoundedAsync(StreamReader reader)
+    private async Task<Exception?> CloseInheritedOutputPipesAsync(Process process)
     {
-        var retained = new StringBuilder(_maximumRetainedOutputCharacters);
-        var buffer = new char[4096];
-        var truncated = false;
-        int charactersRead;
-        while ((charactersRead = await reader.ReadAsync(buffer).ConfigureAwait(false)) != 0)
+        Exception? terminationException = null;
+        try
         {
-            retained.Append(buffer, 0, charactersRead);
-            if (retained.Length > _maximumRetainedOutputCharacters)
-            {
-                retained.Remove(0, retained.Length - _maximumRetainedOutputCharacters);
-                truncated = true;
-            }
+            _terminator.Kill(process);
+        }
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+        {
+            terminationException = exception;
         }
 
-        var value = retained.ToString();
-        return DiagnosticRedactor.Redact(truncated ? $"[output truncated]\n{value}" : value);
+        process.StandardOutput.Dispose();
+        process.StandardError.Dispose();
+        await Task.Yield();
+        return terminationException;
     }
 
     private sealed class SystemProcessTerminator : IProcessTerminator
@@ -255,6 +268,91 @@ internal sealed class ProcessRunner : IProcessRunner
         public void Kill(Process process)
         {
             process.Kill(entireProcessTree: true);
+        }
+    }
+}
+
+internal sealed class BoundedRedactingOutputCollector
+{
+    private const string TruncatedMarker = "[output truncated]\n";
+    private const string OversizedLineMarker = "[oversized output line redacted]";
+
+    private readonly int _maximumRetainedCharacters;
+
+    public BoundedRedactingOutputCollector(int maximumRetainedCharacters)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumRetainedCharacters);
+        _maximumRetainedCharacters = maximumRetainedCharacters;
+    }
+
+    public async Task<string> CollectAsync(TextReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        var retained = new StringBuilder(_maximumRetainedCharacters);
+        var pendingLine = new StringBuilder(Math.Min(_maximumRetainedCharacters, 4096));
+        var buffer = new char[4096];
+        var outputTruncated = false;
+        var oversizedLine = false;
+        int charactersRead;
+        while ((charactersRead = await reader.ReadAsync(buffer).ConfigureAwait(false)) != 0)
+        {
+            for (var index = 0; index < charactersRead; index++)
+            {
+                var character = buffer[index];
+                if (oversizedLine)
+                {
+                    if (character == '\n')
+                    {
+                        AppendBounded(retained, OversizedLineMarker + "\n", ref outputTruncated);
+                        oversizedLine = false;
+                    }
+
+                    continue;
+                }
+
+                if (character == '\n')
+                {
+                    AppendBounded(
+                        retained,
+                        DiagnosticRedactor.Redact(pendingLine.ToString()),
+                        ref outputTruncated);
+                    AppendBounded(retained, "\n", ref outputTruncated);
+                    pendingLine.Clear();
+                }
+                else if (pendingLine.Length == _maximumRetainedCharacters)
+                {
+                    pendingLine.Clear();
+                    oversizedLine = true;
+                }
+                else
+                {
+                    pendingLine.Append(character);
+                }
+            }
+        }
+
+        if (oversizedLine)
+        {
+            AppendBounded(retained, OversizedLineMarker, ref outputTruncated);
+        }
+        else if (pendingLine.Length > 0)
+        {
+            AppendBounded(
+                retained,
+                DiagnosticRedactor.Redact(pendingLine.ToString()),
+                ref outputTruncated);
+        }
+
+        return outputTruncated ? TruncatedMarker + retained : retained.ToString();
+    }
+
+    private void AppendBounded(StringBuilder retained, string value, ref bool outputTruncated)
+    {
+        retained.Append(value);
+        if (retained.Length > _maximumRetainedCharacters)
+        {
+            retained.Remove(0, retained.Length - _maximumRetainedCharacters);
+            outputTruncated = true;
         }
     }
 }
@@ -285,7 +383,7 @@ internal static partial class DiagnosticRedactor
 
             foreach (var variant in variants.OrderByDescending(static item => item.Length))
             {
-                redacted = redacted.Replace(variant, "<home>", StringComparison.OrdinalIgnoreCase);
+                redacted = ReplaceHomeVariantAtPathBoundaries(redacted, variant);
             }
         }
 
@@ -294,4 +392,36 @@ internal static partial class DiagnosticRedactor
 
     [GeneratedRegex(@"(?<url>https?://[^\s?]+)\?[^\s]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex UriQueryRegex();
+
+    private static string ReplaceHomeVariantAtPathBoundaries(string value, string variant)
+    {
+        const string replacement = "<home>";
+        var searchStart = 0;
+        while (searchStart < value.Length)
+        {
+            var match = value.IndexOf(variant, searchStart, StringComparison.OrdinalIgnoreCase);
+            if (match < 0)
+            {
+                break;
+            }
+
+            var boundaryIndex = match + variant.Length;
+            if (boundaryIndex == value.Length || IsPathBoundary(value[boundaryIndex]))
+            {
+                value = string.Concat(value.AsSpan(0, match), replacement, value.AsSpan(boundaryIndex));
+                searchStart = match + replacement.Length;
+            }
+            else
+            {
+                searchStart = boundaryIndex;
+            }
+        }
+
+        return value;
+    }
+
+    private static bool IsPathBoundary(char character)
+    {
+        return !char.IsLetterOrDigit(character) && character is not '_' and not '-' and not '.';
+    }
 }
