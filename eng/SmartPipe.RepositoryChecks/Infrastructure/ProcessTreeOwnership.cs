@@ -33,6 +33,7 @@ internal sealed class ProcessTreeOwnershipFactory : IProcessTreeOwnershipFactory
 internal static class ProcessTreeTerminator
 {
     private const int SigKill = 9;
+    private const int NoSuchProcess = 3;
 
     public static void Kill(Process process)
     {
@@ -40,7 +41,14 @@ internal static class ProcessTreeTerminator
         {
             // The host owns a kill-on-close Job Object. Terminating the host closes
             // its non-inheritable job handle and lets the kernel terminate all members.
-            process.Kill();
+            try
+            {
+                process.Kill();
+            }
+            catch (InvalidOperationException) when (process.HasExited)
+            {
+                // The exited host has already closed its kill-on-close job handle.
+            }
             return;
         }
 
@@ -48,7 +56,11 @@ internal static class ProcessTreeTerminator
         {
             if (UnixNativeMethods.Kill(-process.Id, SigKill) != 0)
             {
-                throw new Win32Exception(Marshal.GetLastPInvokeError());
+                var error = Marshal.GetLastPInvokeError();
+                if (error != NoSuchProcess)
+                {
+                    throw new Win32Exception(error);
+                }
             }
 
             return;

@@ -11,6 +11,7 @@ internal enum ProcessHostControlMessageKind
     Started,
     StartFailed,
     Exit,
+    Teardown,
 }
 
 internal readonly record struct ProcessHostControlMessage(

@@ -26,6 +26,21 @@ public sealed class ProcessRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_NormalExitTearsDownWhileOwnershipLeaderIsAlive()
+    {
+        var terminator = new LeaderAwareTerminator();
+        var runner = new ProcessRunner(terminator);
+
+        var result = await runner.RunAsync(
+            CreateFixtureRequest(["echo", "23"], TimeSpan.FromSeconds(10)),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(23, result.ExitCode);
+        Assert.True(terminator.WasCalled);
+        Assert.True(terminator.LeaderWasAlive);
+    }
+
+    [Fact]
     public async Task RunAsync_ClassifiesRepositoryCheckHostStartupFailure()
     {
         var missingHost = Path.Combine(Path.GetTempPath(), $"missing-host-{Guid.NewGuid():N}.exe");
@@ -86,6 +101,40 @@ public sealed class ProcessRunnerTests
                 TestContext.Current.CancellationToken));
 
         Assert.Equal(ProcessFailureKind.StartFailure, exception.FailureKind);
+    }
+
+    [Fact]
+    public async Task RunAsync_PostStartProtocolFailureTearsDownGroupMember()
+    {
+        var processIdPath = Path.Combine(Path.GetTempPath(), $"smartpipe-malformed-member-{Guid.NewGuid():N}.pid");
+        int? descendantProcessId = null;
+        var terminator = new RecordingTerminator();
+        var runner = new ProcessRunner(
+            terminator,
+            TimeSpan.FromSeconds(2),
+            processHostLocator: new RecordingProcessHostLocator(
+                new ProcessHostLaunch(
+                    GetFixtureExecutablePath(),
+                    ["post-start-malformed-host", processIdPath])));
+        try
+        {
+            var exception = await Assert.ThrowsAsync<ProcessRunnerException>(
+                () => runner.RunAsync(
+                    CreateFixtureRequest("pressure", TimeSpan.FromSeconds(10)),
+                    TestContext.Current.CancellationToken));
+
+            Assert.Equal(ProcessFailureKind.StartFailure, exception.FailureKind);
+            descendantProcessId = int.Parse(
+                await File.ReadAllTextAsync(processIdPath, TestContext.Current.CancellationToken),
+                System.Globalization.CultureInfo.InvariantCulture);
+            Assert.NotNull(terminator.ProcessId);
+            Assert.False(IsProcessRunning(descendantProcessId.Value));
+        }
+        finally
+        {
+            await KillFixtureIfRunningAsync(descendantProcessId);
+            File.Delete(processIdPath);
+        }
     }
 
     [Fact]
@@ -152,7 +201,8 @@ public sealed class ProcessRunnerTests
         using var control = CreateControlServer(pipeName);
         var hostTask = RepositoryCheckProcessHost.RunAsync(
             [pipeName, nonce, GetFixtureExecutablePath(), "--", "wait"],
-            new ThrowingProcessTreeOwnershipFactory());
+            new ThrowingProcessTreeOwnershipFactory(),
+            hostLifetimeCancellation: TestContext.Current.CancellationToken);
 
         await control.WaitForConnectionAsync(TestContext.Current.CancellationToken);
         Assert.Equal(RepositoryCheckProcessHost.InvalidArgumentsExitCode, await hostTask);
@@ -175,7 +225,8 @@ public sealed class ProcessRunnerTests
         {
             var hostTask = RepositoryCheckProcessHost.RunAsync(
                 [pipeName, nonce, GetFixtureExecutablePath(), "--", "touch", startedPath],
-                ownershipFactory);
+                ownershipFactory,
+                hostLifetimeCancellation: TestContext.Current.CancellationToken);
             await control.WaitForConnectionAsync(TestContext.Current.CancellationToken);
             await ownershipFactory.InitializationEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
 
@@ -192,6 +243,71 @@ public sealed class ProcessRunnerTests
         {
             ownershipFactory.ReleaseInitialization.TrySetResult();
             File.Delete(startedPath);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProcessHost_MissingOrMalformedTeardownNeverReleasesOwnershipLeader(bool malformed)
+    {
+        var pipeName = $"smartpipe-test-{Guid.NewGuid():N}";
+        var nonce = Guid.NewGuid().ToString("N");
+        using var hostLifetime = new CancellationTokenSource();
+        using var control = CreateControlServer(pipeName);
+        var hostTask = RepositoryCheckProcessHost.RunAsync(
+            [pipeName, nonce, GetFixtureExecutablePath(), "--", "echo", "0"],
+            new ImmediateProcessTreeOwnershipFactory(),
+            hostLifetimeCancellation: hostLifetime.Token);
+        try
+        {
+            await control.WaitForConnectionAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(
+                ProcessHostControlMessageKind.Ready,
+                (await ProcessHostControlProtocol.ReadAsync(
+                    control,
+                    nonce,
+                    TestContext.Current.CancellationToken)).Kind);
+            await ProcessHostControlProtocol.WriteAsync(
+                control,
+                nonce,
+                new ProcessHostControlMessage(ProcessHostControlMessageKind.Start),
+                TestContext.Current.CancellationToken);
+            Assert.Equal(
+                ProcessHostControlMessageKind.Started,
+                (await ProcessHostControlProtocol.ReadAsync(
+                    control,
+                    nonce,
+                    TestContext.Current.CancellationToken)).Kind);
+            Assert.Equal(
+                ProcessHostControlMessageKind.Exit,
+                (await ProcessHostControlProtocol.ReadAsync(
+                    control,
+                    nonce,
+                    TestContext.Current.CancellationToken)).Kind);
+
+            if (malformed)
+            {
+                await ProcessHostControlProtocol.WriteAsync(
+                    control,
+                    nonce,
+                    new ProcessHostControlMessage(ProcessHostControlMessageKind.Start),
+                    TestContext.Current.CancellationToken);
+            }
+            else
+            {
+                control.Dispose();
+            }
+
+            await Assert.ThrowsAsync<TimeoutException>(
+                () => hostTask.WaitAsync(
+                    TimeSpan.FromMilliseconds(250),
+                    TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            hostLifetime.Cancel();
+            Assert.Equal(RepositoryCheckProcessHost.InvalidArgumentsExitCode, await hostTask);
         }
     }
 
@@ -276,6 +392,34 @@ public sealed class ProcessRunnerTests
                     TestContext.Current.CancellationToken));
 
             Assert.Equal(ProcessFailureKind.Timeout, exception.FailureKind);
+            descendantProcessId = int.Parse(
+                await File.ReadAllTextAsync(processIdPath, TestContext.Current.CancellationToken),
+                System.Globalization.CultureInfo.InvariantCulture);
+            Assert.False(IsProcessRunning(descendantProcessId.Value));
+        }
+        finally
+        {
+            await KillFixtureIfRunningAsync(descendantProcessId);
+            File.Delete(processIdPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_NormalExitTearsDownDescendantThatClosedInheritedOutput()
+    {
+        var processIdPath = Path.Combine(Path.GetTempPath(), $"smartpipe-detached-descendant-{Guid.NewGuid():N}.pid");
+        int? descendantProcessId = null;
+        try
+        {
+            var runner = new ProcessRunner(terminationObservationTimeout: TimeSpan.FromSeconds(2));
+
+            var result = await runner.RunAsync(
+                CreateFixtureRequest(
+                    ["spawn-detached-descendant", processIdPath, "37"],
+                    TimeSpan.FromSeconds(10)),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(37, result.ExitCode);
             descendantProcessId = int.Parse(
                 await File.ReadAllTextAsync(processIdPath, TestContext.Current.CancellationToken),
                 System.Globalization.CultureInfo.InvariantCulture);
@@ -504,6 +648,20 @@ public sealed class ProcessRunnerTests
         }
     }
 
+    private sealed class LeaderAwareTerminator : IProcessTerminator
+    {
+        public bool WasCalled { get; private set; }
+
+        public bool LeaderWasAlive { get; private set; }
+
+        public void Kill(Process process)
+        {
+            WasCalled = true;
+            LeaderWasAlive = !process.HasExited;
+            process.Kill(entireProcessTree: true);
+        }
+    }
+
     private sealed class ThrowingProcessTreeOwnershipFactory : IProcessTreeOwnershipFactory
     {
         public ValueTask<IDisposable> InitializeAsync(CancellationToken cancellationToken)
@@ -525,6 +683,15 @@ public sealed class ProcessRunnerTests
             InitializationEntered.TrySetResult();
             await ReleaseInitialization.Task.WaitAsync(cancellationToken);
             return new NoopOwnership();
+        }
+    }
+
+    private sealed class ImmediateProcessTreeOwnershipFactory : IProcessTreeOwnershipFactory
+    {
+        public ValueTask<IDisposable> InitializeAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult<IDisposable>(new NoopOwnership());
         }
     }
 

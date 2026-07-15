@@ -85,6 +85,18 @@ internal sealed class ProcessHostSession : IDisposable
         return exitCode;
     }
 
+    public async Task SendTeardownAsync()
+    {
+        await RunHandshakeStepAsync(
+                token => ProcessHostControlProtocol.WriteAsync(
+                    _control,
+                    Nonce,
+                    new ProcessHostControlMessage(ProcessHostControlMessageKind.Teardown),
+                    token),
+                CancellationToken.None)
+            .ConfigureAwait(false);
+    }
+
     public async Task<Exception?> TrySendCancelAsync()
     {
         if (StartCommitted || !_control.IsConnected)

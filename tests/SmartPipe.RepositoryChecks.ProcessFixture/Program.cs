@@ -18,6 +18,8 @@ internal static class Program
             "signal-wait" when args.Length == 2 => SignalAndWait(args[1]),
             "delayed-host" when args.Length >= 4 => ConnectControlAndWait(args[1], args[3]),
             "malformed-host" when args.Length >= 3 => SendMalformedControlFrame(args[2]),
+            "spawn-detached-descendant" when args.Length == 3 => SpawnDetachedDescendant(args[1], args[2]),
+            "post-start-malformed-host" when args.Length >= 5 => RunPostStartMalformedHost(args[1], args[3], args[4]),
             _ => 2,
         };
     }
@@ -137,5 +139,109 @@ internal static class Program
         return 0;
     }
 
+    private static int SpawnDetachedDescendant(string processIdPath, string exitCode)
+    {
+        MakeTargetOutputNonInheritable();
+        var startInfo = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = Environment.ProcessPath!,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("descendant-hold");
+        using var descendant = System.Diagnostics.Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Unable to start detached descendant fixture process.");
+        File.WriteAllText(processIdPath, descendant.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return int.Parse(exitCode, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static int RunPostStartMalformedHost(
+        string processIdPath,
+        string controlPipeName,
+        string nonce)
+    {
+        using var control = new System.IO.Pipes.NamedPipeClientStream(
+            ".",
+            controlPipeName,
+            System.IO.Pipes.PipeDirection.InOut);
+        control.Connect(5000);
+        WriteControlFrame(control, nonce, "Ready", string.Empty);
+        ReadControlFrame(control);
+
+        var startInfo = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = Environment.ProcessPath!,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("descendant-hold");
+        using var descendant = System.Diagnostics.Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Unable to start malformed-host descendant.");
+        File.WriteAllText(processIdPath, descendant.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        WriteControlFrame(control, nonce, "Started", string.Empty);
+        control.Write(BitConverter.GetBytes(ProcessHostControlProtocolMaximumFrameBytes + 1));
+        return WaitUntilKilled();
+    }
+
+    private static void WriteControlFrame(
+        Stream control,
+        string nonce,
+        string kind,
+        string detail)
+    {
+        var payload = System.Text.Encoding.UTF8.GetBytes($"1|{nonce}|{kind}|{detail}");
+        control.Write(BitConverter.GetBytes(payload.Length));
+        control.Write(payload);
+    }
+
+    private static void ReadControlFrame(Stream control)
+    {
+        var header = new byte[sizeof(int)];
+        control.ReadExactly(header);
+        var length = BitConverter.ToInt32(header);
+        if (length <= 0 || length > ProcessHostControlProtocolMaximumFrameBytes)
+        {
+            throw new InvalidOperationException("Invalid controller frame length.");
+        }
+
+        control.ReadExactly(new byte[length]);
+    }
+
     private const int ProcessHostControlProtocolMaximumFrameBytes = 512;
+
+    private static void MakeTargetOutputNonInheritable()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            if (!SetHandleInformation(GetStdHandle(-11), 1, 0)
+                || !SetHandleInformation(GetStdHandle(-12), 1, 0))
+            {
+                throw new System.ComponentModel.Win32Exception();
+            }
+        }
+        else
+        {
+            const int setDescriptorFlags = 2;
+            const int closeOnExec = 1;
+            if (SetFileDescriptorFlags(1, setDescriptorFlags, closeOnExec) != 0
+                || SetFileDescriptorFlags(2, setDescriptorFlags, closeOnExec) != 0)
+            {
+                throw new System.ComponentModel.Win32Exception();
+            }
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GetStdHandle(int standardHandle);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
+
+    [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "fcntl", SetLastError = true)]
+    private static extern int SetFileDescriptorFlags(int descriptor, int command, int flags);
 }

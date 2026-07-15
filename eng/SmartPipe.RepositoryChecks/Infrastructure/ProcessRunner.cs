@@ -152,13 +152,13 @@ internal sealed class ProcessRunner : IProcessRunner
             await hostSession.WaitForReadyAsync(linkedCancellation.Token).ConfigureAwait(false);
             if (!await hostSession.SendStartAndWaitForResultAsync(linkedCancellation.Token).ConfigureAwait(false))
             {
-                var terminationException = await TerminateHostAsync(process, hostSession).ConfigureAwait(false);
+                var startFailureTermination = await TerminateHostAsync(process, hostSession).ConfigureAwait(false);
                 if (!await ObserveExitAsync(process).ConfigureAwait(false))
                 {
                     throw new ProcessRunnerException(
                         ProcessFailureKind.TerminationFailure,
                         "Target-start failure was reported but the process host could not be terminated.",
-                        terminationException ?? new TimeoutException("Process-host termination timed out."));
+                        startFailureTermination ?? new TimeoutException("Process-host termination timed out."));
                 }
 
                 await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
@@ -170,17 +170,36 @@ internal sealed class ProcessRunner : IProcessRunner
             var targetExitCode = await hostSession.ReadExitCodeAsync(linkedCancellation.Token)
                 .ConfigureAwait(false);
 
-            await process.WaitForExitAsync(linkedCancellation.Token).ConfigureAwait(false);
-            if (process.ExitCode != 0)
+            Exception? teardownException = null;
+            try
             {
-                throw new ProcessHostProtocolException("The process host exited unsuccessfully.");
+                await hostSession.SendTeardownAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is IOException or ProcessHostProtocolException)
+            {
+                teardownException = exception;
             }
 
-            var normalOutputObserved = await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
-            if (!normalOutputObserved)
+            var terminationException = await TerminateHostAsync(process, hostSession).ConfigureAwait(false);
+            if (!await ObserveExitAsync(process).ConfigureAwait(false))
             {
-                throw new ProcessHostProtocolException(
-                    "The process host completed without closing redirected output.");
+                throw new ProcessRunnerException(
+                    ProcessFailureKind.TerminationFailure,
+                    "Target exited but its owned process group could not be torn down and observed.",
+                    terminationException
+                    ?? teardownException
+                    ?? new TimeoutException("Owned process-group teardown timed out."));
+            }
+
+            if (!await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false))
+            {
+                await CloseInheritedOutputPipesAsync(process).ConfigureAwait(false);
+                if (!await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false))
+                {
+                    throw new ProcessRunnerException(
+                        ProcessFailureKind.TerminationFailure,
+                        "Owned process group exited but redirected output could not be observed.");
+                }
             }
 
             return new ProcessResult(
@@ -279,7 +298,7 @@ internal sealed class ProcessRunner : IProcessRunner
     {
         var terminationException = await hostSession.TrySendCancelAsync().ConfigureAwait(false);
 
-        if (!HasExited(process))
+        if (hostSession.StartCommitted || !HasExited(process))
         {
             try
             {
@@ -432,7 +451,8 @@ internal static class RepositoryCheckProcessHost
     internal static async Task<int> RunAsync(
         IReadOnlyList<string> arguments,
         IProcessTreeOwnershipFactory ownershipFactory,
-        bool holdOwnershipForProcessLifetime = false)
+        bool holdOwnershipForProcessLifetime = false,
+        CancellationToken hostLifetimeCancellation = default)
     {
         ArgumentNullException.ThrowIfNull(ownershipFactory);
         if (!TryParseArguments(
@@ -517,6 +537,7 @@ internal static class RepositoryCheckProcessHost
             s_lifetimeOwnership = ownership;
         }
 
+        var startAccepted = false;
         try
         {
             await WriteControlAsync(
@@ -535,13 +556,30 @@ internal static class RepositoryCheckProcessHost
                 return InvalidArgumentsExitCode;
             }
 
-            return await RunTargetAsync(control, nonce, targetFileName, targetArguments)
+            startAccepted = true;
+            return await RunTargetAsync(
+                    control,
+                    nonce,
+                    targetFileName,
+                    targetArguments,
+                    hostLifetimeCancellation)
                 .ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is IOException
                                            or OperationCanceledException
                                            or ProcessHostProtocolException)
         {
+            if (startAccepted)
+            {
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, hostLifetimeCancellation).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (hostLifetimeCancellation.IsCancellationRequested)
+                {
+                }
+            }
+
             return InvalidArgumentsExitCode;
         }
         finally
@@ -557,7 +595,8 @@ internal static class RepositoryCheckProcessHost
         Stream control,
         string nonce,
         string targetFileName,
-        IReadOnlyList<string> targetArguments)
+        IReadOnlyList<string> targetArguments,
+        CancellationToken hostLifetimeCancellation)
     {
         using var target = new Process
         {
@@ -593,7 +632,8 @@ internal static class RepositoryCheckProcessHost
                     ProcessHostControlMessageKind.Exit,
                     target.ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture)))
             .ConfigureAwait(false);
-        return 0;
+        await WaitForMandatoryTeardownAsync(control, nonce, hostLifetimeCancellation).ConfigureAwait(false);
+        return InvalidArgumentsExitCode;
     }
 
     private static bool TryParseArguments(
@@ -681,6 +721,29 @@ internal static class RepositoryCheckProcessHost
         {
             // The controller has already canceled startup; no target can be created.
         }
+    }
+
+    private static async Task WaitForMandatoryTeardownAsync(
+        Stream control,
+        string nonce,
+        CancellationToken hostLifetimeCancellation)
+    {
+        try
+        {
+            var teardown = await ReadControlAsync(control, nonce, CancellationToken.None).ConfigureAwait(false);
+            if (teardown.Kind != ProcessHostControlMessageKind.Teardown || teardown.Detail is not null)
+            {
+                // Invalid teardown never permits this ownership leader to exit normally.
+            }
+        }
+        catch (Exception exception) when (exception is IOException
+                                           or OperationCanceledException
+                                           or ProcessHostProtocolException)
+        {
+            // Missing or malformed teardown falls back to controller-owned termination.
+        }
+
+        await Task.Delay(Timeout.InfiniteTimeSpan, hostLifetimeCancellation).ConfigureAwait(false);
     }
 
     private static ProcessStartInfo CreateTargetStartInfo(
