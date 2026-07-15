@@ -50,6 +50,13 @@ internal interface IProcessTerminator
     void Kill(Process process);
 }
 
+internal sealed record ProcessHostLaunch(string FileName, IReadOnlyList<string> PrefixArguments);
+
+internal interface IProcessHostLocator
+{
+    ProcessHostLaunch Locate();
+}
+
 internal sealed class ProcessRunner : IProcessRunner
 {
     private const int DefaultMaximumRetainedOutputCharacters = 64 * 1024;
@@ -58,11 +65,13 @@ internal sealed class ProcessRunner : IProcessRunner
     private readonly IProcessTerminator _terminator;
     private readonly TimeSpan _terminationObservationTimeout;
     private readonly int _maximumRetainedOutputCharacters;
+    private readonly IProcessHostLocator _processHostLocator;
 
     public ProcessRunner(
         IProcessTerminator? terminator = null,
         TimeSpan? terminationObservationTimeout = null,
-        int maximumRetainedOutputCharacters = DefaultMaximumRetainedOutputCharacters)
+        int maximumRetainedOutputCharacters = DefaultMaximumRetainedOutputCharacters,
+        IProcessHostLocator? processHostLocator = null)
     {
         if (terminationObservationTimeout <= TimeSpan.Zero)
         {
@@ -73,6 +82,7 @@ internal sealed class ProcessRunner : IProcessRunner
         _terminator = terminator ?? new SystemProcessTerminator();
         _terminationObservationTimeout = terminationObservationTimeout ?? DefaultTerminationObservationTimeout;
         _maximumRetainedOutputCharacters = maximumRetainedOutputCharacters;
+        _processHostLocator = processHostLocator ?? new RepositoryCheckProcessHostLocator();
     }
 
     public async Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken)
@@ -81,7 +91,9 @@ internal sealed class ProcessRunner : IProcessRunner
         ArgumentException.ThrowIfNullOrWhiteSpace(request.FileName);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(request.Timeout, TimeSpan.Zero);
 
-        using var process = new Process { StartInfo = CreateStartInfo(request) };
+        var startupToken = Guid.NewGuid().ToString("N");
+        var hostLaunch = _processHostLocator.Locate();
+        using var process = new Process { StartInfo = CreateStartInfo(request, hostLaunch, startupToken) };
         try
         {
             if (!process.Start())
@@ -148,10 +160,6 @@ internal sealed class ProcessRunner : IProcessRunner
             {
                 await CloseInheritedOutputPipesAsync(process).ConfigureAwait(false);
                 await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
-                throw new ProcessRunnerException(
-                    ProcessFailureKind.TerminationFailure,
-                    "External process output streams did not close within the bounded shutdown interval.",
-                    terminationException ?? exception);
             }
 
             throw new ProcessRunnerException(
@@ -175,23 +183,55 @@ internal sealed class ProcessRunner : IProcessRunner
 
         var standardOutput = await standardOutputTask.ConfigureAwait(false);
         var standardError = await standardErrorTask.ConfigureAwait(false);
+        if (process.ExitCode == RepositoryCheckProcessHost.TargetStartFailureExitCode
+            && standardError.Contains(
+                RepositoryCheckProcessHost.CreateTargetStartFailureMarker(startupToken),
+                StringComparison.Ordinal))
+        {
+            throw new ProcessRunnerException(
+                ProcessFailureKind.StartFailure,
+                "External target process could not be started by the repository-check process host.");
+        }
+
+        if (process.ExitCode == RepositoryCheckProcessHost.OwnershipInitializationFailureExitCode
+            && standardError.Contains(
+                RepositoryCheckProcessHost.CreateOwnershipInitializationFailureMarker(startupToken),
+                StringComparison.Ordinal))
+        {
+            throw new ProcessRunnerException(
+                ProcessFailureKind.StartFailure,
+                "Repository-check process-tree ownership could not be initialized.");
+        }
+
         return new ProcessResult(
             process.ExitCode,
             standardOutput,
             standardError);
     }
 
-    internal static ProcessStartInfo CreateStartInfo(ProcessRequest request)
+    internal static ProcessStartInfo CreateStartInfo(
+        ProcessRequest request,
+        ProcessHostLaunch hostLaunch,
+        string startupToken)
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = request.FileName,
+            FileName = hostLaunch.FileName,
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,
         };
 
+        foreach (var prefixArgument in hostLaunch.PrefixArguments)
+        {
+            startInfo.ArgumentList.Add(prefixArgument);
+        }
+
+        startInfo.ArgumentList.Add(RepositoryCheckProcessHost.DispatchArgument);
+        startInfo.ArgumentList.Add(startupToken);
+        startInfo.ArgumentList.Add(request.FileName);
+        startInfo.ArgumentList.Add("--");
         foreach (var argument in request.Arguments)
         {
             startInfo.ArgumentList.Add(argument);
@@ -267,8 +307,204 @@ internal sealed class ProcessRunner : IProcessRunner
     {
         public void Kill(Process process)
         {
-            process.Kill(entireProcessTree: true);
+            ProcessTreeTerminator.Kill(process);
         }
+    }
+}
+
+internal sealed class RepositoryCheckProcessHostLocator : IProcessHostLocator
+{
+    public ProcessHostLaunch Locate()
+    {
+        var assemblyPath = typeof(ProcessRunner).Assembly.Location;
+        var assemblyDirectory = Path.GetDirectoryName(assemblyPath)!;
+        var appHostName = Path.GetFileNameWithoutExtension(assemblyPath)
+            + (OperatingSystem.IsWindows() ? ".exe" : string.Empty);
+        var appHostPath = Path.Combine(assemblyDirectory, appHostName);
+        if (File.Exists(appHostPath))
+        {
+            return new ProcessHostLaunch(appHostPath, []);
+        }
+
+        return new ProcessHostLaunch(LocateDotnetHost(), [assemblyPath]);
+    }
+
+    private static string LocateDotnetHost()
+    {
+        var configuredHost = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+        if (!string.IsNullOrWhiteSpace(configuredHost))
+        {
+            return configuredHost;
+        }
+
+        var currentProcessPath = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(currentProcessPath)
+            && string.Equals(
+                Path.GetFileNameWithoutExtension(currentProcessPath),
+                "dotnet",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return currentProcessPath;
+        }
+
+        var dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+        if (!string.IsNullOrWhiteSpace(dotnetRoot))
+        {
+            var rootedHost = Path.Combine(dotnetRoot, OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet");
+            if (File.Exists(rootedHost))
+            {
+                return rootedHost;
+            }
+        }
+
+        return OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
+    }
+}
+
+internal static class RepositoryCheckProcessHost
+{
+    public const string DispatchArgument = "--internal-process-host";
+    public const int InvalidArgumentsExitCode = 64;
+    public const int TargetStartFailureExitCode = 125;
+    public const int OwnershipInitializationFailureExitCode = 126;
+
+    private const string TargetStartFailurePrefix = "__SMARTPIPE_TARGET_START_FAILURE__";
+    private const string OwnershipInitializationFailurePrefix = "__SMARTPIPE_OWNERSHIP_INITIALIZATION_FAILURE__";
+    private static readonly object OwnershipInitializationLock = new();
+    private static IDisposable? s_lifetimeOwnership;
+
+    public static async Task<int> RunAsync(IReadOnlyList<string> arguments)
+    {
+        return await RunAsync(
+                arguments,
+                new ProcessTreeOwnershipFactory(),
+                Console.Error)
+            .ConfigureAwait(false);
+    }
+
+    internal static async Task<int> RunAsync(
+        IReadOnlyList<string> arguments,
+        IProcessTreeOwnershipFactory ownershipFactory,
+        TextWriter error)
+    {
+        ArgumentNullException.ThrowIfNull(ownershipFactory);
+        ArgumentNullException.ThrowIfNull(error);
+        if (!TryParseArguments(arguments, out var startupToken, out var targetFileName, out var targetArguments))
+        {
+            return InvalidArgumentsExitCode;
+        }
+
+        try
+        {
+            lock (OwnershipInitializationLock)
+            {
+                if (s_lifetimeOwnership is not null)
+                {
+                    throw new InvalidOperationException(
+                        "Process-tree ownership has already been initialized for this process host.");
+                }
+
+                // Do not dispose this resource during normal execution. On Windows the
+                // host itself is a member of the kill-on-close job, so the OS must close
+                // the last handle only after Main has established the host exit code.
+                s_lifetimeOwnership = ownershipFactory.Initialize()
+                    ?? throw new InvalidOperationException(
+                        "Process-tree ownership initialization returned no lifetime resource.");
+            }
+        }
+        catch (Exception)
+        {
+            await error.WriteLineAsync(CreateOwnershipInitializationFailureMarker(startupToken))
+                .ConfigureAwait(false);
+            return OwnershipInitializationFailureExitCode;
+        }
+
+        return await RunTargetAsync(startupToken, targetFileName, targetArguments, error)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<int> RunTargetAsync(
+        string startupToken,
+        string targetFileName,
+        IReadOnlyList<string> targetArguments,
+        TextWriter error)
+    {
+        using var target = new Process
+        {
+            StartInfo = CreateTargetStartInfo(targetFileName, targetArguments),
+        };
+        try
+        {
+            if (!target.Start())
+            {
+                await error.WriteLineAsync(CreateTargetStartFailureMarker(startupToken)).ConfigureAwait(false);
+                return TargetStartFailureExitCode;
+            }
+        }
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+        {
+            await error.WriteLineAsync(CreateTargetStartFailureMarker(startupToken)).ConfigureAwait(false);
+            return TargetStartFailureExitCode;
+        }
+
+        var forwardOutput = target.StandardOutput.BaseStream.CopyToAsync(Console.OpenStandardOutput());
+        var forwardError = target.StandardError.BaseStream.CopyToAsync(Console.OpenStandardError());
+        await Task.WhenAll(forwardOutput, forwardError).ConfigureAwait(false);
+        await target.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+        return target.ExitCode;
+    }
+
+    public static string CreateTargetStartFailureMarker(string startupToken)
+    {
+        return TargetStartFailurePrefix + startupToken;
+    }
+
+    public static string CreateOwnershipInitializationFailureMarker(string startupToken)
+    {
+        return OwnershipInitializationFailurePrefix + startupToken;
+    }
+
+    private static bool TryParseArguments(
+        IReadOnlyList<string> arguments,
+        out string startupToken,
+        out string targetFileName,
+        out IReadOnlyList<string> targetArguments)
+    {
+        startupToken = string.Empty;
+        targetFileName = string.Empty;
+        targetArguments = [];
+        if (arguments.Count < 3
+            || !Guid.TryParseExact(arguments[0], "N", out _)
+            || string.IsNullOrWhiteSpace(arguments[1])
+            || !string.Equals(arguments[2], "--", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        startupToken = arguments[0];
+        targetFileName = arguments[1];
+        targetArguments = arguments.Skip(3).ToArray();
+        return true;
+    }
+
+    private static ProcessStartInfo CreateTargetStartInfo(
+        string targetFileName,
+        IReadOnlyList<string> targetArguments)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = targetFileName,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        foreach (var argument in targetArguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        return startInfo;
     }
 }
 

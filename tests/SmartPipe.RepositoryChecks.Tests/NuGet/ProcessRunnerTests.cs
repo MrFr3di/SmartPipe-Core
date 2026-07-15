@@ -7,6 +7,82 @@ namespace SmartPipe.RepositoryChecks.Tests.NuGet;
 public sealed class ProcessRunnerTests
 {
     [Fact]
+    public async Task RunAsync_UsesOwnedHost_AndForwardsArgumentsOutputAndExitCode()
+    {
+        var locator = new RecordingProcessHostLocator(new RepositoryCheckProcessHostLocator().Locate());
+        var runner = new ProcessRunner(processHostLocator: locator);
+        var request = CreateFixtureRequest(
+            ["echo", "23", "argument with spaces", "quote\"argument"],
+            TimeSpan.FromSeconds(10));
+
+        var result = await runner.RunAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, locator.Calls);
+        Assert.Equal(23, result.ExitCode);
+        Assert.Contains("ARG:argument with spaces", result.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("ARG:quote\"argument", result.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("fixture-stderr", result.StandardError, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_ClassifiesRepositoryCheckHostStartupFailure()
+    {
+        var missingHost = Path.Combine(Path.GetTempPath(), $"missing-host-{Guid.NewGuid():N}.exe");
+        var runner = new ProcessRunner(
+            processHostLocator: new RecordingProcessHostLocator(new ProcessHostLaunch(missingHost, [])));
+
+        var exception = await Assert.ThrowsAsync<ProcessRunnerException>(
+            () => runner.RunAsync(
+                CreateFixtureRequest("pressure", TimeSpan.FromSeconds(10)),
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(ProcessFailureKind.StartFailure, exception.FailureKind);
+    }
+
+    [Fact]
+    public async Task RunAsync_ClassifiesTargetStartupFailureReportedByHost()
+    {
+        var runner = new ProcessRunner();
+        var missingTarget = Path.Combine(Path.GetTempPath(), $"missing-target-{Guid.NewGuid():N}.exe");
+
+        var exception = await Assert.ThrowsAsync<ProcessRunnerException>(
+            () => runner.RunAsync(
+                new ProcessRequest(missingTarget, ["argument with spaces"], TimeSpan.FromSeconds(10)),
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(ProcessFailureKind.StartFailure, exception.FailureKind);
+    }
+
+    [Theory]
+    [InlineData()]
+    [InlineData("token-only")]
+    [InlineData("token", "target-without-separator")]
+    public async Task ProcessHost_RejectsMalformedArguments(params string[] arguments)
+    {
+        var exitCode = await RepositoryCheckProcessHost.RunAsync(arguments);
+
+        Assert.Equal(RepositoryCheckProcessHost.InvalidArgumentsExitCode, exitCode);
+    }
+
+    [Fact]
+    public async Task ProcessHost_FailsClosedWhenTreeOwnershipCannotBeInitialized()
+    {
+        var startupToken = Guid.NewGuid().ToString("N");
+        using var error = new StringWriter(System.Globalization.CultureInfo.InvariantCulture);
+
+        var exitCode = await RepositoryCheckProcessHost.RunAsync(
+            [startupToken, GetFixtureExecutablePath(), "--", "wait"],
+            new ThrowingProcessTreeOwnershipFactory(),
+            error);
+
+        Assert.Equal(RepositoryCheckProcessHost.OwnershipInitializationFailureExitCode, exitCode);
+        Assert.Contains(
+            RepositoryCheckProcessHost.CreateOwnershipInitializationFailureMarker(startupToken),
+            error.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RunAsync_DrainsLargeOutputWithoutDeadlock_AndBoundsRetainedText()
     {
         const int maximumRetainedCharacters = 4096;
@@ -55,22 +131,22 @@ public sealed class ProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_BoundsNormalExitPipeObservation_AndDoesNotLeakDescendant()
+    public async Task RunAsync_TimesOutOwnedHostTree_AndDoesNotLeakSilentDescendant()
     {
         var processIdPath = Path.Combine(Path.GetTempPath(), $"smartpipe-descendant-{Guid.NewGuid():N}.pid");
         int? descendantProcessId = null;
         try
         {
-            var runner = new ProcessRunner(terminationObservationTimeout: TimeSpan.FromMilliseconds(250));
+            var runner = new ProcessRunner(terminationObservationTimeout: TimeSpan.FromSeconds(2));
 
             var exception = await Assert.ThrowsAsync<ProcessRunnerException>(
                 () => runner.RunAsync(
                     CreateFixtureRequest(
                         ["spawn-descendant", processIdPath],
-                        TimeSpan.FromSeconds(10)),
+                        TimeSpan.FromMilliseconds(500)),
                     TestContext.Current.CancellationToken));
 
-            Assert.Equal(ProcessFailureKind.TerminationFailure, exception.FailureKind);
+            Assert.Equal(ProcessFailureKind.Timeout, exception.FailureKind);
             descendantProcessId = int.Parse(
                 await File.ReadAllTextAsync(processIdPath, TestContext.Current.CancellationToken),
                 System.Globalization.CultureInfo.InvariantCulture);
@@ -259,6 +335,25 @@ public sealed class ProcessRunnerTests
         {
             ProcessId = process.Id;
             process.Kill(entireProcessTree: true);
+        }
+    }
+
+    private sealed class ThrowingProcessTreeOwnershipFactory : IProcessTreeOwnershipFactory
+    {
+        public IDisposable Initialize()
+        {
+            throw new InvalidOperationException("Synthetic ownership initialization failure.");
+        }
+    }
+
+    private sealed class RecordingProcessHostLocator(ProcessHostLaunch launch) : IProcessHostLocator
+    {
+        public int Calls { get; private set; }
+
+        public ProcessHostLaunch Locate()
+        {
+            Calls++;
+            return launch;
         }
     }
 

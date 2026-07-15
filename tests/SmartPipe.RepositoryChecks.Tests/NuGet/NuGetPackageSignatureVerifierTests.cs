@@ -74,13 +74,23 @@ public sealed class NuGetPackageSignatureVerifierTests
             ["nuget", "verify", "C:\\package path\\package.nupkg", "--all"],
             TimeSpan.FromMinutes(1));
 
-        var startInfo = ProcessRunner.CreateStartInfo(request);
+        var hostLaunch = new ProcessHostLaunch("C:\\host path\\SmartPipe.RepositoryChecks.exe", ["host.dll"]);
+        var startInfo = ProcessRunner.CreateStartInfo(request, hostLaunch, "0123456789abcdef0123456789abcdef");
 
         Assert.False(startInfo.UseShellExecute);
         Assert.True(startInfo.RedirectStandardOutput);
         Assert.True(startInfo.RedirectStandardError);
-        Assert.Equal(request.FileName, startInfo.FileName);
-        Assert.Equal(request.Arguments, startInfo.ArgumentList);
+        Assert.Equal(hostLaunch.FileName, startInfo.FileName);
+        Assert.Equal(
+            [
+                "host.dll",
+                RepositoryCheckProcessHost.DispatchArgument,
+                "0123456789abcdef0123456789abcdef",
+                request.FileName,
+                "--",
+                .. request.Arguments,
+            ],
+            startInfo.ArgumentList);
         Assert.Empty(startInfo.Arguments);
     }
 

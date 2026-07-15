@@ -10,7 +10,8 @@ internal static class Program
             "pressure" => WriteOutputPressure(),
             "long-query" => WriteLongQuery(),
             "spawn-descendant" when args.Length == 2 => SpawnOutputHoldingDescendant(args[1]),
-            "descendant-pressure" => WriteDescendantPressure(),
+            "descendant-hold" => WaitUntilKilled(),
+            "echo" when args.Length >= 2 => EchoArgumentsAndExit(args),
             _ => 2,
         };
     }
@@ -55,30 +56,21 @@ internal static class Program
             FileName = Environment.ProcessPath!,
             UseShellExecute = false,
         };
-        startInfo.ArgumentList.Add("descendant-pressure");
+        startInfo.ArgumentList.Add("descendant-hold");
         using var descendant = System.Diagnostics.Process.Start(startInfo)
             ?? throw new InvalidOperationException("Unable to start descendant fixture process.");
         File.WriteAllText(processIdPath, descendant.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
         return 0;
     }
 
-    private static int WriteDescendantPressure()
+    private static int EchoArgumentsAndExit(string[] args)
     {
-        var standardOutputChunk = new string('D', 1024);
-        var standardErrorChunk = new string('X', 1024);
-        try
+        foreach (var argument in args.Skip(2))
         {
-            for (var index = 0; index < 131072; index++)
-            {
-                Console.Out.Write(standardOutputChunk);
-                Console.Error.Write(standardErrorChunk);
-            }
-        }
-        catch (IOException)
-        {
-            // Closing the inherited pipe is the fixture's deterministic shutdown signal.
+            Console.Out.WriteLine($"ARG:{argument}");
         }
 
-        return 0;
+        Console.Error.WriteLine("fixture-stderr");
+        return int.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture);
     }
 }
