@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO.Pipes;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -61,17 +62,20 @@ internal sealed class ProcessRunner : IProcessRunner
 {
     private const int DefaultMaximumRetainedOutputCharacters = 64 * 1024;
     private static readonly TimeSpan DefaultTerminationObservationTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan DefaultProcessHostHandshakeTimeout = TimeSpan.FromSeconds(5);
 
     private readonly IProcessTerminator _terminator;
     private readonly TimeSpan _terminationObservationTimeout;
     private readonly int _maximumRetainedOutputCharacters;
     private readonly IProcessHostLocator _processHostLocator;
+    private readonly TimeSpan _processHostHandshakeTimeout;
 
     public ProcessRunner(
         IProcessTerminator? terminator = null,
         TimeSpan? terminationObservationTimeout = null,
         int maximumRetainedOutputCharacters = DefaultMaximumRetainedOutputCharacters,
-        IProcessHostLocator? processHostLocator = null)
+        IProcessHostLocator? processHostLocator = null,
+        TimeSpan? processHostHandshakeTimeout = null)
     {
         if (terminationObservationTimeout <= TimeSpan.Zero)
         {
@@ -79,10 +83,16 @@ internal sealed class ProcessRunner : IProcessRunner
         }
 
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumRetainedOutputCharacters);
+        if (processHostHandshakeTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(processHostHandshakeTimeout));
+        }
+
         _terminator = terminator ?? new SystemProcessTerminator();
         _terminationObservationTimeout = terminationObservationTimeout ?? DefaultTerminationObservationTimeout;
         _maximumRetainedOutputCharacters = maximumRetainedOutputCharacters;
         _processHostLocator = processHostLocator ?? new RepositoryCheckProcessHostLocator();
+        _processHostHandshakeTimeout = processHostHandshakeTimeout ?? DefaultProcessHostHandshakeTimeout;
     }
 
     public async Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken)
@@ -90,10 +100,23 @@ internal sealed class ProcessRunner : IProcessRunner
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.FileName);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(request.Timeout, TimeSpan.Zero);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            throw new ProcessRunnerException(
+                ProcessFailureKind.Canceled,
+                "External process was canceled before its process host was started.");
+        }
 
-        var startupToken = Guid.NewGuid().ToString("N");
+        using var hostSession = new ProcessHostSession(_processHostHandshakeTimeout);
         var hostLaunch = _processHostLocator.Locate();
-        using var process = new Process { StartInfo = CreateStartInfo(request, hostLaunch, startupToken) };
+        using var process = new Process
+        {
+            StartInfo = CreateStartInfo(
+                request,
+                hostLaunch,
+                hostSession.PipeName,
+                hostSession.Nonce),
+        };
         try
         {
             if (!process.Start())
@@ -126,25 +149,52 @@ internal sealed class ProcessRunner : IProcessRunner
 
         try
         {
+            await hostSession.WaitForReadyAsync(linkedCancellation.Token).ConfigureAwait(false);
+            if (!await hostSession.SendStartAndWaitForResultAsync(linkedCancellation.Token).ConfigureAwait(false))
+            {
+                var terminationException = await TerminateHostAsync(process, hostSession).ConfigureAwait(false);
+                if (!await ObserveExitAsync(process).ConfigureAwait(false))
+                {
+                    throw new ProcessRunnerException(
+                        ProcessFailureKind.TerminationFailure,
+                        "Target-start failure was reported but the process host could not be terminated.",
+                        terminationException ?? new TimeoutException("Process-host termination timed out."));
+                }
+
+                await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
+                throw new ProcessRunnerException(
+                    ProcessFailureKind.StartFailure,
+                    "External target process could not be started by the repository-check process host.");
+            }
+
+            var targetExitCode = await hostSession.ReadExitCodeAsync(linkedCancellation.Token)
+                .ConfigureAwait(false);
+
             await process.WaitForExitAsync(linkedCancellation.Token).ConfigureAwait(false);
+            if (process.ExitCode != 0)
+            {
+                throw new ProcessHostProtocolException("The process host exited unsuccessfully.");
+            }
+
+            var normalOutputObserved = await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
+            if (!normalOutputObserved)
+            {
+                throw new ProcessHostProtocolException(
+                    "The process host completed without closing redirected output.");
+            }
+
+            return new ProcessResult(
+                targetExitCode,
+                await standardOutputTask.ConfigureAwait(false),
+                await standardErrorTask.ConfigureAwait(false));
         }
         catch (OperationCanceledException exception)
         {
             var failureKind = cancellationToken.IsCancellationRequested
                 ? ProcessFailureKind.Canceled
                 : ProcessFailureKind.Timeout;
-            Exception? terminationException = null;
-            if (!HasExited(process))
-            {
-                try
-                {
-                    _terminator.Kill(process);
-                }
-                catch (Exception killException) when (killException is Win32Exception or InvalidOperationException)
-                {
-                    terminationException = killException;
-                }
-            }
+            var terminationException = await TerminateHostAsync(process, hostSession)
+                .ConfigureAwait(false);
 
             var exitObserved = await ObserveExitAsync(process).ConfigureAwait(false);
             if (!exitObserved)
@@ -169,50 +219,32 @@ internal sealed class ProcessRunner : IProcessRunner
                     : "External process was canceled.",
                 exception);
         }
-
-        var normalOutputObserved = await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
-        if (!normalOutputObserved)
+        catch (Exception exception) when (exception is IOException or ProcessHostProtocolException)
         {
-            var terminationException = await CloseInheritedOutputPipesAsync(process).ConfigureAwait(false);
+            var terminationException = await TerminateHostAsync(process, hostSession)
+                .ConfigureAwait(false);
+            var exitObserved = await ObserveExitAsync(process).ConfigureAwait(false);
+            if (!exitObserved)
+            {
+                throw new ProcessRunnerException(
+                    ProcessFailureKind.TerminationFailure,
+                    "Invalid process host could not be terminated and observed.",
+                    terminationException ?? exception);
+            }
+
             await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
             throw new ProcessRunnerException(
-                ProcessFailureKind.TerminationFailure,
-                "External process exited but inherited output pipes did not close within the bounded observation interval.",
-                terminationException ?? new TimeoutException("Redirected output observation timed out."));
-        }
-
-        var standardOutput = await standardOutputTask.ConfigureAwait(false);
-        var standardError = await standardErrorTask.ConfigureAwait(false);
-        if (process.ExitCode == RepositoryCheckProcessHost.TargetStartFailureExitCode
-            && standardError.Contains(
-                RepositoryCheckProcessHost.CreateTargetStartFailureMarker(startupToken),
-                StringComparison.Ordinal))
-        {
-            throw new ProcessRunnerException(
                 ProcessFailureKind.StartFailure,
-                "External target process could not be started by the repository-check process host.");
+                "Repository-check process host did not complete its authenticated control protocol.",
+                exception);
         }
-
-        if (process.ExitCode == RepositoryCheckProcessHost.OwnershipInitializationFailureExitCode
-            && standardError.Contains(
-                RepositoryCheckProcessHost.CreateOwnershipInitializationFailureMarker(startupToken),
-                StringComparison.Ordinal))
-        {
-            throw new ProcessRunnerException(
-                ProcessFailureKind.StartFailure,
-                "Repository-check process-tree ownership could not be initialized.");
-        }
-
-        return new ProcessResult(
-            process.ExitCode,
-            standardOutput,
-            standardError);
     }
 
     internal static ProcessStartInfo CreateStartInfo(
         ProcessRequest request,
         ProcessHostLaunch hostLaunch,
-        string startupToken)
+        string pipeName,
+        string nonce)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -229,7 +261,8 @@ internal sealed class ProcessRunner : IProcessRunner
         }
 
         startInfo.ArgumentList.Add(RepositoryCheckProcessHost.DispatchArgument);
-        startInfo.ArgumentList.Add(startupToken);
+        startInfo.ArgumentList.Add(pipeName);
+        startInfo.ArgumentList.Add(nonce);
         startInfo.ArgumentList.Add(request.FileName);
         startInfo.ArgumentList.Add("--");
         foreach (var argument in request.Arguments)
@@ -238,6 +271,34 @@ internal sealed class ProcessRunner : IProcessRunner
         }
 
         return startInfo;
+    }
+
+    private async Task<Exception?> TerminateHostAsync(
+        Process process,
+        ProcessHostSession hostSession)
+    {
+        var terminationException = await hostSession.TrySendCancelAsync().ConfigureAwait(false);
+
+        if (!HasExited(process))
+        {
+            try
+            {
+                if (hostSession.StartCommitted)
+                {
+                    _terminator.Kill(process);
+                }
+                else
+                {
+                    process.Kill();
+                }
+            }
+            catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+            {
+                terminationException = exception;
+            }
+        }
+
+        return terminationException;
     }
 
     private static bool HasExited(Process process)
@@ -287,20 +348,10 @@ internal sealed class ProcessRunner : IProcessRunner
 
     private async Task<Exception?> CloseInheritedOutputPipesAsync(Process process)
     {
-        Exception? terminationException = null;
-        try
-        {
-            _terminator.Kill(process);
-        }
-        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
-        {
-            terminationException = exception;
-        }
-
         process.StandardOutput.Dispose();
         process.StandardError.Dispose();
         await Task.Yield();
-        return terminationException;
+        return null;
     }
 
     private sealed class SystemProcessTerminator : IProcessTerminator
@@ -365,12 +416,8 @@ internal static class RepositoryCheckProcessHost
 {
     public const string DispatchArgument = "--internal-process-host";
     public const int InvalidArgumentsExitCode = 64;
-    public const int TargetStartFailureExitCode = 125;
-    public const int OwnershipInitializationFailureExitCode = 126;
-
-    private const string TargetStartFailurePrefix = "__SMARTPIPE_TARGET_START_FAILURE__";
-    private const string OwnershipInitializationFailurePrefix = "__SMARTPIPE_OWNERSHIP_INITIALIZATION_FAILURE__";
-    private static readonly object OwnershipInitializationLock = new();
+    private static readonly TimeSpan ControlConnectTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ControlOperationTimeout = TimeSpan.FromSeconds(5);
     private static IDisposable? s_lifetimeOwnership;
 
     public static async Task<int> RunAsync(IReadOnlyList<string> arguments)
@@ -378,56 +425,139 @@ internal static class RepositoryCheckProcessHost
         return await RunAsync(
                 arguments,
                 new ProcessTreeOwnershipFactory(),
-                Console.Error)
+                holdOwnershipForProcessLifetime: true)
             .ConfigureAwait(false);
     }
 
     internal static async Task<int> RunAsync(
         IReadOnlyList<string> arguments,
         IProcessTreeOwnershipFactory ownershipFactory,
-        TextWriter error)
+        bool holdOwnershipForProcessLifetime = false)
     {
         ArgumentNullException.ThrowIfNull(ownershipFactory);
-        ArgumentNullException.ThrowIfNull(error);
-        if (!TryParseArguments(arguments, out var startupToken, out var targetFileName, out var targetArguments))
+        if (!TryParseArguments(
+                arguments,
+                out var pipeName,
+                out var nonce,
+                out var targetFileName,
+                out var targetArguments))
         {
             return InvalidArgumentsExitCode;
         }
 
+        using var control = new NamedPipeClientStream(
+            ".",
+            pipeName,
+            PipeDirection.InOut,
+            PipeOptions.Asynchronous);
         try
         {
-            lock (OwnershipInitializationLock)
-            {
-                if (s_lifetimeOwnership is not null)
-                {
-                    throw new InvalidOperationException(
-                        "Process-tree ownership has already been initialized for this process host.");
-                }
+            using var connectTimeout = new CancellationTokenSource(ControlConnectTimeout);
+            await control.ConnectAsync(connectTimeout.Token).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException
+                                           or OperationCanceledException
+                                           or TimeoutException)
+        {
+            return InvalidArgumentsExitCode;
+        }
 
-                // Do not dispose this resource during normal execution. On Windows the
-                // host itself is a member of the kill-on-close job, so the OS must close
-                // the last handle only after Main has established the host exit code.
-                s_lifetimeOwnership = ownershipFactory.Initialize()
-                    ?? throw new InvalidOperationException(
-                        "Process-tree ownership initialization returned no lifetime resource.");
-            }
+        using var initializationCancellation = new CancellationTokenSource();
+        Task<IDisposable> ownershipTask;
+        try
+        {
+            ownershipTask = ownershipFactory.InitializeAsync(initializationCancellation.Token).AsTask();
         }
         catch (Exception)
         {
-            await error.WriteLineAsync(CreateOwnershipInitializationFailureMarker(startupToken))
-                .ConfigureAwait(false);
-            return OwnershipInitializationFailureExitCode;
+            return InvalidArgumentsExitCode;
         }
 
-        return await RunTargetAsync(startupToken, targetFileName, targetArguments, error)
-            .ConfigureAwait(false);
+        var commandTask = ReadControlAsync(control, nonce, initializationCancellation.Token);
+        var firstCompleted = await Task.WhenAny(ownershipTask, commandTask).ConfigureAwait(false);
+        if (firstCompleted == commandTask)
+        {
+            ProcessHostControlMessage earlyCommand;
+            try
+            {
+                earlyCommand = await commandTask.ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is IOException
+                                               or OperationCanceledException
+                                               or ProcessHostProtocolException)
+            {
+                initializationCancellation.Cancel();
+                return InvalidArgumentsExitCode;
+            }
+
+            initializationCancellation.Cancel();
+            await ObserveCanceledInitializationAsync(ownershipTask).ConfigureAwait(false);
+            return earlyCommand.Kind == ProcessHostControlMessageKind.Cancel && earlyCommand.Detail is null
+                ? 0
+                : InvalidArgumentsExitCode;
+        }
+
+        IDisposable ownership;
+        try
+        {
+            ownership = await ownershipTask.ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    "Process-tree ownership initialization returned no lifetime resource.");
+        }
+        catch (Exception)
+        {
+            initializationCancellation.Cancel();
+            return InvalidArgumentsExitCode;
+        }
+
+        if (holdOwnershipForProcessLifetime)
+        {
+            // A Windows kill-on-close job contains this host. Keep its non-inheritable
+            // handle rooted until OS process teardown, after Main establishes exit code.
+            s_lifetimeOwnership = ownership;
+        }
+
+        try
+        {
+            await WriteControlAsync(
+                    control,
+                    nonce,
+                    new ProcessHostControlMessage(ProcessHostControlMessageKind.Ready))
+                .ConfigureAwait(false);
+            var command = await commandTask.ConfigureAwait(false);
+            if (command.Kind == ProcessHostControlMessageKind.Cancel && command.Detail is null)
+            {
+                return 0;
+            }
+
+            if (command.Kind != ProcessHostControlMessageKind.Start || command.Detail is not null)
+            {
+                return InvalidArgumentsExitCode;
+            }
+
+            return await RunTargetAsync(control, nonce, targetFileName, targetArguments)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException
+                                           or OperationCanceledException
+                                           or ProcessHostProtocolException)
+        {
+            return InvalidArgumentsExitCode;
+        }
+        finally
+        {
+            if (!holdOwnershipForProcessLifetime)
+            {
+                ownership.Dispose();
+            }
+        }
     }
 
     private static async Task<int> RunTargetAsync(
-        string startupToken,
+        Stream control,
+        string nonce,
         string targetFileName,
-        IReadOnlyList<string> targetArguments,
-        TextWriter error)
+        IReadOnlyList<string> targetArguments)
     {
         using var target = new Process
         {
@@ -437,54 +567,120 @@ internal static class RepositoryCheckProcessHost
         {
             if (!target.Start())
             {
-                await error.WriteLineAsync(CreateTargetStartFailureMarker(startupToken)).ConfigureAwait(false);
-                return TargetStartFailureExitCode;
+                await TryWriteFailureAsync(control, nonce, "target-start").ConfigureAwait(false);
+                return 0;
             }
         }
         catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
         {
-            await error.WriteLineAsync(CreateTargetStartFailureMarker(startupToken)).ConfigureAwait(false);
-            return TargetStartFailureExitCode;
+            await TryWriteFailureAsync(control, nonce, "target-start").ConfigureAwait(false);
+            return 0;
         }
 
+        await WriteControlAsync(
+                control,
+                nonce,
+                new ProcessHostControlMessage(ProcessHostControlMessageKind.Started))
+            .ConfigureAwait(false);
         var forwardOutput = target.StandardOutput.BaseStream.CopyToAsync(Console.OpenStandardOutput());
         var forwardError = target.StandardError.BaseStream.CopyToAsync(Console.OpenStandardError());
         await Task.WhenAll(forwardOutput, forwardError).ConfigureAwait(false);
         await target.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-        return target.ExitCode;
-    }
-
-    public static string CreateTargetStartFailureMarker(string startupToken)
-    {
-        return TargetStartFailurePrefix + startupToken;
-    }
-
-    public static string CreateOwnershipInitializationFailureMarker(string startupToken)
-    {
-        return OwnershipInitializationFailurePrefix + startupToken;
+        await WriteControlAsync(
+                control,
+                nonce,
+                new ProcessHostControlMessage(
+                    ProcessHostControlMessageKind.Exit,
+                    target.ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+            .ConfigureAwait(false);
+        return 0;
     }
 
     private static bool TryParseArguments(
         IReadOnlyList<string> arguments,
-        out string startupToken,
+        out string pipeName,
+        out string nonce,
         out string targetFileName,
         out IReadOnlyList<string> targetArguments)
     {
-        startupToken = string.Empty;
+        pipeName = string.Empty;
+        nonce = string.Empty;
         targetFileName = string.Empty;
         targetArguments = [];
-        if (arguments.Count < 3
-            || !Guid.TryParseExact(arguments[0], "N", out _)
-            || string.IsNullOrWhiteSpace(arguments[1])
-            || !string.Equals(arguments[2], "--", StringComparison.Ordinal))
+        if (arguments.Count < 4
+            || string.IsNullOrWhiteSpace(arguments[0])
+            || arguments[0].Length > 128
+            || !Guid.TryParseExact(arguments[1], "N", out _)
+            || string.IsNullOrWhiteSpace(arguments[2])
+            || !string.Equals(arguments[3], "--", StringComparison.Ordinal))
         {
             return false;
         }
 
-        startupToken = arguments[0];
-        targetFileName = arguments[1];
-        targetArguments = arguments.Skip(3).ToArray();
+        pipeName = arguments[0];
+        nonce = arguments[1];
+        targetFileName = arguments[2];
+        targetArguments = arguments.Skip(4).ToArray();
         return true;
+    }
+
+    private static async Task TryWriteFailureAsync(Stream control, string nonce, string safeDetail)
+    {
+        try
+        {
+            await WriteControlAsync(
+                    control,
+                    nonce,
+                    new ProcessHostControlMessage(
+                        ProcessHostControlMessageKind.StartFailed,
+                        safeDetail))
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException
+                                           or OperationCanceledException
+                                           or ProcessHostProtocolException)
+        {
+            // The controller treats a missing failure frame as a start failure too.
+        }
+    }
+
+    private static async Task WriteControlAsync(
+        Stream control,
+        string nonce,
+        ProcessHostControlMessage message)
+    {
+        using var deadline = new CancellationTokenSource(ControlOperationTimeout);
+        await ProcessHostControlProtocol.WriteAsync(control, nonce, message, deadline.Token)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<ProcessHostControlMessage> ReadControlAsync(
+        Stream control,
+        string nonce,
+        CancellationToken cancellationToken)
+    {
+        using var deadline = new CancellationTokenSource(ControlOperationTimeout);
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            deadline.Token);
+        return await ProcessHostControlProtocol.ReadAsync(control, nonce, bounded.Token)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task ObserveCanceledInitializationAsync(Task<IDisposable> ownershipTask)
+    {
+        try
+        {
+            var ownership = await ownershipTask.WaitAsync(ControlOperationTimeout).ConfigureAwait(false);
+            ownership?.Dispose();
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or TimeoutException)
+        {
+        }
+        catch (Exception)
+        {
+            // The controller has already canceled startup; no target can be created.
+        }
     }
 
     private static ProcessStartInfo CreateTargetStartInfo(

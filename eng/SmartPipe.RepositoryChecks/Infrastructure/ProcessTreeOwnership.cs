@@ -7,21 +7,22 @@ namespace SmartPipe.RepositoryChecks.Infrastructure;
 
 internal interface IProcessTreeOwnershipFactory
 {
-    IDisposable Initialize();
+    ValueTask<IDisposable> InitializeAsync(CancellationToken cancellationToken);
 }
 
 internal sealed class ProcessTreeOwnershipFactory : IProcessTreeOwnershipFactory
 {
-    public IDisposable Initialize()
+    public ValueTask<IDisposable> InitializeAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (OperatingSystem.IsWindows())
         {
-            return WindowsJobOwnership.CreateForCurrentProcess();
+            return ValueTask.FromResult<IDisposable>(WindowsJobOwnership.CreateForCurrentProcess());
         }
 
         if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
         {
-            return UnixProcessGroupOwnership.CreateForCurrentProcess();
+            return ValueTask.FromResult<IDisposable>(UnixProcessGroupOwnership.CreateForCurrentProcess());
         }
 
         throw new PlatformNotSupportedException(

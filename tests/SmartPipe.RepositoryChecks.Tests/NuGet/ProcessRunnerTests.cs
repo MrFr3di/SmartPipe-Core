@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO.Pipes;
 using SmartPipe.RepositoryChecks.Infrastructure;
 
 namespace SmartPipe.RepositoryChecks.Tests.NuGet;
@@ -40,6 +41,84 @@ public sealed class ProcessRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_PreCanceled_DoesNotLocateOrStartHost()
+    {
+        var locator = new RecordingProcessHostLocator(new RepositoryCheckProcessHostLocator().Locate());
+        var runner = new ProcessRunner(processHostLocator: locator);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        var exception = await Assert.ThrowsAsync<ProcessRunnerException>(
+            () => runner.RunAsync(CreateFixtureRequest("touch", TimeSpan.FromSeconds(10)), cancellation.Token));
+
+        Assert.Equal(ProcessFailureKind.Canceled, exception.FailureKind);
+        Assert.Equal(0, locator.Calls);
+    }
+
+    [Fact]
+    public async Task RunAsync_ClassifiesZeroExitWithoutControlHandshakeAsStartFailure()
+    {
+        var fixture = GetFixtureExecutablePath();
+        var runner = new ProcessRunner(
+            processHostLocator: new RecordingProcessHostLocator(
+                new ProcessHostLaunch(fixture, ["exit-zero"])),
+            processHostHandshakeTimeout: TimeSpan.FromMilliseconds(250));
+
+        var exception = await Assert.ThrowsAsync<ProcessRunnerException>(
+            () => runner.RunAsync(
+                CreateFixtureRequest("pressure", TimeSpan.FromSeconds(10)),
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(ProcessFailureKind.StartFailure, exception.FailureKind);
+    }
+
+    [Fact]
+    public async Task RunAsync_ClassifiesMalformedControlFrameAsStartFailure()
+    {
+        var fixture = GetFixtureExecutablePath();
+        var runner = new ProcessRunner(
+            processHostLocator: new RecordingProcessHostLocator(
+                new ProcessHostLaunch(fixture, ["malformed-host"])));
+
+        var exception = await Assert.ThrowsAsync<ProcessRunnerException>(
+            () => runner.RunAsync(
+                CreateFixtureRequest("pressure", TimeSpan.FromSeconds(10)),
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(ProcessFailureKind.StartFailure, exception.FailureKind);
+    }
+
+    [Fact]
+    public async Task RunAsync_CancelWhileConnectedHostHasNotReportedReady_DoesNotStartTarget()
+    {
+        var fixture = GetFixtureExecutablePath();
+        var signalName = $"smartpipe-host-connected-{Guid.NewGuid():N}";
+        var targetStartedPath = Path.Combine(Path.GetTempPath(), $"smartpipe-target-not-started-{Guid.NewGuid():N}");
+        using var signal = CreateSignalServer(signalName);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var runner = new ProcessRunner(
+            processHostLocator: new RecordingProcessHostLocator(
+                new ProcessHostLaunch(fixture, ["delayed-host", signalName])));
+        try
+        {
+            var runTask = runner.RunAsync(
+                CreateFixtureRequest(["touch", targetStartedPath], TimeSpan.FromSeconds(30)),
+                cancellation.Token);
+            await WaitForSignalAsync(signal);
+
+            cancellation.Cancel();
+            var exception = await Assert.ThrowsAsync<ProcessRunnerException>(() => runTask);
+
+            Assert.Equal(ProcessFailureKind.Canceled, exception.FailureKind);
+            Assert.False(File.Exists(targetStartedPath));
+        }
+        finally
+        {
+            File.Delete(targetStartedPath);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_ClassifiesTargetStartupFailureReportedByHost()
     {
         var runner = new ProcessRunner();
@@ -55,8 +134,9 @@ public sealed class ProcessRunnerTests
 
     [Theory]
     [InlineData()]
-    [InlineData("token-only")]
-    [InlineData("token", "target-without-separator")]
+    [InlineData("pipe-only")]
+    [InlineData("pipe", "nonce-only")]
+    [InlineData("pipe", "0123456789abcdef0123456789abcdef", "target-without-separator")]
     public async Task ProcessHost_RejectsMalformedArguments(params string[] arguments)
     {
         var exitCode = await RepositoryCheckProcessHost.RunAsync(arguments);
@@ -67,19 +147,68 @@ public sealed class ProcessRunnerTests
     [Fact]
     public async Task ProcessHost_FailsClosedWhenTreeOwnershipCannotBeInitialized()
     {
-        var startupToken = Guid.NewGuid().ToString("N");
-        using var error = new StringWriter(System.Globalization.CultureInfo.InvariantCulture);
+        var pipeName = $"smartpipe-test-{Guid.NewGuid():N}";
+        var nonce = Guid.NewGuid().ToString("N");
+        using var control = CreateControlServer(pipeName);
+        var hostTask = RepositoryCheckProcessHost.RunAsync(
+            [pipeName, nonce, GetFixtureExecutablePath(), "--", "wait"],
+            new ThrowingProcessTreeOwnershipFactory());
 
-        var exitCode = await RepositoryCheckProcessHost.RunAsync(
-            [startupToken, GetFixtureExecutablePath(), "--", "wait"],
-            new ThrowingProcessTreeOwnershipFactory(),
-            error);
+        await control.WaitForConnectionAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(RepositoryCheckProcessHost.InvalidArgumentsExitCode, await hostTask);
+        await Assert.ThrowsAsync<ProcessHostProtocolException>(
+            () => ProcessHostControlProtocol.ReadAsync(
+                control,
+                nonce,
+                TestContext.Current.CancellationToken));
+    }
 
-        Assert.Equal(RepositoryCheckProcessHost.OwnershipInitializationFailureExitCode, exitCode);
-        Assert.Contains(
-            RepositoryCheckProcessHost.CreateOwnershipInitializationFailureMarker(startupToken),
-            error.ToString(),
-            StringComparison.Ordinal);
+    [Fact]
+    public async Task ProcessHost_CancelDuringDelayedOwnershipInitialization_NeverStartsTarget()
+    {
+        var pipeName = $"smartpipe-test-{Guid.NewGuid():N}";
+        var nonce = Guid.NewGuid().ToString("N");
+        var startedPath = Path.Combine(Path.GetTempPath(), $"smartpipe-not-started-{Guid.NewGuid():N}");
+        var ownershipFactory = new DelayedProcessTreeOwnershipFactory();
+        using var control = CreateControlServer(pipeName);
+        try
+        {
+            var hostTask = RepositoryCheckProcessHost.RunAsync(
+                [pipeName, nonce, GetFixtureExecutablePath(), "--", "touch", startedPath],
+                ownershipFactory);
+            await control.WaitForConnectionAsync(TestContext.Current.CancellationToken);
+            await ownershipFactory.InitializationEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+            await ProcessHostControlProtocol.WriteAsync(
+                control,
+                nonce,
+                new ProcessHostControlMessage(ProcessHostControlMessageKind.Cancel),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(0, await hostTask.WaitAsync(TestContext.Current.CancellationToken));
+            Assert.False(File.Exists(startedPath));
+        }
+        finally
+        {
+            ownershipFactory.ReleaseInitialization.TrySetResult();
+            File.Delete(startedPath);
+        }
+    }
+
+    [Theory]
+    [InlineData("125")]
+    [InlineData("126")]
+    public async Task RunAsync_TargetControlLookingOutputAndReservedExitCodesRemainOrdinary(string exitCode)
+    {
+        var runner = new ProcessRunner();
+
+        var result = await runner.RunAsync(
+            CreateFixtureRequest(["spoof-control", exitCode], TimeSpan.FromSeconds(10)),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(int.Parse(exitCode, System.Globalization.CultureInfo.InvariantCulture), result.ExitCode);
+        Assert.Contains("__SMARTPIPE_TARGET_START_FAILURE__", result.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("|StartFailed|target-start", result.StandardError, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -181,10 +310,13 @@ public sealed class ProcessRunnerTests
         var terminator = new RecordingTerminator();
         var runner = new ProcessRunner(terminator, TimeSpan.FromSeconds(2));
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var signalName = $"smartpipe-target-started-{Guid.NewGuid():N}";
+        using var signal = CreateSignalServer(signalName);
 
         var runTask = runner.RunAsync(
-            CreateFixtureRequest("wait", TimeSpan.FromSeconds(30)),
+            CreateFixtureRequest(["signal-wait", signalName], TimeSpan.FromSeconds(30)),
             cancellation.Token);
+        await WaitForSignalAsync(signal);
         cancellation.Cancel();
         var exception = await Assert.ThrowsAsync<ProcessRunnerException>(() => runTask);
 
@@ -199,12 +331,15 @@ public sealed class ProcessRunnerTests
         var terminator = new ThrowingTerminator(killBeforeThrow: false);
         var runner = new ProcessRunner(terminator, TimeSpan.FromMilliseconds(250));
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var signalName = $"smartpipe-target-started-{Guid.NewGuid():N}";
+        using var signal = CreateSignalServer(signalName);
 
         try
         {
             var runTask = runner.RunAsync(
-                CreateFixtureRequest("wait", TimeSpan.FromSeconds(30)),
+                CreateFixtureRequest(["signal-wait", signalName], TimeSpan.FromSeconds(30)),
                 cancellation.Token);
+            await WaitForSignalAsync(signal);
             cancellation.Cancel();
             var exception = await Assert.ThrowsAsync<ProcessRunnerException>(() => runTask);
 
@@ -224,10 +359,13 @@ public sealed class ProcessRunnerTests
         var terminator = new ThrowingTerminator(killBeforeThrow: true);
         var runner = new ProcessRunner(terminator, TimeSpan.FromSeconds(2));
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var signalName = $"smartpipe-target-started-{Guid.NewGuid():N}";
+        using var signal = CreateSignalServer(signalName);
 
         var runTask = runner.RunAsync(
-            CreateFixtureRequest("wait", TimeSpan.FromSeconds(30)),
+            CreateFixtureRequest(["signal-wait", signalName], TimeSpan.FromSeconds(30)),
             cancellation.Token);
+        await WaitForSignalAsync(signal);
         cancellation.Cancel();
         var exception = await Assert.ThrowsAsync<ProcessRunnerException>(() => runTask);
 
@@ -292,6 +430,34 @@ public sealed class ProcessRunnerTests
             executableName);
     }
 
+    private static NamedPipeServerStream CreateControlServer(string pipeName)
+    {
+        return new NamedPipeServerStream(
+            pipeName,
+            PipeDirection.InOut,
+            maxNumberOfServerInstances: 1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+    }
+
+    private static NamedPipeServerStream CreateSignalServer(string pipeName)
+    {
+        return new NamedPipeServerStream(
+            pipeName,
+            PipeDirection.In,
+            maxNumberOfServerInstances: 1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+    }
+
+    private static async Task WaitForSignalAsync(NamedPipeServerStream signal)
+    {
+        await signal.WaitForConnectionAsync(TestContext.Current.CancellationToken);
+        var value = new byte[1];
+        await signal.ReadExactlyAsync(value, TestContext.Current.CancellationToken);
+        Assert.Equal(1, value[0]);
+    }
+
     private static bool IsProcessRunning(int processId)
     {
         try
@@ -340,9 +506,32 @@ public sealed class ProcessRunnerTests
 
     private sealed class ThrowingProcessTreeOwnershipFactory : IProcessTreeOwnershipFactory
     {
-        public IDisposable Initialize()
+        public ValueTask<IDisposable> InitializeAsync(CancellationToken cancellationToken)
         {
             throw new InvalidOperationException("Synthetic ownership initialization failure.");
+        }
+    }
+
+    private sealed class DelayedProcessTreeOwnershipFactory : IProcessTreeOwnershipFactory
+    {
+        public TaskCompletionSource InitializationEntered { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource ReleaseInitialization { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask<IDisposable> InitializeAsync(CancellationToken cancellationToken)
+        {
+            InitializationEntered.TrySetResult();
+            await ReleaseInitialization.Task.WaitAsync(cancellationToken);
+            return new NoopOwnership();
+        }
+    }
+
+    private sealed class NoopOwnership : IDisposable
+    {
+        public void Dispose()
+        {
         }
     }
 

@@ -75,7 +75,9 @@ public sealed class NuGetPackageSignatureVerifierTests
             TimeSpan.FromMinutes(1));
 
         var hostLaunch = new ProcessHostLaunch("C:\\host path\\SmartPipe.RepositoryChecks.exe", ["host.dll"]);
-        var startInfo = ProcessRunner.CreateStartInfo(request, hostLaunch, "0123456789abcdef0123456789abcdef");
+        const string pipeName = "smartpipe-process-host-test";
+        const string nonce = "0123456789abcdef0123456789abcdef";
+        var startInfo = ProcessRunner.CreateStartInfo(request, hostLaunch, pipeName, nonce);
 
         Assert.False(startInfo.UseShellExecute);
         Assert.True(startInfo.RedirectStandardOutput);
@@ -85,7 +87,8 @@ public sealed class NuGetPackageSignatureVerifierTests
             [
                 "host.dll",
                 RepositoryCheckProcessHost.DispatchArgument,
-                "0123456789abcdef0123456789abcdef",
+                pipeName,
+                nonce,
                 request.FileName,
                 "--",
                 .. request.Arguments,

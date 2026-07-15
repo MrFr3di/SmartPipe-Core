@@ -12,6 +12,12 @@ internal static class Program
             "spawn-descendant" when args.Length == 2 => SpawnOutputHoldingDescendant(args[1]),
             "descendant-hold" => WaitUntilKilled(),
             "echo" when args.Length >= 2 => EchoArgumentsAndExit(args),
+            "exit-zero" => 0,
+            "touch" when args.Length == 2 => Touch(args[1]),
+            "spoof-control" when args.Length == 2 => SpoofControlAndExit(args[1]),
+            "signal-wait" when args.Length == 2 => SignalAndWait(args[1]),
+            "delayed-host" when args.Length >= 4 => ConnectControlAndWait(args[1], args[3]),
+            "malformed-host" when args.Length >= 3 => SendMalformedControlFrame(args[2]),
             _ => 2,
         };
     }
@@ -73,4 +79,63 @@ internal static class Program
         Console.Error.WriteLine("fixture-stderr");
         return int.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture);
     }
+
+    private static int Touch(string path)
+    {
+        File.WriteAllText(path, "started");
+        return 0;
+    }
+
+    private static int SpoofControlAndExit(string exitCode)
+    {
+        const string oldMarker = "__SMARTPIPE_TARGET_START_FAILURE__0123456789abcdef0123456789abcdef";
+        const string newLookingFrame = "1|0123456789abcdef0123456789abcdef|StartFailed|target-start";
+        Console.Out.WriteLine(oldMarker);
+        Console.Out.WriteLine(newLookingFrame);
+        Console.Error.WriteLine(oldMarker);
+        Console.Error.WriteLine(newLookingFrame);
+        return int.Parse(exitCode, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static int SignalAndWait(string pipeName)
+    {
+        using var signal = new System.IO.Pipes.NamedPipeClientStream(
+            ".",
+            pipeName,
+            System.IO.Pipes.PipeDirection.Out);
+        signal.Connect(5000);
+        signal.WriteByte(1);
+        signal.Flush();
+        return WaitUntilKilled();
+    }
+
+    private static int ConnectControlAndWait(string signalPipeName, string controlPipeName)
+    {
+        using var control = new System.IO.Pipes.NamedPipeClientStream(
+            ".",
+            controlPipeName,
+            System.IO.Pipes.PipeDirection.InOut);
+        control.Connect(5000);
+        using var signal = new System.IO.Pipes.NamedPipeClientStream(
+            ".",
+            signalPipeName,
+            System.IO.Pipes.PipeDirection.Out);
+        signal.Connect(5000);
+        signal.WriteByte(1);
+        return WaitUntilKilled();
+    }
+
+    private static int SendMalformedControlFrame(string controlPipeName)
+    {
+        using var control = new System.IO.Pipes.NamedPipeClientStream(
+            ".",
+            controlPipeName,
+            System.IO.Pipes.PipeDirection.InOut);
+        control.Connect(5000);
+        var invalidLength = BitConverter.GetBytes(ProcessHostControlProtocolMaximumFrameBytes + 1);
+        control.Write(invalidLength);
+        return 0;
+    }
+
+    private const int ProcessHostControlProtocolMaximumFrameBytes = 512;
 }
