@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.1.2] — Unreleased
+## [2.1.2] — 2026-07-15
 
 Patch release that separates JSON integrations into a dedicated package while
 preserving the SmartPipe.Extensions 2.x compatibility contract.
@@ -72,7 +72,6 @@ preserving the SmartPipe.Extensions 2.x compatibility contract.
 - `JsonFileSink<T>` output is documented as batch JSON Lines: one JSON array
   per flushed line, not conventional one-object-per-line NDJSON.
 - `JsonLinesDeadLetterSerializer<T>` remains in `SmartPipe.Core`.
-- Newtonsoft.Json is not introduced into the package graph.
 
 ## [2.1.1] — 2026-07-08
 
@@ -142,24 +141,6 @@ fixes found after `v2.1.0`.
 - **Package and publish gates** — release workflows continue to validate
   packages through local consumer, trim, NativeAOT, vulnerability, and
   deprecated-package checks before publish.
-
-### Source-Backed Notes
-
-- Regex hardening follows .NET guidance for
-  [`GeneratedRegexAttribute`](https://learn.microsoft.com/en-us/dotnet/standard/base-types/regular-expression-source-generators)
-  and [`RegexOptions.NonBacktracking`](https://learn.microsoft.com/en-us/dotnet/standard/base-types/regular-expression-options#nonbacktracking-mode).
-- Observability wording follows .NET
-  [`System.Diagnostics.Metrics`](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/metrics-instrumentation)
-  guidance: `Meter` creates named instrument groups, while exporters belong at
-  the host boundary.
-- Probabilistic structure docs remain bounded by the original algorithm papers:
-  Fan et al.,
-  [Cuckoo Filter: Practically Better Than Bloom](https://www.cs.cmu.edu/~dga/papers/cuckoo-conext2014.pdf),
-  and Flajolet et al.,
-  [HyperLogLog: the analysis of a near-optimal cardinality estimation algorithm](https://algo.inria.fr/flajolet/Publications/FlFuGaMe07.pdf).
-- ObjectPool concurrency wording avoids ABA guarantees unless backed by current
-  implementation evidence; tagged-state ABA mitigation is treated as a
-  concurrency pattern, not a blanket pool guarantee.
 
 ## [2.1.0] — 2026-06-27
 
