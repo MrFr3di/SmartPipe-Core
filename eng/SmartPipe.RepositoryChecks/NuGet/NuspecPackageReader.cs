@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.Versioning;
 using System.Text.RegularExpressions;
 using System.Xml;
@@ -276,6 +277,19 @@ internal static partial class NuspecPackageReader
         }
 
         var baseFramework = match.Groups["base"].Value;
+        if (match.Groups["coremajor"].Success)
+        {
+            baseFramework = $"netcoreapp{CanonicalizeNumericComponent(match.Groups["coremajor"].Value)}.{CanonicalizeNumericComponent(match.Groups["coreminor"].Value)}";
+        }
+        else if (match.Groups["standardmajor"].Success)
+        {
+            baseFramework = $"netstandard{CanonicalizeNumericComponent(match.Groups["standardmajor"].Value)}.{CanonicalizeNumericComponent(match.Groups["standardminor"].Value)}";
+        }
+        else if (match.Groups["netmajor"].Success)
+        {
+            baseFramework = $"net{CanonicalizeNumericComponent(match.Groups["netmajor"].Value)}.{CanonicalizeNumericComponent(match.Groups["netminor"].Value)}";
+        }
+
         var platform = match.Groups["platform"].Value;
         if (baseFramework.StartsWith("netcoreapp", StringComparison.Ordinal))
         {
@@ -286,8 +300,8 @@ internal static partial class NuspecPackageReader
         }
         else if (baseFramework.StartsWith("netstandard", StringComparison.Ordinal)
             && !IsSupportedNetStandard(new Version(
-                int.Parse(match.Groups["standardmajor"].Value, System.Globalization.CultureInfo.InvariantCulture),
-                int.Parse(match.Groups["standardminor"].Value, System.Globalization.CultureInfo.InvariantCulture))))
+                ParseCanonicalNumericComponent(match.Groups["standardmajor"].Value),
+                ParseCanonicalNumericComponent(match.Groups["standardminor"].Value))))
         {
             throw InvalidPackage("nuspec netstandard short framework version is unsupported");
         }
@@ -305,12 +319,12 @@ internal static partial class NuspecPackageReader
                 throw InvalidPackage("nuspec .NETFramework short profile is unsupported");
             }
         }
-        else if (platform.Length != 0 && !PlatformProfileRegex().IsMatch(platform))
+        else if (platform.Length != 0)
         {
-            throw InvalidPackage("nuspec short framework platform is unsupported");
+            platform = CanonicalizePlatformProfile(platform, "nuspec short framework platform is unsupported");
         }
 
-        return framework;
+        return platform.Length == 0 ? baseFramework : $"{baseFramework}-{platform}";
     }
 
     private static string AppendPlatformProfile(string baseFramework, string profile)
@@ -320,12 +334,39 @@ internal static partial class NuspecPackageReader
             return baseFramework;
         }
 
-        if (!PlatformProfileRegex().IsMatch(profile))
+        return $"{baseFramework}-{CanonicalizePlatformProfile(profile, "nuspec .NETCoreApp platform profile is unsupported")}";
+    }
+
+    private static string CanonicalizePlatformProfile(string profile, string invalidDetail)
+    {
+        var match = PlatformProfileRegex().Match(profile);
+        if (!match.Success)
         {
-            throw InvalidPackage("nuspec .NETCoreApp platform profile is unsupported");
+            throw InvalidPackage(invalidDetail);
         }
 
-        return $"{baseFramework}-{profile}";
+        var version = match.Groups["version"].Value;
+        if (version.Length == 0)
+        {
+            return match.Groups["name"].Value;
+        }
+
+        return $"{match.Groups["name"].Value}{string.Join('.', version.Split('.').Select(CanonicalizeNumericComponent))}";
+    }
+
+    private static string CanonicalizeNumericComponent(string value)
+    {
+        return ParseCanonicalNumericComponent(value).ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static int ParseCanonicalNumericComponent(string value)
+    {
+        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var component))
+        {
+            throw InvalidPackage("nuspec target framework numeric component is invalid or too large");
+        }
+
+        return component;
     }
 
     private static bool IsSupportedNetStandard(Version version)
@@ -334,10 +375,10 @@ internal static partial class NuspecPackageReader
             || version.Major == 2 && version.Minor is >= 0 and <= 1;
     }
 
-    [GeneratedRegex("^(?<base>(?:netcoreapp(?<coremajor>[1-9]\\d*)\\.\\d+)|(?:netstandard(?<standardmajor>[1-9]\\d*)\\.(?<standardminor>\\d+))|(?:net(?:[1-4]\\d{1,2}|(?:[5-9]|[1-9]\\d+)\\.\\d+)))(?:-(?<platform>[a-z][a-z0-9]*(?:\\d+(?:\\.\\d+){0,3})?))?$")]
+    [GeneratedRegex("^(?<base>(?:netcoreapp(?<coremajor>[1-9]\\d*)\\.(?<coreminor>\\d+))|(?:netstandard(?<standardmajor>[1-9]\\d*)\\.(?<standardminor>\\d+))|(?:net(?:[1-4]\\d{1,2}|(?<netmajor>[5-9]|[1-9]\\d+)\\.(?<netminor>\\d+))))(?:-(?<platform>[a-z][a-z0-9]*(?:\\d+(?:\\.\\d+){0,3})?))?$")]
     private static partial Regex ShortFrameworkRegex();
 
-    [GeneratedRegex("^(?:windows|android|ios|maccatalyst|macos|tvos|browser|linux)(?:\\d+(?:\\.\\d+){0,3})?$")]
+    [GeneratedRegex("^(?<name>windows|android|ios|maccatalyst|macos|tvos|browser|linux)(?<version>\\d+(?:\\.\\d+){0,3})?$")]
     private static partial Regex PlatformProfileRegex();
 
     private static RepositoryCheckException InvalidPackage(string detail)

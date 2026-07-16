@@ -129,6 +129,10 @@ public sealed class NuGetPackageReaderTests
     [InlineData(".NETStandard,Version=v2.0", "netstandard2.0")]
     [InlineData(".NETFramework,Version=v4.8,Profile=Client", "net48-client")]
     [InlineData("NET10.0-WINDOWS10.0.19041.0", "net10.0-windows10.0.19041.0")]
+    [InlineData("net10.00", "net10.0")]
+    [InlineData("netstandard2.00", "netstandard2.0")]
+    [InlineData("net10.0-windows01.02", "net10.0-windows1.2")]
+    [InlineData(".NETCoreApp,Version=v10.0,Profile=Windows01.02", "net10.0-windows1.2")]
     public async Task ReadAsync_CanonicalizesSupportedFrameworkIdentities(string framework, string expected)
     {
         var nuspec = SyntheticNuGetPackage.CreateNuspec("Package", "1.0.0", $"""
@@ -142,6 +146,36 @@ public sealed class NuGetPackageReaderTests
     }
 
     [Theory]
+    [InlineData("net10.00", "net10.0")]
+    [InlineData("netstandard2.00", "netstandard2.0")]
+    [InlineData("net10.0-windows01.02", "net10.0-windows1.2")]
+    [InlineData(".NETCoreApp,Version=v10.0,Profile=Windows01.02", "net10.0-windows1.2")]
+    public async Task ReadAsync_RejectsCanonicalEquivalentDependencyGroups(string first, string second)
+    {
+        var nuspec = SyntheticNuGetPackage.CreateNuspec("Package", "1.0.0", $"""
+            <dependencies><group targetFramework="{first}" /><group targetFramework="{second}" /></dependencies>
+            """);
+        using var package = SyntheticNuGetPackage.Create("Package", "1.0.0", nuspec: nuspec);
+
+        await Assert.ThrowsAsync<RepositoryCheckException>(
+            () => new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReadAsync_RejectsDuplicateAssemblyIdentityAcrossCanonicalEquivalentFrameworkPaths()
+    {
+        var assembly = SyntheticNuGetPackage.CreateManagedAssembly("Duplicate", new Version(1, 0, 0, 0));
+        using var package = SyntheticNuGetPackage.Create(entries:
+        [
+            ("lib/net10.0/Duplicate.dll", assembly),
+            ("lib/net10.00/Duplicate.dll", assembly),
+        ]);
+
+        await Assert.ThrowsAsync<RepositoryCheckException>(
+            () => new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
     [InlineData(".NETCoreApp, Version=v10.0")]
     [InlineData("net1")]
     [InlineData("netcoreapp10.0")]
@@ -149,6 +183,8 @@ public sealed class NuGetPackageReaderTests
     [InlineData("net41")]
     [InlineData("portable")]
     [InlineData("net10.0-unknown1.0")]
+    [InlineData("net2147483648.0")]
+    [InlineData("net10.0-windows2147483648.0")]
     [InlineData("garbage")]
     public async Task ReadAsync_RejectsUnknownOrInvalidFrameworkIdentities(string framework)
     {
