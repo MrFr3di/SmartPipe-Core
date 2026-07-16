@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Xml;
-using System.Xml.Linq;
 using SmartPipe.RepositoryChecks.Infrastructure;
 
 namespace SmartPipe.RepositoryChecks.Repository;
@@ -44,16 +43,14 @@ internal sealed class RepositorySnapshotReader
     {
         var root = RepositoryPaths.NormalizeRoot(repositoryRoot);
         var fullSolutionPath = RepositoryPaths.ResolveWithinRoot(root, solutionPath, "solution");
+        RepositoryPaths.RequireExistingRegularFile(root, fullSolutionPath, "solution");
         var projectPaths = ReadSolutionProjects(root, fullSolutionPath);
         var result = new List<ProjectIdentitySnapshot>(projectPaths.Count);
         foreach (var projectPath in projectPaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var fullProjectPath = RepositoryPaths.ResolveWithinRoot(root, projectPath, "project");
-            if (!File.Exists(fullProjectPath))
-            {
-                throw new FileNotFoundException($"Solution project does not exist: {projectPath}", fullProjectPath);
-            }
+            RepositoryPaths.RequireExistingRegularProject(root, fullProjectPath, projectPath);
 
             var request = new ProcessRequest(
                 _dotnetPath,
@@ -72,6 +69,13 @@ internal sealed class RepositorySnapshotReader
             try
             {
                 processResult = await _processRunner.RunAsync(request, cancellationToken).ConfigureAwait(false);
+            }
+            catch (ProcessRunnerException exception) when (exception.FailureKind == ProcessFailureKind.Canceled)
+            {
+                throw new OperationCanceledException(
+                    $"MSBuild property evaluation was canceled for {projectPath}.",
+                    exception,
+                    cancellationToken);
             }
             catch (ProcessRunnerException exception)
             {
@@ -106,49 +110,194 @@ internal sealed class RepositorySnapshotReader
 
     private static IReadOnlyList<string> ReadSolutionProjects(string root, string solutionPath)
     {
-        XDocument document;
+        var projects = new List<string>();
+        var logicalPaths = new HashSet<string>(StringComparer.Ordinal);
+        var physicalPaths = new HashSet<string>(RepositoryPaths.FileSystemPathComparer);
+        var elements = new Stack<SlnxFrame>();
+        var totalProjectCount = 0;
+        var rootSeen = false;
+        var rootClosed = false;
         try
         {
             using var reader = XmlReader.Create(solutionPath, RepositoryXml.CreateSettings());
-            document = XDocument.Load(reader, LoadOptions.None);
+            while (reader.Read())
+            {
+                switch (reader.NodeType)
+                {
+                    case XmlNodeType.Element:
+                        if (rootClosed || reader.NamespaceURI.Length != 0)
+                        {
+                            throw new InvalidDataException("The SLNX contains an element outside the strict namespace-empty schema.");
+                        }
+
+                        if (!rootSeen)
+                        {
+                            if (reader.Depth != 0 || reader.LocalName != "Solution")
+                            {
+                                throw new InvalidDataException("The SLNX root must be namespace-empty Solution.");
+                            }
+
+                            ValidateAttributes(reader, "Solution");
+                            rootSeen = true;
+                        }
+                        else
+                        {
+                            var parent = elements.TryPeek(out var parentFrame) ? parentFrame : null;
+                            if (parent?.Name is not ("Solution" or "Folder"))
+                            {
+                                throw new InvalidDataException("SLNX Project elements cannot contain children.");
+                            }
+
+                            if (reader.LocalName == "Folder")
+                            {
+                                ValidateAttributes(reader, "Folder", "Name");
+                                var folderName = RequireAttribute(reader, "Name", "Folder");
+                                if (!reader.IsEmptyElement)
+                                {
+                                    elements.Push(new SlnxFrame(
+                                        "Folder",
+                                        parent!.InProductionFolder || string.Equals(folderName, "/src/", StringComparison.Ordinal)));
+                                }
+                            }
+                            else if (reader.LocalName == "Project")
+                            {
+                                ValidateAttributes(reader, "Project", "Path");
+                                var path = RequireAttribute(reader, "Path", "Project");
+                                if (++totalProjectCount > MaximumProjects)
+                                {
+                                    throw new InvalidDataException($"The SLNX project count exceeds {MaximumProjects}.");
+                                }
+
+                                var fullPath = RepositoryPaths.ResolveWithinRoot(root, path, "project");
+                                var normalized = RepositoryPaths.ToRelativePath(root, fullPath);
+                                if (!logicalPaths.Add(normalized))
+                                {
+                                    throw new InvalidDataException($"The SLNX contains a duplicate project path: {normalized}");
+                                }
+
+                                if (!physicalPaths.Add(fullPath))
+                                {
+                                    throw new InvalidDataException($"The SLNX contains project paths that alias the same physical path: {normalized}");
+                                }
+
+                                var physicallyUnderSrc = normalized.StartsWith("src/", StringComparison.Ordinal);
+                                if (parent!.InProductionFolder != physicallyUnderSrc)
+                                {
+                                    throw new InvalidDataException(
+                                        $"SLNX project {normalized} is inconsistent with the semantic /src/ folder boundary.");
+                                }
+
+                                if (parent.InProductionFolder)
+                                {
+                                    projects.Add(normalized);
+                                }
+                            }
+                            else
+                            {
+                                throw new InvalidDataException($"Unsupported SLNX element: {reader.LocalName}");
+                            }
+                        }
+
+                        if (!reader.IsEmptyElement && reader.LocalName != "Folder")
+                        {
+                            elements.Push(new SlnxFrame(
+                                reader.LocalName,
+                                elements.TryPeek(out var containing) && containing.InProductionFolder));
+                        }
+                        else if (reader.Depth == 0)
+                        {
+                            rootClosed = true;
+                        }
+
+                        break;
+
+                    case XmlNodeType.EndElement:
+                        if (reader.NamespaceURI.Length != 0
+                            || !elements.TryPop(out var opened)
+                            || !string.Equals(opened.Name, reader.LocalName, StringComparison.Ordinal))
+                        {
+                            throw new InvalidDataException("The SLNX element structure is invalid.");
+                        }
+
+                        if (elements.Count == 0)
+                        {
+                            rootClosed = true;
+                        }
+
+                        break;
+
+                    case XmlNodeType.Text:
+                    case XmlNodeType.CDATA:
+                    case XmlNodeType.SignificantWhitespace:
+                        if (!string.IsNullOrWhiteSpace(reader.Value))
+                        {
+                            throw new InvalidDataException("The SLNX schema does not allow text content.");
+                        }
+
+                        break;
+
+                    case XmlNodeType.Whitespace:
+                    case XmlNodeType.Comment:
+                    case XmlNodeType.XmlDeclaration:
+                    case XmlNodeType.ProcessingInstruction:
+                        break;
+
+                    default:
+                        throw new InvalidDataException($"Unsupported SLNX XML node: {reader.NodeType}");
+                }
+            }
         }
         catch (Exception exception) when (exception is XmlException or IOException)
         {
             throw new InvalidDataException("The SLNX document is malformed or unreadable.", exception);
         }
 
-        if (document.Root?.Name != "Solution")
+        if (!rootSeen || !rootClosed || elements.Count != 0)
         {
-            throw new InvalidDataException("The SLNX root element must be Solution without an XML namespace.");
+            throw new InvalidDataException("The SLNX does not contain one complete Solution root.");
         }
 
-        var rawProjects = document.Descendants("Project").ToArray();
-        if (rawProjects.Length == 0 || rawProjects.Length > MaximumProjects)
+        if (totalProjectCount == 0)
         {
             throw new InvalidDataException($"The SLNX project count must be between 1 and {MaximumProjects}.");
         }
 
-        var projects = new List<string>(rawProjects.Length);
-        var unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var project in rawProjects)
+        if (projects.Count == 0)
         {
-            var path = project.Attribute("Path")?.Value;
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                throw new InvalidDataException("Every SLNX Project must have a non-empty Path attribute.");
-            }
-
-            var normalized = RepositoryPaths.ToRelativePath(root, RepositoryPaths.ResolveWithinRoot(root, path, "project"));
-            if (!unique.Add(normalized))
-            {
-                throw new InvalidDataException($"The SLNX contains a duplicate project path: {normalized}");
-            }
-
-            projects.Add(normalized);
+            throw new InvalidDataException("The SLNX does not contain any production projects in semantic folder /src/.");
         }
 
         projects.Sort(StringComparer.Ordinal);
         return projects;
+    }
+
+    private static void ValidateAttributes(XmlReader reader, string elementName, params string[] allowed)
+    {
+        if (!reader.HasAttributes)
+        {
+            return;
+        }
+
+        while (reader.MoveToNextAttribute())
+        {
+            if (reader.NamespaceURI.Length != 0 || !allowed.Contains(reader.LocalName))
+            {
+                throw new InvalidDataException($"Unsupported attribute {reader.Name} on SLNX {elementName}.");
+            }
+        }
+
+        reader.MoveToElement();
+    }
+
+    private static string RequireAttribute(XmlReader reader, string attributeName, string elementName)
+    {
+        var value = reader.GetAttribute(attributeName);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidDataException($"SLNX {elementName} requires non-empty {attributeName}.");
+        }
+
+        return value;
     }
 
     private static EvaluatedProperties ParseEvaluatedProperties(string json, string projectPath)
@@ -213,10 +362,15 @@ internal sealed class RepositorySnapshotReader
         string TargetFramework,
         bool IsPackable,
         string AssemblyName);
+
+    private sealed record SlnxFrame(string Name, bool InProductionFolder);
 }
 
 internal static class RepositoryPaths
 {
+    public static StringComparer FileSystemPathComparer { get; } =
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
     public static string NormalizeRoot(string repositoryRoot)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(repositoryRoot);
@@ -226,13 +380,15 @@ internal static class RepositoryPaths
             throw new DirectoryNotFoundException($"Repository root does not exist: {root}");
         }
 
-        return Path.TrimEndingDirectorySeparator(root);
+        root = Path.TrimEndingDirectorySeparator(root);
+        RejectLinkOrReparsePoint(root, "repository root");
+        return root;
     }
 
     public static string ResolveWithinRoot(string root, string path, string description)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        if (Path.IsPathRooted(path))
+        if (IsPortableAbsolutePath(path))
         {
             throw new InvalidDataException($"The {description} path must be repository-relative, not absolute.");
         }
@@ -243,21 +399,59 @@ internal static class RepositoryPaths
             throw new InvalidDataException($"The {description} path resolves outside the repository.");
         }
 
+        RejectExistingLinkedComponents(root, fullPath, description);
         return fullPath;
     }
 
     public static string NormalizeOutputProjectPath(string root, string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (!Path.IsPathRooted(path) && IsPortableAbsolutePath(path))
+        {
+            throw new InvalidDataException("Package-list project path uses a foreign absolute-path syntax.");
+        }
+
         var fullPath = Path.IsPathRooted(path)
             ? Path.GetFullPath(path)
             : Path.GetFullPath(path.Replace('/', Path.DirectorySeparatorChar), root);
+        var relativePath = NormalizeContainedFullPath(root, fullPath, "package-list project");
+        RequireExistingRegularProject(root, fullPath, path);
+        return relativePath;
+    }
+
+    public static string NormalizeContainedFullPath(string root, string fullPath, string description)
+    {
         if (!IsWithinRoot(root, fullPath))
         {
-            throw new InvalidDataException("Package-list project path resolves outside the repository.");
+            throw new InvalidDataException($"The {description} path resolves outside the repository.");
         }
 
+        RejectExistingLinkedComponents(root, fullPath, description);
         return ToRelativePath(root, fullPath);
+    }
+
+    public static void RequireExistingRegularProject(string root, string fullPath, string displayPath)
+    {
+        RejectExistingLinkedComponents(root, fullPath, "project");
+        if (!string.Equals(Path.GetExtension(fullPath), ".csproj", StringComparison.OrdinalIgnoreCase)
+            || !File.Exists(fullPath)
+            || (File.GetAttributes(fullPath) & FileAttributes.Directory) != 0)
+        {
+            throw new InvalidDataException($"Project path must name an existing regular .csproj file: {displayPath}");
+        }
+
+        RejectLinkOrReparsePoint(fullPath, "project");
+    }
+
+    public static void RequireExistingRegularFile(string root, string fullPath, string description)
+    {
+        RejectExistingLinkedComponents(root, fullPath, description);
+        if (!File.Exists(fullPath) || (File.GetAttributes(fullPath) & FileAttributes.Directory) != 0)
+        {
+            throw new FileNotFoundException($"Expected regular file does not exist: {description}", fullPath);
+        }
+
+        RejectLinkOrReparsePoint(fullPath, description);
     }
 
     public static string ToRelativePath(string root, string fullPath) =>
@@ -269,6 +463,47 @@ internal static class RepositoryPaths
         return string.Equals(root, fullPath, comparison)
             || fullPath.StartsWith(root + Path.DirectorySeparatorChar, comparison)
             || fullPath.StartsWith(root + Path.AltDirectorySeparatorChar, comparison);
+    }
+
+    public static bool IsPortableAbsolutePath(string path)
+    {
+        if (Path.IsPathRooted(path) || path[0] == '\\')
+        {
+            return true;
+        }
+
+        return path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':';
+    }
+
+    private static void RejectExistingLinkedComponents(string root, string fullPath, string description)
+    {
+        RejectLinkOrReparsePoint(root, "repository root");
+        var relative = Path.GetRelativePath(root, fullPath);
+        if (relative == ".")
+        {
+            return;
+        }
+
+        var current = root;
+        foreach (var component in relative.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, component);
+            if (!File.Exists(current) && !Directory.Exists(current))
+            {
+                break;
+            }
+
+            RejectLinkOrReparsePoint(current, description);
+        }
+    }
+
+    private static void RejectLinkOrReparsePoint(string path, string description)
+    {
+        FileSystemInfo info = Directory.Exists(path) ? new DirectoryInfo(path) : new FileInfo(path);
+        if (info.LinkTarget is not null || (info.Attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new InvalidDataException($"The {description} path traverses a symbolic link or reparse point.");
+        }
     }
 }
 

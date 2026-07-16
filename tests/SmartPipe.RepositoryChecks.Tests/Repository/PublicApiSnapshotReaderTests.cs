@@ -57,6 +57,67 @@ public sealed class PublicApiSnapshotReaderTests
         Assert.Equal(["orphan/PublicAPI.Unshipped.txt"], snapshot.UnexpectedFiles);
     }
 
+    [Fact]
+    public void Read_RejectsLinkedExpectedPublicApiFile()
+    {
+        using var repository = new RepositoryTestDirectory();
+        repository.Write("src/A/A.csproj", "<Project />");
+        repository.Write("src/A/Actual.txt", "A\n");
+        if (!repository.TryCreateFileLink("src/A/PublicAPI.Shipped.txt", "src/A/Actual.txt"))
+        {
+            return;
+        }
+
+        var exception = Assert.Throws<InvalidDataException>(() => new PublicApiSnapshotReader().Read(
+            repository.Path,
+            [Identity("src/A/A.csproj")]));
+
+        Assert.Contains("link", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Read_UsesPlatformPathSemanticsForExcludedDirectoryNames()
+    {
+        using var repository = new RepositoryTestDirectory();
+        repository.Write("src/A/A.csproj", "<Project />");
+        repository.Write("src/A/PublicAPI.Shipped.txt", "A\n");
+        repository.Write("BIN/PublicAPI.Unshipped.txt", "Unexpected\n");
+
+        var snapshot = new PublicApiSnapshotReader().Read(repository.Path, [Identity("src/A/A.csproj")]);
+
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Empty(snapshot.UnexpectedFiles);
+        }
+        else
+        {
+            Assert.Equal(["BIN/PublicAPI.Unshipped.txt"], snapshot.UnexpectedFiles);
+        }
+    }
+
+    [Fact]
+    public void Read_PreservesCaseDistinctUnixProjectPathsWithOrdinalOrdering()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var repository = new RepositoryTestDirectory();
+        repository.Write("src/A/A.csproj", "<Project />");
+        repository.Write("src/A/PublicAPI.Shipped.txt", "A\n");
+        repository.Write("src/a/a.csproj", "<Project />");
+        repository.Write("src/a/PublicAPI.Shipped.txt", "a\n");
+
+        var snapshot = new PublicApiSnapshotReader().Read(
+            repository.Path,
+            [Identity("src/a/a.csproj"), Identity("src/A/A.csproj")]);
+
+        Assert.Equal(
+            ["src/A/PublicAPI.Shipped.txt", "src/a/PublicAPI.Shipped.txt"],
+            snapshot.Files.Select(static file => file.Path));
+    }
+
     private static PublicApiFileSnapshot ReadSingle(string content) => ReadSingleBytes(Encoding.UTF8.GetBytes(content));
 
     private static PublicApiFileSnapshot ReadSingleBytes(byte[] content)

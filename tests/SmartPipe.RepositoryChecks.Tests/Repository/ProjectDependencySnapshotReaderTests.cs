@@ -32,10 +32,90 @@ public sealed class ProjectDependencySnapshotReaderTests
         Assert.Equal("contentFiles", packageReference.ExcludeAssets);
     }
 
+    [Theory]
+    [InlineData("<Project xmlns=\"urn:test\"><ItemGroup><PackageReference Include=\"A\" Version=\"1\" /></ItemGroup></Project>")]
+    [InlineData("<Project><Target><ItemGroup><PackageReference Include=\"A\" Version=\"1\" /></ItemGroup></Target></Project>")]
+    [InlineData("<Project xmlns:x=\"urn:test\"><ItemGroup><x:ProjectReference Include=\"../B/B.csproj\" /></ItemGroup></Project>")]
+    [InlineData("<Project><Choose><When Condition=\"true\"><ItemGroup><ProjectReference Include=\"../B/B.csproj\" /></ItemGroup></When></Choose></Project>")]
+    public void ReadDirect_RejectsReferenceLikeXmlOutsideExactDirectSchema(string projectXml)
+    {
+        using var repository = new RepositoryTestDirectory();
+        repository.Write("src/A/A.csproj", projectXml);
+        var reader = new ProjectDependencySnapshotReader(new FakeProcessRunner(), "dotnet");
+
+        Assert.Throws<InvalidDataException>(() => reader.ReadDirect(repository.Path, [Identity("src/A/A.csproj")]));
+    }
+
+    [Theory]
+    [InlineData("<PackageReference Include=\"A\" Version=\"1\"><Version>1</Version></PackageReference>")]
+    [InlineData("<PackageReference Include=\"A\"><PrivateAssets>all</PrivateAssets><PrivateAssets>all</PrivateAssets></PackageReference>")]
+    [InlineData("<PackageReference Include=\"A\" Unsupported=\"x\" />")]
+    public void ReadDirect_RejectsDuplicateMetadataAndUnsupportedReferenceAttributes(string referenceXml)
+    {
+        using var repository = new RepositoryTestDirectory();
+        repository.Write("src/A/A.csproj", $"<Project><ItemGroup>{referenceXml}</ItemGroup></Project>");
+        var reader = new ProjectDependencySnapshotReader(new FakeProcessRunner(), "dotnet");
+
+        Assert.Throws<InvalidDataException>(() => reader.ReadDirect(repository.Path, [Identity("src/A/A.csproj")]));
+    }
+
+    [Fact]
+    public void ReadDirect_RejectsCaseInsensitiveSemanticDuplicatePackageReferences()
+    {
+        using var repository = new RepositoryTestDirectory();
+        repository.Write("src/A/A.csproj", """
+            <Project><ItemGroup>
+              <PackageReference Include="Example.Package" Version="1" PrivateAssets="all" />
+              <PackageReference Include="example.package" Version="1" PrivateAssets="all" />
+            </ItemGroup></Project>
+            """);
+        var reader = new ProjectDependencySnapshotReader(new FakeProcessRunner(), "dotnet");
+
+        var exception = Assert.Throws<InvalidDataException>(() => reader.ReadDirect(repository.Path, [Identity("src/A/A.csproj")]));
+
+        Assert.Contains("duplicate", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ReadDirect_RejectsExactSemanticDuplicateProjectReferences()
+    {
+        using var repository = new RepositoryTestDirectory();
+        repository.Write("src/A/A.csproj", """
+            <Project><ItemGroup>
+              <ProjectReference Include="../B/B.csproj" Condition="true" />
+              <ProjectReference Include="../B/B.csproj" Condition="true" />
+            </ItemGroup></Project>
+            """);
+        var reader = new ProjectDependencySnapshotReader(new FakeProcessRunner(), "dotnet");
+
+        var exception = Assert.Throws<InvalidDataException>(() => reader.ReadDirect(repository.Path, [Identity("src/A/A.csproj")]));
+
+        Assert.Contains("duplicate", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ReadDirect_UsesTotalOrdinalOrderAcrossAllReferenceFields()
+    {
+        using var repository = new RepositoryTestDirectory();
+        repository.Write("src/A/A.csproj", """
+            <Project><ItemGroup>
+              <PackageReference Include="Same" Version="2" Condition="B" />
+              <PackageReference Include="Same" Version="1" Condition="B" />
+              <PackageReference Include="Same" Version="1" Condition="A" />
+            </ItemGroup></Project>
+            """);
+        var reader = new ProjectDependencySnapshotReader(new FakeProcessRunner(), "dotnet");
+
+        var references = Assert.Single(reader.ReadDirect(repository.Path, [Identity("src/A/A.csproj")])).PackageReferences;
+
+        Assert.Equal(["A|1", "B|1", "B|2"], references.Select(reference => $"{reference.Condition}|{reference.Version}"));
+    }
+
     [Fact]
     public async Task ReadRestoredAsync_RemovesAbsolutePaths_AndCanonicalizesArrayOrder()
     {
         using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
         var first = PackageJson(repository.Path, reverse: false, resolvedVersion: "2.0.0");
         var second = PackageJson(repository.Path, reverse: true, resolvedVersion: "2.0.0");
         var firstRunner = new FakeProcessRunner(new ProcessResult(0, first, string.Empty));
@@ -52,7 +132,7 @@ public sealed class ProjectDependencySnapshotReaderTests
         Assert.Contains("src/A/A.csproj", a.CanonicalJson, StringComparison.Ordinal);
         var request = Assert.Single(firstRunner.Requests);
         Assert.Equal("dotnet", request.FileName);
-        Assert.Equal(["package", "list", "--project", "SmartPipe.Core.slnx", "--include-transitive", "--format", "json", "--output-version", "1", "--no-restore"], request.Arguments);
+        Assert.Equal(["package", "list", "--project", Path.Combine(repository.Path, "SmartPipe.Core.slnx"), "--include-transitive", "--format", "json", "--output-version", "1", "--no-restore"], request.Arguments);
         Assert.Equal(TimeSpan.FromSeconds(23), request.Timeout);
     }
 
@@ -60,6 +140,7 @@ public sealed class ProjectDependencySnapshotReaderTests
     public async Task ReadRestoredAsync_ResolvedVersionChangeChangesSnapshotHash()
     {
         using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
         var a = await ReadGraph(repository, PackageJson(repository.Path, reverse: false, resolvedVersion: "2.0.0"));
         var b = await ReadGraph(repository, PackageJson(repository.Path, reverse: false, resolvedVersion: "2.0.1"));
 
@@ -70,6 +151,7 @@ public sealed class ProjectDependencySnapshotReaderTests
     public async Task ReadRestoredAsync_RejectsPathOutsideRepository()
     {
         using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
         var json = PackageJson(Path.GetPathRoot(repository.Path) + "outside/A.csproj", reverse: false, resolvedVersion: "2.0.0", pathIsProject: true);
         var reader = new ProjectDependencySnapshotReader(new FakeProcessRunner(new ProcessResult(0, json, string.Empty)), "dotnet");
 
@@ -83,10 +165,12 @@ public sealed class ProjectDependencySnapshotReaderTests
     public async Task ReadRestoredAsync_RejectsDuplicatePackageIds()
     {
         using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
         var projectPath = Path.Combine(repository.Path, "src", "A", "A.csproj").Replace('\\', '/');
         var json = System.Text.Json.JsonSerializer.Serialize(new
         {
             version = 1,
+            parameters = "--include-transitive",
             projects = new[]
             {
                 new
@@ -119,6 +203,7 @@ public sealed class ProjectDependencySnapshotReaderTests
     public async Task ReadRestoredAsync_RejectsMalformedJsonAndProcessFailure()
     {
         using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
         var malformed = new ProjectDependencySnapshotReader(new FakeProcessRunner(new ProcessResult(0, "{", string.Empty)), "dotnet");
         await Assert.ThrowsAsync<InvalidDataException>(() => malformed.ReadRestoredAsync(
             repository.Path, "Repo.slnx", TestContext.Current.CancellationToken));
@@ -129,9 +214,223 @@ public sealed class ProjectDependencySnapshotReaderTests
         Assert.Contains("package list", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("--include-transitive --no-restore")]
+    public async Task ReadRestoredAsync_RequiresExactIncludeTransitiveParameters(string? parameters)
+    {
+        using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
+        var root = new Dictionary<string, object?>
+        {
+            ["version"] = 1,
+            ["projects"] = Array.Empty<object>(),
+        };
+        if (parameters is not null)
+        {
+            root["parameters"] = parameters;
+        }
+
+        var json = System.Text.Json.JsonSerializer.Serialize(root);
+        var reader = CreateRestoredReader(json);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => reader.ReadRestoredAsync(
+            repository.Path, "SmartPipe.Core.slnx", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReadRestoredAsync_RejectsEmptyProjectsAndEmptyFrameworks()
+    {
+        using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
+        var emptyProjects = "{\"version\":1,\"parameters\":\"--include-transitive\",\"projects\":[]}";
+        await Assert.ThrowsAsync<InvalidDataException>(() => CreateRestoredReader(emptyProjects).ReadRestoredAsync(
+            repository.Path, "SmartPipe.Core.slnx", TestContext.Current.CancellationToken));
+
+        var emptyFrameworks = SingleProjectJson(Path.Combine(repository.Path, "src", "A", "A.csproj"), []);
+        await Assert.ThrowsAsync<InvalidDataException>(() => CreateRestoredReader(emptyFrameworks).ReadRestoredAsync(
+            repository.Path, "SmartPipe.Core.slnx", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReadRestoredAsync_RejectsProjectAndFrameworkCountsAboveBounds()
+    {
+        using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
+        var projectPath = Path.Combine(repository.Path, "src", "A", "A.csproj");
+        for (var index = 0; index < 257; index++)
+        {
+            repository.Write($"src/A/A{index}.csproj", "<Project />");
+        }
+
+        var tooManyProjects = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            version = 1,
+            parameters = "--include-transitive",
+            projects = Enumerable.Range(0, 257).Select(index => new
+            {
+                path = projectPath.Replace("A.csproj", $"A{index}.csproj", StringComparison.Ordinal),
+                frameworks = new[] { new { framework = "net10.0" } },
+            }),
+        });
+        var projectCountException = await Assert.ThrowsAsync<InvalidDataException>(() => CreateRestoredReader(tooManyProjects).ReadRestoredAsync(
+            repository.Path, "SmartPipe.Core.slnx", TestContext.Current.CancellationToken));
+        Assert.Contains("256", projectCountException.Message, StringComparison.Ordinal);
+
+        var frameworks = Enumerable.Range(0, 65).Select(index => new Dictionary<string, object?>
+        {
+            ["framework"] = $"net{index}.0",
+        }).ToArray();
+        var tooManyFrameworks = SingleProjectJson(projectPath, frameworks);
+        await Assert.ThrowsAsync<InvalidDataException>(() => CreateRestoredReader(tooManyFrameworks).ReadRestoredAsync(
+            repository.Path, "SmartPipe.Core.slnx", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReadRestoredAsync_RejectsPackageCountAboveBoundBeforeStoringAllEntries()
+    {
+        using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
+        var projectPath = Path.Combine(repository.Path, "src", "A", "A.csproj");
+        var json = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            version = 1,
+            parameters = "--include-transitive",
+            projects = new[]
+            {
+                new
+                {
+                    path = projectPath,
+                    frameworks = new[]
+                    {
+                        new
+                        {
+                            framework = "net10.0",
+                            transitivePackages = Enumerable.Range(0, 4097).Select(index => new
+                            {
+                                id = $"Package.{index}",
+                                resolvedVersion = "1.0.0",
+                            }),
+                        },
+                    },
+                },
+            },
+        });
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() => CreateRestoredReader(json).ReadRestoredAsync(
+            repository.Path, "SmartPipe.Core.slnx", TestContext.Current.CancellationToken));
+
+        Assert.Contains("4096", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("C:\\outside\\A.csproj")]
+    [InlineData("\\\\server\\share\\A.csproj")]
+    public async Task ReadRestoredAsync_RejectsPortableAbsoluteProjectPaths(string path)
+    {
+        using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => CreateRestoredReader(
+            SingleProjectJson(path, [new Dictionary<string, object?> { ["framework"] = "net10.0" }])).ReadRestoredAsync(
+                repository.Path, "SmartPipe.Core.slnx", TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
+    [InlineData("src/A")]
+    [InlineData("src/A/Missing.csproj")]
+    [InlineData("src/A/not-project.txt")]
+    public async Task ReadRestoredAsync_RequiresExistingRegularCsprojFile(string relativePath)
+    {
+        using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
+        repository.Write("src/A/not-project.txt", "x");
+        var path = Path.Combine(repository.Path, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        var json = SingleProjectJson(path, [new Dictionary<string, object?> { ["framework"] = "net10.0" }]);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => CreateRestoredReader(json).ReadRestoredAsync(
+            repository.Path, "SmartPipe.Core.slnx", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReadRestoredAsync_RejectsLinkedProjectPathComponent()
+    {
+        using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
+        if (!repository.TryCreateDirectoryLink("linked", "src/A"))
+        {
+            return;
+        }
+
+        var linkedPath = Path.Combine(repository.Path, "linked", "A.csproj");
+        var json = SingleProjectJson(linkedPath, [new Dictionary<string, object?> { ["framework"] = "net10.0" }]);
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() => CreateRestoredReader(json).ReadRestoredAsync(
+            repository.Path, "SmartPipe.Core.slnx", TestContext.Current.CancellationToken));
+
+        Assert.Contains("link", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReadRestoredAsync_PropagatesCanceledProcessAsCancellation()
+    {
+        using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
+        var reader = new ProjectDependencySnapshotReader(
+            new FakeProcessRunner(new ProcessRunnerException(ProcessFailureKind.Canceled, "canceled")),
+            "dotnet");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reader.ReadRestoredAsync(
+            repository.Path, "SmartPipe.Core.slnx", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReadRestoredAsync_WrapsNonCancellationProcessFailure()
+    {
+        using var repository = new RepositoryTestDirectory();
+        PrepareRestoredFiles(repository);
+        var reader = new ProjectDependencySnapshotReader(
+            new FakeProcessRunner(new ProcessRunnerException(ProcessFailureKind.Timeout, "timeout")),
+            "dotnet");
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => reader.ReadRestoredAsync(
+            repository.Path, "SmartPipe.Core.slnx", TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
+    [InlineData("C:\\outside\\B.csproj")]
+    [InlineData("\\\\server\\share\\B.csproj")]
+    public void ReadDirect_RejectsPortableAbsoluteProjectReference(string include)
+    {
+        using var repository = new RepositoryTestDirectory();
+        repository.Write("src/A/A.csproj", $"<Project><ItemGroup><ProjectReference Include=\"{include}\" /></ItemGroup></Project>");
+
+        Assert.Throws<InvalidDataException>(() => new ProjectDependencySnapshotReader(new FakeProcessRunner(), "dotnet")
+            .ReadDirect(repository.Path, [Identity("src/A/A.csproj")]));
+    }
+
     private static Task<RestoredDependencySnapshot> ReadGraph(RepositoryTestDirectory repository, string json) =>
-        new ProjectDependencySnapshotReader(new FakeProcessRunner(new ProcessResult(0, json, string.Empty)), "dotnet")
+        CreateRestoredReader(json)
             .ReadRestoredAsync(repository.Path, "SmartPipe.Core.slnx", TestContext.Current.CancellationToken);
+
+    private static ProjectDependencySnapshotReader CreateRestoredReader(string json) =>
+        new(new FakeProcessRunner(new ProcessResult(0, json, string.Empty)), "dotnet");
+
+    private static void PrepareRestoredFiles(RepositoryTestDirectory repository)
+    {
+        repository.Write("SmartPipe.Core.slnx", "<Solution />");
+        repository.Write("Repo.slnx", "<Solution />");
+        repository.Write("src/A/A.csproj", "<Project />");
+        repository.Write("src/Z/Z.csproj", "<Project />");
+    }
+
+    private static string SingleProjectJson(string path, IReadOnlyList<Dictionary<string, object?>> frameworks) =>
+        System.Text.Json.JsonSerializer.Serialize(new
+        {
+            version = 1,
+            parameters = "--include-transitive",
+            projects = new[] { new { path, frameworks } },
+        });
 
     private static string PackageJson(string repositoryRootOrProjectPath, bool reverse, string resolvedVersion, bool pathIsProject = false)
     {

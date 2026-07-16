@@ -19,7 +19,7 @@ internal sealed class PublicApiSnapshotReader
 {
     private const long MaximumPublicApiFileBytes = 16 * 1024 * 1024;
     private const int MaximumDiscoveredFiles = 4096;
-    private static readonly HashSet<string> ExcludedDirectoryNames = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> ExcludedDirectoryNames = new(RepositoryPaths.FileSystemPathComparer)
     {
         ".git", ".work", ".opencode", ".kilo", "artifacts", "BenchmarkDotNet.Artifacts",
         "bin", "obj", "packages", "coverage", "logs", "node_modules",
@@ -31,11 +31,13 @@ internal sealed class PublicApiSnapshotReader
     {
         ArgumentNullException.ThrowIfNull(packableProjects);
         var root = RepositoryPaths.NormalizeRoot(repositoryRoot);
-        var expected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var expected = new HashSet<string>(StringComparer.Ordinal);
+        var physicalExpected = new HashSet<string>(RepositoryPaths.FileSystemPathComparer);
         var snapshots = new List<PublicApiFileSnapshot>(packableProjects.Count * 2);
         foreach (var project in packableProjects.OrderBy(static item => item.ProjectPath, StringComparer.Ordinal))
         {
             var projectPath = RepositoryPaths.ResolveWithinRoot(root, project.ProjectPath, "project");
+            RepositoryPaths.RequireExistingRegularProject(root, projectPath, project.ProjectPath);
             var projectDirectory = Path.GetDirectoryName(projectPath)!;
             var shippedPath = Path.Combine(projectDirectory, "PublicAPI.Shipped.txt");
             if (!File.Exists(shippedPath))
@@ -45,11 +47,11 @@ internal sealed class PublicApiSnapshotReader
                     shippedPath);
             }
 
-            AddSnapshot(root, shippedPath, expected, snapshots);
+            AddSnapshot(root, shippedPath, expected, physicalExpected, snapshots);
             var unshippedPath = Path.Combine(projectDirectory, "PublicAPI.Unshipped.txt");
             if (File.Exists(unshippedPath))
             {
-                AddSnapshot(root, unshippedPath, expected, snapshots);
+                AddSnapshot(root, unshippedPath, expected, physicalExpected, snapshots);
             }
         }
 
@@ -65,14 +67,16 @@ internal sealed class PublicApiSnapshotReader
         string root,
         string fullPath,
         ISet<string> expected,
+        ISet<string> physicalExpected,
         ICollection<PublicApiFileSnapshot> snapshots)
     {
         var relativePath = RepositoryPaths.ToRelativePath(root, fullPath);
-        if (!expected.Add(relativePath))
+        if (!expected.Add(relativePath) || !physicalExpected.Add(fullPath))
         {
             throw new InvalidDataException($"Duplicate PublicAPI path: {relativePath}");
         }
 
+        RepositoryPaths.RequireExistingRegularFile(root, fullPath, relativePath);
         var fileInfo = new FileInfo(fullPath);
         if (fileInfo.Length > MaximumPublicApiFileBytes)
         {
@@ -128,7 +132,9 @@ internal sealed class PublicApiSnapshotReader
             foreach (var child in Directory.EnumerateDirectories(directory).OrderByDescending(static item => item, StringComparer.Ordinal))
             {
                 var info = new DirectoryInfo(child);
-                if (!ExcludedDirectoryNames.Contains(info.Name) && info.LinkTarget is null)
+                if (!ExcludedDirectoryNames.Contains(info.Name)
+                    && info.LinkTarget is null
+                    && (info.Attributes & FileAttributes.ReparsePoint) == 0)
                 {
                     pending.Push(child);
                 }

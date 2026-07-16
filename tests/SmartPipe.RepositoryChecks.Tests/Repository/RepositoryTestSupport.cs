@@ -28,6 +28,38 @@ internal sealed class RepositoryTestDirectory : IDisposable
         return path;
     }
 
+    public bool TryCreateFileLink(string relativeLinkPath, string relativeTargetPath)
+    {
+        var linkPath = System.IO.Path.Combine(Path, relativeLinkPath.Replace('/', System.IO.Path.DirectorySeparatorChar));
+        var targetPath = System.IO.Path.Combine(Path, relativeTargetPath.Replace('/', System.IO.Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(linkPath)!);
+        try
+        {
+            File.CreateSymbolicLink(linkPath, targetPath);
+            return new FileInfo(linkPath).LinkTarget is not null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    public bool TryCreateDirectoryLink(string relativeLinkPath, string relativeTargetPath)
+    {
+        var linkPath = System.IO.Path.Combine(Path, relativeLinkPath.Replace('/', System.IO.Path.DirectorySeparatorChar));
+        var targetPath = System.IO.Path.Combine(Path, relativeTargetPath.Replace('/', System.IO.Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(linkPath)!);
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, targetPath);
+            return new DirectoryInfo(linkPath).LinkTarget is not null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return false;
+        }
+    }
+
     public void Dispose() => Directory.Delete(Path, recursive: true);
 }
 
