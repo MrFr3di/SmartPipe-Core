@@ -123,6 +123,75 @@ public sealed class NuGetPackageReaderTests
         await Assert.ThrowsAsync<RepositoryCheckException>(() => new NuGetPackageReader().ReadAsync(idsPackage.Path, TestContext.Current.CancellationToken));
     }
 
+    [Theory]
+    [InlineData(".NETCoreApp,Version=v3.1", "netcoreapp3.1")]
+    [InlineData(".NETCoreApp,Version=v5.0", "net5.0")]
+    [InlineData(".NETStandard,Version=v2.0", "netstandard2.0")]
+    [InlineData(".NETFramework,Version=v4.8,Profile=Client", "net48-client")]
+    [InlineData("NET10.0-WINDOWS10.0.19041.0", "net10.0-windows10.0.19041.0")]
+    public async Task ReadAsync_CanonicalizesSupportedFrameworkIdentities(string framework, string expected)
+    {
+        var nuspec = SyntheticNuGetPackage.CreateNuspec("Package", "1.0.0", $"""
+            <dependencies><group targetFramework="{framework}" /></dependencies>
+            """);
+        using var package = SyntheticNuGetPackage.Create("Package", "1.0.0", nuspec: nuspec);
+
+        var result = await new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected, Assert.Single(result.Dependencies.Groups).TargetFramework);
+    }
+
+    [Theory]
+    [InlineData(".NETCoreApp, Version=v10.0")]
+    [InlineData("net1")]
+    [InlineData("netcoreapp10.0")]
+    [InlineData("netcoreapp2.9")]
+    [InlineData("net41")]
+    [InlineData("portable")]
+    [InlineData("net10.0-unknown1.0")]
+    [InlineData("garbage")]
+    public async Task ReadAsync_RejectsUnknownOrInvalidFrameworkIdentities(string framework)
+    {
+        var nuspec = SyntheticNuGetPackage.CreateNuspec("Package", "1.0.0", $"""
+            <dependencies><group targetFramework="{framework}" /></dependencies>
+            """);
+        using var package = SyntheticNuGetPackage.Create("Package", "1.0.0", nuspec: nuspec);
+
+        await Assert.ThrowsAsync<RepositoryCheckException>(
+            () => new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd")]
+    [InlineData("http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd")]
+    public async Task ReadAsync_AcceptsNoNamespaceAndKnownOfficialNuspecNamespaces(string xmlNamespace)
+    {
+        var namespaceAttribute = xmlNamespace.Length == 0 ? string.Empty : $" xmlns=\"{xmlNamespace}\"";
+        var nuspec = $"<package{namespaceAttribute}><metadata><id>Package</id><version>1.0.0</version></metadata></package>";
+        using var package = SyntheticNuGetPackage.Create("Package", "1.0.0", nuspec: nuspec);
+
+        var result = await new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Package", result.Id);
+    }
+
+    [Fact]
+    public async Task ReadAsync_RejectsUnknownOrMixedNuspecNamespaces()
+    {
+        using var unknown = SyntheticNuGetPackage.Create("Package", "1.0.0", nuspec: """
+            <package xmlns="urn:unknown"><metadata><id>Package</id><version>1.0.0</version></metadata></package>
+            """);
+        using var mixed = SyntheticNuGetPackage.Create("Package", "1.0.0", nuspec: """
+            <package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd" xmlns:evil="urn:evil">
+              <metadata><evil:id>Package</evil:id><version>1.0.0</version></metadata>
+            </package>
+            """);
+
+        await Assert.ThrowsAsync<RepositoryCheckException>(() => new NuGetPackageReader().ReadAsync(unknown.Path, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<RepositoryCheckException>(() => new NuGetPackageReader().ReadAsync(mixed.Path, TestContext.Current.CancellationToken));
+    }
+
     [Fact]
     public async Task ReadAsync_RejectsArchiveLimitOverflows()
     {
@@ -136,6 +205,81 @@ public sealed class NuGetPackageReaderTests
         });
 
         await Assert.ThrowsAsync<RepositoryCheckException>(() => reader.ReadAsync(package.Path, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReadAsync_PreflightsForgedCentralDirectoryCountBeforeZipEnumeration()
+    {
+        using var package = SyntheticNuGetPackage.Create();
+        package.ForgeEndOfCentralDirectory(entryCount: 5000, centralDirectorySize: 1, centralDirectoryOffset: 1);
+
+        var exception = await Assert.ThrowsAsync<RepositoryCheckException>(
+            () => new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken));
+
+        Assert.Contains("preflight", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReadAsync_PreflightsForgedCentralDirectoryOverflowBeforeZipEnumeration()
+    {
+        using var package = SyntheticNuGetPackage.Create();
+        package.ForgeEndOfCentralDirectory(entryCount: 1, centralDirectorySize: uint.MaxValue - 1, centralDirectoryOffset: uint.MaxValue - 1);
+
+        var exception = await Assert.ThrowsAsync<RepositoryCheckException>(
+            () => new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken));
+
+        Assert.Contains("preflight", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReadAsync_PreflightsZip64LocatorOutsideArchive()
+    {
+        using var package = SyntheticNuGetPackage.Create();
+        package.ForgeZip64WithLocatorOutsideArchive();
+
+        var exception = await Assert.ThrowsAsync<RepositoryCheckException>(
+            () => new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken));
+
+        Assert.Contains("preflight", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReadAsync_PreflightsMissingOrTruncatedZip64Locator()
+    {
+        using var package = SyntheticNuGetPackage.Create();
+        package.ForgeEndOfCentralDirectory(
+            entryCount: ushort.MaxValue,
+            centralDirectorySize: uint.MaxValue,
+            centralDirectoryOffset: uint.MaxValue);
+
+        var exception = await Assert.ThrowsAsync<RepositoryCheckException>(
+            () => new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken));
+
+        Assert.Contains("locator", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("preflight", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReadAsync_PreflightsTruncatedZip64Record()
+    {
+        using var package = SyntheticNuGetPackage.Create();
+        package.ForgeZip64WithTruncatedRecord();
+
+        var exception = await Assert.ThrowsAsync<RepositoryCheckException>(
+            () => new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken));
+
+        Assert.Contains("preflight", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReadAsync_AcceptsValidSingleDiskZip64Metadata()
+    {
+        using var package = SyntheticNuGetPackage.Create();
+        package.ConvertToValidZip64();
+
+        var result = await new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken);
+
+        Assert.Equal("SmartPipe.Core", result.Id);
     }
 
     [Fact]
@@ -163,18 +307,90 @@ public sealed class NuGetPackageReaderTests
     }
 
     [Fact]
-    public async Task ReadAsync_RejectsInvalidManagedPeAndDuplicateAssemblyIdentityPerTfm()
+    public async Task ReadAsync_RejectsInvalidManagedPeAndExactDuplicateWithinAssetFamilyAndTfm()
     {
         var testAssembly = await File.ReadAllBytesAsync(typeof(NuGetPackageReaderTests).Assembly.Location, TestContext.Current.CancellationToken);
         using var invalid = SyntheticNuGetPackage.Create(entries: [("lib/net10.0/Invalid.dll", [0x4d, 0x5a])]);
         using var duplicate = SyntheticNuGetPackage.Create(entries:
         [
             ("lib/net10.0/One.dll", testAssembly),
-            ("ref/net10.0/Two.dll", testAssembly),
+            ("lib/net10.0/Two.dll", testAssembly),
         ]);
 
         await Assert.ThrowsAsync<RepositoryCheckException>(() => new NuGetPackageReader().ReadAsync(invalid.Path, TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<RepositoryCheckException>(() => new NuGetPackageReader().ReadAsync(duplicate.Path, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReadAsync_AllowsRefAndLibCounterpartsAndPreservesAssetFamily()
+    {
+        var assembly = SyntheticNuGetPackage.CreateManagedAssembly("Counterpart", new Version(1, 2, 3, 4));
+        using var package = SyntheticNuGetPackage.Create(entries:
+        [
+            ("ref/net10.0/Counterpart.dll", assembly),
+            ("lib/net10.0/Counterpart.dll", assembly),
+        ]);
+
+        var result = await new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["lib", "ref"], result.Assets.Assemblies.Select(static assembly => assembly.AssetFamily));
+    }
+
+    [Fact]
+    public async Task ReadAsync_AllowsSameAssemblyNameWithDifferentFullIdentity()
+    {
+        using var package = SyntheticNuGetPackage.Create(entries:
+        [
+            ("lib/net10.0/One.dll", SyntheticNuGetPackage.CreateManagedAssembly("SameName", new Version(1, 0, 0, 0))),
+            ("lib/net10.0/Two.dll", SyntheticNuGetPackage.CreateManagedAssembly("SameName", new Version(2, 0, 0, 0))),
+        ]);
+
+        var result = await new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["1.0.0.0", "2.0.0.0"], result.Assets.Assemblies.Select(static assembly => assembly.Version).Order());
+    }
+
+    [Fact]
+    public async Task ReadAsync_DistinguishesFullPublicKeyFromStoredPublicKeyToken()
+    {
+        var fullKey = Enumerable.Range(1, 16).Select(static value => (byte)value).ToArray();
+        var storedToken = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 };
+        using var package = SyntheticNuGetPackage.Create(entries:
+        [
+            ("lib/net10.0/FullKey.dll", SyntheticNuGetPackage.CreateManagedAssembly("FullKey", new Version(1, 0), fullKey, containsFullPublicKey: true)),
+            ("lib/net10.0/StoredToken.dll", SyntheticNuGetPackage.CreateManagedAssembly("StoredToken", new Version(1, 0), storedToken)),
+        ]);
+
+        var result = await new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken);
+
+        var hash = SHA1.HashData(fullKey);
+        var expectedFullKeyToken = Convert.ToHexStringLower(hash.AsSpan(hash.Length - 8).ToArray().Reverse().ToArray());
+        Assert.Equal(expectedFullKeyToken, Assert.Single(result.Assets.Assemblies, static assembly => assembly.Name == "FullKey").PublicKeyToken);
+        Assert.Equal("0102030405060708", Assert.Single(result.Assets.Assemblies, static assembly => assembly.Name == "StoredToken").PublicKeyToken);
+    }
+
+    [Fact]
+    public async Task ReadAsync_RejectsInvalidStoredPublicKeyTokenLength()
+    {
+        using var package = SyntheticNuGetPackage.Create(entries:
+        [
+            ("lib/net10.0/BadToken.dll", SyntheticNuGetPackage.CreateManagedAssembly("BadToken", new Version(1, 0), [1, 2, 3, 4, 5, 6, 7])),
+        ]);
+
+        await Assert.ThrowsAsync<RepositoryCheckException>(
+            () => new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReadAsync_RejectsEmptyFullPublicKeyBlob()
+    {
+        using var package = SyntheticNuGetPackage.Create(entries:
+        [
+            ("lib/net10.0/EmptyKey.dll", SyntheticNuGetPackage.CreateManagedAssembly("EmptyKey", new Version(1, 0), [], containsFullPublicKey: true)),
+        ]);
+
+        await Assert.ThrowsAsync<RepositoryCheckException>(
+            () => new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken));
     }
 
     [Fact]

@@ -62,14 +62,17 @@ internal sealed record PackageAssemblySnapshot
     public required string PublicKeyToken { get; init; }
 
     [JsonPropertyOrder(4)]
-    public required string AssetPath { get; init; }
+    public required string AssetFamily { get; init; }
 
     [JsonPropertyOrder(5)]
-    public required string TargetFramework { get; init; }
+    public required string AssetPath { get; init; }
 
     [JsonPropertyOrder(6)]
-    public required IReadOnlyList<string> ExportedTypes { get; init; }
+    public required string TargetFramework { get; init; }
 
     [JsonPropertyOrder(7)]
+    public required IReadOnlyList<string> ExportedTypes { get; init; }
+
+    [JsonPropertyOrder(8)]
     public required IReadOnlyList<string> TypeForwarders { get; init; }
 }
