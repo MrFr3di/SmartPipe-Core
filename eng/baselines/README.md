@@ -9,3 +9,17 @@ Manifest producers must persist manifests through `BaselineManifestSerializer.Wr
 Canonical JSON uses schema version 1, UTF-8 without a BOM, two-space indentation, LF line endings, exactly one final LF, explicit property order, and stable identity ordering for arrays. Text hashes normalize a leading UTF-8 BOM and CRLF/CR to LF without trimming whitespace; package hashes cover the original package bytes.
 
 The manifest rejects unknown properties and schema versions. Package sources and workflow evidence URLs must use HTTPS, hashes must be lowercase SHA-256, and snapshot paths must be repository-relative without parent traversal.
+
+## Verification diagnostics
+
+`verify-baseline --offline` reports deterministic diagnostics sorted by code and message:
+
+- `SPB001`: unsafe or invalid manifest/schema/path;
+- `SPB002`-`SPB004`: repository identity, commit, or SDK mismatch;
+- `SPB005`-`SPB006`: required file missing or snapshot hash mismatch;
+- `SPB007`-`SPB010`: package hash, signature, identity/assets, or dependencies mismatch;
+- `SPB014`: public API snapshot mismatch;
+- `SPB015`: repository dependency snapshot mismatch;
+- `SPB016`: required release branch missing from CI, CodeQL, or Dependency Review workflow policy.
+
+Offline verification never fetches packages. It hashes package bytes before signature or archive inspection and ignores unreferenced files in the baseline directory.

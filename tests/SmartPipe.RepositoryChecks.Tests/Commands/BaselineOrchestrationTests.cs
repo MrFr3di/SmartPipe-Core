@@ -1,0 +1,291 @@
+using System.Text.Json.Nodes;
+using SmartPipe.RepositoryChecks.Baselines;
+using SmartPipe.RepositoryChecks.Commands;
+using SmartPipe.RepositoryChecks.Infrastructure;
+using SmartPipe.RepositoryChecks.NuGet;
+using SmartPipe.RepositoryChecks.Tests.NuGet;
+
+namespace SmartPipe.RepositoryChecks.Tests.Commands;
+
+public sealed class BaselineOrchestrationTests
+{
+    [Fact]
+    public async Task CaptureThenOfflineVerify_Passes()
+    {
+        using var scenario = new BaselineScenario();
+
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var result = await scenario.VerifyAsync();
+
+        Assert.True(result.Success, result.Format());
+        Assert.True(File.Exists(scenario.ManifestPath));
+    }
+
+    [Fact]
+    public async Task FailedCapture_DoesNotReplaceExistingBaseline()
+    {
+        using var scenario = new BaselineScenario();
+        Directory.CreateDirectory(scenario.BaselinePath);
+        var marker = Path.Combine(scenario.BaselinePath, "keep.txt");
+        await File.WriteAllTextAsync(marker, "old", TestContext.Current.CancellationToken);
+        scenario.SignatureVerifier.Failure = new InvalidDataException("signature failure");
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => scenario.CaptureAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal("old", await File.ReadAllTextAsync(marker, TestContext.Current.CancellationToken));
+        Assert.Empty(Directory.GetDirectories(Path.GetDirectoryName(scenario.BaselinePath)!, ".2.1.2.capture-*"));
+    }
+
+    [Fact]
+    public async Task ManifestMutation_Fails()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(scenario.ManifestPath, TestContext.Current.CancellationToken))!.AsObject();
+        json["targetRelease"] = "2.2.1";
+        await File.WriteAllTextAsync(scenario.ManifestPath, json.ToJsonString(), TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB001");
+    }
+
+    [Fact]
+    public async Task PackageByteMutation_FailsBeforeParsing()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        await File.AppendAllTextAsync(Path.Combine(scenario.PackagesPath, "SmartPipe.Core.2.1.2.nupkg"), "mutated", TestContext.Current.CancellationToken);
+        scenario.SignatureVerifier.VerifiedPaths.Clear();
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB007" && item.Message.Contains("SmartPipe.Core", StringComparison.Ordinal));
+        Assert.DoesNotContain(scenario.SignatureVerifier.VerifiedPaths, path => Path.GetFileName(path) == "SmartPipe.Core.2.1.2.nupkg");
+    }
+
+    [Fact]
+    public async Task PublicApiMutation_Fails()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        await File.AppendAllTextAsync(scenario.PublicApiPath, "\nNew.Api", TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB014");
+    }
+
+    [Fact]
+    public async Task DirectPackageReferenceMutation_Fails()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(scenario.ProjectPath, "<Project><ItemGroup><PackageReference Include=\"Changed\" Version=\"2.0.0\" /></ItemGroup></Project>", TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB015");
+    }
+
+    [Theory]
+    [InlineData(".github/workflows/ci.yml")]
+    [InlineData(".github/workflows/codeql.yml")]
+    [InlineData(".github/workflows/dependency-review.yml")]
+    public async Task WorkflowReleaseBranchRemoval_Fails(string workflowRelativePath)
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(Path.Combine(scenario.Root, workflowRelativePath.Replace('/', Path.DirectorySeparatorChar)), "on:\n  push:\n    branches: [ main ]\n", TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB016");
+    }
+
+    [Fact]
+    public async Task UnknownSnapshotFile_IsIgnored()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(Path.Combine(scenario.BaselinePath, "unknown.json"), "{\"changed\":true}", TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.True(result.Success, result.Format());
+    }
+
+    [Fact]
+    public async Task ManifestPathTraversal_IsRejectedImmediately()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var text = await File.ReadAllTextAsync(scenario.ManifestPath, TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(scenario.ManifestPath, text.Replace("eng/baselines/2.1.2/public-api.json", "../public-api.json", StringComparison.Ordinal), TestContext.Current.CancellationToken);
+        scenario.SignatureVerifier.VerifiedPaths.Clear();
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Collection(result.Diagnostics, item => Assert.Equal("SPB001", item.Code));
+        Assert.Empty(scenario.SignatureVerifier.VerifiedPaths);
+    }
+
+    [Fact]
+    public async Task Cancellation_CleansTemporaryCaptureDirectory()
+    {
+        using var scenario = new BaselineScenario();
+        using var cancellation = new CancellationTokenSource();
+        scenario.Fetcher.AfterCopy = cancellation.Cancel;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scenario.CaptureAsync(cancellation.Token));
+
+        Assert.Empty(Directory.GetDirectories(Path.GetDirectoryName(scenario.BaselinePath)!, ".2.1.2.capture-*"));
+        Assert.False(Directory.Exists(scenario.BaselinePath));
+    }
+
+    private sealed class BaselineScenario : IDisposable
+    {
+        private const string Sha = "8e79902d22de714f493582946f7c260462b0895e";
+        private readonly List<SyntheticNuGetPackage> _packages = [];
+        private readonly ScenarioProcessRunner _processRunner;
+        private readonly BaselineCaptureService _capture;
+        private readonly BaselineVerificationService _verify;
+
+        public BaselineScenario()
+        {
+            Root = Path.Combine(Path.GetTempPath(), "SmartPipe.BaselineScenario", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Root);
+            PackagesPath = Path.Combine(Root, "packages");
+            Directory.CreateDirectory(PackagesPath);
+            BaselinePath = Path.Combine(Root, "eng", "baselines", "2.1.2");
+            ManifestPath = Path.Combine(BaselinePath, "manifest.json");
+            ProjectPath = Write("src/Fixture/Fixture.csproj", "<Project><ItemGroup><PackageReference Include=\"Example\" Version=\"1.0.0\" /></ItemGroup></Project>");
+            PublicApiPath = Write("src/Fixture/PublicAPI.Shipped.txt", "Fixture.Api\n");
+            WorkflowPath = Write(".github/workflows/ci.yml", "on:\n  push:\n    branches: [ main, release/2.2.0 ]\n");
+            Write(".github/workflows/codeql.yml", "on:\n  push:\n    branches: [ main, release/2.2.0 ]\n");
+            Write(".github/workflows/dependency-review.yml", "on:\n  pull_request:\n    branches: [ main, release/2.2.0 ]\n");
+            Write("SmartPipe.Core.slnx", "<Solution><Folder Name=\"/src/\"><Project Path=\"src/Fixture/Fixture.csproj\" /></Folder></Solution>");
+            Write("global.json", "{\"sdk\":{\"version\":\"10.0.302\"}}");
+            WorkflowEvidencePath = Write("workflow.json", "{\"workflows\":[{\"name\":\"CI\",\"runId\":1,\"url\":\"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/1\",\"conclusion\":\"success\"},{\"name\":\"CodeQL\",\"runId\":2,\"url\":\"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/2\",\"conclusion\":\"success\"},{\"name\":\"Dependency Review\",\"runId\":3,\"url\":\"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/3\",\"conclusion\":\"success\"}]}");
+
+            var sources = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var id in new[] { "SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Json" })
+            {
+                var package = SyntheticNuGetPackage.Create(id, entries: [("lib/net10.0/readme.txt", "fixture"u8.ToArray())]);
+                _packages.Add(package);
+                sources.Add(id, package.Path);
+            }
+
+            Fetcher = new CopyingFetcher(sources);
+            SignatureVerifier = new RecordingSignatureVerifier();
+            _processRunner = new ScenarioProcessRunner(Sha, ProjectPath);
+            var repository = new BaselineRepositorySnapshotReader(_processRunner, "dotnet");
+            _verify = new BaselineVerificationService(_processRunner, "git", SignatureVerifier, new NuGetPackageReader(), repository);
+            _capture = new BaselineCaptureService(_processRunner, "git", "dotnet", Fetcher, SignatureVerifier, new NuGetPackageReader(), repository, _verify);
+        }
+
+        public string Root { get; }
+        public string PackagesPath { get; }
+        public string BaselinePath { get; }
+        public string ManifestPath { get; }
+        public string ProjectPath { get; }
+        public string PublicApiPath { get; }
+        public string WorkflowPath { get; }
+        public string WorkflowEvidencePath { get; }
+        public CopyingFetcher Fetcher { get; }
+        public RecordingSignatureVerifier SignatureVerifier { get; }
+
+        public Task CaptureAsync(CancellationToken cancellationToken) => _capture.CaptureAsync(new CaptureBaselineOptions(
+            Root, "MrFr3di/SmartPipe-Core", Sha, "2.2.0", "2.1.2", PackagesPath,
+            "eng/baselines/2.1.2", WorkflowEvidencePath), cancellationToken);
+
+        public Task<BaselineVerificationResult> VerifyAsync() => _verify.VerifyAsync(new VerifyBaselineOptions(
+            Root, ManifestPath, PackagesPath, Offline: true), TestContext.Current.CancellationToken);
+
+        public void Dispose()
+        {
+            foreach (var package in _packages)
+            {
+                package.Dispose();
+            }
+
+            Directory.Delete(Root, recursive: true);
+        }
+
+        private string Write(string relative, string text)
+        {
+            var path = Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, text);
+            return path;
+        }
+    }
+
+    private sealed class CopyingFetcher(IReadOnlyDictionary<string, string> sources) : INuGetPackageFetcher
+    {
+        public Action? AfterCopy { get; set; }
+
+        public Task<string> FetchAsync(string packageId, string version, string destinationDirectory, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Directory.CreateDirectory(destinationDirectory);
+            var destination = Path.Combine(destinationDirectory, $"{packageId}.{version}.nupkg");
+            File.Copy(sources[packageId], destination, overwrite: true);
+            AfterCopy?.Invoke();
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(destination);
+        }
+    }
+
+    private sealed class RecordingSignatureVerifier : INuGetPackageSignatureVerifier
+    {
+        public Exception? Failure { get; set; }
+        public List<string> VerifiedPaths { get; } = [];
+
+        public Task VerifyAsync(string packagePath, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            VerifiedPaths.Add(packagePath);
+            return Failure is null ? Task.CompletedTask : Task.FromException(Failure);
+        }
+    }
+
+    private sealed class ScenarioProcessRunner(string sha, string projectPath) : IProcessRunner
+    {
+        public Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (request.FileName == "git" && request.Arguments.Count == 4
+                && request.Arguments[0] == "-C" && request.Arguments.Skip(2).SequenceEqual(["status", "--porcelain"]))
+            {
+                return Success(string.Empty);
+            }
+
+            if (request.FileName == "git" && request.Arguments.Count == 4
+                && request.Arguments[0] == "-C" && request.Arguments.Skip(2).SequenceEqual(["rev-parse", "HEAD"]))
+            {
+                return Success(sha + "\n");
+            }
+
+            if (request.FileName == "dotnet" && request.Arguments.SequenceEqual(["--version"]))
+            {
+                return Success("10.0.302\n");
+            }
+
+            if (request.Arguments.FirstOrDefault() == "msbuild")
+            {
+                return Success("{\"Properties\":{\"PackageId\":\"Fixture\",\"Version\":\"2.2.0\",\"TargetFramework\":\"net10.0\",\"IsPackable\":\"true\",\"AssemblyName\":\"Fixture\"}}");
+            }
+
+            if (request.Arguments.Take(2).SequenceEqual(["package", "list"]))
+            {
+                var escaped = JsonValue.Create(projectPath)!.ToJsonString();
+                return Success($"{{\"version\":1,\"parameters\":\"--include-transitive\",\"projects\":[{{\"path\":{escaped},\"frameworks\":[{{\"framework\":\"net10.0\",\"topLevelPackages\":[{{\"id\":\"Example\",\"requestedVersion\":\"1.0.0\",\"resolvedVersion\":\"1.0.0\"}}]}}]}}]}}");
+            }
+
+            throw new InvalidOperationException($"Unexpected process: {request.FileName} {string.Join(' ', request.Arguments)}");
+        }
+
+        private static Task<ProcessResult> Success(string output) => Task.FromResult(new ProcessResult(0, output, string.Empty));
+    }
+}
