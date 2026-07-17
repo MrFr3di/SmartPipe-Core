@@ -94,6 +94,30 @@ public sealed class ProjectDependencySnapshotReaderTests
     }
 
     [Fact]
+    public void ReadDirect_UsesFileSystemCaseSemanticsForProjectReferenceIdentity()
+    {
+        using var repository = new RepositoryTestDirectory();
+        repository.Write("src/A/A.csproj", """
+            <Project><ItemGroup>
+              <ProjectReference Include="../B/B.csproj" Condition="true" />
+              <ProjectReference Include="../b/B.csproj" Condition="true" />
+            </ItemGroup></Project>
+            """);
+        var reader = new ProjectDependencySnapshotReader(new FakeProcessRunner(), "dotnet");
+
+        if (OperatingSystem.IsWindows())
+        {
+            var exception = Assert.Throws<InvalidDataException>(() => reader.ReadDirect(repository.Path, [Identity("src/A/A.csproj")]));
+            Assert.Contains("duplicate", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        else
+        {
+            var references = Assert.Single(reader.ReadDirect(repository.Path, [Identity("src/A/A.csproj")])).ProjectReferences;
+            Assert.Equal(["../B/B.csproj", "../b/B.csproj"], references.Select(reference => reference.Include));
+        }
+    }
+
+    [Fact]
     public void ReadDirect_UsesTotalOrdinalOrderAcrossAllReferenceFields()
     {
         using var repository = new RepositoryTestDirectory();

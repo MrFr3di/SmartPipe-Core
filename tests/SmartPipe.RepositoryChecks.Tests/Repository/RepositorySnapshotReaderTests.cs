@@ -221,6 +221,29 @@ public sealed class RepositorySnapshotReaderTests
     }
 
     [Fact]
+    public async Task ReadPackableProjectsAsync_UsesFileSystemCaseSemanticsForPhysicalSrcPath()
+    {
+        using var repository = new RepositoryTestDirectory();
+        repository.Write("Repo.slnx", "<Solution><Folder Name=\"/src/\"><Project Path=\"SRC/A.csproj\" /></Folder></Solution>");
+        repository.Write("SRC/A.csproj", "<Project />");
+        var runner = new FakeProcessRunner(SuccessProperties("A", "1.0.0", "net10.0", true, "A"));
+        var reader = new RepositorySnapshotReader(runner, "dotnet");
+
+        if (OperatingSystem.IsWindows())
+        {
+            var project = Assert.Single(await reader.ReadPackableProjectsAsync(
+                repository.Path, "Repo.slnx", TestContext.Current.CancellationToken));
+
+            Assert.Equal("SRC/A.csproj", project.ProjectPath);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(() => reader.ReadPackableProjectsAsync(
+                repository.Path, "Repo.slnx", TestContext.Current.CancellationToken));
+        }
+    }
+
+    [Fact]
     public async Task ReadPackableProjectsAsync_PropagatesCanceledProcessAsCancellation()
     {
         using var repository = CreateSingleProjectRepository();

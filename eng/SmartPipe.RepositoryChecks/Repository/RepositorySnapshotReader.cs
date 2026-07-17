@@ -180,7 +180,8 @@ internal sealed class RepositorySnapshotReader
                                     throw new InvalidDataException($"The SLNX contains project paths that alias the same physical path: {normalized}");
                                 }
 
-                                var physicallyUnderSrc = normalized.StartsWith("src/", StringComparison.Ordinal);
+                                var physicallyUnderSrc = normalized.Length >= "src/".Length
+                                    && RepositoryPaths.FileSystemPathComparer.Equals(normalized[.."src/".Length], "src/");
                                 if (parent!.InProductionFolder != physicallyUnderSrc)
                                 {
                                     throw new InvalidDataException(
