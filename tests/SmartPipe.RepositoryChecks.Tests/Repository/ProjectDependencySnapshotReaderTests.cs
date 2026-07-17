@@ -118,6 +118,23 @@ public sealed class ProjectDependencySnapshotReaderTests
     }
 
     [Fact]
+    public void ReadDirect_OrdersProjectReferenceIncludesOrdinally()
+    {
+        using var repository = new RepositoryTestDirectory();
+        repository.Write("src/A/A.csproj", """
+            <Project><ItemGroup>
+              <ProjectReference Include="../a/a.csproj" />
+              <ProjectReference Include="../Z/Z.csproj" />
+            </ItemGroup></Project>
+            """);
+        var reader = new ProjectDependencySnapshotReader(new FakeProcessRunner(), "dotnet");
+
+        var references = Assert.Single(reader.ReadDirect(repository.Path, [Identity("src/A/A.csproj")])).ProjectReferences;
+
+        Assert.Equal(["../Z/Z.csproj", "../a/a.csproj"], references.Select(reference => reference.Include));
+    }
+
+    [Fact]
     public void ReadDirect_UsesTotalOrdinalOrderAcrossAllReferenceFields()
     {
         using var repository = new RepositoryTestDirectory();

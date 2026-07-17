@@ -42,7 +42,7 @@ internal sealed record RestoredDependencySnapshot(
 internal static class DirectReferenceTotalComparer
 {
     public static IComparer<DirectReferenceSnapshot> ProjectReference { get; } =
-        new Comparer(RepositoryPaths.FileSystemPathComparer);
+        new Comparer(StringComparer.Ordinal);
 
     public static IComparer<DirectReferenceSnapshot> PackageReference { get; } =
         new Comparer(StringComparer.OrdinalIgnoreCase);
