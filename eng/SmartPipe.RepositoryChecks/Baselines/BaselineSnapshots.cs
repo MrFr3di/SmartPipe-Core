@@ -37,7 +37,7 @@ internal static class BaselineReport
             .AppendLine("# SmartPipe 2.1.2 baseline report")
             .AppendLine()
             .Append("Repository: `").Append(manifest.Repository.FullName).AppendLine("`")
-            .Append("Commit: `").Append(manifest.Repository.CommitSha).AppendLine("`")
+            .Append("Capture commit: `").Append(manifest.Repository.CaptureCommitSha).AppendLine("`")
             .Append("SDK: `").Append(manifest.Repository.SdkVersion).AppendLine("`")
             .AppendLine()
             .AppendLine("## Packages")
@@ -63,12 +63,13 @@ internal static class BaselineReport
         report.AppendLine()
             .AppendLine("## Workflow evidence")
             .AppendLine()
-            .AppendLine("| Workflow | Run ID | URL |")
-            .AppendLine("| --- | ---: | --- |");
+            .AppendLine("| Workflow | Run ID | Head SHA | URL |")
+            .AppendLine("| --- | ---: | --- | --- |");
         foreach (var workflow in manifest.Repository.RequiredWorkflows.OrderBy(static item => item.Name, StringComparer.Ordinal))
         {
             report.Append("| ").Append(workflow.Name).Append(" | ").Append(workflow.RunId)
-                .Append(" | ").Append(workflow.Url).AppendLine(" |");
+                .Append(" | `").Append(workflow.HeadSha).Append("` | ")
+                .Append(workflow.Url).AppendLine(" |");
         }
 
         return CanonicalText.ToUtf8Bytes(report.ToString()

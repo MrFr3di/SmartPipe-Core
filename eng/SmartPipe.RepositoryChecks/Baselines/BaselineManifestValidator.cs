@@ -39,7 +39,7 @@ internal static class BaselineManifestValidator
     {
         RequireText(repository.FullName, "repository.fullName");
         RequireText(repository.DefaultBranch, "repository.defaultBranch");
-        RequireLowercaseHex(repository.CommitSha, 40, "repository.commitSha");
+        RequireLowercaseHex(repository.CaptureCommitSha, 40, "repository.captureCommitSha");
         RequireText(repository.SdkVersion, "repository.sdkVersion");
         RequireSafeRelativePath(repository.SolutionPath, "repository.solutionPath");
 
@@ -67,6 +67,12 @@ internal static class BaselineManifestValidator
             if (workflow.RunId <= 0)
             {
                 throw Invalid("workflow.runId must be positive.");
+            }
+
+            RequireLowercaseHex(workflow.HeadSha, 40, "workflow.headSha");
+            if (!string.Equals(workflow.HeadSha, repository.CaptureCommitSha, StringComparison.Ordinal))
+            {
+                throw Invalid("workflow.headSha must equal repository.captureCommitSha.");
             }
 
             RequireHttpsUri(workflow.Url, "workflow.url");

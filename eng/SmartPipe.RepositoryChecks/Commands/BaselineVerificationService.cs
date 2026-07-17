@@ -141,16 +141,14 @@ internal sealed class BaselineVerificationService
 
         try
         {
-            var actualCommit = await RunOutputAsync(
-                _gitPath, ["-C", options.RepositoryRoot, "rev-parse", "HEAD"], cancellationToken).ConfigureAwait(false);
-            if (!string.Equals(actualCommit, manifest.Repository.CommitSha, StringComparison.Ordinal))
-            {
-                diagnostics.Add(new("SPB003", "Repository commit mismatch", manifest.Repository.CommitSha, actualCommit));
-            }
+            _ = await RunOutputAsync(
+                _gitPath,
+                ["-C", options.RepositoryRoot, "merge-base", "--is-ancestor", manifest.Repository.CaptureCommitSha, "HEAD"],
+                cancellationToken).ConfigureAwait(false);
         }
         catch (RepositoryCheckException exception)
         {
-            diagnostics.Add(new("SPB003", $"Repository commit could not be read: {exception.Message}"));
+            diagnostics.Add(new("SPB003", $"Capture commit is not an ancestor of HEAD or is unavailable: {exception.Message}"));
         }
 
         try

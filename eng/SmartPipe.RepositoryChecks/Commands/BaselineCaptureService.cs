@@ -125,7 +125,7 @@ internal sealed class BaselineCaptureService
                 {
                     FullName = options.Repository,
                     DefaultBranch = "main",
-                    CommitSha = options.Commit,
+                    CaptureCommitSha = options.Commit,
                     SdkVersion = sdkVersion,
                     SolutionPath = "SmartPipe.Core.slnx",
                     RequiredWorkflows = workflows,
@@ -317,6 +317,7 @@ internal sealed class BaselineCaptureService
                 runs.Add(new WorkflowRunEvidence(
                     runId,
                     RequiredString(item, "workflowName"),
+                    headSha,
                     status,
                     conclusion,
                     new Uri(RequiredString(item, "url"), UriKind.Absolute),
@@ -341,6 +342,7 @@ internal sealed class BaselineCaptureService
                 {
                     Name = run.WorkflowName,
                     RunId = run.DatabaseId,
+                    HeadSha = run.HeadSha,
                     Url = run.Url,
                     Conclusion = run.Conclusion,
                 });
@@ -398,6 +400,7 @@ internal sealed class BaselineCaptureService
     private sealed record WorkflowRunEvidence(
         long DatabaseId,
         string WorkflowName,
+        string HeadSha,
         string Status,
         string Conclusion,
         Uri Url,

@@ -34,10 +34,86 @@ public sealed class BaselineOrchestrationTests
 
         Assert.Equal(first, second);
         Assert.Contains("# SmartPipe 2.1.2 baseline report", first, StringComparison.Ordinal);
-        Assert.Contains(BaselineScenario.Sha, first, StringComparison.Ordinal);
+        Assert.Contains($"Capture commit: `{BaselineScenario.Sha}`", first, StringComparison.Ordinal);
+        Assert.Contains("| Workflow | Run ID | Head SHA | URL |", first, StringComparison.Ordinal);
         Assert.Contains("| CI | 1 |", first, StringComparison.Ordinal);
         Assert.DoesNotContain('\r', first);
         Assert.EndsWith("\n", first, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Capture_PersistsExactCaptureAndWorkflowCommitIdentity()
+    {
+        using var scenario = new BaselineScenario();
+
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var root = JsonNode.Parse(await File.ReadAllTextAsync(
+            scenario.ManifestPath, TestContext.Current.CancellationToken))!.AsObject();
+
+        Assert.Equal(BaselineScenario.Sha, root["repository"]!["captureCommitSha"]!.GetValue<string>());
+        Assert.All(root["repository"]!["requiredWorkflows"]!.AsArray(), workflow =>
+            Assert.Equal(BaselineScenario.Sha, workflow!["headSha"]!.GetValue<string>()));
+        Assert.Null(root["repository"]!["commitSha"]);
+    }
+
+    [Fact]
+    public async Task DescendantGovernanceHead_VerifiesByCaptureCommitAncestry()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        scenario.ProcessRunner.CurrentHeadSha = new string('d', 40);
+        scenario.ProcessRunner.MergeBaseExitCode = 0;
+        scenario.ProcessRunner.Requests.Clear();
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.True(result.Success, result.Format());
+        Assert.Contains(scenario.ProcessRunner.Requests, request => request.FileName == "git"
+            && request.Arguments.Skip(2).SequenceEqual(
+                ["merge-base", "--is-ancestor", BaselineScenario.Sha, "HEAD"]));
+        Assert.DoesNotContain(scenario.ProcessRunner.Requests, request => request.FileName == "git"
+            && request.Arguments.Skip(2).SequenceEqual(["rev-parse", "HEAD"]));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(128)]
+    public async Task UnrelatedOrMissingCaptureCommit_FailsClosed(int mergeBaseExitCode)
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        scenario.ProcessRunner.MergeBaseExitCode = mergeBaseExitCode;
+        scenario.ProcessRunner.Requests.Clear();
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "SPB003");
+        Assert.Contains(scenario.ProcessRunner.Requests, request => request.FileName == "git"
+            && request.Arguments.Skip(2).SequenceEqual(
+                ["merge-base", "--is-ancestor", BaselineScenario.Sha, "HEAD"]));
+    }
+
+    [Fact]
+    public async Task WellFormedMutatedCaptureCommit_FailsAncestryCheck()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var mutatedSha = new string('b', 40);
+        var root = JsonNode.Parse(await File.ReadAllTextAsync(
+            scenario.ManifestPath, TestContext.Current.CancellationToken))!.AsObject();
+        root["repository"]!["captureCommitSha"] = mutatedSha;
+        foreach (var workflow in root["repository"]!["requiredWorkflows"]!.AsArray())
+        {
+            workflow!["headSha"] = mutatedSha;
+        }
+
+        await File.WriteAllTextAsync(
+            scenario.ManifestPath, root.ToJsonString(), TestContext.Current.CancellationToken);
+        scenario.ProcessRunner.MergeBaseExitCode = 128;
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "SPB003");
     }
 
     [Fact]
@@ -457,6 +533,8 @@ public sealed class BaselineOrchestrationTests
     internal sealed class ScenarioProcessRunner(string sha, string projectPath) : IProcessRunner
     {
         public Exception? GitFailure { get; set; }
+        public string CurrentHeadSha { get; set; } = sha;
+        public int MergeBaseExitCode { get; set; }
         public List<ProcessRequest> Requests { get; } = [];
 
         public Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken)
@@ -476,7 +554,18 @@ public sealed class BaselineOrchestrationTests
             if (request.FileName == "git" && request.Arguments.Count == 4
                 && request.Arguments[0] == "-C" && request.Arguments.Skip(2).SequenceEqual(["rev-parse", "HEAD"]))
             {
-                return Success(sha + "\n");
+                return Success(CurrentHeadSha + "\n");
+            }
+
+            if (request.FileName == "git" && request.Arguments.Count == 6
+                && request.Arguments[0] == "-C"
+                && request.Arguments.Skip(2).SequenceEqual(
+                    ["merge-base", "--is-ancestor", request.Arguments[4], "HEAD"]))
+            {
+                return Task.FromResult(new ProcessResult(
+                    MergeBaseExitCode,
+                    string.Empty,
+                    MergeBaseExitCode == 0 ? string.Empty : "not an ancestor"));
             }
 
             if (request.FileName == "dotnet" && request.Arguments.SequenceEqual(["--version"]))

@@ -15,13 +15,13 @@ internal static class BaselineFixtures
         {
             FullName = "MrFr3di/SmartPipe-Core",
             DefaultBranch = "main",
-            CommitSha = "8e79902d22de714f493582946f7c260462b0895e",
+            CaptureCommitSha = "8e79902d22de714f493582946f7c260462b0895e",
             SdkVersion = "10.0.302",
             SolutionPath = "SmartPipe.Core.slnx",
             RequiredWorkflows =
             [
-                new WorkflowBaseline { Name = "release", RunId = 2, Url = new Uri("https://github.com/MrFr3di/SmartPipe-Core/actions/runs/2"), Conclusion = "success" },
-                new WorkflowBaseline { Name = "ci", RunId = 1, Url = new Uri("https://github.com/MrFr3di/SmartPipe-Core/actions/runs/1"), Conclusion = "success" },
+                new WorkflowBaseline { Name = "release", RunId = 2, HeadSha = "8e79902d22de714f493582946f7c260462b0895e", Url = new Uri("https://github.com/MrFr3di/SmartPipe-Core/actions/runs/2"), Conclusion = "success" },
+                new WorkflowBaseline { Name = "ci", RunId = 1, HeadSha = "8e79902d22de714f493582946f7c260462b0895e", Url = new Uri("https://github.com/MrFr3di/SmartPipe-Core/actions/runs/1"), Conclusion = "success" },
             ],
         },
         Packages =

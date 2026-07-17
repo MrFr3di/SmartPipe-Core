@@ -41,7 +41,7 @@ internal sealed record RepositoryBaseline
     public required string DefaultBranch { get; init; }
 
     [JsonPropertyOrder(2)]
-    public required string CommitSha { get; init; }
+    public required string CaptureCommitSha { get; init; }
 
     [JsonPropertyOrder(3)]
     public required string SdkVersion { get; init; }
@@ -62,9 +62,12 @@ internal sealed record WorkflowBaseline
     public required long RunId { get; init; }
 
     [JsonPropertyOrder(2)]
-    public required Uri Url { get; init; }
+    public required string HeadSha { get; init; }
 
     [JsonPropertyOrder(3)]
+    public required Uri Url { get; init; }
+
+    [JsonPropertyOrder(4)]
     public required string Conclusion { get; init; }
 }
 

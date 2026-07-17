@@ -74,11 +74,11 @@
     "repository": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fullName", "defaultBranch", "commitSha", "sdkVersion", "solutionPath", "requiredWorkflows"],
+      "required": ["fullName", "defaultBranch", "captureCommitSha", "sdkVersion", "solutionPath", "requiredWorkflows"],
       "properties": {
         "fullName": { "type": "string", "minLength": 1 },
         "defaultBranch": { "type": "string", "minLength": 1 },
-        "commitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "captureCommitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
         "sdkVersion": { "type": "string", "minLength": 1 },
         "solutionPath": { "$ref": "#/$defs/relativePath" },
         "requiredWorkflows": {
@@ -92,10 +92,11 @@
     "workflow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "runId", "url", "conclusion"],
+      "required": ["name", "runId", "headSha", "url", "conclusion"],
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "runId": { "type": "integer", "minimum": 1 },
+        "headSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
         "url": { "type": "string", "format": "uri", "pattern": "^https://" },
         "conclusion": { "const": "success" }
       }

@@ -114,6 +114,8 @@ public sealed class BaselineManifestSerializerTests
         AssertInvalid(root => root["packages"] = null);
         AssertInvalid(root => root["repository"]!["requiredWorkflows"] = null);
         AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0] = null);
+        AssertInvalid(root => root["repository"]!.AsObject().Remove("captureCommitSha"));
+        AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!.AsObject().Remove("headSha"));
         AssertInvalid(root => root["packages"]![0] = null);
     }
 
@@ -124,11 +126,13 @@ public sealed class BaselineManifestSerializerTests
         AssertInvalid(root => root["targetRelease"] = "2.2");
         AssertInvalid(root => root["repository"]!["fullName"] = " ");
         AssertInvalid(root => root["repository"]!["defaultBranch"] = "");
-        AssertInvalid(root => root["repository"]!["commitSha"] = new string('A', 40));
+        AssertInvalid(root => root["repository"]!["captureCommitSha"] = new string('A', 40));
         AssertInvalid(root => root["repository"]!["sdkVersion"] = " ");
         AssertInvalid(root => root["repository"]!["solutionPath"] = "../SmartPipe.Core.slnx");
         AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!["name"] = " ");
         AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!["runId"] = 0);
+        AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!["headSha"] = new string('A', 40));
+        AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!["headSha"] = new string('b', 40));
         AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!["url"] = "http://github.com/run/1");
         AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!["url"] = "/actions/runs/1");
         AssertInvalid(root => root["repository"]!["requiredWorkflows"]![0]!["conclusion"] = "failure");
@@ -172,10 +176,17 @@ public sealed class BaselineManifestSerializerTests
         Assert.Equal(1, root.GetProperty("properties").GetProperty("schemaVersion").GetProperty("const").GetInt32());
 
         var definitions = root.GetProperty("$defs");
-        var commitPattern = GetPattern(definitions, "repository", "commitSha");
+        var repositoryRequired = definitions.GetProperty("repository").GetProperty("required");
+        Assert.Contains(repositoryRequired.EnumerateArray(), item => item.GetString() == "captureCommitSha");
+        var workflowRequired = definitions.GetProperty("workflow").GetProperty("required");
+        Assert.Contains(workflowRequired.EnumerateArray(), item => item.GetString() == "headSha");
+        var commitPattern = GetPattern(definitions, "repository", "captureCommitSha");
         Assert.Equal("^[0-9a-f]{40}$", commitPattern);
         Assert.Matches(commitPattern, "8e79902d22de714f493582946f7c260462b0895e");
         Assert.DoesNotMatch(commitPattern, "8E79902D22DE714F493582946F7C260462B0895E");
+
+        var workflowHeadPattern = GetPattern(definitions, "workflow", "headSha");
+        Assert.Equal(commitPattern, workflowHeadPattern);
 
         var hashPattern = GetPattern(definitions, "snapshot", "sha256");
         Assert.Equal("^[0-9a-f]{64}$", hashPattern);
