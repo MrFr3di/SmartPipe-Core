@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using SmartPipe.RepositoryChecks.Infrastructure;
 using SmartPipe.RepositoryChecks.NuGet;
@@ -25,6 +26,62 @@ internal static class BaselineSnapshotJson
     {
         var json = JsonSerializer.Serialize(value, Options);
         return CanonicalText.ToUtf8Bytes(json.TrimEnd('\r', '\n') + "\n");
+    }
+}
+
+internal static class BaselineReport
+{
+    public static byte[] Create(BaselineManifest manifest)
+    {
+        var report = new StringBuilder()
+            .AppendLine("# SmartPipe 2.1.2 baseline report")
+            .AppendLine()
+            .Append("Repository: `").Append(manifest.Repository.FullName).AppendLine("`")
+            .Append("Commit: `").Append(manifest.Repository.CommitSha).AppendLine("`")
+            .Append("SDK: `").Append(manifest.Repository.SdkVersion).AppendLine("`")
+            .AppendLine()
+            .AppendLine("## Packages")
+            .AppendLine()
+            .AppendLine("| Package | Version | SHA-256 |")
+            .AppendLine("| --- | --- | --- |");
+        foreach (var package in manifest.Packages.OrderBy(static item => item.Id, StringComparer.Ordinal))
+        {
+            report.Append("| ").Append(package.Id).Append(" | ").Append(package.Version)
+                .Append(" | `").Append(package.Sha256).AppendLine("` |");
+        }
+
+        report.AppendLine()
+            .AppendLine("## Snapshots")
+            .AppendLine()
+            .AppendLine("| Path | SHA-256 |")
+            .AppendLine("| --- | --- |");
+        foreach (var snapshot in EnumerateSnapshots(manifest).OrderBy(static item => item.Path, StringComparer.Ordinal))
+        {
+            report.Append("| ").Append(snapshot.Path).Append(" | `").Append(snapshot.Sha256).AppendLine("` |");
+        }
+
+        report.AppendLine()
+            .AppendLine("## Workflow evidence")
+            .AppendLine()
+            .AppendLine("| Workflow | Run ID | URL |")
+            .AppendLine("| --- | ---: | --- |");
+        foreach (var workflow in manifest.Repository.RequiredWorkflows.OrderBy(static item => item.Name, StringComparer.Ordinal))
+        {
+            report.Append("| ").Append(workflow.Name).Append(" | ").Append(workflow.RunId)
+                .Append(" | ").Append(workflow.Url).AppendLine(" |");
+        }
+
+        return CanonicalText.ToUtf8Bytes(report.ToString()
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\r", "\n", StringComparison.Ordinal));
+    }
+
+    private static IEnumerable<SnapshotReference> EnumerateSnapshots(BaselineManifest manifest)
+    {
+        yield return manifest.PublicApi;
+        yield return manifest.PackageAssets;
+        yield return manifest.PackageDependencies;
+        yield return manifest.RepositoryDependencies;
     }
 }
 

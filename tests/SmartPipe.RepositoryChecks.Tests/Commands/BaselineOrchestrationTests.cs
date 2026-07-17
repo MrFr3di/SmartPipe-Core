@@ -22,6 +22,56 @@ public sealed class BaselineOrchestrationTests
     }
 
     [Fact]
+    public async Task Capture_WritesDeterministicBaselineReport()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var reportPath = Path.Combine(scenario.BaselinePath, "baseline-report.md");
+        var first = await File.ReadAllTextAsync(reportPath, TestContext.Current.CancellationToken);
+
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var second = await File.ReadAllTextAsync(reportPath, TestContext.Current.CancellationToken);
+
+        Assert.Equal(first, second);
+        Assert.Contains("# SmartPipe 2.1.2 baseline report", first, StringComparison.Ordinal);
+        Assert.Contains(BaselineScenario.Sha, first, StringComparison.Ordinal);
+        Assert.Contains("| CI | 1 |", first, StringComparison.Ordinal);
+        Assert.DoesNotContain('\r', first);
+        Assert.EndsWith("\n", first, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BaselineReportMutation_FailsVerification()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        await File.AppendAllTextAsync(
+            Path.Combine(scenario.BaselinePath, "baseline-report.md"),
+            "mutated\n",
+            TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB006"
+            && item.Message.Contains("report", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData("mixed-sha")]
+    [InlineData("pending")]
+    [InlineData("failed")]
+    public async Task Capture_RejectsInvalidRawGitHubWorkflowEvidence(string mutation)
+    {
+        using var scenario = new BaselineScenario();
+        scenario.WriteWorkflowEvidence(mutation);
+
+        await Assert.ThrowsAnyAsync<InvalidDataException>(
+            () => scenario.CaptureAsync(TestContext.Current.CancellationToken));
+
+        Assert.False(Directory.Exists(scenario.BaselinePath));
+    }
+
+    [Fact]
     public async Task FailedCapture_DoesNotReplaceExistingBaseline()
     {
         using var scenario = new BaselineScenario();
@@ -34,6 +84,19 @@ public sealed class BaselineOrchestrationTests
 
         Assert.Equal("old", await File.ReadAllTextAsync(marker, TestContext.Current.CancellationToken));
         Assert.Empty(Directory.GetDirectories(Path.GetDirectoryName(scenario.BaselinePath)!, ".2.1.2.capture-*"));
+    }
+
+    [Fact]
+    public async Task SuccessfulCapture_DoesNotFailWhenBackupCleanupFails()
+    {
+        using var scenario = new BaselineScenario(failBackupCleanup: true);
+        Directory.CreateDirectory(scenario.BaselinePath);
+        await File.WriteAllTextAsync(Path.Combine(scenario.BaselinePath, "old.txt"), "old", TestContext.Current.CancellationToken);
+
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(File.Exists(scenario.ManifestPath));
+        Assert.False(File.Exists(Path.Combine(scenario.BaselinePath, "old.txt")));
     }
 
     [Fact]
@@ -130,6 +193,113 @@ public sealed class BaselineOrchestrationTests
         Assert.Empty(scenario.SignatureVerifier.VerifiedPaths);
     }
 
+    [Theory]
+    [InlineData("defaultBranch", "wrong")]
+    [InlineData("solutionPath", "Other.slnx")]
+    [InlineData("duplicateSnapshots", "")]
+    public async Task UnsafeManifestContract_StopsBeforeProcessesAndPackages(string mutation, string value)
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var root = JsonNode.Parse(await File.ReadAllTextAsync(scenario.ManifestPath, TestContext.Current.CancellationToken))!.AsObject();
+        if (mutation == "duplicateSnapshots")
+        {
+            root["packageAssets"]!["path"] = root["publicApi"]!["path"]!.GetValue<string>();
+        }
+        else
+        {
+            root["repository"]![mutation] = value;
+        }
+
+        await File.WriteAllTextAsync(scenario.ManifestPath, root.ToJsonString(), TestContext.Current.CancellationToken);
+        scenario.ProcessRunner.Requests.Clear();
+        scenario.SignatureVerifier.VerifiedPaths.Clear();
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Collection(result.Diagnostics, diagnostic => Assert.Equal("SPB001", diagnostic.Code));
+        Assert.Empty(scenario.ProcessRunner.Requests);
+        Assert.Empty(scenario.SignatureVerifier.VerifiedPaths);
+    }
+
+    [Theory]
+    [InlineData(".github/workflows/ci.yml")]
+    [InlineData(".github/workflows/codeql.yml")]
+    [InlineData(".github/workflows/dependency-review.yml")]
+    public async Task WorkflowReleaseBranchInCommentOrEnvironment_DoesNotSatisfyPolicy(string workflowRelativePath)
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var path = Path.Combine(scenario.Root, workflowRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        await File.WriteAllTextAsync(path, "on:\n  pull_request:\n    branches: [ main ]\nenv:\n  NOTE: release/2.2.0 # unrelated\njobs:\n  check:\n    steps:\n      - run: echo release/2.2.0\n", TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB016");
+    }
+
+    [Fact]
+    public async Task GitFailure_IsDiagnosticAndIndependentChecksContinue()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        scenario.ProcessRunner.GitFailure = new ProcessRunnerException(ProcessFailureKind.StartFailure, "git unavailable");
+        await File.AppendAllTextAsync(scenario.PublicApiPath, "Changed.Api\n", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(scenario.WorkflowPath, "on:\n  push:\n    branches: [ main ]\n", TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB003");
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB014");
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB016");
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("malformed")]
+    public async Task InvalidGlobalJson_IsDiagnosticAndIndependentChecksContinue(string state)
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        if (state == "missing")
+        {
+            File.Delete(scenario.GlobalJsonPath);
+        }
+        else
+        {
+            await File.WriteAllTextAsync(scenario.GlobalJsonPath, "{", TestContext.Current.CancellationToken);
+        }
+
+        await File.WriteAllTextAsync(scenario.WorkflowPath, "on:\n  push:\n    branches: [ main ]\n", TestContext.Current.CancellationToken);
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB004");
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB016");
+    }
+
+    [Fact]
+    public async Task CanceledGitProcess_PropagatesCancellation()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        scenario.ProcessRunner.GitFailure = new ProcessRunnerException(ProcessFailureKind.Canceled, "git canceled");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scenario.VerifyAsync());
+    }
+
+    [Fact]
+    public async Task CanceledGitProcessDuringCapture_PropagatesAndCleansTemporaryDirectory()
+    {
+        using var scenario = new BaselineScenario();
+        scenario.ProcessRunner.GitFailure = new ProcessRunnerException(ProcessFailureKind.Canceled, "git canceled");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => scenario.CaptureAsync(TestContext.Current.CancellationToken));
+
+        Assert.Empty(Directory.GetDirectories(Path.GetDirectoryName(scenario.BaselinePath)!, ".2.1.2.capture-*"));
+        Assert.False(Directory.Exists(scenario.BaselinePath));
+    }
+
     [Fact]
     public async Task Cancellation_CleansTemporaryCaptureDirectory()
     {
@@ -145,13 +315,13 @@ public sealed class BaselineOrchestrationTests
 
     private sealed class BaselineScenario : IDisposable
     {
-        private const string Sha = "8e79902d22de714f493582946f7c260462b0895e";
+        internal const string Sha = "8e79902d22de714f493582946f7c260462b0895e";
         private readonly List<SyntheticNuGetPackage> _packages = [];
         private readonly ScenarioProcessRunner _processRunner;
         private readonly BaselineCaptureService _capture;
         private readonly BaselineVerificationService _verify;
 
-        public BaselineScenario()
+        public BaselineScenario(bool failBackupCleanup = false)
         {
             Root = Path.Combine(Path.GetTempPath(), "SmartPipe.BaselineScenario", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Root);
@@ -161,12 +331,13 @@ public sealed class BaselineOrchestrationTests
             ManifestPath = Path.Combine(BaselinePath, "manifest.json");
             ProjectPath = Write("src/Fixture/Fixture.csproj", "<Project><ItemGroup><PackageReference Include=\"Example\" Version=\"1.0.0\" /></ItemGroup></Project>");
             PublicApiPath = Write("src/Fixture/PublicAPI.Shipped.txt", "Fixture.Api\n");
-            WorkflowPath = Write(".github/workflows/ci.yml", "on:\n  push:\n    branches: [ main, release/2.2.0 ]\n");
-            Write(".github/workflows/codeql.yml", "on:\n  push:\n    branches: [ main, release/2.2.0 ]\n");
+            WorkflowPath = Write(".github/workflows/ci.yml", "on:\n  push:\n    branches: [ main, release/2.2.0 ]\n  pull_request:\n    branches: [ main, release/2.2.0 ]\n");
+            Write(".github/workflows/codeql.yml", "on:\n  push:\n    branches: [ main, release/2.2.0 ]\n  pull_request:\n    branches: [ main, release/2.2.0 ]\n");
             Write(".github/workflows/dependency-review.yml", "on:\n  pull_request:\n    branches: [ main, release/2.2.0 ]\n");
             Write("SmartPipe.Core.slnx", "<Solution><Folder Name=\"/src/\"><Project Path=\"src/Fixture/Fixture.csproj\" /></Folder></Solution>");
-            Write("global.json", "{\"sdk\":{\"version\":\"10.0.302\"}}");
-            WorkflowEvidencePath = Write("workflow.json", "{\"workflows\":[{\"name\":\"CI\",\"runId\":1,\"url\":\"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/1\",\"conclusion\":\"success\"},{\"name\":\"CodeQL\",\"runId\":2,\"url\":\"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/2\",\"conclusion\":\"success\"},{\"name\":\"Dependency Review\",\"runId\":3,\"url\":\"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/3\",\"conclusion\":\"success\"}]}");
+            GlobalJsonPath = Write("global.json", "{\"sdk\":{\"version\":\"10.0.302\"}}");
+            WorkflowEvidencePath = Path.Combine(Root, "workflow.json");
+            WriteWorkflowEvidence("valid");
 
             var sources = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var id in new[] { "SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Json" })
@@ -181,7 +352,9 @@ public sealed class BaselineOrchestrationTests
             _processRunner = new ScenarioProcessRunner(Sha, ProjectPath);
             var repository = new BaselineRepositorySnapshotReader(_processRunner, "dotnet");
             _verify = new BaselineVerificationService(_processRunner, "git", SignatureVerifier, new NuGetPackageReader(), repository);
-            _capture = new BaselineCaptureService(_processRunner, "git", "dotnet", Fetcher, SignatureVerifier, new NuGetPackageReader(), repository, _verify);
+            _capture = new BaselineCaptureService(
+                _processRunner, "git", "dotnet", Fetcher, SignatureVerifier, new NuGetPackageReader(), repository, _verify,
+                failBackupCleanup ? _ => throw new IOException("backup cleanup failed") : null);
         }
 
         public string Root { get; }
@@ -191,9 +364,26 @@ public sealed class BaselineOrchestrationTests
         public string ProjectPath { get; }
         public string PublicApiPath { get; }
         public string WorkflowPath { get; }
+        public string GlobalJsonPath { get; }
         public string WorkflowEvidencePath { get; }
         public CopyingFetcher Fetcher { get; }
         public RecordingSignatureVerifier SignatureVerifier { get; }
+        public ScenarioProcessRunner ProcessRunner => _processRunner;
+
+        public void WriteWorkflowEvidence(string mutation)
+        {
+            var ciSha = mutation == "mixed-sha" ? new string('a', 40) : Sha;
+            var ciStatus = mutation == "pending" ? "in_progress" : "completed";
+            var ciConclusion = mutation == "pending" ? string.Empty : mutation == "failed" ? "failure" : "success";
+            var evidence = $$"""
+                [
+                  {"databaseId":1,"workflowName":"CI","headSha":"{{ciSha}}","status":"{{ciStatus}}","conclusion":"{{ciConclusion}}","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/1","event":"push","createdAt":"2026-07-17T00:00:00Z"},
+                  {"databaseId":2,"workflowName":"CodeQL","headSha":"{{Sha}}","status":"completed","conclusion":"success","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/2","event":"push","createdAt":"2026-07-17T00:01:00Z"},
+                  {"databaseId":3,"workflowName":"Dependency Review","headSha":"{{Sha}}","status":"completed","conclusion":"success","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/3","event":"pull_request","createdAt":"2026-07-17T00:02:00Z"}
+                ]
+                """;
+            File.WriteAllText(WorkflowEvidencePath, evidence);
+        }
 
         public Task CaptureAsync(CancellationToken cancellationToken) => _capture.CaptureAsync(new CaptureBaselineOptions(
             Root, "MrFr3di/SmartPipe-Core", Sha, "2.2.0", "2.1.2", PackagesPath,
@@ -250,11 +440,19 @@ public sealed class BaselineOrchestrationTests
         }
     }
 
-    private sealed class ScenarioProcessRunner(string sha, string projectPath) : IProcessRunner
+    internal sealed class ScenarioProcessRunner(string sha, string projectPath) : IProcessRunner
     {
+        public Exception? GitFailure { get; set; }
+        public List<ProcessRequest> Requests { get; } = [];
+
         public Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(request);
+            if (request.FileName == "git" && GitFailure is not null)
+            {
+                throw GitFailure;
+            }
             if (request.FileName == "git" && request.Arguments.Count == 4
                 && request.Arguments[0] == "-C" && request.Arguments.Skip(2).SequenceEqual(["status", "--porcelain"]))
             {

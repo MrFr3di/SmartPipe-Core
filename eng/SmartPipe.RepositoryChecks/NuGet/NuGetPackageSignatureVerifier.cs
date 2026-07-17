@@ -45,6 +45,11 @@ internal sealed class NuGetPackageSignatureVerifier : INuGetPackageSignatureVeri
         {
             result = await _processRunner.RunAsync(request, cancellationToken).ConfigureAwait(false);
         }
+        catch (ProcessRunnerException exception) when (exception.FailureKind == ProcessFailureKind.Canceled)
+        {
+            throw new OperationCanceledException(
+                "NuGet signature verification was canceled.", exception, cancellationToken);
+        }
         catch (ProcessRunnerException exception)
         {
             throw new RepositoryCheckException(

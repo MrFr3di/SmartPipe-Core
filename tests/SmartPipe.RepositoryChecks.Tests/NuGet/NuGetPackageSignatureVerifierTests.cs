@@ -51,7 +51,6 @@ public sealed class NuGetPackageSignatureVerifierTests
     [Theory]
     [InlineData((int)ProcessFailureKind.StartFailure)]
     [InlineData((int)ProcessFailureKind.Timeout)]
-    [InlineData((int)ProcessFailureKind.Canceled)]
     [InlineData((int)ProcessFailureKind.TerminationFailure)]
     public async Task VerifyAsync_ThrowsExternalToolError_WhenProcessCannotComplete(int failureKindValue)
     {
@@ -64,6 +63,16 @@ public sealed class NuGetPackageSignatureVerifierTests
 
         Assert.Equal(ExitCodes.ExternalSourceUnavailable, exception.ExitCode);
         Assert.Contains("signature verification tool", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_TranslatesCanceledProcessFailureToCancellation()
+    {
+        var verifier = CreateVerifier(new StubProcessRunner(
+            new ProcessRunnerException(ProcessFailureKind.Canceled, "tool canceled")));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => verifier.VerifyAsync("package.nupkg", TestContext.Current.CancellationToken));
     }
 
     [Fact]

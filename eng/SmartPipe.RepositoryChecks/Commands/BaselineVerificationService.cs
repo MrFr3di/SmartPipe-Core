@@ -45,11 +45,11 @@ internal sealed class BaselineVerificationService
     private const string TargetRelease = "2.2.0";
     private const string SolutionPath = "SmartPipe.Core.slnx";
     private static readonly TimeSpan ProcessTimeout = TimeSpan.FromMinutes(2);
-    private static readonly (string Name, string Path)[] RequiredWorkflowFiles =
+    private static readonly (string Name, string Path, string[] Events)[] RequiredWorkflowFiles =
     [
-        ("CI", ".github/workflows/ci.yml"),
-        ("CodeQL", ".github/workflows/codeql.yml"),
-        ("Dependency Review", ".github/workflows/dependency-review.yml"),
+        ("CI", ".github/workflows/ci.yml", ["push", "pull_request"]),
+        ("CodeQL", ".github/workflows/codeql.yml", ["push", "pull_request"]),
+        ("Dependency Review", ".github/workflows/dependency-review.yml", ["pull_request"]),
     ];
 
     private readonly IProcessRunner _processRunner;
@@ -84,18 +84,26 @@ internal sealed class BaselineVerificationService
     {
         var diagnostics = new List<BaselineDiagnostic>();
         BaselineManifest manifest;
+        string baselineRoot;
         try
         {
             var root = RepositoryPaths.NormalizeRoot(options.RepositoryRoot);
             _ = RepositoryPaths.NormalizeContainedFullPath(
                 root, Path.GetFullPath(options.PackagesDirectory), "packages directory");
             var manifestPath = ResolveInputWithinRoot(root, options.ManifestPath, "manifest");
+            baselineRoot = snapshotRootOverride ?? Path.GetDirectoryName(manifestPath)!;
             RepositoryPaths.RequireExistingRegularFile(root, manifestPath, "manifest");
             manifest = BaselineManifestSerializer.Deserialize(await File.ReadAllTextAsync(manifestPath, cancellationToken).ConfigureAwait(false));
             if (!string.Equals(manifest.TargetRelease, TargetRelease, StringComparison.Ordinal)
                 || !string.Equals(manifest.BaselineName, "smartpipe-core-2.1.2", StringComparison.Ordinal))
             {
                 throw new JsonException("Manifest must describe the fixed 2.1.2 to 2.2.0 baseline.");
+            }
+
+            if (!string.Equals(manifest.Repository.DefaultBranch, "main", StringComparison.Ordinal)
+                || !string.Equals(manifest.Repository.SolutionPath, SolutionPath, StringComparison.Ordinal))
+            {
+                throw new JsonException("Manifest must use defaultBranch 'main' and solutionPath 'SmartPipe.Core.slnx'.");
             }
 
             var workflowNames = manifest.Repository.RequiredWorkflows
@@ -106,11 +114,20 @@ internal sealed class BaselineVerificationService
                 throw new JsonException("Manifest workflow evidence must include CI, CodeQL, and Dependency Review.");
             }
 
-            // Resolve every referenced path before any package, process, or repository work.
-            _ = ResolveSnapshot(root, manifest.PublicApi.Path, snapshotRootOverride);
-            _ = ResolveSnapshot(root, manifest.PackageAssets.Path, snapshotRootOverride);
-            _ = ResolveSnapshot(root, manifest.PackageDependencies.Path, snapshotRootOverride);
-            _ = ResolveSnapshot(root, manifest.RepositoryDependencies.Path, snapshotRootOverride);
+            // Resolve and de-alias every referenced path before any package, process, or repository work.
+            var uniqueSnapshotPaths = new HashSet<string>(RepositoryPaths.FileSystemPathComparer);
+            foreach (var snapshot in new[]
+                     {
+                         manifest.PublicApi, manifest.PackageAssets,
+                         manifest.PackageDependencies, manifest.RepositoryDependencies,
+                     })
+            {
+                var normalized = RepositoryPaths.ResolveWithinRoot(root, snapshot.Path, "snapshot");
+                if (!uniqueSnapshotPaths.Add(normalized))
+                {
+                    throw new JsonException("Manifest snapshot paths must be unique after normalization.");
+                }
+            }
         }
         catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException or InvalidDataException)
         {
@@ -122,17 +139,32 @@ internal sealed class BaselineVerificationService
             diagnostics.Add(new("SPB002", "Repository full name mismatch", RepositoryName, manifest.Repository.FullName));
         }
 
-        var actualCommit = await RunOutputAsync(
-            _gitPath, ["-C", options.RepositoryRoot, "rev-parse", "HEAD"], cancellationToken).ConfigureAwait(false);
-        if (!string.Equals(actualCommit, manifest.Repository.CommitSha, StringComparison.Ordinal))
+        try
         {
-            diagnostics.Add(new("SPB003", "Repository commit mismatch", manifest.Repository.CommitSha, actualCommit));
+            var actualCommit = await RunOutputAsync(
+                _gitPath, ["-C", options.RepositoryRoot, "rev-parse", "HEAD"], cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(actualCommit, manifest.Repository.CommitSha, StringComparison.Ordinal))
+            {
+                diagnostics.Add(new("SPB003", "Repository commit mismatch", manifest.Repository.CommitSha, actualCommit));
+            }
+        }
+        catch (RepositoryCheckException exception)
+        {
+            diagnostics.Add(new("SPB003", $"Repository commit could not be read: {exception.Message}"));
         }
 
-        var actualSdk = ReadSdkVersion(options.RepositoryRoot);
-        if (!string.Equals(actualSdk, manifest.Repository.SdkVersion, StringComparison.Ordinal))
+        try
         {
-            diagnostics.Add(new("SPB004", "global.json SDK mismatch", manifest.Repository.SdkVersion, actualSdk));
+            var actualSdk = ReadSdkVersion(options.RepositoryRoot);
+            if (!string.Equals(actualSdk, manifest.Repository.SdkVersion, StringComparison.Ordinal))
+            {
+                diagnostics.Add(new("SPB004", "global.json SDK mismatch", manifest.Repository.SdkVersion, actualSdk));
+            }
+        }
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException
+                                           or InvalidDataException or KeyNotFoundException or InvalidOperationException)
+        {
+            diagnostics.Add(new("SPB004", $"global.json SDK could not be read: {exception.Message}"));
         }
 
         var snapshotFiles = new[]
@@ -159,6 +191,22 @@ internal sealed class BaselineVerificationService
             if (!string.Equals(hash, reference.Sha256, StringComparison.Ordinal))
             {
                 diagnostics.Add(new("SPB006", $"Snapshot hash mismatch: {reference.Path}", reference.Sha256, hash));
+            }
+        }
+
+        var reportPath = Path.Combine(baselineRoot, "baseline-report.md");
+        if (!File.Exists(reportPath))
+        {
+            diagnostics.Add(new("SPB005", "Required baseline report is missing: baseline-report.md"));
+        }
+        else
+        {
+            var expectedReport = BaselineReport.Create(manifest);
+            var actualReport = await File.ReadAllBytesAsync(reportPath, cancellationToken).ConfigureAwait(false);
+            if (!actualReport.AsSpan().SequenceEqual(expectedReport))
+            {
+                diagnostics.Add(new("SPB006", "Baseline report content mismatch",
+                    Hashing.Sha256Hex(expectedReport), Hashing.Sha256Hex(actualReport)));
             }
         }
 
@@ -229,8 +277,7 @@ internal sealed class BaselineVerificationService
         foreach (var workflow in RequiredWorkflowFiles)
         {
             var path = RepositoryPaths.ResolveWithinRoot(options.RepositoryRoot, workflow.Path, "workflow");
-            if (!File.Exists(path)
-                || !File.ReadAllText(path).Contains(releaseBranch, StringComparison.Ordinal))
+            if (!WorkflowPolicyContainsBranch(path, workflow.Events, releaseBranch))
             {
                 diagnostics.Add(new("SPB016", $"Workflow release branch policy mismatch: {workflow.Name}", releaseBranch, workflow.Path));
             }
@@ -283,8 +330,24 @@ internal sealed class BaselineVerificationService
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken)
     {
-        var result = await _processRunner.RunAsync(
-            new ProcessRequest(executable, arguments, ProcessTimeout), cancellationToken).ConfigureAwait(false);
+        ProcessResult result;
+        try
+        {
+            result = await _processRunner.RunAsync(
+                new ProcessRequest(executable, arguments, ProcessTimeout), cancellationToken).ConfigureAwait(false);
+        }
+        catch (ProcessRunnerException exception) when (exception.FailureKind == ProcessFailureKind.Canceled)
+        {
+            throw new OperationCanceledException("Repository process was canceled.", exception, cancellationToken);
+        }
+        catch (ProcessRunnerException exception)
+        {
+            throw new RepositoryCheckException(
+                ExitCodes.ExternalSourceUnavailable,
+                $"Process failed: {executable} {string.Join(' ', arguments)}",
+                exception);
+        }
+
         if (result.ExitCode != 0)
         {
             throw new RepositoryCheckException(ExitCodes.ExternalSourceUnavailable,
@@ -292,5 +355,134 @@ internal sealed class BaselineVerificationService
         }
 
         return result.StandardOutput.Trim();
+    }
+
+    private static bool WorkflowPolicyContainsBranch(
+        string path,
+        IReadOnlyList<string> requiredEvents,
+        string branch)
+    {
+        if (!File.Exists(path) || new FileInfo(path).Length > 1024 * 1024)
+        {
+            return false;
+        }
+
+        var found = requiredEvents.ToDictionary(static item => item, static _ => false, StringComparer.Ordinal);
+        string? currentEvent = null;
+        var inOn = false;
+        var inBranches = false;
+        var lineCount = 0;
+        foreach (var rawLine in File.ReadLines(path))
+        {
+            if (++lineCount > 10_000 || rawLine.Contains('\t', StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var line = StripYamlComment(rawLine).TrimEnd();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            var indent = line.Length - line.TrimStart().Length;
+            var content = line[indent..];
+            if (indent == 0)
+            {
+                inOn = content == "on:";
+                currentEvent = null;
+                inBranches = false;
+                continue;
+            }
+
+            if (!inOn)
+            {
+                continue;
+            }
+
+            if (indent == 2 && content.EndsWith(':') && !content.StartsWith('-'))
+            {
+                currentEvent = content[..^1];
+                inBranches = false;
+                continue;
+            }
+
+            if (indent <= 2)
+            {
+                currentEvent = null;
+                inBranches = false;
+                continue;
+            }
+
+            if (currentEvent is null || !found.ContainsKey(currentEvent))
+            {
+                continue;
+            }
+
+            if (indent == 4 && content.StartsWith("branches:", StringComparison.Ordinal))
+            {
+                inBranches = true;
+                var value = content["branches:".Length..].Trim();
+                if (value.Length != 0 && ParseInlineBranches(value).Contains(branch, StringComparer.Ordinal))
+                {
+                    found[currentEvent] = true;
+                }
+
+                continue;
+            }
+
+            if (inBranches && indent == 6 && content.StartsWith("- ", StringComparison.Ordinal))
+            {
+                var value = Unquote(content[2..].Trim());
+                if (string.Equals(value, branch, StringComparison.Ordinal))
+                {
+                    found[currentEvent] = true;
+                }
+
+                continue;
+            }
+
+            if (indent <= 4)
+            {
+                inBranches = false;
+            }
+        }
+
+        return found.Values.All(static value => value);
+    }
+
+    private static IEnumerable<string> ParseInlineBranches(string value)
+    {
+        if (value.Length < 2 || value[0] != '[' || value[^1] != ']')
+        {
+            return [];
+        }
+
+        return value[1..^1].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(Unquote);
+    }
+
+    private static string Unquote(string value) =>
+        value.Length >= 2 && value[0] == value[^1] && value[0] is '\'' or '"'
+            ? value[1..^1]
+            : value;
+
+    private static string StripYamlComment(string line)
+    {
+        char quote = '\0';
+        for (var index = 0; index < line.Length; index++)
+        {
+            var character = line[index];
+            if (character is '\'' or '"')
+            {
+                quote = quote == '\0' ? character : quote == character ? '\0' : quote;
+            }
+            else if (character == '#' && quote == '\0')
+            {
+                return line[..index];
+            }
+        }
+
+        return line;
     }
 }

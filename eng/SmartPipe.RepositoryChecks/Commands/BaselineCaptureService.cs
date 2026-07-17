@@ -23,6 +23,7 @@ internal sealed class BaselineCaptureService
     private readonly NuGetPackageReader _packageReader;
     private readonly BaselineRepositorySnapshotReader _repositoryReader;
     private readonly BaselineVerificationService _verification;
+    private readonly Action<string> _deleteBackup;
 
     public BaselineCaptureService(
         IProcessRunner processRunner,
@@ -32,7 +33,8 @@ internal sealed class BaselineCaptureService
         INuGetPackageSignatureVerifier signatureVerifier,
         NuGetPackageReader packageReader,
         BaselineRepositorySnapshotReader repositoryReader,
-        BaselineVerificationService verification)
+        BaselineVerificationService verification,
+        Action<string>? deleteBackup = null)
     {
         _processRunner = processRunner;
         _gitPath = gitPath;
@@ -42,6 +44,7 @@ internal sealed class BaselineCaptureService
         _packageReader = packageReader;
         _repositoryReader = repositoryReader;
         _verification = verification;
+        _deleteBackup = deleteBackup ?? (static path => Directory.Delete(path, recursive: true));
     }
 
     public async Task CaptureAsync(CaptureBaselineOptions options, CancellationToken cancellationToken)
@@ -111,7 +114,8 @@ internal sealed class BaselineCaptureService
             }
 
             var outputRelative = RepositoryPaths.ToRelativePath(root, target);
-            var workflows = await ReadWorkflowEvidenceAsync(workflowEvidence, cancellationToken).ConfigureAwait(false);
+            var workflows = await ReadWorkflowEvidenceAsync(
+                workflowEvidence, options.Commit, cancellationToken).ConfigureAwait(false);
             var manifest = new BaselineManifest
             {
                 SchemaVersion = 1,
@@ -140,6 +144,11 @@ internal sealed class BaselineCaptureService
                 PackageDependencies = Snapshot(outputRelative, "package-dependencies.json", files),
                 RepositoryDependencies = Snapshot(outputRelative, "repository-dependencies.json", files),
             };
+
+            await File.WriteAllBytesAsync(
+                Path.Combine(temporary, "baseline-report.md"),
+                BaselineReport.Create(manifest),
+                cancellationToken).ConfigureAwait(false);
 
             // Manifest is intentionally the final write in the temporary output.
             var temporaryManifest = Path.Combine(temporary, "manifest.json");
@@ -175,7 +184,14 @@ internal sealed class BaselineCaptureService
 
             if (Directory.Exists(backup))
             {
-                Directory.Delete(backup, recursive: true);
+                try
+                {
+                    _deleteBackup(backup);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    // Publication already succeeded. A stale private backup is safer than a false capture failure.
+                }
             }
         }
         finally
@@ -207,8 +223,24 @@ internal sealed class BaselineCaptureService
 
     private async Task<string> RunOutputAsync(string executable, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
-        var result = await _processRunner.RunAsync(
-            new ProcessRequest(executable, arguments, TimeSpan.FromMinutes(2)), cancellationToken).ConfigureAwait(false);
+        ProcessResult result;
+        try
+        {
+            result = await _processRunner.RunAsync(
+                new ProcessRequest(executable, arguments, TimeSpan.FromMinutes(2)), cancellationToken).ConfigureAwait(false);
+        }
+        catch (ProcessRunnerException exception) when (exception.FailureKind == ProcessFailureKind.Canceled)
+        {
+            throw new OperationCanceledException("Repository process was canceled.", exception, cancellationToken);
+        }
+        catch (ProcessRunnerException exception)
+        {
+            throw new RepositoryCheckException(
+                ExitCodes.ExternalSourceUnavailable,
+                $"Process failed: {executable} {string.Join(' ', arguments)}",
+                exception);
+        }
+
         if (result.ExitCode != 0)
         {
             throw new RepositoryCheckException(ExitCodes.ExternalSourceUnavailable,
@@ -229,19 +261,138 @@ internal sealed class BaselineCaptureService
 
     private static async Task<IReadOnlyList<WorkflowBaseline>> ReadWorkflowEvidenceAsync(
         string path,
+        string expectedCommit,
         CancellationToken cancellationToken)
     {
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
-        var workflows = document.RootElement.GetProperty("workflows").EnumerateArray().Select(item => new WorkflowBaseline
+        try
         {
-            Name = item.GetProperty("name").GetString()!,
-            RunId = item.GetProperty("runId").GetInt64(),
-            Url = new Uri(item.GetProperty("url").GetString()!, UriKind.Absolute),
-            Conclusion = item.GetProperty("conclusion").GetString()!,
-        }).ToArray();
-        return workflows;
+            using var document = await JsonDocument.ParseAsync(
+                stream,
+                new JsonDocumentOptions { MaxDepth = 8, CommentHandling = JsonCommentHandling.Disallow },
+                cancellationToken).ConfigureAwait(false);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                throw new InvalidDataException("Workflow evidence must be the raw gh run list JSON array.");
+            }
+
+            var runs = new List<WorkflowRunEvidence>();
+            foreach (var item in document.RootElement.EnumerateArray())
+            {
+                if (runs.Count == 1000)
+                {
+                    throw new InvalidDataException("Workflow evidence exceeds 1000 runs.");
+                }
+
+                ValidateWorkflowProperties(item);
+                var headSha = RequiredString(item, "headSha");
+                if (!string.Equals(headSha, expectedCommit, StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException("Every workflow evidence run must match the requested commit SHA.");
+                }
+
+                var createdAt = item.GetProperty("createdAt");
+                if (createdAt.ValueKind != JsonValueKind.String || !createdAt.TryGetDateTimeOffset(out _))
+                {
+                    throw new InvalidDataException("Workflow evidence createdAt must be an ISO-8601 timestamp.");
+                }
+
+                var databaseId = item.GetProperty("databaseId");
+                if (databaseId.ValueKind != JsonValueKind.Number
+                    || !databaseId.TryGetInt64(out var runId)
+                    || runId <= 0)
+                {
+                    throw new InvalidDataException("Workflow evidence databaseId must be positive.");
+                }
+
+                runs.Add(new WorkflowRunEvidence(
+                    runId,
+                    RequiredString(item, "workflowName"),
+                    RequiredString(item, "status"),
+                    StringValue(item, "conclusion"),
+                    new Uri(RequiredString(item, "url"), UriKind.Absolute),
+                    RequiredString(item, "event")));
+            }
+
+            var workflows = new List<WorkflowBaseline>(3);
+            foreach (var requiredName in new[] { "CI", "CodeQL", "Dependency Review" })
+            {
+                var successful = runs.Where(run =>
+                    string.Equals(run.WorkflowName, requiredName, StringComparison.Ordinal)
+                    && string.Equals(run.Status, "completed", StringComparison.Ordinal)
+                    && string.Equals(run.Conclusion, "success", StringComparison.Ordinal)).ToArray();
+                if (successful.Length != 1)
+                {
+                    throw new InvalidDataException(
+                        $"Workflow evidence must contain exactly one completed successful {requiredName} run.");
+                }
+
+                var run = successful[0];
+                workflows.Add(new WorkflowBaseline
+                {
+                    Name = run.WorkflowName,
+                    RunId = run.DatabaseId,
+                    Url = run.Url,
+                    Conclusion = run.Conclusion,
+                });
+            }
+
+            return workflows;
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("Workflow evidence JSON is malformed.", exception);
+        }
     }
+
+    private static void ValidateWorkflowProperties(JsonElement item)
+    {
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException("Workflow evidence entries must be objects.");
+        }
+
+        var allowed = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "databaseId", "workflowName", "headSha", "status", "conclusion", "url", "event", "createdAt",
+        };
+        foreach (var property in item.EnumerateObject())
+        {
+            if (!allowed.Remove(property.Name))
+            {
+                throw new InvalidDataException($"Workflow evidence contains duplicate or unknown property '{property.Name}'.");
+            }
+        }
+
+        if (allowed.Count != 0)
+        {
+            throw new InvalidDataException($"Workflow evidence is missing property '{allowed.Order().First()}'.");
+        }
+    }
+
+    private static string RequiredString(JsonElement item, string name)
+    {
+        var value = StringValue(item, name);
+        return string.IsNullOrWhiteSpace(value)
+            ? throw new InvalidDataException($"Workflow evidence {name} must be nonempty.")
+            : value;
+    }
+
+    private static string StringValue(JsonElement item, string name)
+    {
+        var value = item.GetProperty(name);
+        return value.ValueKind == JsonValueKind.String
+            ? value.GetString()!
+            : throw new InvalidDataException($"Workflow evidence {name} must be a string.");
+    }
+
+    private sealed record WorkflowRunEvidence(
+        long DatabaseId,
+        string WorkflowName,
+        string Status,
+        string Conclusion,
+        Uri Url,
+        string Event);
 
     private static void ValidateFixedBaseline(CaptureBaselineOptions options)
     {
