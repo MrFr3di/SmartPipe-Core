@@ -305,11 +305,20 @@ internal sealed class BaselineCaptureService
                     throw new InvalidDataException("Workflow evidence databaseId must be positive.");
                 }
 
+                var status = RequiredString(item, "status");
+                var conclusion = StringValue(item, "conclusion");
+                if (!string.Equals(status, "completed", StringComparison.Ordinal)
+                    || !string.Equals(conclusion, "success", StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException(
+                        "Every workflow evidence run must be completed successfully.");
+                }
+
                 runs.Add(new WorkflowRunEvidence(
                     runId,
                     RequiredString(item, "workflowName"),
-                    RequiredString(item, "status"),
-                    StringValue(item, "conclusion"),
+                    status,
+                    conclusion,
                     new Uri(RequiredString(item, "url"), UriKind.Absolute),
                     RequiredString(item, "event")));
             }

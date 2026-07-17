@@ -60,6 +60,8 @@ public sealed class BaselineOrchestrationTests
     [InlineData("mixed-sha")]
     [InlineData("pending")]
     [InlineData("failed")]
+    [InlineData("extra-pending")]
+    [InlineData("extra-failed")]
     public async Task Capture_RejectsInvalidRawGitHubWorkflowEvidence(string mutation)
     {
         using var scenario = new BaselineScenario();
@@ -375,11 +377,23 @@ public sealed class BaselineOrchestrationTests
             var ciSha = mutation == "mixed-sha" ? new string('a', 40) : Sha;
             var ciStatus = mutation == "pending" ? "in_progress" : "completed";
             var ciConclusion = mutation == "pending" ? string.Empty : mutation == "failed" ? "failure" : "success";
+            var extra = mutation switch
+            {
+                "extra-pending" => $$"""
+                    ,
+                      {"databaseId":4,"workflowName":"Other","headSha":"{{Sha}}","status":"in_progress","conclusion":"","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/4","event":"push","createdAt":"2026-07-17T00:03:00Z"}
+                    """,
+                "extra-failed" => $$"""
+                    ,
+                      {"databaseId":4,"workflowName":"Other","headSha":"{{Sha}}","status":"completed","conclusion":"failure","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/4","event":"push","createdAt":"2026-07-17T00:03:00Z"}
+                    """,
+                _ => string.Empty,
+            };
             var evidence = $$"""
                 [
                   {"databaseId":1,"workflowName":"CI","headSha":"{{ciSha}}","status":"{{ciStatus}}","conclusion":"{{ciConclusion}}","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/1","event":"push","createdAt":"2026-07-17T00:00:00Z"},
                   {"databaseId":2,"workflowName":"CodeQL","headSha":"{{Sha}}","status":"completed","conclusion":"success","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/2","event":"push","createdAt":"2026-07-17T00:01:00Z"},
-                  {"databaseId":3,"workflowName":"Dependency Review","headSha":"{{Sha}}","status":"completed","conclusion":"success","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/3","event":"pull_request","createdAt":"2026-07-17T00:02:00Z"}
+                  {"databaseId":3,"workflowName":"Dependency Review","headSha":"{{Sha}}","status":"completed","conclusion":"success","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/3","event":"pull_request","createdAt":"2026-07-17T00:02:00Z"}{{extra}}
                 ]
                 """;
             File.WriteAllText(WorkflowEvidencePath, evidence);
