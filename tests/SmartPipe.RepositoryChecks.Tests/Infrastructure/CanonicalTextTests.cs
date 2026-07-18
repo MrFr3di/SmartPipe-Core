@@ -6,6 +6,15 @@ namespace SmartPipe.RepositoryChecks.Tests.Infrastructure;
 public sealed class CanonicalTextTests
 {
     [Fact]
+    public void ToUtf8Bytes_StringOverloadRemovesBomAndNormalizesLineEndings()
+    {
+        var result = CanonicalText.ToUtf8Bytes("\uFEFFfirst\r\nsecond\rthird\n");
+
+        Assert.Equal("first\nsecond\nthird\n", Encoding.UTF8.GetString(result));
+        Assert.False(result.AsSpan().StartsWith(Encoding.UTF8.Preamble));
+    }
+
+    [Fact]
     public void ToUtf8Bytes_RemovesBomAndNormalizesLineEndingsWithoutTrimming()
     {
         var input = Encoding.UTF8.GetBytes("\uFEFFfirst\r\nsecond\rthird\n\n");

@@ -11,7 +11,7 @@ internal static class CanonicalText
     public static byte[] ToUtf8Bytes(string input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        return StrictUtf8.GetBytes(input);
+        return ToUtf8Bytes(StrictUtf8.GetBytes(input));
     }
 
     public static byte[] ToUtf8Bytes(ReadOnlySpan<byte> input)
