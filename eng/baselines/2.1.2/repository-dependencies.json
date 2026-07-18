@@ -1,0 +1,1574 @@
+{
+  "direct": [
+    {
+      "projectPath": "src/SmartPipe.Core/SmartPipe.Core.csproj",
+      "projectReferences": [],
+      "packageReferences": [
+        {
+          "include": "Microsoft.CodeAnalysis.PublicApiAnalyzers",
+          "version": "5.6.0",
+          "condition": null,
+          "privateAssets": "all",
+          "includeAssets": null,
+          "excludeAssets": null
+        },
+        {
+          "include": "Microsoft.Extensions.Logging.Abstractions",
+          "version": "10.0.8",
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        }
+      ]
+    },
+    {
+      "projectPath": "src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj",
+      "projectReferences": [
+        {
+          "include": "../SmartPipe.Core/SmartPipe.Core.csproj",
+          "version": null,
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        }
+      ],
+      "packageReferences": [
+        {
+          "include": "Microsoft.CodeAnalysis.PublicApiAnalyzers",
+          "version": "5.6.0",
+          "condition": null,
+          "privateAssets": "all",
+          "includeAssets": null,
+          "excludeAssets": null
+        },
+        {
+          "include": "Microsoft.Extensions.Logging.Abstractions",
+          "version": "10.0.8",
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        }
+      ]
+    },
+    {
+      "projectPath": "src/SmartPipe.Extensions/SmartPipe.Extensions.csproj",
+      "projectReferences": [
+        {
+          "include": "../SmartPipe.Core/SmartPipe.Core.csproj",
+          "version": null,
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        },
+        {
+          "include": "../SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj",
+          "version": null,
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        }
+      ],
+      "packageReferences": [
+        {
+          "include": "CsvHelper",
+          "version": "33.1.0",
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        },
+        {
+          "include": "Dapper",
+          "version": "2.1.79",
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        },
+        {
+          "include": "Mapster",
+          "version": "10.0.10",
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        },
+        {
+          "include": "Microsoft.CodeAnalysis.PublicApiAnalyzers",
+          "version": "5.6.0",
+          "condition": null,
+          "privateAssets": "all",
+          "includeAssets": null,
+          "excludeAssets": null
+        },
+        {
+          "include": "Microsoft.EntityFrameworkCore",
+          "version": "10.0.8",
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        },
+        {
+          "include": "Microsoft.Extensions.Diagnostics.HealthChecks",
+          "version": "10.0.8",
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        },
+        {
+          "include": "Microsoft.Extensions.Hosting.Abstractions",
+          "version": "10.0.8",
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        },
+        {
+          "include": "Microsoft.Extensions.Http",
+          "version": "10.0.8",
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        },
+        {
+          "include": "Microsoft.Extensions.Logging.Abstractions",
+          "version": "10.0.8",
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        },
+        {
+          "include": "Microsoft.Extensions.Resilience",
+          "version": "10.6.0",
+          "condition": null,
+          "privateAssets": null,
+          "includeAssets": null,
+          "excludeAssets": null
+        }
+      ]
+    }
+  ],
+  "restored": [
+    {
+      "projectPath": "benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0",
+          "topLevelPackages": [
+            {
+              "id": "BenchmarkDotNet",
+              "requestedVersion": "0.15.8",
+              "resolvedVersion": "0.15.8",
+              "autoReferenced": null
+            }
+          ],
+          "transitivePackages": [
+            {
+              "id": "BenchmarkDotNet.Annotations",
+              "requestedVersion": null,
+              "resolvedVersion": "0.15.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "CommandLineParser",
+              "requestedVersion": null,
+              "resolvedVersion": "2.9.1",
+              "autoReferenced": null
+            },
+            {
+              "id": "Gee.External.Capstone",
+              "requestedVersion": null,
+              "resolvedVersion": "2.3.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Iced",
+              "requestedVersion": null,
+              "resolvedVersion": "1.21.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.CodeAnalysis.Analyzers",
+              "requestedVersion": null,
+              "resolvedVersion": "3.11.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.CodeAnalysis.Common",
+              "requestedVersion": null,
+              "resolvedVersion": "4.14.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.CodeAnalysis.CSharp",
+              "requestedVersion": null,
+              "resolvedVersion": "4.14.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Diagnostics.NETCore.Client",
+              "requestedVersion": null,
+              "resolvedVersion": "0.2.510501",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Diagnostics.Runtime",
+              "requestedVersion": null,
+              "resolvedVersion": "3.1.512801",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Diagnostics.Tracing.TraceEvent",
+              "requestedVersion": null,
+              "resolvedVersion": "3.1.21",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.DotNet.PlatformAbstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "3.1.6",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.DependencyInjection",
+              "requestedVersion": null,
+              "resolvedVersion": "6.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.DependencyInjection.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Logging",
+              "requestedVersion": null,
+              "resolvedVersion": "6.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Logging.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Options",
+              "requestedVersion": null,
+              "resolvedVersion": "6.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Primitives",
+              "requestedVersion": null,
+              "resolvedVersion": "6.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Perfolizer",
+              "requestedVersion": null,
+              "resolvedVersion": "0.6.1",
+              "autoReferenced": null
+            },
+            {
+              "id": "Pragmastat",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.4",
+              "autoReferenced": null
+            },
+            {
+              "id": "System.CodeDom",
+              "requestedVersion": null,
+              "resolvedVersion": "9.0.5",
+              "autoReferenced": null
+            },
+            {
+              "id": "System.Management",
+              "requestedVersion": null,
+              "resolvedVersion": "9.0.5",
+              "autoReferenced": null
+            },
+            {
+              "id": "System.Reflection.TypeExtensions",
+              "requestedVersion": null,
+              "resolvedVersion": "4.7.0",
+              "autoReferenced": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "projectPath": "eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0",
+          "topLevelPackages": [],
+          "transitivePackages": []
+        }
+      ]
+    },
+    {
+      "projectPath": "src/SmartPipe.Core/SmartPipe.Core.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0",
+          "topLevelPackages": [
+            {
+              "id": "Microsoft.CodeAnalysis.PublicApiAnalyzers",
+              "requestedVersion": "5.6.0",
+              "resolvedVersion": "5.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Logging.Abstractions",
+              "requestedVersion": "10.0.8",
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.NET.ILLink.Tasks",
+              "requestedVersion": "[10.0.10, )",
+              "resolvedVersion": "10.0.10",
+              "autoReferenced": "true"
+            }
+          ],
+          "transitivePackages": [
+            {
+              "id": "Microsoft.Extensions.DependencyInjection.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "projectPath": "src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0",
+          "topLevelPackages": [
+            {
+              "id": "Microsoft.CodeAnalysis.PublicApiAnalyzers",
+              "requestedVersion": "5.6.0",
+              "resolvedVersion": "5.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Logging.Abstractions",
+              "requestedVersion": "10.0.8",
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.NET.ILLink.Tasks",
+              "requestedVersion": "[10.0.10, )",
+              "resolvedVersion": "10.0.10",
+              "autoReferenced": "true"
+            }
+          ],
+          "transitivePackages": [
+            {
+              "id": "Microsoft.Extensions.DependencyInjection.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "projectPath": "src/SmartPipe.Extensions/SmartPipe.Extensions.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0",
+          "topLevelPackages": [
+            {
+              "id": "CsvHelper",
+              "requestedVersion": "33.1.0",
+              "resolvedVersion": "33.1.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Dapper",
+              "requestedVersion": "2.1.79",
+              "resolvedVersion": "2.1.79",
+              "autoReferenced": null
+            },
+            {
+              "id": "Mapster",
+              "requestedVersion": "10.0.10",
+              "resolvedVersion": "10.0.10",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.CodeAnalysis.PublicApiAnalyzers",
+              "requestedVersion": "5.6.0",
+              "resolvedVersion": "5.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.EntityFrameworkCore",
+              "requestedVersion": "10.0.8",
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Diagnostics.HealthChecks",
+              "requestedVersion": "10.0.8",
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Hosting.Abstractions",
+              "requestedVersion": "10.0.8",
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Http",
+              "requestedVersion": "10.0.8",
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Logging.Abstractions",
+              "requestedVersion": "10.0.8",
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Resilience",
+              "requestedVersion": "10.6.0",
+              "resolvedVersion": "10.6.0",
+              "autoReferenced": null
+            }
+          ],
+          "transitivePackages": [
+            {
+              "id": "Mapster.Core",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.10",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.EntityFrameworkCore.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.EntityFrameworkCore.Analyzers",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Caching.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Caching.Memory",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Compliance.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Configuration",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Configuration.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Configuration.Binder",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.DependencyInjection",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.DependencyInjection.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Diagnostics",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Diagnostics.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Diagnostics.ExceptionSummarization",
+              "requestedVersion": null,
+              "resolvedVersion": "10.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.FileProviders.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Logging",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.ObjectPool",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Options",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Options.ConfigurationExtensions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Primitives",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Telemetry.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Polly.Core",
+              "requestedVersion": null,
+              "resolvedVersion": "8.4.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Polly.Extensions",
+              "requestedVersion": null,
+              "resolvedVersion": "8.4.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Polly.RateLimiting",
+              "requestedVersion": null,
+              "resolvedVersion": "8.4.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "System.Threading.RateLimiting",
+              "requestedVersion": null,
+              "resolvedVersion": "8.0.0",
+              "autoReferenced": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "projectPath": "tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0",
+          "topLevelPackages": [
+            {
+              "id": "FluentAssertions",
+              "requestedVersion": "8.10.0",
+              "resolvedVersion": "8.10.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.TimeProvider.Testing",
+              "requestedVersion": "10.7.0",
+              "resolvedVersion": "10.7.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.NET.Test.Sdk",
+              "requestedVersion": "18.6.0",
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Extensions.CodeCoverage",
+              "requestedVersion": "18.8.0",
+              "resolvedVersion": "18.8.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Moq",
+              "requestedVersion": "4.20.72",
+              "resolvedVersion": "4.20.72",
+              "autoReferenced": null
+            },
+            {
+              "id": "NSubstitute",
+              "requestedVersion": "5.3.0",
+              "resolvedVersion": "5.3.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.runner.visualstudio",
+              "requestedVersion": "3.1.5",
+              "resolvedVersion": "3.1.5",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.mtp-v2",
+              "requestedVersion": "3.2.2",
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            }
+          ],
+          "transitivePackages": [
+            {
+              "id": "Castle.Core",
+              "requestedVersion": null,
+              "resolvedVersion": "5.1.1",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.ApplicationInsights",
+              "requestedVersion": null,
+              "resolvedVersion": "2.23.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Bcl.AsyncInterfaces",
+              "requestedVersion": null,
+              "resolvedVersion": "6.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.CodeCoverage",
+              "requestedVersion": null,
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.DiaSymReader",
+              "requestedVersion": null,
+              "resolvedVersion": "2.2.3",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.DependencyInjection.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.DependencyModel",
+              "requestedVersion": null,
+              "resolvedVersion": "8.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Logging.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Extensions.Telemetry",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Extensions.TrxReport.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Platform",
+              "requestedVersion": null,
+              "resolvedVersion": "2.2.3",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Platform.MSBuild",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.TestPlatform.ObjectModel",
+              "requestedVersion": null,
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.TestPlatform.TestHost",
+              "requestedVersion": null,
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Win32.Registry",
+              "requestedVersion": null,
+              "resolvedVersion": "5.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Newtonsoft.Json",
+              "requestedVersion": null,
+              "resolvedVersion": "13.0.3",
+              "autoReferenced": null
+            },
+            {
+              "id": "System.Diagnostics.EventLog",
+              "requestedVersion": null,
+              "resolvedVersion": "6.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.analyzers",
+              "requestedVersion": null,
+              "resolvedVersion": "1.27.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.assert",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.common",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.core.mtp-v2",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.extensibility.core",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.runner.common",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.runner.inproc.console",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "projectPath": "tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0",
+          "topLevelPackages": [
+            {
+              "id": "FluentAssertions",
+              "requestedVersion": "8.10.0",
+              "resolvedVersion": "8.10.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Logging.Abstractions",
+              "requestedVersion": "10.0.8",
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.NET.Test.Sdk",
+              "requestedVersion": "18.6.0",
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Moq",
+              "requestedVersion": "4.20.72",
+              "resolvedVersion": "4.20.72",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.runner.visualstudio",
+              "requestedVersion": "3.1.5",
+              "resolvedVersion": "3.1.5",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.mtp-v2",
+              "requestedVersion": "3.2.2",
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            }
+          ],
+          "transitivePackages": [
+            {
+              "id": "Castle.Core",
+              "requestedVersion": null,
+              "resolvedVersion": "5.1.1",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.ApplicationInsights",
+              "requestedVersion": null,
+              "resolvedVersion": "2.23.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Bcl.AsyncInterfaces",
+              "requestedVersion": null,
+              "resolvedVersion": "6.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.CodeCoverage",
+              "requestedVersion": null,
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.DependencyInjection.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Extensions.Telemetry",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Extensions.TrxReport.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Platform",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Platform.MSBuild",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.TestPlatform.ObjectModel",
+              "requestedVersion": null,
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.TestPlatform.TestHost",
+              "requestedVersion": null,
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Win32.Registry",
+              "requestedVersion": null,
+              "resolvedVersion": "5.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Newtonsoft.Json",
+              "requestedVersion": null,
+              "resolvedVersion": "13.0.3",
+              "autoReferenced": null
+            },
+            {
+              "id": "System.Diagnostics.EventLog",
+              "requestedVersion": null,
+              "resolvedVersion": "6.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.analyzers",
+              "requestedVersion": null,
+              "resolvedVersion": "1.27.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.assert",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.common",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.core.mtp-v2",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.extensibility.core",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.runner.common",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.runner.inproc.console",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "projectPath": "tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0",
+          "topLevelPackages": [
+            {
+              "id": "FluentAssertions",
+              "requestedVersion": "8.10.0",
+              "resolvedVersion": "8.10.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Data.Sqlite",
+              "requestedVersion": "10.0.9",
+              "resolvedVersion": "10.0.9",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.EntityFrameworkCore.InMemory",
+              "requestedVersion": "10.0.8",
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Logging.Abstractions",
+              "requestedVersion": "10.0.8",
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Logging.Console",
+              "requestedVersion": "10.0.8",
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.NET.Test.Sdk",
+              "requestedVersion": "18.6.0",
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Moq",
+              "requestedVersion": "4.20.72",
+              "resolvedVersion": "4.20.72",
+              "autoReferenced": null
+            },
+            {
+              "id": "SQLitePCLRaw.bundle_e_sqlite3",
+              "requestedVersion": "3.0.3",
+              "resolvedVersion": "3.0.3",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.runner.visualstudio",
+              "requestedVersion": "3.1.5",
+              "resolvedVersion": "3.1.5",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.mtp-v2",
+              "requestedVersion": "3.2.2",
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            }
+          ],
+          "transitivePackages": [
+            {
+              "id": "Castle.Core",
+              "requestedVersion": null,
+              "resolvedVersion": "5.1.1",
+              "autoReferenced": null
+            },
+            {
+              "id": "CsvHelper",
+              "requestedVersion": null,
+              "resolvedVersion": "33.1.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Dapper",
+              "requestedVersion": null,
+              "resolvedVersion": "2.1.79",
+              "autoReferenced": null
+            },
+            {
+              "id": "Mapster",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.10",
+              "autoReferenced": null
+            },
+            {
+              "id": "Mapster.Core",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.10",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.ApplicationInsights",
+              "requestedVersion": null,
+              "resolvedVersion": "2.23.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Bcl.AsyncInterfaces",
+              "requestedVersion": null,
+              "resolvedVersion": "6.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.CodeCoverage",
+              "requestedVersion": null,
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Data.Sqlite.Core",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.9",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.EntityFrameworkCore",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.EntityFrameworkCore.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.EntityFrameworkCore.Analyzers",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Caching.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Caching.Memory",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Compliance.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Configuration",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Configuration.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Configuration.Binder",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.DependencyInjection",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.DependencyInjection.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Diagnostics",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Diagnostics.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Diagnostics.ExceptionSummarization",
+              "requestedVersion": null,
+              "resolvedVersion": "10.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Diagnostics.HealthChecks",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.FileProviders.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Hosting.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Http",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Logging",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Logging.Configuration",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.ObjectPool",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Options",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Options.ConfigurationExtensions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Primitives",
+              "requestedVersion": null,
+              "resolvedVersion": "10.0.8",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Resilience",
+              "requestedVersion": null,
+              "resolvedVersion": "10.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Extensions.Telemetry.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "10.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Extensions.Telemetry",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Extensions.TrxReport.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Platform",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Platform.MSBuild",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.TestPlatform.ObjectModel",
+              "requestedVersion": null,
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.TestPlatform.TestHost",
+              "requestedVersion": null,
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Win32.Registry",
+              "requestedVersion": null,
+              "resolvedVersion": "5.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Newtonsoft.Json",
+              "requestedVersion": null,
+              "resolvedVersion": "13.0.3",
+              "autoReferenced": null
+            },
+            {
+              "id": "Polly.Core",
+              "requestedVersion": null,
+              "resolvedVersion": "8.4.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Polly.Extensions",
+              "requestedVersion": null,
+              "resolvedVersion": "8.4.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Polly.RateLimiting",
+              "requestedVersion": null,
+              "resolvedVersion": "8.4.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "SourceGear.sqlite3",
+              "requestedVersion": null,
+              "resolvedVersion": "3.50.4.5",
+              "autoReferenced": null
+            },
+            {
+              "id": "SQLitePCLRaw.config.e_sqlite3",
+              "requestedVersion": null,
+              "resolvedVersion": "3.0.3",
+              "autoReferenced": null
+            },
+            {
+              "id": "SQLitePCLRaw.core",
+              "requestedVersion": null,
+              "resolvedVersion": "3.0.3",
+              "autoReferenced": null
+            },
+            {
+              "id": "SQLitePCLRaw.provider.e_sqlite3",
+              "requestedVersion": null,
+              "resolvedVersion": "3.0.3",
+              "autoReferenced": null
+            },
+            {
+              "id": "System.Diagnostics.EventLog",
+              "requestedVersion": null,
+              "resolvedVersion": "6.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "System.Threading.RateLimiting",
+              "requestedVersion": null,
+              "resolvedVersion": "8.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.analyzers",
+              "requestedVersion": null,
+              "resolvedVersion": "1.27.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.assert",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.common",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.core.mtp-v2",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.extensibility.core",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.runner.common",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.runner.inproc.console",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "projectPath": "tests/SmartPipe.RepositoryChecks.ProcessFixture/SmartPipe.RepositoryChecks.ProcessFixture.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0",
+          "topLevelPackages": [],
+          "transitivePackages": []
+        }
+      ]
+    },
+    {
+      "projectPath": "tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0",
+          "topLevelPackages": [
+            {
+              "id": "Microsoft.NET.Test.Sdk",
+              "requestedVersion": "18.6.0",
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.mtp-v2",
+              "requestedVersion": "3.2.2",
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            }
+          ],
+          "transitivePackages": [
+            {
+              "id": "Microsoft.ApplicationInsights",
+              "requestedVersion": null,
+              "resolvedVersion": "2.23.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Bcl.AsyncInterfaces",
+              "requestedVersion": null,
+              "resolvedVersion": "6.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.CodeCoverage",
+              "requestedVersion": null,
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Extensions.Telemetry",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Extensions.TrxReport.Abstractions",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Platform",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Testing.Platform.MSBuild",
+              "requestedVersion": null,
+              "resolvedVersion": "2.0.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.TestPlatform.ObjectModel",
+              "requestedVersion": null,
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.TestPlatform.TestHost",
+              "requestedVersion": null,
+              "resolvedVersion": "18.6.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Microsoft.Win32.Registry",
+              "requestedVersion": null,
+              "resolvedVersion": "5.0.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "Newtonsoft.Json",
+              "requestedVersion": null,
+              "resolvedVersion": "13.0.3",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.analyzers",
+              "requestedVersion": null,
+              "resolvedVersion": "1.27.0",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.assert",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.common",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.core.mtp-v2",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.extensibility.core",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.runner.common",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            },
+            {
+              "id": "xunit.v3.runner.inproc.console",
+              "requestedVersion": null,
+              "resolvedVersion": "3.2.2",
+              "autoReferenced": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

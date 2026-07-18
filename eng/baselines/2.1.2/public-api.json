@@ -1,0 +1,53 @@
+{
+  "files": [
+    {
+      "path": "src/SmartPipe.Core/PublicAPI.Shipped.txt",
+      "sha256": "866b65ceaf1a27927ae9c5be572680e879071bf452691162f5a89b17e088dfc7",
+      "lineCount": 1023,
+      "apiEntryCount": 1022,
+      "firstApiEntry": "~override SmartPipe.Core.PipelineResult\u003CT\u003E.Equals(object obj) -\u003E bool",
+      "lastApiEntry": "virtual SmartPipe.Core.PipelineEvent.PrintMembers(System.Text.StringBuilder! builder) -\u003E bool"
+    },
+    {
+      "path": "src/SmartPipe.Core/PublicAPI.Unshipped.txt",
+      "sha256": "5cffa11a83ccb478eab5765eb6054e1fa4f45510446db9348ede62658f6ae5b6",
+      "lineCount": 61,
+      "apiEntryCount": 60,
+      "firstApiEntry": "SmartPipe.Core.CircuitBreaker.CircuitBreaker(SmartPipe.Core.CircuitBreakerOptions! options, System.TimeProvider! timeProvider) -\u003E void",
+      "lastApiEntry": "static SmartPipe.Core.SecretScanner.Scan(string! content) -\u003E SmartPipe.Core.SecretScanResult"
+    },
+    {
+      "path": "src/SmartPipe.Extensions.Json/PublicAPI.Shipped.txt",
+      "sha256": "3c3b422dddb1efeb0fc5b228608fd8682452b2a9507d4031894bce3c4dedadbd",
+      "lineCount": 1,
+      "apiEntryCount": 0,
+      "firstApiEntry": null,
+      "lastApiEntry": null
+    },
+    {
+      "path": "src/SmartPipe.Extensions.Json/PublicAPI.Unshipped.txt",
+      "sha256": "9647c99e67f3b6b52ec94372aa8a9b08540841842ffa3be093f1b0cb6110a8c6",
+      "lineCount": 145,
+      "apiEntryCount": 144,
+      "firstApiEntry": "SmartPipe.Extensions.Selectors.DeadLetterSource\u003CT\u003E",
+      "lastApiEntry": "static SmartPipe.Extensions.JsonFileSourceOptions.operator ==(SmartPipe.Extensions.JsonFileSourceOptions? left, SmartPipe.Extensions.JsonFileSourceOptions? right) -\u003E bool"
+    },
+    {
+      "path": "src/SmartPipe.Extensions/PublicAPI.Shipped.txt",
+      "sha256": "0d7f784d914ca97e718c5cecc99738663718edcb20d2e662d4076e66d1eff1c3",
+      "lineCount": 284,
+      "apiEntryCount": 283,
+      "firstApiEntry": "override SmartPipe.Extensions.SmartPipeHealthSnapshot.Equals(object? obj) -\u003E bool",
+      "lastApiEntry": "SmartPipe.Extensions.SmartPipeHealthSnapshot.StartedAtUtc.init -\u003E void"
+    },
+    {
+      "path": "src/SmartPipe.Extensions/PublicAPI.Unshipped.txt",
+      "sha256": "699de808489a9eabec7febc7f2532afc08f81e364c09368e7e5f7750a2f1c4d4",
+      "lineCount": 2,
+      "apiEntryCount": 1,
+      "firstApiEntry": "SmartPipe.Extensions.Selectors.DeadLetterSource\u003CT\u003E.DeadLetterSource(string! path, System.Text.Json.Serialization.Metadata.JsonTypeInfo\u003CT\u003E! valueTypeInfo, SmartPipe.Extensions.DeadLetterSourceOptions! options) -\u003E void (forwarded, contained in SmartPipe.Extensions.Json)",
+      "lastApiEntry": "SmartPipe.Extensions.Selectors.DeadLetterSource\u003CT\u003E.DeadLetterSource(string! path, System.Text.Json.Serialization.Metadata.JsonTypeInfo\u003CT\u003E! valueTypeInfo, SmartPipe.Extensions.DeadLetterSourceOptions! options) -\u003E void (forwarded, contained in SmartPipe.Extensions.Json)"
+    }
+  ],
+  "unexpectedFiles": []
+}
