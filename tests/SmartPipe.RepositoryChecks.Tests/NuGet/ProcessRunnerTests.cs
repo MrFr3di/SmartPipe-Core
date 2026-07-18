@@ -128,7 +128,7 @@ public sealed class ProcessRunnerTests
                 await File.ReadAllTextAsync(processIdPath, TestContext.Current.CancellationToken),
                 System.Globalization.CultureInfo.InvariantCulture);
             Assert.NotNull(terminator.ProcessId);
-            Assert.False(IsProcessRunning(descendantProcessId.Value));
+            await AssertProcessExitedAsync(descendantProcessId.Value);
         }
         finally
         {
@@ -395,7 +395,7 @@ public sealed class ProcessRunnerTests
             descendantProcessId = int.Parse(
                 await File.ReadAllTextAsync(processIdPath, TestContext.Current.CancellationToken),
                 System.Globalization.CultureInfo.InvariantCulture);
-            Assert.False(IsProcessRunning(descendantProcessId.Value));
+            await AssertProcessExitedAsync(descendantProcessId.Value);
         }
         finally
         {
@@ -423,7 +423,7 @@ public sealed class ProcessRunnerTests
             descendantProcessId = int.Parse(
                 await File.ReadAllTextAsync(processIdPath, TestContext.Current.CancellationToken),
                 System.Globalization.CultureInfo.InvariantCulture);
-            Assert.False(IsProcessRunning(descendantProcessId.Value));
+            await AssertProcessExitedAsync(descendantProcessId.Value);
         }
         finally
         {
@@ -612,6 +612,38 @@ public sealed class ProcessRunnerTests
         catch (ArgumentException)
         {
             return false;
+        }
+    }
+
+    private static async Task AssertProcessExitedAsync(int processId)
+    {
+        Process process;
+        try
+        {
+            process = Process.GetProcessById(processId);
+        }
+        catch (ArgumentException)
+        {
+            // The descendant already exited before observation began.
+            return;
+        }
+
+        using (process)
+        using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+        using (var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                   TestContext.Current.CancellationToken,
+                   timeout.Token))
+        {
+            try
+            {
+                await process.WaitForExitAsync(cancellation.Token);
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                Assert.Fail($"Descendant process {processId} did not exit within the teardown interval.");
+            }
+
+            Assert.True(process.HasExited);
         }
     }
 

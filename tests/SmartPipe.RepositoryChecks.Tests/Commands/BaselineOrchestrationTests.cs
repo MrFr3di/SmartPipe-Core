@@ -338,13 +338,12 @@ public sealed class BaselineOrchestrationTests
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("tr-TR");
             var second = (await scenario.VerifyAsync()).Format();
 
-            const string expected = """
-                BASELINE VERIFICATION FAILED
-                [SPB005] Required baseline report is missing: baseline-report.md
-                [SPB016] Workflow release branch policy mismatch: CI
-                  expected: release/2.2.0
-                  actual:   .github/workflows/ci.yml
-                """;
+            var expected = string.Join('\n',
+                "BASELINE VERIFICATION FAILED",
+                "[SPB005] Required baseline report is missing: baseline-report.md",
+                "[SPB016] Workflow release branch policy mismatch: CI",
+                "  expected: release/2.2.0",
+                "  actual:   .github/workflows/ci.yml");
             Assert.Equal(expected, first);
             Assert.Equal(expected, second);
         }
