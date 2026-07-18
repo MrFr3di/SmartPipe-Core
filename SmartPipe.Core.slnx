@@ -2,12 +2,17 @@
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj" />
   </Folder>
+  <Folder Name="/eng/">
+    <Project Path="eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/SmartPipe.Core/SmartPipe.Core.csproj" />
     <Project Path="src/SmartPipe.Extensions/SmartPipe.Extensions.csproj" />
     <Project Path="src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/SmartPipe.RepositoryChecks.ProcessFixture/SmartPipe.RepositoryChecks.ProcessFixture.csproj" />
+    <Project Path="tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj" />
     <Project Path="tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj" />

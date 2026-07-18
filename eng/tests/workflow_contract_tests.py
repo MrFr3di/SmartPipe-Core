@@ -72,6 +72,51 @@ def command_index(commands: list[str], token: str) -> int:
     return matches[0]
 
 
+def assert_baseline_lane(job: dict, label: str, *, require_scope: bool) -> None:
+    job_steps = steps(job, label)
+    repository_tests = named_step(job_steps, "Repository baseline contract tests")
+    test_run = " ".join(str(repository_tests.get("run", "")).split())
+    expected_test = ("dotnet test --project "
+                     "tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj "
+                     "--configuration Release --no-build --minimum-expected-tests 1")
+    require(test_run == expected_test,
+            f"{label} repository tests must set --minimum-expected-tests 1.")
+
+    if require_scope:
+        checkouts = [step for step in job_steps
+                     if str(step.get("uses", "")).startswith("actions/checkout")]
+        require(len(checkouts) == 1
+                and checkouts[0].get("with", {}).get("fetch-depth") == 0,
+                f"{label} scope verification checkout must fetch full Git history.")
+        scope = named_step(job_steps, "Verify SP220-00 scope")
+        require(scope.get("if") == "github.event_name == 'pull_request'",
+                f"{label} scope verification must be PR-only.")
+        scope_run = " ".join(str(scope.get("run", "")).split())
+        expected_scope = ("dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+                          "--configuration Release --no-build -- verify-sp220-scope --repo-root . "
+                          "--base-commit ${{ github.event.pull_request.base.sha }}")
+        require(scope_run == expected_scope,
+                f"{label} scope verification must use the pull request base SHA.")
+
+    online = named_step(job_steps, "Provision and verify 2.1.2 baseline")
+    offline = named_step(job_steps, "Verify 2.1.2 baseline offline")
+    online_run = " ".join(str(online.get("run", "")).split())
+    offline_run = " ".join(str(offline.get("run", "")).split())
+    expected_online = ("dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+                       "--configuration Release --no-build -- verify-baseline --repo-root . "
+                       "--manifest eng/baselines/2.1.2/manifest.json "
+                       "--packages-dir artifacts/baselines/2.1.2")
+    forbidden = ("curl", "wget", "Invoke-WebRequest", "http://", "https://")
+    require(not any(token.lower() in offline_run.lower() for token in forbidden),
+            f"{label} offline baseline step must not be network-capable.")
+    require(online_run == expected_online,
+            f"{label} online baseline command must provision and verify the exact manifest.")
+    require(offline_run == expected_online + " --offline",
+            f"{label} offline baseline command must verify the exact manifest offline.")
+    require(job_steps.index(online) < job_steps.index(offline),
+            f"{label} offline baseline verification must run after online provisioning.")
+
+
 def assert_immutable_action_refs(documents: dict[str, dict]) -> None:
     for file_name, document in documents.items():
         for job_name, job in document["jobs"].items():
@@ -142,6 +187,11 @@ def validate(documents: dict[str, dict]) -> None:
     ci = documents["ci.yml"]
     publish = documents["publish-nuget.yml"]
 
+    for event in ("push", "pull_request"):
+        branches = ci.get("on", {}).get(event, {}).get("branches", [])
+        require("release/2.2.0" in branches,
+                f"CI {event} must include release/2.2.0.")
+
     workflow_call = reusable.get("on", {}).get("workflow_call")
     require(isinstance(workflow_call, dict), "Reusable validation must declare on.workflow_call.")
     reusable_job = reusable["jobs"].get("build-test-pack")
@@ -156,6 +206,11 @@ def validate(documents: dict[str, dict]) -> None:
     restores = [command for command in reusable_runs if "dotnet restore SmartPipe.Core.slnx" in command]
     require(restores == ["dotnet restore SmartPipe.Core.slnx --locked-mode"],
             "Reusable validation must perform exactly one locked-mode solution restore.")
+    build_step = named_step(reusable_steps, "Build")
+    repository_test_step = named_step(reusable_steps, "Repository baseline contract tests")
+    require(reusable_steps.index(build_step) < reusable_steps.index(repository_test_step),
+            "Reusable repository baseline tests must run after Build.")
+    assert_baseline_lane(reusable_job, "Reusable Linux baseline lane", require_scope=True)
 
     required_steps = (
         "Format verify", "Build", "Core tests with coverage", "Extensions tests",
@@ -208,6 +263,33 @@ def validate(documents: dict[str, dict]) -> None:
                  "Build Extensions package",
                  "Package split direct, forwarding, and legacy consumers"):
         named_step(windows_steps, name)
+
+    baseline_windows = ci["jobs"].get("baseline-contract-windows")
+    require(isinstance(baseline_windows, dict)
+            and baseline_windows.get("name") == "Baseline contract (Windows)"
+            and baseline_windows.get("runs-on") == "windows-latest",
+            "CI must define the uniquely named Windows baseline contract job.")
+    baseline_windows_steps = steps(baseline_windows, "Windows baseline contract lane")
+    checkout = baseline_windows_steps[0]
+    require(str(checkout.get("uses", "")).startswith("actions/checkout")
+            and checkout.get("with", {}).get("persist-credentials") is False,
+            "Windows baseline contract checkout must pin SHA and disable credentials.")
+    baseline_runs = runs(baseline_windows_steps)
+    require("dotnet restore SmartPipe.Core.slnx --locked-mode" in baseline_runs,
+            "Windows baseline contract lane must perform locked restore.")
+    build = named_step(baseline_windows_steps, "Build repository checks")
+    require("-warnaserror" in str(build.get("run", "")),
+            "Windows baseline contract build must treat warnings as errors.")
+    assert_baseline_lane(baseline_windows, "Windows baseline contract lane", require_scope=True)
+
+    explicit_names = []
+    for file_name, document in documents.items():
+        for job_id, job in document["jobs"].items():
+            if "name" in job:
+                explicit_names.append((str(job["name"]), file_name, job_id))
+    duplicates = {name for name, _, _ in explicit_names
+                  if sum(item[0] == name for item in explicit_names) > 1}
+    require(not duplicates, f"Required job/check names must be unique: {sorted(duplicates)}")
 
     windows_text = "\n".join(windows_runs)
     require("SmartPipe.Extensions.Json.Tests.Sinks.JsonFileSinkLifecycleTests" in windows_text,
@@ -298,6 +380,39 @@ def _restore_floating_sdk_selection(documents: dict[str, dict]) -> None:
                     with_block["dotnet-version"] = "10.0.x"
 
 
+def _remove_release_branch(documents: dict[str, dict]) -> None:
+    branches = documents["ci.yml"]["on"]["pull_request"]["branches"]
+    branches.remove("release/2.2.0")
+
+
+def _remove_linux_offline_verification(documents: dict[str, dict]) -> None:
+    job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
+    job["steps"] = [step for step in job["steps"]
+                    if step.get("name") != "Verify 2.1.2 baseline offline"]
+
+
+def _make_windows_offline_network_capable(documents: dict[str, dict]) -> None:
+    job = documents["ci.yml"]["jobs"]["baseline-contract-windows"]
+    named_step(job["steps"], "Verify 2.1.2 baseline offline")["run"] += "\nInvoke-WebRequest https://example.test"
+
+
+def _remove_repository_test_minimum(documents: dict[str, dict]) -> None:
+    job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
+    step = named_step(job["steps"], "Repository baseline contract tests")
+    step["run"] = str(step["run"]).replace("--minimum-expected-tests 1", "")
+
+
+def _duplicate_required_job_name(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["jobs"]["json-file-windows"]["name"] = "Baseline contract (Windows)"
+
+
+def _make_linux_baseline_checkout_shallow(documents: dict[str, dict]) -> None:
+    job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
+    checkout = next(step for step in job["steps"]
+                    if str(step.get("uses", "")).startswith("actions/checkout"))
+    checkout["with"]["fetch-depth"] = 1
+
+
 def assert_mutation_rejected(documents: dict[str, dict], mutate, expected: str) -> None:
     mutated = copy.deepcopy(documents)
     mutate(mutated)
@@ -347,6 +462,16 @@ def main() -> int:
         documents,
         _restore_floating_sdk_selection,
         "global.json as the SDK source",
+    )
+    assert_mutation_rejected(documents, _remove_release_branch, "release/2.2.0")
+    assert_mutation_rejected(documents, _remove_linux_offline_verification, "Verify 2.1.2 baseline offline")
+    assert_mutation_rejected(documents, _make_windows_offline_network_capable, "must not be network-capable")
+    assert_mutation_rejected(documents, _remove_repository_test_minimum, "--minimum-expected-tests 1")
+    assert_mutation_rejected(documents, _duplicate_required_job_name, "must be unique")
+    assert_mutation_rejected(
+        documents,
+        _make_linux_baseline_checkout_shallow,
+        "Reusable Linux baseline lane scope verification checkout must fetch full Git history.",
     )
     print("Workflow contract tests passed (YAML 1.2 structure, SDK pinning, graph, artifact flow, "
           "ordering, immutable refs, RED mutations).")
