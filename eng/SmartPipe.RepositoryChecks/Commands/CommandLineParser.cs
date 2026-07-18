@@ -20,6 +20,10 @@ internal sealed record VerifyBaselineOptions(
     string PackagesDirectory,
     bool Offline) : RepositoryCheckCommand(RepositoryRoot);
 
+internal sealed record VerifySp220ScopeOptions(
+    string RepositoryRoot,
+    string BaseCommit) : RepositoryCheckCommand(RepositoryRoot);
+
 internal sealed class CommandLineException(string message) : Exception(message);
 
 internal static class CommandLineParser
@@ -39,6 +43,10 @@ internal static class CommandLineParser
     {
         "--repo-root", "--manifest", "--packages-dir", "--offline",
     };
+    private static readonly HashSet<string> VerifySp220ScopeOptions = new(StringComparer.Ordinal)
+    {
+        "--repo-root", "--base-commit",
+    };
 
     public static RepositoryCheckCommand Parse(string[] args)
     {
@@ -52,8 +60,17 @@ internal static class CommandLineParser
         {
             "capture-baseline" => ParseCapture(args.AsSpan(1)),
             "verify-baseline" => ParseVerify(args.AsSpan(1)),
+            "verify-sp220-scope" => ParseVerifySp220Scope(args.AsSpan(1)),
             _ => throw new CommandLineException($"Unknown command '{args[0]}'."),
         };
+    }
+
+    private static VerifySp220ScopeOptions ParseVerifySp220Scope(ReadOnlySpan<string> args)
+    {
+        var values = ParseOptions(args, VerifySp220ScopeOptions);
+        var commit = Require(values, "--base-commit");
+        RequireLowercaseSha(commit, "--base-commit");
+        return new VerifySp220ScopeOptions(RequireRoot(values), commit);
     }
 
     private static CaptureBaselineOptions ParseCapture(ReadOnlySpan<string> args)
@@ -63,7 +80,7 @@ internal static class CommandLineParser
         var output = Require(values, "--output-dir");
         _ = ResolveWithinRoot(root, output, "--output-dir");
         var commit = Require(values, "--commit");
-        RequireLowercaseSha(commit);
+        RequireLowercaseSha(commit, "--commit");
         var targetRelease = Require(values, "--target-release");
         var baselineVersion = Require(values, "--baseline-version");
         RequireVersion(targetRelease, "--target-release");
@@ -186,11 +203,11 @@ internal static class CommandLineParser
         }
     }
 
-    private static void RequireLowercaseSha(string value)
+    private static void RequireLowercaseSha(string value, string option)
     {
         if (value.Length != 40 || value.Any(character => !char.IsAsciiDigit(character) && character is not (>= 'a' and <= 'f')))
         {
-            throw new CommandLineException("Option '--commit' must be 40 lowercase hexadecimal characters.");
+            throw new CommandLineException($"Option '{option}' must be 40 lowercase hexadecimal characters.");
         }
     }
 

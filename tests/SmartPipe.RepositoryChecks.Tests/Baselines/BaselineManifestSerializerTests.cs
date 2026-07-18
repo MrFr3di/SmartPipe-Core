@@ -96,6 +96,31 @@ public sealed class BaselineManifestSerializerTests
     }
 
     [Fact]
+    public void Deserialize_RejectsSchemaVersionZero()
+    {
+        var json = BaselineManifestSerializer.Serialize(BaselineFixtures.CreateManifest());
+        json = json.Replace("\"schemaVersion\": 1", "\"schemaVersion\": 0", StringComparison.Ordinal);
+
+        var exception = Assert.Throws<JsonException>(() => BaselineManifestSerializer.Deserialize(json));
+
+        Assert.Contains("schema version", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DeserializeThenSerialize_CanonicalizesJsonObjectPropertyOrder()
+    {
+        var canonical = BaselineManifestSerializer.Serialize(BaselineFixtures.CreateManifest());
+        var root = JsonNode.Parse(canonical)!.AsObject();
+        var reversed = new JsonObject(root.Reverse().Select(property =>
+            KeyValuePair.Create(property.Key, property.Value?.DeepClone())));
+
+        var actual = BaselineManifestSerializer.Serialize(
+            BaselineManifestSerializer.Deserialize(reversed.ToJsonString()));
+
+        Assert.Equal(canonical, actual);
+    }
+
+    [Fact]
     public void Serialize_RejectsDuplicatePackageIdentitiesIgnoringCase()
     {
         var manifest = BaselineFixtures.CreateManifest();

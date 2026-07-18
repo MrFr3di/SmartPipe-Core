@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 using SmartPipe.RepositoryChecks.Baselines;
 using SmartPipe.RepositoryChecks.Commands;
@@ -132,6 +133,19 @@ public sealed class BaselineOrchestrationTests
             && item.Message.Contains("report", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task MissingBaselineReport_FailsVerification()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        File.Delete(Path.Combine(scenario.BaselinePath, "baseline-report.md"));
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB005"
+            && item.Message == "Required baseline report is missing: baseline-report.md");
+    }
+
     [Theory]
     [InlineData("mixed-sha")]
     [InlineData("pending")]
@@ -147,6 +161,18 @@ public sealed class BaselineOrchestrationTests
             () => scenario.CaptureAsync(TestContext.Current.CancellationToken));
 
         Assert.False(Directory.Exists(scenario.BaselinePath));
+    }
+
+    [Fact]
+    public async Task Capture_RejectsDuplicateSuccessfulWorkflowEvidenceAsAmbiguous()
+    {
+        using var scenario = new BaselineScenario();
+        scenario.WriteWorkflowEvidence("duplicate-success");
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(
+            () => scenario.CaptureAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("exactly one", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -242,6 +268,81 @@ public sealed class BaselineOrchestrationTests
         var result = await scenario.VerifyAsync();
 
         Assert.Contains(result.Diagnostics, item => item.Code == "SPB016");
+    }
+
+    [Theory]
+    [InlineData(".github/workflows/ci.yml", "push")]
+    [InlineData(".github/workflows/ci.yml", "pull_request")]
+    [InlineData(".github/workflows/codeql.yml", "push")]
+    [InlineData(".github/workflows/codeql.yml", "pull_request")]
+    [InlineData(".github/workflows/dependency-review.yml", "pull_request")]
+    public async Task RequiredWorkflowEventReleaseBranchMutation_Fails(
+        string workflowRelativePath,
+        string mutatedEvent)
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var events = workflowRelativePath.EndsWith("dependency-review.yml", StringComparison.Ordinal)
+            ? new[] { "pull_request" }
+            : new[] { "push", "pull_request" };
+        var yaml = "on:\n" + string.Concat(events.Select(eventName =>
+            $"  {eventName}:\n    branches: [ main{(eventName == mutatedEvent ? string.Empty : ", release/2.2.0")} ]\n"));
+        await File.WriteAllTextAsync(
+            Path.Combine(scenario.Root, workflowRelativePath.Replace('/', Path.DirectorySeparatorChar)),
+            yaml,
+            TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB016"
+            && item.Actual == workflowRelativePath);
+    }
+
+    [Fact]
+    public async Task OfflineVerify_PerformsZeroPackageFetches()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var callsAfterCapture = scenario.Fetcher.FetchCount;
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.True(result.Success, result.Format());
+        Assert.Equal(callsAfterCapture, scenario.Fetcher.FetchCount);
+    }
+
+    [Fact]
+    public async Task Diagnostics_AreExactStableAndCultureIndependent()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        File.Delete(Path.Combine(scenario.BaselinePath, "baseline-report.md"));
+        await File.WriteAllTextAsync(
+            scenario.WorkflowPath,
+            "on:\n  push:\n    branches: [ main ]\n  pull_request:\n    branches: [ main ]\n",
+            TestContext.Current.CancellationToken);
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+            var first = (await scenario.VerifyAsync()).Format();
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("tr-TR");
+            var second = (await scenario.VerifyAsync()).Format();
+
+            const string expected = """
+                BASELINE VERIFICATION FAILED
+                [SPB005] Required baseline report is missing: baseline-report.md
+                [SPB016] Workflow release branch policy mismatch: CI
+                  expected: release/2.2.0
+                  actual:   .github/workflows/ci.yml
+                """;
+            Assert.Equal(expected, first);
+            Assert.Equal(expected, second);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
     }
 
     [Fact]
@@ -463,6 +564,10 @@ public sealed class BaselineOrchestrationTests
                     ,
                       {"databaseId":4,"workflowName":"Other","headSha":"{{Sha}}","status":"completed","conclusion":"failure","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/4","event":"push","createdAt":"2026-07-17T00:03:00Z"}
                     """,
+                "duplicate-success" => $$"""
+                    ,
+                      {"databaseId":4,"workflowName":"CI","headSha":"{{Sha}}","status":"completed","conclusion":"success","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/4","event":"pull_request","createdAt":"2026-07-17T00:03:00Z"}
+                    """,
                 _ => string.Empty,
             };
             var evidence = $$"""
@@ -504,9 +609,11 @@ public sealed class BaselineOrchestrationTests
     private sealed class CopyingFetcher(IReadOnlyDictionary<string, string> sources) : INuGetPackageFetcher
     {
         public Action? AfterCopy { get; set; }
+        public int FetchCount { get; private set; }
 
         public Task<string> FetchAsync(string packageId, string version, string destinationDirectory, CancellationToken cancellationToken)
         {
+            FetchCount++;
             cancellationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(destinationDirectory);
             var destination = Path.Combine(destinationDirectory, $"{packageId}.{version}.nupkg");

@@ -50,6 +50,12 @@ internal static class Program
                     Console.WriteLine(result.Format());
                     return result.Success ? ExitCodes.Success : ExitCodes.RepositorySnapshotMismatch;
 
+                case VerifySp220ScopeOptions verifyScope:
+                    var scopeResult = await new Sp220ScopeVerificationService(runner, "git")
+                        .VerifyAsync(verifyScope, cancellation.Token).ConfigureAwait(false);
+                    Console.WriteLine(scopeResult.Format());
+                    return scopeResult.Success ? ExitCodes.Success : ExitCodes.RepositorySnapshotMismatch;
+
                 default:
                     throw new InvalidOperationException("Unsupported command type.");
             }
