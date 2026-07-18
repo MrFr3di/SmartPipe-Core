@@ -98,6 +98,21 @@ public sealed class CommandLineParserTests
     }
 
     [Fact]
+    public void Parse_AllowsOnlineVerificationWithMissingPackages()
+    {
+        using var repository = new CommandRepository();
+
+        var command = Assert.IsType<VerifyBaselineOptions>(CommandLineParser.Parse(
+        [
+            "verify-baseline", "--repo-root", repository.Path,
+            "--manifest", "eng/baselines/2.1.2/manifest.json",
+            "--packages-dir", repository.PackagesPath,
+        ]));
+
+        Assert.False(command.Offline);
+    }
+
+    [Fact]
     public void Parse_RejectsDuplicateOption()
     {
         using var repository = new CommandRepository();

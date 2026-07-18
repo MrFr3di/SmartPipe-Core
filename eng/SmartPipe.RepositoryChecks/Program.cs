@@ -29,6 +29,7 @@ internal static class Program
             var command = CommandLineParser.Parse(args);
             var runner = new ProcessRunner();
             using var httpClient = new HttpClient();
+            var fetcher = new NuGetPackageFetcher(httpClient, new NuGetServiceIndexClient(httpClient));
             var packageReader = new NuGetPackageReader();
             var signatureVerifier = new NuGetPackageSignatureVerifier(runner, "dotnet");
             var repositoryReader = new BaselineRepositorySnapshotReader(runner, "dotnet");
@@ -38,7 +39,6 @@ internal static class Program
             switch (command)
             {
                 case CaptureBaselineOptions capture:
-                    var fetcher = new NuGetPackageFetcher(httpClient, new NuGetServiceIndexClient(httpClient));
                     await new BaselineCaptureService(
                         runner, "git", "dotnet", fetcher, signatureVerifier, packageReader,
                         repositoryReader, verification).CaptureAsync(capture, cancellation.Token).ConfigureAwait(false);
@@ -46,7 +46,14 @@ internal static class Program
                     return ExitCodes.Success;
 
                 case VerifyBaselineOptions verify:
-                    var result = await verification.VerifyAsync(verify, cancellation.Token).ConfigureAwait(false);
+                    if (!verify.Offline)
+                    {
+                        await new BaselinePackageProvisioner(fetcher)
+                            .ProvisionAsync(verify, cancellation.Token).ConfigureAwait(false);
+                    }
+
+                    var result = await verification.VerifyAsync(
+                        verify with { Offline = true }, cancellation.Token).ConfigureAwait(false);
                     Console.WriteLine(result.Format());
                     return result.Success ? ExitCodes.Success : ExitCodes.RepositorySnapshotMismatch;
 

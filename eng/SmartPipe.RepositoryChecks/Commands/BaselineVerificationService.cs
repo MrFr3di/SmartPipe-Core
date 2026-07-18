@@ -82,6 +82,11 @@ internal sealed class BaselineVerificationService
         string? snapshotRootOverride,
         CancellationToken cancellationToken)
     {
+        if (!options.Offline)
+        {
+            throw new InvalidOperationException("Baseline verification must be offline.");
+        }
+
         var diagnostics = new List<BaselineDiagnostic>();
         BaselineManifest manifest;
         string baselineRoot;

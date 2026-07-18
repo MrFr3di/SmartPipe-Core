@@ -312,6 +312,15 @@ public sealed class BaselineOrchestrationTests
     }
 
     [Fact]
+    public async Task Verifier_RejectsOnlineOptionsBeforeDoingWork()
+    {
+        using var scenario = new BaselineScenario();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => scenario.VerifyAsync(offline: false));
+        Assert.Empty(scenario.ProcessRunner.Requests);
+    }
+
+    [Fact]
     public async Task Diagnostics_AreExactStableAndCultureIndependent()
     {
         using var scenario = new BaselineScenario();
@@ -584,8 +593,8 @@ public sealed class BaselineOrchestrationTests
             Root, "MrFr3di/SmartPipe-Core", Sha, "2.2.0", "2.1.2", PackagesPath,
             "eng/baselines/2.1.2", WorkflowEvidencePath), cancellationToken);
 
-        public Task<BaselineVerificationResult> VerifyAsync() => _verify.VerifyAsync(new VerifyBaselineOptions(
-            Root, ManifestPath, PackagesPath, Offline: true), TestContext.Current.CancellationToken);
+        public Task<BaselineVerificationResult> VerifyAsync(bool offline = true) => _verify.VerifyAsync(new VerifyBaselineOptions(
+            Root, ManifestPath, PackagesPath, Offline: offline), TestContext.Current.CancellationToken);
 
         public void Dispose()
         {

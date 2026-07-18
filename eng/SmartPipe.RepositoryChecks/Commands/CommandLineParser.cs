@@ -104,21 +104,19 @@ internal static class CommandLineParser
         var manifest = ResolveContainedInput(root, Require(values, "--manifest"), "--manifest");
         var packages = ResolveContainedInput(root, Require(values, "--packages-dir"), "--packages-dir");
         var offline = values.ContainsKey("--offline");
-        if (!offline)
+        if (offline)
         {
-            throw new CommandLineException("Missing required option '--offline'.");
-        }
-
-        foreach (var packageId in PackageIds)
-        {
-            var fileName = $"{packageId}.2.1.2.nupkg";
-            if (!File.Exists(Path.Combine(packages, fileName)))
+            foreach (var packageId in PackageIds)
             {
-                throw new CommandLineException($"Offline package is missing: {fileName}.");
+                var fileName = $"{packageId}.2.1.2.nupkg";
+                if (!File.Exists(Path.Combine(packages, fileName)))
+                {
+                    throw new CommandLineException($"Offline package is missing: {fileName}.");
+                }
             }
         }
 
-        return new VerifyBaselineOptions(root, manifest, packages, Offline: true);
+        return new VerifyBaselineOptions(root, manifest, packages, offline);
     }
 
     private static Dictionary<string, string?> ParseOptions(ReadOnlySpan<string> args, IReadOnlySet<string> allowed)
