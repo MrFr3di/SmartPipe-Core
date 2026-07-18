@@ -188,7 +188,18 @@ internal sealed class BaselineVerificationService
                 continue;
             }
 
-            var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+            byte[] bytes;
+            try
+            {
+                bytes = CanonicalText.ToUtf8Bytes(
+                    await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false));
+            }
+            catch (DecoderFallbackException)
+            {
+                diagnostics.Add(new("SPB006", $"Snapshot is not valid UTF-8 text: {reference.Path}"));
+                continue;
+            }
+
             snapshotBytes[reference.Path] = bytes;
             var hash = Hashing.Sha256Hex(bytes);
             if (!string.Equals(hash, reference.Sha256, StringComparison.Ordinal))
@@ -205,11 +216,19 @@ internal sealed class BaselineVerificationService
         else
         {
             var expectedReport = BaselineReport.Create(manifest);
-            var actualReport = await File.ReadAllBytesAsync(reportPath, cancellationToken).ConfigureAwait(false);
-            if (!actualReport.AsSpan().SequenceEqual(expectedReport))
+            try
             {
-                diagnostics.Add(new("SPB006", "Baseline report content mismatch",
-                    Hashing.Sha256Hex(expectedReport), Hashing.Sha256Hex(actualReport)));
+                var actualReport = CanonicalText.ToUtf8Bytes(
+                    await File.ReadAllBytesAsync(reportPath, cancellationToken).ConfigureAwait(false));
+                if (!actualReport.AsSpan().SequenceEqual(expectedReport))
+                {
+                    diagnostics.Add(new("SPB006", "Baseline report content mismatch",
+                        Hashing.Sha256Hex(expectedReport), Hashing.Sha256Hex(actualReport)));
+                }
+            }
+            catch (DecoderFallbackException)
+            {
+                diagnostics.Add(new("SPB006", "Baseline report is not valid UTF-8 text"));
             }
         }
 

@@ -389,7 +389,8 @@ internal sealed class ProjectDependencySnapshotReader
 
                 RequireObject(projectElement, "project");
                 ValidateProperties(projectElement, "project", "path", "frameworks");
-                var projectPath = RepositoryPaths.NormalizeOutputProjectPath(root, GetRequiredString(projectElement, "path", "project"));
+                var outputPath = RehydrateRedactedProjectPath(root, GetRequiredString(projectElement, "path", "project"));
+                var projectPath = RepositoryPaths.NormalizeOutputProjectPath(root, outputPath);
                 if (!logicalProjects.Add(projectPath))
                 {
                     throw new InvalidDataException($"Package-list JSON contains duplicate project {projectPath}.");
@@ -451,6 +452,33 @@ internal sealed class ProjectDependencySnapshotReader
         {
             throw new InvalidDataException("dotnet package list returned values of unexpected JSON types.", exception);
         }
+    }
+
+    private static string RehydrateRedactedProjectPath(string root, string path)
+    {
+        const string marker = "<home>";
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (string.IsNullOrWhiteSpace(home))
+        {
+            return path;
+        }
+
+        home = Path.TrimEndingDirectorySeparator(Path.GetFullPath(home));
+        var relativeRoot = Path.GetRelativePath(home, root).Replace('\\', '/');
+        if (relativeRoot == ".." || relativeRoot.StartsWith("../", StringComparison.Ordinal))
+        {
+            return path;
+        }
+
+        var redactedRoot = relativeRoot == "." ? marker : $"{marker}/{relativeRoot}";
+        var normalizedPath = path.Replace('\\', '/');
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!normalizedPath.StartsWith(redactedRoot + '/', comparison))
+        {
+            return path;
+        }
+
+        return root + normalizedPath[redactedRoot.Length..].Replace('/', Path.DirectorySeparatorChar);
     }
 
     private static IReadOnlyList<RestoredPackageSnapshot> ParsePackages(

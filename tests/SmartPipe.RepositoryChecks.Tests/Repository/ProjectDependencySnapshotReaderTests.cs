@@ -178,6 +178,31 @@ public sealed class ProjectDependencySnapshotReaderTests
     }
 
     [Fact]
+    public async Task ReadRestoredAsync_RehydratesRedactedProjectPathWithinRepositoryRoot()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var root = Path.Combine(home, "SmartPipe.RepositoryChecks.Tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "src", "A"));
+            await File.WriteAllTextAsync(Path.Combine(root, "SmartPipe.Core.slnx"), "<Solution />", TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(root, "src", "A", "A.csproj"), "<Project />", TestContext.Current.CancellationToken);
+            var projectPath = Path.Combine(root, "src", "A", "A.csproj");
+            var redactedPath = "<home>" + projectPath[home.Length..].Replace('\\', '/');
+            var json = SingleProjectJson(redactedPath, [new Dictionary<string, object?> { ["framework"] = "net10.0" }]);
+
+            var snapshot = await CreateRestoredReader(json).ReadRestoredAsync(
+                root, "SmartPipe.Core.slnx", TestContext.Current.CancellationToken);
+
+            Assert.Equal("src/A/A.csproj", Assert.Single(snapshot.Projects).ProjectPath);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ReadRestoredAsync_ResolvedVersionChangeChangesSnapshotHash()
     {
         using var repository = new RepositoryTestDirectory();

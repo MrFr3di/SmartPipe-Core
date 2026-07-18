@@ -146,6 +146,30 @@ public sealed class BaselineOrchestrationTests
             && item.Message == "Required baseline report is missing: baseline-report.md");
     }
 
+    [Fact]
+    public async Task Verify_CanonicalizesTrackedBaselineTextLineEndings()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        foreach (var fileName in new[]
+                 {
+                     "public-api.json", "package-assets.json", "package-dependencies.json",
+                     "repository-dependencies.json", "baseline-report.md",
+                 })
+        {
+            var path = Path.Combine(scenario.BaselinePath, fileName);
+            var text = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(
+                path,
+                text.Replace("\n", "\r\n", StringComparison.Ordinal),
+                TestContext.Current.CancellationToken);
+        }
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.True(result.Success, result.Format());
+    }
+
     [Theory]
     [InlineData("mixed-sha")]
     [InlineData("pending")]
