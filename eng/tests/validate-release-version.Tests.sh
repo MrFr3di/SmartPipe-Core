@@ -3,15 +3,15 @@ set -euo pipefail
 
 script_dir="${BASH_SOURCE[0]%/*}"
 validator="$(cd "$script_dir/.." && pwd)/validate-release-version.sh"
-
-"$BASH" "$validator" v2.1.2 2.1.2 2.1.2 2.1.2 >/dev/null
-output="$("$BASH" "$validator" v2.1.2-rc.1 2.1.2 2.1.2 2.1.2)"
-[[ "$output" == *$'PACKAGE_VERSION=2.1.2-rc.1'* ]]
-[[ "$output" == *$'BASE_VERSION=2.1.2'* ]]
-
-if "$BASH" "$validator" v2.1.2 2.1.2 2.1.1 2.1.2 >/dev/null 2>&1; then
-  echo 'JSON version mismatch was accepted.' >&2
-  exit 1
-fi
+temp_dir="$(mktemp -d)"
+trap 'rm -rf -- "$temp_dir"' EXIT
+cat >"$temp_dir/dotnet" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*"
+EOF
+chmod +x "$temp_dir/dotnet"
+output="$(PATH="$temp_dir:$PATH" "$BASH" "$validator" --tag v2.2.0 --mode current --package-directory artifacts/packages)"
+[[ "$output" == 'run --project eng/SmartPipe.RepositoryChecks -- verify-release-version --tag v2.2.0 --mode current --package-directory artifacts/packages' ]]
+[[ "$(grep -c 'verify-release-version' "$validator")" -eq 1 ]]
 
 echo 'validate-release-version script tests passed.'

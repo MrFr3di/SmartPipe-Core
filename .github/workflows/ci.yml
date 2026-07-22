@@ -56,23 +56,6 @@ jobs:
           dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Tests.DeadLetterSinkAppendTests --minimum-expected-tests 1
           dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Json.Tests.DeadLetterSinkLifecycleTests --minimum-expected-tests 1
 
-      - name: Build Extensions package
-        run: >
-          dotnet build
-          src/SmartPipe.Extensions/SmartPipe.Extensions.csproj
-          --configuration Release
-          --no-restore
-          -warnaserror
-
-      - name: Package split direct, forwarding, and legacy consumers
-        shell: pwsh
-        run: |
-          $version = dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo
-          dotnet pack src/SmartPipe.Core/SmartPipe.Core.csproj --configuration Release --no-build -p:PackageVersion=$version -o artifacts/packages
-          dotnet pack src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj --configuration Release --no-build -p:PackageVersion=$version -o artifacts/packages
-          dotnet pack src/SmartPipe.Extensions/SmartPipe.Extensions.csproj --configuration Release --no-build -p:PackageVersion=$version -o artifacts/packages
-          ./eng/validate-json-package-split.ps1 -PackageDirectory ./artifacts/packages -Version $version
-
   baseline-contract-windows:
     name: Baseline contract (Windows)
     runs-on: windows-latest

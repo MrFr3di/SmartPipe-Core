@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 import sys
 from pathlib import Path
@@ -181,6 +182,27 @@ def assert_link_check_exclusion_scoped() -> None:
             "lychee.toml must not contain a broad nuget.org exclusion.")
 
 
+def assert_consumer_contract() -> None:
+    manifest_path = ROOT / "eng" / "consumer-scenarios.json"
+    document = json.loads(manifest_path.read_text(encoding="utf-8"))
+    current = [scenario for scenario in document["scenarios"] if scenario["set"] == "current"]
+    expected = {
+        "core-direct", "json-direct", "extensions-meta", "legacy-binary-2.1.2",
+        "core-trim", "core-nativeaot", "json-nativeaot",
+    }
+    require(len(current) == 7 and {scenario["id"] for scenario in current} == expected,
+            "Current consumer set must contain the exact seven scenarios.")
+    meta = next(scenario for scenario in current if scenario["id"] == "extensions-meta")
+    require(meta["packageIds"] == ["SmartPipe.Extensions"],
+            "extensions-meta must directly reference only the facade package.")
+    source = (ROOT / "tests" / "Consumers" / "Scenarios"
+              / "extensions-meta" / "Program.cs").read_text(encoding="utf-8")
+    require("new MapsterTransform<DefaultSource, DefaultDestination>()" in source
+            and "new TypeAdapterConfig()" in source
+            and "ConfiguredDestination" in source,
+            "extensions-meta must assert default and configured Mapster mappings.")
+
+
 
 def validate(documents: dict[str, dict]) -> None:
     reusable = documents["reusable-release-validation.yml"]
@@ -210,38 +232,85 @@ def validate(documents: dict[str, dict]) -> None:
     repository_test_step = named_step(reusable_steps, "Repository baseline contract tests")
     require(reusable_steps.index(build_step) < reusable_steps.index(repository_test_step),
             "Reusable repository baseline tests must run after Build.")
+    for name in ("Verify central package management", "Verify package projects"):
+        require(reusable_steps.index(build_step) < reusable_steps.index(named_step(reusable_steps, name)),
+                f"Reusable {name} must run after Build because it uses --no-build.")
+
     assert_baseline_lane(reusable_job, "Reusable Linux baseline lane", require_scope=True)
 
     required_steps = (
-        "Format verify", "Build", "Core tests with coverage", "Extensions tests",
-        "JSON Extensions tests", "Core correctness regressions", "Core concurrency regressions",
-        "Pack Core", "Pack JSON Extensions", "Pack Extensions", "Validate JSON package split",
-        "Mapster packed consumer smoke", "Consumer smoke", "Trimmed consumer smoke",
-        "NativeAOT consumer smoke", "JSON and dead-letter AOT smoke",
-        "Vulnerable package scan", "Upload packages",
+        "Verify central package management", "Verify package projects",
+        "Format verify", "Build", "Repository baseline contract tests",
+        "Verify SP220-00 scope", "Core tests with coverage", "Core stress tests",
+        "Extensions tests", "JSON Extensions tests", "Core correctness regressions",
+        "Core concurrency regressions", "Extensions correctness regressions",
+        "PR concurrency regression repeat", "Test and benchmark warning gate",
+        "Pack packages from graph", "Verify baseline integrity",
+        "Verify package graph current", "Verify package metadata current",
+        "Verify package ownership current", "Verify release versions current",
+        "Run current consumers", "Vulnerable package scan", "Verify direct production audit policy", "Deprecated package scan",
+        "Outdated package report", "Docs link check",
+        "Upload immutable packages and reports",
     )
     for name in required_steps:
         named_step(reusable_steps, name)
-    pack_names = [step.get("name") for step in reusable_steps if str(step.get("name", "")).startswith("Pack ")]
-    require(pack_names == ["Pack Core", "Pack JSON Extensions", "Pack Extensions"],
-            "Reusable package creation must be ordered Core -> JSON -> Extensions.")
-    upload = named_step(reusable_steps, "Upload packages")
+    gate_order = [
+        "Restore locked", "Build", "Verify central package management", "Verify package projects",
+        "Test and benchmark warning gate", "Pack packages from graph",
+        "Verify baseline integrity", "Verify package graph current",
+        "Verify package metadata current", "Verify package ownership current",
+        "Verify release versions current", "Run current consumers",
+        "Vulnerable package scan", "Verify direct production audit policy",
+        "Deprecated package scan", "Outdated package report",
+        "Upload immutable packages and reports",
+    ]
+    gate_indexes = [reusable_steps.index(named_step(reusable_steps, name)) for name in gate_order]
+    require(gate_indexes == sorted(gate_indexes),
+            "Reusable package gates must follow the required order.")
+    reusable_text = "\n".join(reusable_runs)
+    pack_run = str(named_step(reusable_steps, "Pack packages from graph").get("run", ""))
+    for token in ("pack-packages", "--mode current", "--configuration Release",
+                  "--package-version", "--output artifacts/packages",
+                  "--manifest artifacts/packages/manifest.json"):
+        require(token in pack_run, f"Graph-driven pack step must contain '{token}'.")
+    require(reusable_text.count("pack-packages") == 1,
+            "Reusable validation must invoke pack-packages exactly once.")
+    require(re.search(r"\\bdotnet\\s+pack\\b", reusable_text) is None,
+            "Reusable validation must not hard-code dotnet pack commands.")
+    require("validate-json-package-split.ps1" not in reusable_text,
+            "Reusable validation must not call the legacy package split validator.")
+    for forbidden in ("dotnet new", "Program.cs", "<<'CS'", "<<CS", "<<'XML'", "<<XML"):
+        require(forbidden not in reusable_text,
+                f"Reusable validation must not generate inline projects ({forbidden}).")
+    ownership_run = str(named_step(reusable_steps, "Verify package ownership current").get("run", ""))
+    require("--baseline eng/baselines/2.1.2" in ownership_run,
+            "Ownership verification must use snapshot metadata from eng/baselines/2.1.2.")
+    baseline_integrity_run = str(named_step(reusable_steps, "Verify baseline integrity").get("run", ""))
+    require("--mode integrity" in baseline_integrity_run,
+            "Baseline integrity gate must use integrity mode.")
+    audit_reports = {
+        "Vulnerable package scan": "artifacts/audit/vulnerable.json",
+        "Deprecated package scan": "artifacts/audit/deprecated.json",
+        "Outdated package report": "artifacts/audit/outdated.json",
+    }
+    for name, report in audit_reports.items():
+        command = str(named_step(reusable_steps, name).get("run", ""))
+        require("dotnet package list --project SmartPipe.Core.slnx" in command
+                and "--format json" in command and "--output-version 1" in command
+                and report in command,
+                f"{name} must save a machine-readable JSON report.")
+    audit_policy_run = str(named_step(reusable_steps, "Verify direct production audit policy").get("run", ""))
+    require("verify-nuget-audit" in audit_policy_run
+            and "--report artifacts/audit/vulnerable.json" in audit_policy_run,
+            "Reusable validation must enforce the direct production audit policy from the vulnerable JSON report.")
+    upload = named_step(reusable_steps, "Upload immutable packages and reports")
     require(upload.get("with", {}).get("name") == "${{ inputs.artifact-name }}",
             "Reusable validation must upload the caller-selected artifact name.")
-    require(upload.get("with", {}).get("path") == "artifacts/packages",
-            "Reusable validation must upload only artifacts/packages.")
-
-    json_aot_run = str(named_step(reusable_steps, "JSON and dead-letter AOT smoke").get("run", ""))
-    json_aot_project = json_aot_run.split(
-        "cat > artifacts/json-deadletter-aot-smoke/SmartPipe.JsonDeadLetterAotSmoke.csproj <<XML",
-        1)[1].split("\nXML", 1)[0]
-    require('<PackageReference Include="SmartPipe.Extensions.Json"' in json_aot_project,
-            "JSON NativeAOT smoke must reference SmartPipe.Extensions.Json directly.")
-    require('<PackageReference Include="SmartPipe.Core"' not in json_aot_project,
-            "JSON NativeAOT smoke must obtain SmartPipe.Core transitively.")
-    require("<JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>"
-            in json_aot_project,
-            "JSON NativeAOT smoke must disable reflection-based JSON metadata.")
+    upload_path = str(upload.get("with", {}).get("path", ""))
+    require("artifacts/packages" in upload_path
+            and "artifacts/consumers/**/result.json" in upload_path
+            and "artifacts/audit" in upload_path,
+            "Reusable validation must upload package artifacts, consumer reports, and audit reports together.")
 
     validation = ci["jobs"].get("validation")
     require(validation == {
@@ -260,9 +329,11 @@ def validate(documents: dict[str, dict]) -> None:
             "Windows JSON lane must not execute the stress suite.")
     for name in ("Build JSON test project", "JSON file source, path, open, and share tests",
                  "JSON file sink and dispose tests", "Dead-letter source and sink tests",
-                 "Build Extensions package",
-                 "Package split direct, forwarding, and legacy consumers"):
+                 ):
         named_step(windows_steps, name)
+    require(not any("dotnet pack" in command or "validate-json-package-split" in command
+                    for command in windows_runs),
+            "Windows JSON lane must remain package-count agnostic.")
 
     baseline_windows = ci["jobs"].get("baseline-contract-windows")
     require(isinstance(baseline_windows, dict)
@@ -308,16 +379,10 @@ def validate(documents: dict[str, dict]) -> None:
         require("--minimum-expected-tests 1" in command,
                 f"Every filtered test command must set --minimum-expected-tests 1: {command}")
 
-    pack_index = command_index(windows_runs,
-                               "dotnet pack src/SmartPipe.Extensions/SmartPipe.Extensions.csproj")
-    build_index = command_index(windows_runs,
-                                "dotnet build src/SmartPipe.Extensions/SmartPipe.Extensions.csproj")
-    require(build_index < pack_index,
-            "SmartPipe.Extensions must be built before it is packed with --no-build.")
-
     assert_persist_credentials_disabled(documents)
     assert_setup_dotnet_uses_global_json(documents)
     assert_link_check_exclusion_scoped()
+    assert_consumer_contract()
 
     version = publish["jobs"].get("version")
     validation = publish["jobs"].get("validation")
@@ -341,17 +406,32 @@ def validate(documents: dict[str, dict]) -> None:
             "Publish must download the same artifact name produced by validation.")
     publish_runs = runs(publish_steps)
     require(not any("dotnet pack" in command for command in publish_runs), "Publish job must never repack.")
+    version_runs = runs(steps(version, "publish version"))
+    hard_coded_ids = ("SmartPipe.Core", "SmartPipe.Extensions.Json", "SmartPipe.Extensions")
+    require(not any(package_id in command for command in version_runs + publish_runs
+                    for package_id in hard_coded_ids),
+            "Publish version, push, and availability logic must not hard-code package IDs.")
+    require(download.get("with", {}).get("path") == "artifacts",
+            "Publish download layout must preserve manifest repository-relative paths.")
     push = named_step(publish_steps, "Publish packages in dependency order")
-    push_lines = [line.strip() for line in str(push.get("run", "")).splitlines()
-                  if line.strip().startswith("dotnet nuget push")]
-    expected_packages = ["SmartPipe.Core.", "SmartPipe.Extensions.Json.", "SmartPipe.Extensions."]
-    require(len(push_lines) == 3, "Publish must contain exactly three explicit NuGet pushes.")
-    require(all(package in line for package, line in zip(expected_packages, push_lines)),
-            "NuGet pushes must be ordered Core -> JSON -> Extensions.")
-    require("--skip-duplicate" not in "\n".join(push_lines),
-            "Package push commands must add --skip-duplicate only through recoverable-rerun logic.")
-    require("skip_duplicate=(--skip-duplicate)" in str(push.get("run", "")),
+    push_run = str(push.get("run", ""))
+    require("artifacts/packages/manifest.json" in push_run
+            and "sort_by(.publishOrder)" in push_run
+            and ".nupkgPath" in push_run
+            and ".nupkgSha256" in push_run,
+            "Publish must read ordered paths and hashes from manifest.json.")
+    require("awk '{print tolower($1)}'" in push_run
+            and "toupper($1)" not in push_run,
+            "Publish must normalize sha256sum output to lowercase before comparing it with the manifest hash.")
+    require(push_run.count("dotnet nuget push") == 1,
+            "Publish must use one manifest-driven push loop.")
+    require("skip_duplicate=(--skip-duplicate)" in push_run,
             "Recoverable rerun must be the only source of --skip-duplicate.")
+    availability_run = str(named_step(
+        publish_steps, "Verify published package versions are available").get("run", ""))
+    require("sort_by(.publishOrder)" in availability_run
+            and "[.id, .version]" in availability_run,
+            "Availability checks must derive package IDs and versions from manifest.json.")
 
     assert_immutable_action_refs(documents)
 
@@ -413,6 +493,30 @@ def _make_linux_baseline_checkout_shallow(documents: dict[str, dict]) -> None:
     checkout["with"]["fetch-depth"] = 1
 
 
+def _remove_reusable_step(documents: dict[str, dict], name: str) -> None:
+    job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
+    job["steps"] = [step for step in job["steps"] if step.get("name") != name]
+
+
+def _move_graph_before_integrity(documents: dict[str, dict]) -> None:
+    job_steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+    graph = named_step(job_steps, "Verify package graph current")
+    job_steps.remove(graph)
+    pack_index = job_steps.index(named_step(job_steps, "Pack packages from graph"))
+    job_steps.insert(pack_index + 1, graph)
+
+
+def _duplicate_upload(documents: dict[str, dict]) -> None:
+    job_steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+    job_steps.append(copy.deepcopy(named_step(job_steps, "Upload immutable packages and reports")))
+
+
+def _hardcode_publish_package(documents: dict[str, dict]) -> None:
+    publish_steps = documents["publish-nuget.yml"]["jobs"]["publish"]["steps"]
+    push = named_step(publish_steps, "Publish packages in dependency order")
+    push["run"] = str(push["run"]) + "\ndotnet nuget push artifacts/packages/SmartPipe.Core.2.2.0.nupkg"
+
+
 def assert_mutation_rejected(documents: dict[str, dict], mutate, expected: str) -> None:
     mutated = copy.deepcopy(documents)
     mutate(mutated)
@@ -472,6 +576,31 @@ def main() -> int:
         documents,
         _make_linux_baseline_checkout_shallow,
         "Reusable Linux baseline lane scope verification checkout must fetch full Git history.",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Format verify"),
+        "Format verify",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Core tests with coverage"),
+        "Core tests with coverage",
+    )
+    assert_mutation_rejected(
+        documents,
+        _move_graph_before_integrity,
+        "required order",
+    )
+    assert_mutation_rejected(
+        documents,
+        _duplicate_upload,
+        "exactly one step named 'Upload immutable packages and reports'",
+    )
+    assert_mutation_rejected(
+        documents,
+        _hardcode_publish_package,
+        "must not hard-code package IDs",
     )
     print("Workflow contract tests passed (YAML 1.2 structure, SDK pinning, graph, artifact flow, "
           "ordering, immutable refs, RED mutations).")
