@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://smartpipe.dev/schemas/package-graph.schema.json",
+  "title": "SmartPipe package graph",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "releaseVersion", "packages"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "releaseVersion": { "const": "2.2.0" },
+    "packages": {
+      "type": "array",
+      "minItems": 19,
+      "maxItems": 19,
+      "items": { "$ref": "#/$defs/package" }
+    }
+  },
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requiredSmartPipePackages", "allowedSmartPipePackages", "allowedExternalPackages", "forbiddenPackagePatterns"],
+      "properties": {
+        "requiredSmartPipePackages": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "allowedSmartPipePackages": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "allowedExternalPackages": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "forbiddenPackagePatterns": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "allowance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dependency", "reason", "ownerEpic", "expiresBeforeRelease", "evidence"],
+      "properties": {
+        "dependency": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "ownerEpic": { "type": "string", "minLength": 1 },
+        "expiresBeforeRelease": { "type": "boolean" },
+        "evidence": { "type": "string", "minLength": 1 }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "projectPath", "lifecycle", "activationEpic", "scaffoldKind", "publishOrder", "baselineVersion", "aotContract", "currentDependencies", "releaseDependencies", "temporaryAllowances", "consumerScenarios"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^SmartPipe\\.(Core|Testing|Extensions(?:\\.[A-Za-z]+)*)$" },
+        "projectPath": { "type": "string", "pattern": "^src/[^/]+/[^/]+\\.csproj$" },
+        "lifecycle": { "enum": ["active", "planned", "compatibility-facade"] },
+        "activationEpic": { "type": ["string", "null"] },
+        "scaffoldKind": { "enum": [null, "core-leaf", "framework-integration", "composed-integration", "host-integration", "testing"] },
+        "publishOrder": { "type": "integer", "minimum": 1 },
+        "baselineVersion": { "type": ["string", "null"] },
+        "aotContract": { "enum": ["full", "full-json-type-info", "transport-full", "explicit-sql", "verified", "verified-no-blanket", "annotated-reflection", "unsupported-blanket", "not-runtime", "no-blanket"] },
+        "currentDependencies": { "$ref": "#/$defs/policy" },
+        "releaseDependencies": { "$ref": "#/$defs/policy" },
+        "temporaryAllowances": { "type": "array", "items": { "$ref": "#/$defs/allowance" } },
+        "consumerScenarios": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    }
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "requiredAtRelease": [
+    "channels-direct",
+    "transforms-direct",
+    "logging-direct",
+    "csv-direct",
+    "dapper-direct",
+    "entity-framework-core-direct",
+    "mapster-direct",
+    "polly-direct",
+    "http-direct",
+    "testing-direct",
+    "http-json-direct",
+    "dependency-injection-direct",
+    "opentelemetry-direct",
+    "hosting-direct",
+    "health-checks-direct",
+    "data-annotations-direct"
+  ],
+  "scenarios": [
+    {
+      "id": "core-direct",
+      "set": "current",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/core-direct/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core"],
+      "forbiddenDependencies": [],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "json-direct",
+      "set": "current",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/json-direct/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.Json"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.Json"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "CsvHelper", "Dapper", "Microsoft.EntityFrameworkCore", "Mapster", "Polly"],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "extensions-meta",
+      "set": "current",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/extensions-meta/Consumer.csproj",
+      "packageIds": ["SmartPipe.Extensions"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Json"],
+      "forbiddenDependencies": [],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "legacy-binary-2.1.2",
+      "set": "current",
+      "mode": "binary-compatibility",
+      "templatePath": "tests/Consumers/Scenarios/legacy-binary-2.1.2/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Json"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Json"],
+      "forbiddenDependencies": [],
+      "baselineVersion": "2.1.2",
+      "timeout": "00:10:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "core-trim",
+      "set": "current",
+      "mode": "publish-trimmed",
+      "templatePath": "tests/Consumers/Scenarios/core-trim/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core"],
+      "forbiddenDependencies": [],
+      "baselineVersion": null,
+      "timeout": "00:10:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "core-nativeaot",
+      "set": "current",
+      "mode": "publish-native-aot",
+      "templatePath": "tests/Consumers/Scenarios/core-nativeaot/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core"],
+      "forbiddenDependencies": [],
+      "baselineVersion": null,
+      "timeout": "00:15:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "json-nativeaot",
+      "set": "current",
+      "mode": "publish-native-aot",
+      "templatePath": "tests/Consumers/Scenarios/json-nativeaot/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.Json"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.Json"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "CsvHelper", "Dapper", "Microsoft.EntityFrameworkCore", "Mapster", "Polly"],
+      "baselineVersion": null,
+      "timeout": "00:15:00",
+      "runSecondLockedRestore": true
+    }
+  ]
+}

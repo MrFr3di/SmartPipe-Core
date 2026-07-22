@@ -15,6 +15,24 @@ public sealed class CommandLineParserTests
         Assert.Equal("Unknown command 'ship-it'.", Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(["ship-it"])).Message);
 
     [Fact]
+    public void Parse_ReturnsNuGetAuditOptions()
+    {
+        using var repository = new CommandRepository();
+        var report = Path.Combine(repository.Path, "artifacts", "audit", "vulnerable.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(report)!);
+        File.WriteAllText(report, "{}");
+
+        var command = Assert.IsType<VerifyNuGetAuditOptions>(CommandLineParser.Parse(
+        [
+            "verify-nuget-audit", "--repo-root", repository.Path,
+            "--report", "artifacts/audit/vulnerable.json",
+        ]));
+
+        Assert.Equal(repository.Path, command.RepositoryRoot);
+        Assert.Equal(report, command.ReportPath);
+    }
+
+    [Fact]
     public void Parse_RejectsMissingRequiredOption()
     {
         using var repository = new CommandRepository();
@@ -110,6 +128,37 @@ public sealed class CommandLineParserTests
         ]));
 
         Assert.False(command.Offline);
+    }
+
+    [Fact]
+    public void Parse_IntegrityVerificationMode_IsExplicit()
+    {
+        using var repository = new CommandRepository();
+
+        var command = Assert.IsType<VerifyBaselineOptions>(CommandLineParser.Parse(
+        [
+            "verify-baseline", "--repo-root", repository.Path,
+            "--manifest", "eng/baselines/2.1.2/manifest.json",
+            "--packages-dir", repository.PackagesPath,
+            "--mode", "integrity",
+        ]));
+
+        Assert.Equal(BaselineVerificationMode.Integrity, command.Mode);
+    }
+
+    [Fact]
+    public void Parse_DefaultVerificationMode_RemainsFull()
+    {
+        using var repository = new CommandRepository();
+
+        var command = Assert.IsType<VerifyBaselineOptions>(CommandLineParser.Parse(
+        [
+            "verify-baseline", "--repo-root", repository.Path,
+            "--manifest", "eng/baselines/2.1.2/manifest.json",
+            "--packages-dir", repository.PackagesPath,
+        ]));
+
+        Assert.Equal(BaselineVerificationMode.Full, command.Mode);
     }
 
     [Fact]

@@ -200,7 +200,7 @@ public sealed class ProcessRunnerTests
         var nonce = Guid.NewGuid().ToString("N");
         using var control = CreateControlServer(pipeName);
         var hostTask = RepositoryCheckProcessHost.RunAsync(
-            [pipeName, nonce, GetFixtureExecutablePath(), "--", "wait"],
+            [pipeName, nonce, GetFixtureExecutablePath(), "", "--", "wait"],
             new ThrowingProcessTreeOwnershipFactory(),
             hostLifetimeCancellation: TestContext.Current.CancellationToken);
 
@@ -224,7 +224,7 @@ public sealed class ProcessRunnerTests
         try
         {
             var hostTask = RepositoryCheckProcessHost.RunAsync(
-                [pipeName, nonce, GetFixtureExecutablePath(), "--", "touch", startedPath],
+                [pipeName, nonce, GetFixtureExecutablePath(), "", "--", "touch", startedPath],
                 ownershipFactory,
                 hostLifetimeCancellation: TestContext.Current.CancellationToken);
             await control.WaitForConnectionAsync(TestContext.Current.CancellationToken);
@@ -256,7 +256,7 @@ public sealed class ProcessRunnerTests
         using var hostLifetime = new CancellationTokenSource();
         using var control = CreateControlServer(pipeName);
         var hostTask = RepositoryCheckProcessHost.RunAsync(
-            [pipeName, nonce, GetFixtureExecutablePath(), "--", "echo", "0"],
+            [pipeName, nonce, GetFixtureExecutablePath(), "", "--", "echo", "0"],
             new ImmediateProcessTreeOwnershipFactory(),
             hostLifetimeCancellation: hostLifetime.Token);
         try
@@ -347,7 +347,7 @@ public sealed class ProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_RedactsOversizedUnterminatedQueryBeforeRetention()
+    public async Task RunAsync_RedactsLongUnterminatedQueryBeforeRetentionAndSpill()
     {
         var runner = new ProcessRunner(maximumRetainedOutputCharacters: 4096);
 
@@ -356,7 +356,7 @@ public sealed class ProcessRunnerTests
             TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain("super-secret-token", result.StandardOutput, StringComparison.Ordinal);
-        Assert.Contains("oversized output line redacted", result.StandardOutput, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("https://example.test/package?<redacted>", result.StandardOutput);
     }
 
     [Fact]
@@ -376,22 +376,29 @@ public sealed class ProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_TimesOutOwnedHostTree_AndDoesNotLeakSilentDescendant()
+    public async Task RunAsync_CancelsReadyOwnedHostTree_AndDoesNotLeakSilentDescendant()
     {
         var processIdPath = Path.Combine(Path.GetTempPath(), $"smartpipe-descendant-{Guid.NewGuid():N}.pid");
         int? descendantProcessId = null;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var signalName = $"smartpipe-descendant-started-{Guid.NewGuid():N}";
+        using var signal = CreateSignalServer(signalName);
         try
         {
             var runner = new ProcessRunner(terminationObservationTimeout: TimeSpan.FromSeconds(2));
 
-            var exception = await Assert.ThrowsAsync<ProcessRunnerException>(
-                () => runner.RunAsync(
-                    CreateFixtureRequest(
-                        ["spawn-descendant", processIdPath],
-                        TimeSpan.FromMilliseconds(500)),
-                    TestContext.Current.CancellationToken));
+            var runTask = runner.RunAsync(
+                CreateFixtureRequest(
+                    ["spawn-descendant-signal", processIdPath, signalName],
+                    TimeSpan.FromSeconds(30)),
+                cancellation.Token);
+            var signalTask = WaitForSignalAsync(signal);
+            Assert.Same(signalTask, await Task.WhenAny(signalTask, runTask));
+            await signalTask;
+            cancellation.Cancel();
+            var exception = await Assert.ThrowsAsync<ProcessRunnerException>(() => runTask);
 
-            Assert.Equal(ProcessFailureKind.Timeout, exception.FailureKind);
+            Assert.Equal(ProcessFailureKind.Canceled, exception.FailureKind);
             descendantProcessId = int.Parse(
                 await File.ReadAllTextAsync(processIdPath, TestContext.Current.CancellationToken),
                 System.Globalization.CultureInfo.InvariantCulture);

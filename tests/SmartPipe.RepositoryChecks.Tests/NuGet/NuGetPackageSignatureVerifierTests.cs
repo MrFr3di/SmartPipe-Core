@@ -99,6 +99,7 @@ public sealed class NuGetPackageSignatureVerifierTests
                 pipeName,
                 nonce,
                 request.FileName,
+                "",
                 "--",
                 .. request.Arguments,
             ],
