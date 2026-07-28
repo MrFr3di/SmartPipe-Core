@@ -1,0 +1,23 @@
+<Project>
+  <ItemGroup>
+    <None Include="$(SmartPipeRepositoryRoot)assets/nuget/icon.png"
+          Pack="true"
+          PackagePath="icon.png"
+          Visible="false" />
+    <None Include="$(SmartPipePackageReadmeSource)"
+          Pack="true"
+          PackagePath="README.md"
+          Visible="false" />
+  </ItemGroup>
+
+  <Target Name="SmartPipePackageValidate" BeforeTargets="Pack">
+    <Error Condition="'$(PackageId)' == ''" Text="SmartPipe package requires PackageId." />
+    <Error Condition="'$(Description)' == ''" Text="SmartPipe package $(PackageId) requires Description." />
+    <Error Condition="'$(PackageTags)' == ''" Text="SmartPipe package $(PackageId) requires PackageTags." />
+    <Error Condition="'$(SmartPipePackageReadmeSource)' == ''" Text="SmartPipe package $(PackageId) requires SmartPipePackageReadmeSource." />
+    <Error Condition="!Exists('$(SmartPipePackageReadmeSource)')" Text="SmartPipe package README does not exist: $(SmartPipePackageReadmeSource)." />
+    <Error Condition="!Exists('$(SmartPipeRepositoryRoot)assets/nuget/icon.png')" Text="SmartPipe package icon does not exist: $(SmartPipeRepositoryRoot)assets/nuget/icon.png." />
+    <Error Condition="'$(PackageVersion)' != '' and '$(PackageVersion)' != '$(Version)'" Text="SmartPipe package $(PackageId) version $(PackageVersion) does not match repository version $(Version)." />
+    <Error Condition="('$(PackageId)' == 'SmartPipe.Core' or '$(PackageId)' == 'SmartPipe.Extensions' or '$(PackageId)' == 'SmartPipe.Extensions.Json') and '$(PackageValidationBaselineVersion)' != '2.1.2'" Text="Existing SmartPipe package $(PackageId) requires PackageValidationBaselineVersion=2.1.2." />
+  </Target>
+</Project>

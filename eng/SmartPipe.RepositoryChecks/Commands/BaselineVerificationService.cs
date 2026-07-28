@@ -281,18 +281,21 @@ internal sealed class BaselineVerificationService
                 "SPB010", "Package dependency snapshot mismatch", diagnostics);
         }
 
-        try
+        if (options.Mode == BaselineVerificationMode.Full)
         {
-            var current = await _repositoryReader.ReadAsync(
-                options.RepositoryRoot, manifest.Repository.SolutionPath, cancellationToken).ConfigureAwait(false);
-            CompareSnapshot(snapshotBytes, manifest.PublicApi, current.PublicApi,
-                "SPB014", "Public API snapshot mismatch", diagnostics);
-            CompareSnapshot(snapshotBytes, manifest.RepositoryDependencies, current.RepositoryDependencies,
-                "SPB015", "Repository dependency snapshot mismatch", diagnostics);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            diagnostics.Add(new("SPB015", $"Repository snapshot could not be read: {exception.Message}"));
+            try
+            {
+                var current = await _repositoryReader.ReadAsync(
+                    options.RepositoryRoot, manifest.Repository.SolutionPath, cancellationToken).ConfigureAwait(false);
+                CompareSnapshot(snapshotBytes, manifest.PublicApi, current.PublicApi,
+                    "SPB014", "Public API snapshot mismatch", diagnostics);
+                CompareSnapshot(snapshotBytes, manifest.RepositoryDependencies, current.RepositoryDependencies,
+                    "SPB015", "Repository dependency snapshot mismatch", diagnostics);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                diagnostics.Add(new("SPB015", $"Repository snapshot could not be read: {exception.Message}"));
+            }
         }
 
         var releaseBranch = $"release/{manifest.TargetRelease}";

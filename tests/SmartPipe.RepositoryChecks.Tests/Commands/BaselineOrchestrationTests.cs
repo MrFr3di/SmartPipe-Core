@@ -134,6 +134,20 @@ public sealed class BaselineOrchestrationTests
     }
 
     [Fact]
+    public async Task IntegrityMode_DoesNotReadCurrentRepositorySnapshots()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        scenario.ProcessRunner.Requests.Clear();
+
+        var result = await scenario.VerifyAsync(mode: BaselineVerificationMode.Integrity);
+
+        Assert.True(result.Success, result.Format());
+        Assert.DoesNotContain(scenario.ProcessRunner.Requests, request =>
+            request.FileName == "dotnet" && request.Arguments.Any(argument => argument.Contains("package", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task MissingBaselineReport_FailsVerification()
     {
         using var scenario = new BaselineScenario();
@@ -616,8 +630,8 @@ public sealed class BaselineOrchestrationTests
             Root, "MrFr3di/SmartPipe-Core", Sha, "2.2.0", "2.1.2", PackagesPath,
             "eng/baselines/2.1.2", WorkflowEvidencePath), cancellationToken);
 
-        public Task<BaselineVerificationResult> VerifyAsync(bool offline = true) => _verify.VerifyAsync(new VerifyBaselineOptions(
-            Root, ManifestPath, PackagesPath, Offline: offline), TestContext.Current.CancellationToken);
+        public Task<BaselineVerificationResult> VerifyAsync(bool offline = true, BaselineVerificationMode mode = BaselineVerificationMode.Full) => _verify.VerifyAsync(new VerifyBaselineOptions(
+            Root, ManifestPath, PackagesPath, Offline: offline, Mode: mode), TestContext.Current.CancellationToken);
 
         public void Dispose()
         {

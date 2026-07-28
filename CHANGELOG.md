@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.2.0] — Development
+
+### Build and package infrastructure
+
+- Central package management, lock-file reconciliation, package graph and
+  ownership manifests now drive current and release validation.
+- Consumer smoke workspaces use fail-closed source mapping and bounded package
+  archive extraction; package metadata validation rejects CI version drift.
+- Added contributor and architecture guides for package authoring and release
+  gates.
+
 ## [2.1.2] — 2026-07-15
 
 Patch release that separates JSON integrations into a dedicated package while

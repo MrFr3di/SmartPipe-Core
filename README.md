@@ -258,6 +258,8 @@ check for the public quick-start scenarios.
 - [Health checks](docs/health-checks.md)
 - [API reference](docs/api-reference.md)
 - [Contributing](docs/contributing.md)
+- [Package authoring](docs/contributing/package-authoring.md)
+- [Package infrastructure](docs/architecture/package-infrastructure.md)
 - [Migration from removed legacy APIs](docs/migration/legacy-to-typed.md)
 - [Migration to SmartPipe.Extensions.Json](docs/migration/2.1.2-json-package-split.md)
 

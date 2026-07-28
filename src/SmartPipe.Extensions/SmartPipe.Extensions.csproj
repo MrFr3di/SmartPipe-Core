@@ -1,28 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <SmartPipePackage>true</SmartPipePackage>
+  </PropertyGroup>
+  <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
+  <PropertyGroup>
     <PackageId>SmartPipe.Extensions</PackageId>
-    <Authors>SmartPipe</Authors>
-    <Description>Integrations for SmartPipe.Core including HTTP, EF Core, Dapper, CSV, Mapster, resilience, hosting, and health checks. Version 2.1.2 retains compatibility forwarding for JSON integrations moved to SmartPipe.Extensions.Json.</Description>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageIcon>icon.png</PackageIcon>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Integrations for SmartPipe.Core including HTTP, EF Core, Dapper, CSV, Mapster, resilience, hosting, and health checks. The 2.2.0 line retains compatibility forwarding for JSON integrations moved to SmartPipe.Extensions.Json.</Description>
     <PackageTags>etl;pipeline;polly;efcore;dapper;mapster;csvhelper;json;compression</PackageTags>
-    <RepositoryUrl>https://github.com/MrFr3di/SmartPipe-Core</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
-    <PackageProjectUrl>https://github.com/MrFr3di/SmartPipe-Core</PackageProjectUrl>
-    <PublishRepositoryUrl>true</PublishRepositoryUrl>
-    <Deterministic>true</Deterministic>
-    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-    <EnablePackageValidation>true</EnablePackageValidation>
-    <PackageValidationBaselineVersion>2.1.1</PackageValidationBaselineVersion>
-    <ApiCompatEnableRuleCannotChangeParameterName>true</ApiCompatEnableRuleCannotChangeParameterName>
-    <EnableStrictModeForCompatibleTfms>true</EnableStrictModeForCompatibleTfms>
+    <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
+    <PackageValidationBaselineVersion>2.1.2</PackageValidationBaselineVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -37,24 +23,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CsvHelper" Version="33.1.0" />
-    <PackageReference Include="Dapper" Version="2.1.79" />
-    <PackageReference Include="Mapster" Version="10.0.10" />
+    <PackageReference Include="CsvHelper" />
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Mapster" />
     <PackageReference
       Include="Microsoft.CodeAnalysis.PublicApiAnalyzers"
-      Version="5.6.0"
       PrivateAssets="all"
     />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.8" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.8" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.8" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.8" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
-    <PackageReference Include="Microsoft.Extensions.Resilience" Version="10.6.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Resilience" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Include="..\SmartPipe.Core\icon.png" Pack="true" PackagePath="\" />
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
 </Project>

@@ -8,8 +8,10 @@ internal static class Program
         {
             "wait" => WaitUntilKilled(),
             "pressure" => WriteOutputPressure(),
+            "spill-pressure" => WriteSpillPressure(),
             "long-query" => WriteLongQuery(),
             "spawn-descendant" when args.Length == 2 => SpawnOutputHoldingDescendant(args[1]),
+            "spawn-descendant-signal" when args.Length == 3 => SpawnDescendantSignalAndWait(args[1], args[2]),
             "descendant-hold" => WaitUntilKilled(),
             "echo" when args.Length >= 2 => EchoArgumentsAndExit(args),
             "exit-zero" => 0,
@@ -69,6 +71,36 @@ internal static class Program
             ?? throw new InvalidOperationException("Unable to start descendant fixture process.");
         File.WriteAllText(processIdPath, descendant.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
         return 0;
+    }
+
+    private static int WriteSpillPressure()
+    {
+        var chunk = new string('S', 1024);
+        for (var index = 0; index < 6144; index++) Console.Out.WriteLine(chunk);
+        Console.Out.Write("SPILL-END");
+        return 0;
+    }
+
+    private static int SpawnDescendantSignalAndWait(string processIdPath, string signalPipeName)
+    {
+        var startInfo = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = Environment.ProcessPath!,
+            UseShellExecute = false,
+        };
+        startInfo.ArgumentList.Add("descendant-hold");
+        using var descendant = System.Diagnostics.Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Unable to start descendant fixture process.");
+        File.WriteAllText(processIdPath, descendant.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        using var signal = new System.IO.Pipes.NamedPipeClientStream(
+            ".",
+            signalPipeName,
+            System.IO.Pipes.PipeDirection.Out);
+        signal.Connect(5000);
+        signal.WriteByte(1);
+        signal.Flush();
+        return WaitUntilKilled();
     }
 
     private static int EchoArgumentsAndExit(string[] args)

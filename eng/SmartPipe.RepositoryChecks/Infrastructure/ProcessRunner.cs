@@ -9,12 +9,16 @@ namespace SmartPipe.RepositoryChecks.Infrastructure;
 internal sealed record ProcessRequest(
     string FileName,
     IReadOnlyList<string> Arguments,
-    TimeSpan Timeout);
+    TimeSpan Timeout,
+    string? WorkingDirectory = null,
+    string? OutputLogDirectory = null);
 
 internal sealed record ProcessResult(
     int ExitCode,
     string StandardOutput,
-    string StandardError);
+    string StandardError,
+    string? StandardOutputLog = null,
+    string? StandardErrorLog = null);
 
 internal enum ProcessFailureKind
 {
@@ -61,12 +65,14 @@ internal interface IProcessHostLocator
 internal sealed class ProcessRunner : IProcessRunner
 {
     private const int DefaultMaximumRetainedOutputCharacters = 64 * 1024;
+    private const int DefaultMaximumSpillOutputCharacters = 16 * 1024 * 1024;
     private static readonly TimeSpan DefaultTerminationObservationTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan DefaultProcessHostHandshakeTimeout = TimeSpan.FromSeconds(5);
 
     private readonly IProcessTerminator _terminator;
     private readonly TimeSpan _terminationObservationTimeout;
     private readonly int _maximumRetainedOutputCharacters;
+    private readonly int _maximumSpillOutputCharacters;
     private readonly IProcessHostLocator _processHostLocator;
     private readonly TimeSpan _processHostHandshakeTimeout;
 
@@ -74,6 +80,7 @@ internal sealed class ProcessRunner : IProcessRunner
         IProcessTerminator? terminator = null,
         TimeSpan? terminationObservationTimeout = null,
         int maximumRetainedOutputCharacters = DefaultMaximumRetainedOutputCharacters,
+        int maximumSpillOutputCharacters = DefaultMaximumSpillOutputCharacters,
         IProcessHostLocator? processHostLocator = null,
         TimeSpan? processHostHandshakeTimeout = null)
     {
@@ -83,6 +90,7 @@ internal sealed class ProcessRunner : IProcessRunner
         }
 
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumRetainedOutputCharacters);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumSpillOutputCharacters, maximumRetainedOutputCharacters);
         if (processHostHandshakeTimeout <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(processHostHandshakeTimeout));
@@ -91,6 +99,7 @@ internal sealed class ProcessRunner : IProcessRunner
         _terminator = terminator ?? new SystemProcessTerminator();
         _terminationObservationTimeout = terminationObservationTimeout ?? DefaultTerminationObservationTimeout;
         _maximumRetainedOutputCharacters = maximumRetainedOutputCharacters;
+        _maximumSpillOutputCharacters = maximumSpillOutputCharacters;
         _processHostLocator = processHostLocator ?? new RepositoryCheckProcessHostLocator();
         _processHostHandshakeTimeout = processHostHandshakeTimeout ?? DefaultProcessHostHandshakeTimeout;
     }
@@ -138,10 +147,14 @@ internal sealed class ProcessRunner : IProcessRunner
                 exception);
         }
 
-        var standardOutputTask = new BoundedRedactingOutputCollector(_maximumRetainedOutputCharacters)
-            .CollectAsync(process.StandardOutput);
-        var standardErrorTask = new BoundedRedactingOutputCollector(_maximumRetainedOutputCharacters)
-            .CollectAsync(process.StandardError);
+        var logId = Guid.NewGuid().ToString("N");
+        var stdoutLog = request.OutputLogDirectory is null ? null : Path.Combine(request.OutputLogDirectory, logId + ".stdout.log");
+        var stderrLog = request.OutputLogDirectory is null ? null : Path.Combine(request.OutputLogDirectory, logId + ".stderr.log");
+        if (request.OutputLogDirectory is not null) Directory.CreateDirectory(request.OutputLogDirectory);
+        var standardOutputTask = new BoundedRedactingOutputCollector(_maximumRetainedOutputCharacters, _maximumSpillOutputCharacters)
+            .CollectWithLogAsync(process.StandardOutput, stdoutLog);
+        var standardErrorTask = new BoundedRedactingOutputCollector(_maximumRetainedOutputCharacters, _maximumSpillOutputCharacters)
+            .CollectWithLogAsync(process.StandardError, stderrLog);
         using var timeout = new CancellationTokenSource(request.Timeout);
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
@@ -202,10 +215,9 @@ internal sealed class ProcessRunner : IProcessRunner
                 }
             }
 
-            return new ProcessResult(
-                targetExitCode,
-                await standardOutputTask.ConfigureAwait(false),
-                await standardErrorTask.ConfigureAwait(false));
+            var standardOutput = await standardOutputTask.ConfigureAwait(false);
+            var standardError = await standardErrorTask.ConfigureAwait(false);
+            return new ProcessResult(targetExitCode, standardOutput.Retained, standardError.Retained, standardOutput.LogPath, standardError.LogPath);
         }
         catch (OperationCanceledException exception)
         {
@@ -283,6 +295,7 @@ internal sealed class ProcessRunner : IProcessRunner
         startInfo.ArgumentList.Add(pipeName);
         startInfo.ArgumentList.Add(nonce);
         startInfo.ArgumentList.Add(request.FileName);
+        startInfo.ArgumentList.Add(request.WorkingDirectory ?? string.Empty);
         startInfo.ArgumentList.Add("--");
         foreach (var argument in request.Arguments)
         {
@@ -350,7 +363,7 @@ internal sealed class ProcessRunner : IProcessRunner
         }
     }
 
-    private async Task<bool> ObserveOutputAsync(Task<string> standardOutput, Task<string> standardError)
+    private async Task<bool> ObserveOutputAsync(Task<CollectedProcessOutput> standardOutput, Task<CollectedProcessOutput> standardError)
     {
         try
         {
@@ -460,6 +473,7 @@ internal static class RepositoryCheckProcessHost
                 out var pipeName,
                 out var nonce,
                 out var targetFileName,
+                out var targetWorkingDirectory,
                 out var targetArguments))
         {
             return InvalidArgumentsExitCode;
@@ -561,6 +575,7 @@ internal static class RepositoryCheckProcessHost
                     control,
                     nonce,
                     targetFileName,
+                    targetWorkingDirectory,
                     targetArguments,
                     hostLifetimeCancellation)
                 .ConfigureAwait(false);
@@ -595,12 +610,13 @@ internal static class RepositoryCheckProcessHost
         Stream control,
         string nonce,
         string targetFileName,
+        string? targetWorkingDirectory,
         IReadOnlyList<string> targetArguments,
         CancellationToken hostLifetimeCancellation)
     {
         using var target = new Process
         {
-            StartInfo = CreateTargetStartInfo(targetFileName, targetArguments),
+            StartInfo = CreateTargetStartInfo(targetFileName, targetWorkingDirectory, targetArguments),
         };
         try
         {
@@ -641,18 +657,20 @@ internal static class RepositoryCheckProcessHost
         out string pipeName,
         out string nonce,
         out string targetFileName,
+        out string? targetWorkingDirectory,
         out IReadOnlyList<string> targetArguments)
     {
         pipeName = string.Empty;
         nonce = string.Empty;
         targetFileName = string.Empty;
+        targetWorkingDirectory = null;
         targetArguments = [];
-        if (arguments.Count < 4
+        if (arguments.Count < 5
             || string.IsNullOrWhiteSpace(arguments[0])
             || arguments[0].Length > 128
             || !Guid.TryParseExact(arguments[1], "N", out _)
             || string.IsNullOrWhiteSpace(arguments[2])
-            || !string.Equals(arguments[3], "--", StringComparison.Ordinal))
+            || !string.Equals(arguments[4], "--", StringComparison.Ordinal))
         {
             return false;
         }
@@ -660,7 +678,12 @@ internal static class RepositoryCheckProcessHost
         pipeName = arguments[0];
         nonce = arguments[1];
         targetFileName = arguments[2];
-        targetArguments = arguments.Skip(4).ToArray();
+        targetWorkingDirectory = string.IsNullOrEmpty(arguments[3]) ? null : arguments[3];
+        if (targetWorkingDirectory is not null)
+        {
+            if (!Path.IsPathFullyQualified(targetWorkingDirectory) || !Directory.Exists(targetWorkingDirectory)) return false;
+        }
+        targetArguments = arguments.Skip(5).ToArray();
         return true;
     }
 
@@ -748,6 +771,7 @@ internal static class RepositoryCheckProcessHost
 
     private static ProcessStartInfo CreateTargetStartInfo(
         string targetFileName,
+        string? workingDirectory,
         IReadOnlyList<string> targetArguments)
     {
         var startInfo = new ProcessStartInfo
@@ -757,6 +781,7 @@ internal static class RepositoryCheckProcessHost
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,
+            WorkingDirectory = workingDirectory ?? string.Empty,
         };
         foreach (var argument in targetArguments)
         {
@@ -767,78 +792,92 @@ internal static class RepositoryCheckProcessHost
     }
 }
 
+internal sealed record CollectedProcessOutput(string Retained, string? LogPath);
+
 internal sealed class BoundedRedactingOutputCollector
 {
     private const string TruncatedMarker = "[output truncated]\n";
     private const string OversizedLineMarker = "[oversized output line redacted]";
 
     private readonly int _maximumRetainedCharacters;
+    private readonly int _maximumLogCharacters;
 
-    public BoundedRedactingOutputCollector(int maximumRetainedCharacters)
+    public BoundedRedactingOutputCollector(int maximumRetainedCharacters, int maximumLogCharacters = 16 * 1024 * 1024)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumRetainedCharacters);
         _maximumRetainedCharacters = maximumRetainedCharacters;
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumLogCharacters, maximumRetainedCharacters);
+        _maximumLogCharacters = maximumLogCharacters;
     }
 
     public async Task<string> CollectAsync(TextReader reader)
+        => (await CollectWithLogAsync(reader, null).ConfigureAwait(false)).Retained;
+
+    public async Task<CollectedProcessOutput> CollectWithLogAsync(TextReader reader, string? logPath)
     {
         ArgumentNullException.ThrowIfNull(reader);
+        StreamWriter? log = null;
+        if (logPath is not null)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+            log = new StreamWriter(logPath, append: false, new UTF8Encoding(false));
+        }
         var retained = new StringBuilder(_maximumRetainedCharacters);
         var pendingLine = new StringBuilder(Math.Min(_maximumRetainedCharacters, 4096));
         var buffer = new char[4096];
         var outputTruncated = false;
         var oversizedLine = false;
-        int charactersRead;
-        while ((charactersRead = await reader.ReadAsync(buffer).ConfigureAwait(false)) != 0)
+        var loggedCharacters = 0;
+        var logTruncated = false;
+        async Task AppendAsync(string value)
         {
-            for (var index = 0; index < charactersRead; index++)
+            AppendBounded(retained, value, ref outputTruncated);
+            if (log is null || logTruncated) return;
+            var available = _maximumLogCharacters - loggedCharacters;
+            if (available <= 0) { await log.WriteAsync("\n[spill log truncated]\n").ConfigureAwait(false); logTruncated = true; return; }
+            var written = value.Length <= available ? value : value[..available];
+            await log.WriteAsync(written).ConfigureAwait(false);
+            loggedCharacters += written.Length;
+            if (written.Length != value.Length) { await log.WriteAsync("\n[spill log truncated]\n").ConfigureAwait(false); logTruncated = true; }
+        }
+        int charactersRead;
+        try
+        {
+            while ((charactersRead = await reader.ReadAsync(buffer).ConfigureAwait(false)) != 0)
             {
-                var character = buffer[index];
-                if (oversizedLine)
+                for (var index = 0; index < charactersRead; index++)
                 {
+                    var character = buffer[index];
+                    if (oversizedLine)
+                    {
+                        if (character == '\n')
+                        {
+                            await AppendAsync(OversizedLineMarker + "\n").ConfigureAwait(false);
+                            oversizedLine = false;
+                        }
+                        continue;
+                    }
                     if (character == '\n')
                     {
-                        AppendBounded(retained, OversizedLineMarker + "\n", ref outputTruncated);
-                        oversizedLine = false;
+                        await AppendAsync(DiagnosticRedactor.Redact(pendingLine.ToString()) + "\n").ConfigureAwait(false);
+                        pendingLine.Clear();
                     }
-
-                    continue;
-                }
-
-                if (character == '\n')
-                {
-                    AppendBounded(
-                        retained,
-                        DiagnosticRedactor.Redact(pendingLine.ToString()),
-                        ref outputTruncated);
-                    AppendBounded(retained, "\n", ref outputTruncated);
-                    pendingLine.Clear();
-                }
-                else if (pendingLine.Length == _maximumRetainedCharacters)
-                {
-                    pendingLine.Clear();
-                    oversizedLine = true;
-                }
-                else
-                {
-                    pendingLine.Append(character);
+                    else if (pendingLine.Length == _maximumLogCharacters)
+                    {
+                        pendingLine.Clear();
+                        oversizedLine = true;
+                    }
+                    else pendingLine.Append(character);
                 }
             }
+            if (oversizedLine) await AppendAsync(OversizedLineMarker).ConfigureAwait(false);
+            else if (pendingLine.Length > 0) await AppendAsync(DiagnosticRedactor.Redact(pendingLine.ToString())).ConfigureAwait(false);
         }
-
-        if (oversizedLine)
+        finally
         {
-            AppendBounded(retained, OversizedLineMarker, ref outputTruncated);
+            if (log is not null) await log.DisposeAsync().ConfigureAwait(false);
         }
-        else if (pendingLine.Length > 0)
-        {
-            AppendBounded(
-                retained,
-                DiagnosticRedactor.Redact(pendingLine.ToString()),
-                ref outputTruncated);
-        }
-
-        return outputTruncated ? TruncatedMarker + retained : retained.ToString();
+        return new(outputTruncated ? TruncatedMarker + retained : retained.ToString(), logPath);
     }
 
     private void AppendBounded(StringBuilder retained, string value, ref bool outputTruncated)
@@ -882,11 +921,22 @@ internal static partial class DiagnosticRedactor
             }
         }
 
-        return UriQueryRegex().Replace(redacted, "${url}?<redacted>");
+        redacted = SensitiveUriRegex().Replace(redacted, static match =>
+        {
+            if (!Uri.TryCreate(match.Value, UriKind.Absolute, out var uri)) return "<redacted-url>";
+            var authority = uri.GetLeftPart(UriPartial.Authority);
+            if (!string.IsNullOrEmpty(uri.UserInfo)) authority = authority.Replace(uri.UserInfo + "@", "<redacted>@", StringComparison.Ordinal);
+            return authority + uri.AbsolutePath + (string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment) ? "" : "?<redacted>");
+        });
+        return CredentialRegex().Replace(redacted, "${key}=<redacted>");
     }
 
     [GeneratedRegex(@"(?<url>https?://[^\s?]+)\?[^\s]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex UriQueryRegex();
+    [GeneratedRegex(@"https?://[^\s]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex SensitiveUriRegex();
+    [GeneratedRegex(@"(?<key>password|passwd|token|apikey|api_key|secret)\s*=\s*[^\s;]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex CredentialRegex();
 
     private static string ReplaceHomeVariantAtPathBoundaries(string value, string variant)
     {
