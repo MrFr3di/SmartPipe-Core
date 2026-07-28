@@ -59,3 +59,81 @@ SmartPipe.Core.TimeoutRetryMode.CooperativeOnly = 0 -> SmartPipe.Core.TimeoutRet
 SmartPipe.Core.TimeoutRetryMode.DetachAndRetryIdempotent = 2 -> SmartPipe.Core.TimeoutRetryMode
 SmartPipe.Core.TimeoutRetryMode.DetachWithoutRetry = 1 -> SmartPipe.Core.TimeoutRetryMode
 static SmartPipe.Core.SecretScanner.Scan(string! content) -> SmartPipe.Core.SecretScanResult
+SmartPipe.Core.PipelineKey
+SmartPipe.Core.PipelineKey.PipelineKey() -> void
+SmartPipe.Core.PipelineKey.PipelineKey(string! value) -> void
+SmartPipe.Core.PipelineKey.Equals(SmartPipe.Core.PipelineKey other) -> bool
+SmartPipe.Core.PipelineKey.IsEmpty.get -> bool
+SmartPipe.Core.PipelineKey.Value.get -> string!
+override SmartPipe.Core.PipelineKey.GetHashCode() -> int
+override SmartPipe.Core.PipelineKey.ToString() -> string!
+~override SmartPipe.Core.PipelineKey.Equals(object obj) -> bool
+static SmartPipe.Core.PipelineKey.operator !=(SmartPipe.Core.PipelineKey left, SmartPipe.Core.PipelineKey right) -> bool
+static SmartPipe.Core.PipelineKey.operator ==(SmartPipe.Core.PipelineKey left, SmartPipe.Core.PipelineKey right) -> bool
+SmartPipe.Core.PipelineStageKey
+SmartPipe.Core.PipelineStageKey.PipelineStageKey() -> void
+SmartPipe.Core.PipelineStageKey.PipelineStageKey(string! value) -> void
+SmartPipe.Core.PipelineStageKey.Equals(SmartPipe.Core.PipelineStageKey other) -> bool
+SmartPipe.Core.PipelineStageKey.IsEmpty.get -> bool
+SmartPipe.Core.PipelineStageKey.Value.get -> string!
+override SmartPipe.Core.PipelineStageKey.GetHashCode() -> int
+override SmartPipe.Core.PipelineStageKey.ToString() -> string!
+~override SmartPipe.Core.PipelineStageKey.Equals(object obj) -> bool
+static SmartPipe.Core.PipelineStageKey.operator !=(SmartPipe.Core.PipelineStageKey left, SmartPipe.Core.PipelineStageKey right) -> bool
+static SmartPipe.Core.PipelineStageKey.operator ==(SmartPipe.Core.PipelineStageKey left, SmartPipe.Core.PipelineStageKey right) -> bool
+SmartPipe.Core.PipelineActivationContext
+SmartPipe.Core.PipelineActivationContext.PipelineActivationContext(SmartPipe.Core.PipelineKey pipelineKey, System.Guid runId, System.IServiceProvider? services = null, System.TimeProvider? timeProvider = null) -> void
+SmartPipe.Core.PipelineActivationContext.PipelineKey.get -> SmartPipe.Core.PipelineKey
+SmartPipe.Core.PipelineActivationContext.RunId.get -> System.Guid
+SmartPipe.Core.PipelineActivationContext.Services.get -> System.IServiceProvider?
+SmartPipe.Core.PipelineActivationContext.TimeProvider.get -> System.TimeProvider!
+SmartPipe.Core.PipelineComponent
+SmartPipe.Core.PipelineComponent<TComponent>
+SmartPipe.Core.PipelineComponent<TComponent>.Initialize.get -> bool
+SmartPipe.Core.PipelineComponent<TComponent>.Ownership.get -> SmartPipe.Core.PipelineComponentOwnership
+SmartPipe.Core.PipelineComponentOwnership
+SmartPipe.Core.PipelineComponentOwnership.ExternallyOwned = 2 -> SmartPipe.Core.PipelineComponentOwnership
+SmartPipe.Core.PipelineComponentOwnership.RuntimeOwned = 0 -> SmartPipe.Core.PipelineComponentOwnership
+SmartPipe.Core.PipelineComponentOwnership.ScopeOwned = 1 -> SmartPipe.Core.PipelineComponentOwnership
+static SmartPipe.Core.PipelineComponent.Borrowed<TComponent>(TComponent! instance, bool initialize = false) -> SmartPipe.Core.PipelineComponent<TComponent!>!
+static SmartPipe.Core.PipelineComponent.RuntimeOwned<TComponent>(System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<TComponent!>>! factory) -> SmartPipe.Core.PipelineComponent<TComponent!>!
+static SmartPipe.Core.PipelineComponent.ScopeOwned<TComponent>(System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<TComponent!>>! factory) -> SmartPipe.Core.PipelineComponent<TComponent!>!
+SmartPipe.Core.PipelineDefinition<TInput, TOutput>
+SmartPipe.Core.PipelineDefinition<TInput, TOutput>.HasSink.get -> bool
+SmartPipe.Core.PipelineDefinition<TInput, TOutput>.IsReusable.get -> bool
+SmartPipe.Core.PipelineDefinition<TInput, TOutput>.Key.get -> SmartPipe.Core.PipelineKey
+SmartPipe.Core.PipelineDefinition<TInput, TOutput>.LineageMode.get -> SmartPipe.Core.LineageMode
+SmartPipe.Core.PipelineDefinition<TInput, TOutput>.RuntimeOptions.get -> SmartPipe.Core.PipelineRuntimeOptions!
+SmartPipe.Core.PipelineDefinition<TInput, TOutput>.StartAsync(SmartPipe.Core.PipelineActivationContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SmartPipe.Core.PipelineRun<TOutput>!>!
+SmartPipe.Core.PipelineDefinition<TInput, TOutput>.StartAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SmartPipe.Core.PipelineRun<TOutput>!>!
+SmartPipe.Core.PipelineDefinition<TInput, TOutput>.Stages.get -> System.Collections.Generic.IReadOnlyList<SmartPipe.Core.PipelineStageMetadata!>!
+SmartPipe.Core.PipelineDefinitionBuilder
+SmartPipe.Core.PipelineDefinitionBuilder<TInput, TOutput>
+SmartPipe.Core.PipelineDefinitionBuilder<TInput, TOutput>.Build() -> SmartPipe.Core.PipelineDefinition<TInput, TOutput>!
+SmartPipe.Core.PipelineDefinitionBuilder<TInput, TOutput>.To(SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSink<TOutput>!>! sink) -> SmartPipe.Core.PipelineDefinition<TInput, TOutput>!
+SmartPipe.Core.PipelineDefinitionBuilder<TInput, TOutput>.Transform<TNext>(SmartPipe.Core.PipelineStageKey stageKey, SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineTransformer<TOutput, TNext>!>! transformer, SmartPipe.Core.StageFailureOptions? failureOptions = null, SmartPipe.Core.StageDeadLetterOptions<TOutput>? deadLetterOptions = null, string? stageName = null) -> SmartPipe.Core.PipelineDefinitionBuilder<TInput, TNext>!
+SmartPipe.Core.PipelineDefinitionBuilder<TInput, TOutput>.WithLineageMode(SmartPipe.Core.LineageMode lineageMode) -> SmartPipe.Core.PipelineDefinitionBuilder<TInput, TOutput>!
+SmartPipe.Core.PipelineDefinitionBuilder<TInput, TOutput>.WithObserver(SmartPipe.Core.IPipelineObserver! observer, SmartPipe.Core.ObserverReliability reliability = SmartPipe.Core.ObserverReliability.BestEffort, SmartPipe.Core.ObserverFailurePolicy failurePolicy = SmartPipe.Core.ObserverFailurePolicy.Log) -> SmartPipe.Core.PipelineDefinitionBuilder<TInput, TOutput>!
+SmartPipe.Core.PipelineDefinitionBuilder<TInput, TOutput>.WithRuntimeOptions(SmartPipe.Core.PipelineRuntimeOptions! options) -> SmartPipe.Core.PipelineDefinitionBuilder<TInput, TOutput>!
+SmartPipe.Core.PipelineDefinitionBuilder<TInput>
+SmartPipe.Core.PipelineDefinitionBuilder<TInput>.Build() -> SmartPipe.Core.PipelineDefinition<TInput, TInput>!
+SmartPipe.Core.PipelineDefinitionBuilder<TInput>.To(SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSink<TInput>!>! sink) -> SmartPipe.Core.PipelineDefinition<TInput, TInput>!
+SmartPipe.Core.PipelineDefinitionBuilder<TInput>.Transform<TNext>(SmartPipe.Core.PipelineStageKey stageKey, SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineTransformer<TInput, TNext>!>! transformer, SmartPipe.Core.StageFailureOptions? failureOptions = null, SmartPipe.Core.StageDeadLetterOptions<TInput>? deadLetterOptions = null, string? stageName = null) -> SmartPipe.Core.PipelineDefinitionBuilder<TInput, TNext>!
+SmartPipe.Core.PipelineDefinitionBuilder<TInput>.WithLineageMode(SmartPipe.Core.LineageMode lineageMode) -> SmartPipe.Core.PipelineDefinitionBuilder<TInput>!
+SmartPipe.Core.PipelineDefinitionBuilder<TInput>.WithObserver(SmartPipe.Core.IPipelineObserver! observer, SmartPipe.Core.ObserverReliability reliability = SmartPipe.Core.ObserverReliability.BestEffort, SmartPipe.Core.ObserverFailurePolicy failurePolicy = SmartPipe.Core.ObserverFailurePolicy.Log) -> SmartPipe.Core.PipelineDefinitionBuilder<TInput>!
+SmartPipe.Core.PipelineDefinitionBuilder<TInput>.WithRuntimeOptions(SmartPipe.Core.PipelineRuntimeOptions! options) -> SmartPipe.Core.PipelineDefinitionBuilder<TInput>!
+SmartPipe.Core.PipelineStageMetadata
+SmartPipe.Core.PipelineStageMetadata.FailureOptions.get -> SmartPipe.Core.StageFailureOptions!
+SmartPipe.Core.PipelineStageMetadata.InputType.get -> System.Type!
+SmartPipe.Core.PipelineStageMetadata.Key.get -> SmartPipe.Core.PipelineStageKey
+SmartPipe.Core.PipelineStageMetadata.Name.get -> string!
+SmartPipe.Core.PipelineStageMetadata.OutputType.get -> System.Type!
+SmartPipe.Core.PipelineStageMetadata.PipelineStageMetadata(SmartPipe.Core.PipelineStageKey key, string! name, System.Type! inputType, System.Type! outputType, SmartPipe.Core.StageFailureOptions! failureOptions) -> void
+static SmartPipe.Core.PipelineDefinitionBuilder.From<TInput>(SmartPipe.Core.PipelineKey pipelineKey, SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSource<TInput>!>! source) -> SmartPipe.Core.PipelineDefinitionBuilder<TInput>!
+SmartPipe.Core.PipelineActivationException
+SmartPipe.Core.PipelineActivationException.CleanupExceptions.get -> System.Collections.Generic.IReadOnlyList<System.Exception!>!
+SmartPipe.Core.PipelineActivationException.PipelineActivationException(SmartPipe.Core.PipelineKey pipelineKey, System.Guid runId, System.Exception! primaryException, System.Collections.Generic.IEnumerable<System.Exception!>! cleanupExceptions) -> void
+SmartPipe.Core.PipelineActivationException.PipelineKey.get -> SmartPipe.Core.PipelineKey
+SmartPipe.Core.PipelineActivationException.RunId.get -> System.Guid
+SmartPipe.Core.PipelineRun<TOutput>.PipelineKey.get -> SmartPipe.Core.PipelineKey
+SmartPipe.Core.PipelineRun<TOutput>.RunId.get -> System.Guid

@@ -91,6 +91,38 @@ Install `SmartPipe.Extensions` 2.1.2 for HTTP, database, CSV, mapping,
 resilience, hosting, and health-check integrations. JSON-only applications
 should reference `SmartPipe.Extensions.Json` directly.
 
+## Canonical Definitions In 2.2
+
+The 2.2 definition API separates resource-free construction from per-run
+activation. Every component enters through an explicit ownership descriptor;
+`Build()` and terminal `To()` validate and snapshot the definition without
+invoking factories:
+
+```csharp
+PipelineDefinition<int, string> definition = PipelineDefinitionBuilder
+    .From(
+        new PipelineKey("orders"),
+        PipelineComponent.RuntimeOwned<IPipelineSource<int>>(
+            static (_, _) => ValueTask.FromResult<IPipelineSource<int>>(new OrderSource())))
+    .Transform(
+        new PipelineStageKey("format"),
+        PipelineComponent.RuntimeOwned<IPipelineTransformer<int, string>>(
+            static (_, _) => ValueTask.FromResult<IPipelineTransformer<int, string>>(
+                PipelineTransformer.FromFunc<int, string>(
+                    static (value, _) => ValueTask.FromResult(value.ToString())))))
+    .Build();
+
+await using PipelineRun<string> run = await definition.StartAsync(cancellationToken);
+await run.Completion;
+```
+
+Definitions containing only per-run component descriptors are reusable. A
+borrowed component, observer instance, or `StageDeadLetterOptions<T>` makes the
+definition single-use; Core never disposes those external resources.
+`StartAsync` returns only after activation, initialization, runtime `Running`
+state, and `PipelineStartedEvent` acceptance. Runtime-created handles expose the
+exact `PipelineKey` and `Guid RunId` for the run.
+
 ## Quick Start
 
 ```csharp
@@ -190,6 +222,9 @@ PipelineBuilder
 Do not mix instance components with `TransformFactory` or `ToFactory`. Use
 `.Transform(instance)` and `.To(instance)` for instance pipelines, or start with
 `.FromFactory(...)` when every run needs fresh runtime-owned components.
+Legacy instance registrations and observers are single-use even when an instance
+advertises `Reusable` or `SingletonExternal`; use the all-factory form for every
+repeated or concurrent run.
 
 Typed health checks can be registered for DI pipelines:
 

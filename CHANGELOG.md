@@ -2,6 +2,21 @@
 
 ## [2.2.0] — Development
 
+### Core definition and lifecycle model
+
+- Added immutable typed definitions with explicit pipeline/stage keys, per-run
+  activation context, ownership descriptors, cached structural compilation,
+  ordered rollback, readiness-aware startup, and exact run identity.
+- Existing `PipelineBuilder` signatures now route through the sole legacy adapter
+  into the generic compiler, activator, start operation, and executor. Factory
+  chains remain reusable and legacy stage/ID behavior is preserved.
+- Legacy instance sources, stages, sinks, and observers are intentionally
+  single-use, including instances marked `Reusable` or `SingletonExternal`.
+  Repeated and concurrent runs must use `FromFactory`, `TransformFactory`, and
+  `ToFactory`; losing starts fail before activation.
+- Non-generic definition metadata now exposes defensive read-only collections and
+  rejects duplicate stage IDs with the shared structural topology validator.
+
 ### Build and package infrastructure
 
 - Central package management, lock-file reconciliation, package graph and

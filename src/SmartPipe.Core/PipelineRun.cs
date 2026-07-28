@@ -20,6 +20,8 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
     private readonly Func<CancellationToken, ValueTask>? _abort;
     private readonly Func<ValueTask>? _dispose;
     private readonly Func<SmartPipeMetricsSnapshot>? _metricsProvider;
+    private readonly object _disposeGate = new();
+    private Task? _disposeTask;
 
     /// <summary>Creates a pipeline run handle.</summary>
     /// <param name="outputs">Primary output reader.</param>
@@ -62,6 +64,33 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
         Func<CancellationToken, ValueTask>? abort,
         Func<ValueTask>? dispose,
         Func<SmartPipeMetricsSnapshot>? metricsProvider
+    ) : this(
+        outputs,
+        completion,
+        stateProvider,
+        cancel,
+        drain,
+        tryDrain,
+        abort,
+        dispose,
+        metricsProvider,
+        default,
+        Guid.Empty)
+    {
+    }
+
+    internal PipelineRun(
+        ChannelReader<PipelineOutput<TOutput>> outputs,
+        Task completion,
+        Func<PipelineRunState> stateProvider,
+        Func<CancellationToken, ValueTask>? cancel,
+        Func<TimeSpan, CancellationToken, ValueTask>? drain,
+        Func<TimeSpan, CancellationToken, ValueTask<PipelineDrainResult>>? tryDrain,
+        Func<CancellationToken, ValueTask>? abort,
+        Func<ValueTask>? dispose,
+        Func<SmartPipeMetricsSnapshot>? metricsProvider,
+        PipelineKey pipelineKey,
+        Guid runId
     )
     {
         Outputs = outputs ?? throw new ArgumentNullException(nameof(outputs));
@@ -73,6 +102,20 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
         _abort = abort;
         _dispose = dispose;
         _metricsProvider = metricsProvider;
+        if (pipelineKey.IsEmpty)
+        {
+            if (runId != Guid.Empty)
+                throw new ArgumentException("A run identifier requires a pipeline key.", nameof(runId));
+        }
+        else
+        {
+            PipelineKeyGuard.ThrowIfInvalid(pipelineKey, nameof(pipelineKey));
+            if (runId == Guid.Empty)
+                throw new ArgumentException("RunId must not be empty.", nameof(runId));
+        }
+
+        PipelineKey = pipelineKey;
+        RunId = runId;
     }
 
     /// <summary>
@@ -101,7 +144,9 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
             _tryDrain,
             _abort,
             dispose,
-            _metricsProvider);
+            _metricsProvider,
+            PipelineKey,
+            RunId);
     }
 
     private readonly Func<PipelineRunState> _stateProvider;
@@ -111,6 +156,14 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
 
     /// <summary>Gets the task that observes run success, cancellation, or failure.</summary>
     public Task Completion { get; }
+
+    /// <summary>Gets the canonical definition identity for a runtime-created run.</summary>
+    /// <remarks>Manually constructed compatibility handles return the default key.</remarks>
+    public PipelineKey PipelineKey { get; }
+
+    /// <summary>Gets the canonical run identifier for a runtime-created run.</summary>
+    /// <remarks>Manually constructed compatibility handles return <see cref="Guid.Empty"/>.</remarks>
+    public Guid RunId { get; }
 
     /// <summary>Gets the current run state.</summary>
     public PipelineRunState State => _stateProvider();
@@ -162,7 +215,42 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
         _abort?.Invoke(ct) ?? ValueTask.CompletedTask;
 
     /// <inheritdoc />
-    public ValueTask DisposeAsync() => _dispose?.Invoke() ?? ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        if (_dispose is null)
+            return ValueTask.CompletedTask;
+
+        TaskCompletionSource? starter = null;
+        Task task;
+        lock (_disposeGate)
+        {
+            if (_disposeTask is null)
+            {
+                starter = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                _disposeTask = starter.Task;
+            }
+
+            task = _disposeTask;
+        }
+
+        if (starter is not null)
+            _ = CompleteDisposeAsync(starter);
+
+        return new(task);
+    }
+
+    private async Task CompleteDisposeAsync(TaskCompletionSource completion)
+    {
+        try
+        {
+            await _dispose!().ConfigureAwait(false);
+            completion.SetResult();
+        }
+        catch (Exception error)
+        {
+            completion.SetException(error);
+        }
+    }
 }
 
 /// <summary>Current lifecycle state for a <see cref="PipelineRun{TOutput}"/>.</summary>
