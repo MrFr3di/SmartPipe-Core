@@ -5,6 +5,7 @@ using SmartPipe.RepositoryChecks.Infrastructure;
 
 namespace SmartPipe.RepositoryChecks.Tests.NuGet;
 
+[Collection(ExternalProcessCollection.Name)]
 public sealed class ProcessRunnerTests
 {
     [Fact]

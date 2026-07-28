@@ -130,9 +130,6 @@ jobs:
         --mode current --configuration Release --package-version "$PACKAGE_VERSION"
         --output artifacts/packages --manifest artifacts/packages/manifest.json
 
-    - name: Verify baseline integrity
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-baseline --repo-root . --manifest eng/baselines/2.1.2/manifest.json --packages-dir artifacts/baselines/2.1.2 --mode integrity
-
     - name: Provision and verify 2.1.2 baseline
       run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-baseline --repo-root . --manifest eng/baselines/2.1.2/manifest.json --packages-dir artifacts/baselines/2.1.2 --mode integrity
 

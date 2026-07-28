@@ -4,6 +4,7 @@ using SmartPipe.RepositoryChecks.Tests.Repository;
 namespace SmartPipe.RepositoryChecks.Tests.Packaging;
 
 [Trait("Category", "PackageInfrastructure")]
+[Collection(ExternalProcessCollection.Name)]
 public sealed class PackageMetadataTargetTests
 {
     [Fact]

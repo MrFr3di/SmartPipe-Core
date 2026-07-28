@@ -101,6 +101,10 @@ def assert_baseline_lane(job: dict, label: str, *, require_scope: bool) -> None:
 
     online = named_step(job_steps, "Provision and verify 2.1.2 baseline")
     offline = named_step(job_steps, "Verify 2.1.2 baseline offline")
+    baseline_steps = [step for step in job_steps
+                      if "verify-baseline" in str(step.get("run", ""))]
+    require(len(baseline_steps) == 2,
+            f"{label} must run exactly one online and one offline baseline verification.")
     online_run = " ".join(str(online.get("run", "")).split())
     offline_run = " ".join(str(offline.get("run", "")).split())
     expected_online = ("dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
@@ -245,7 +249,7 @@ def validate(documents: dict[str, dict]) -> None:
         "Extensions tests", "JSON Extensions tests", "Core correctness regressions",
         "Core concurrency regressions", "Extensions correctness regressions",
         "PR concurrency regression repeat", "Test and benchmark warning gate",
-        "Pack packages from graph", "Verify baseline integrity",
+        "Pack packages from graph", "Provision and verify 2.1.2 baseline",
         "Verify package graph current", "Verify package metadata current",
         "Verify package ownership current", "Verify release versions current",
         "Run current consumers", "Vulnerable package scan", "Verify direct production audit policy", "Deprecated package scan",
@@ -257,7 +261,7 @@ def validate(documents: dict[str, dict]) -> None:
     gate_order = [
         "Restore locked", "Build", "Verify central package management", "Verify package projects",
         "Test and benchmark warning gate", "Pack packages from graph",
-        "Verify baseline integrity", "Verify package graph current",
+        "Provision and verify 2.1.2 baseline", "Verify package graph current",
         "Verify package metadata current", "Verify package ownership current",
         "Verify release versions current", "Run current consumers",
         "Vulnerable package scan", "Verify direct production audit policy",
@@ -285,9 +289,6 @@ def validate(documents: dict[str, dict]) -> None:
     ownership_run = str(named_step(reusable_steps, "Verify package ownership current").get("run", ""))
     require("--baseline eng/baselines/2.1.2" in ownership_run,
             "Ownership verification must use snapshot metadata from eng/baselines/2.1.2.")
-    baseline_integrity_run = str(named_step(reusable_steps, "Verify baseline integrity").get("run", ""))
-    require("--mode integrity" in baseline_integrity_run,
-            "Baseline integrity gate must use integrity mode.")
     audit_reports = {
         "Vulnerable package scan": "artifacts/audit/vulnerable.json",
         "Deprecated package scan": "artifacts/audit/deprecated.json",

@@ -7,6 +7,7 @@ using System.Text;
 
 namespace SmartPipe.RepositoryChecks.Tests.Scaffolding;
 
+[Collection(ExternalProcessCollection.Name)]
 public sealed class PackageTemplateRendererTests
 {
     [Theory]

@@ -7,6 +7,7 @@ using SmartPipe.RepositoryChecks.Tests.NuGet;
 namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 
 [Trait("Category", "PackageInfrastructure")]
+[Collection(ExternalProcessCollection.Name)]
 public sealed class ConsumerScenarioRunnerTests
 {
     [Fact]
