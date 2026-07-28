@@ -3,6 +3,8 @@
 **/obj/
 **/artifacts/
 **/nuget
+!assets/nuget/
+!assets/nuget/icon.png
 !eng/SmartPipe.RepositoryChecks/NuGet/
 !eng/SmartPipe.RepositoryChecks/NuGet/**
 !tests/SmartPipe.RepositoryChecks.Tests/NuGet/
