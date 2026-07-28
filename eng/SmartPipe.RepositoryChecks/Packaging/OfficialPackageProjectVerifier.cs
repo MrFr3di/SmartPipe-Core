@@ -217,7 +217,9 @@ internal sealed class OfficialPackageProjectVerifier
 
         var projectDirectory = Path.GetDirectoryName(projectPath)!;
         var expanded = source.Replace("$(SmartPipeRepositoryRoot)", root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-            .Replace("$(MSBuildProjectDirectory)", projectDirectory, StringComparison.OrdinalIgnoreCase);
+            .Replace("$(MSBuildProjectDirectory)", projectDirectory, StringComparison.OrdinalIgnoreCase)
+            .Replace('\\', Path.DirectorySeparatorChar)
+            .Replace('/', Path.DirectorySeparatorChar);
         if (expanded.Contains("$(", StringComparison.Ordinal))
         {
             return null;

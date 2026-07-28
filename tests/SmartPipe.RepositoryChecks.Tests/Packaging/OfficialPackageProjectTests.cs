@@ -65,6 +65,19 @@ public sealed class OfficialPackageProjectTests
         Assert.Contains(result.Errors, violation => violation.Code == "SPPKG005");
     }
 
+    [Fact]
+    public async Task Verify_WindowsStyleReadmePath_IsResolvedOnEveryPlatform()
+    {
+        using var repository = FixtureRepository();
+        repository.Write("src/SmartPipe.Core/SmartPipe.Core.csproj", ProjectXml("SmartPipe.Core", readme: "$(MSBuildProjectDirectory)\\README.md"));
+        repository.Write("src/SmartPipe.Core/README.md", "# Fixture");
+
+        var result = await new OfficialPackageProjectVerifier(FixturePackageIds).VerifyAsync(
+            repository.Path, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(result.Errors, violation => violation.Code == "SPPKG005");
+    }
+
     private static RepositoryTestDirectory FixtureRepository()
     {
         var repository = new RepositoryTestDirectory();
@@ -72,7 +85,8 @@ public sealed class OfficialPackageProjectTests
         repository.Write("eng/SmartPipe.Package.props", "<Project />");
         repository.Write("src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj", ProjectXml("SmartPipe.Extensions.Json", readme: "README.md", baseline: "2.1.2"));
         repository.Write("src/SmartPipe.Extensions/SmartPipe.Extensions.csproj", ProjectXml("SmartPipe.Extensions", readme: "README.md", baseline: "2.1.2"));
-        repository.Write("README.md", "# Fixture");
+        repository.Write("src/SmartPipe.Extensions.Json/README.md", "# Fixture");
+        repository.Write("src/SmartPipe.Extensions/README.md", "# Fixture");
         return repository;
     }
 

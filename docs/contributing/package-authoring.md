@@ -35,6 +35,8 @@ with `SmartPipePackage=true`. Keep package-specific description, tags, README,
 icon, repository metadata, XML documentation, symbols, Source Link, and API
 baselines in the package project or its template. Common properties come from
 `Directory.Build.props` and `eng/SmartPipe.Package.props`.
+README source paths use MSBuild path semantics on every supported operating
+system and must resolve to a file inside the repository.
 
 ## Dependency and ownership rules
 
