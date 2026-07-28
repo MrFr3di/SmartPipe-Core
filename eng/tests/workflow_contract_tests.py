@@ -106,7 +106,7 @@ def assert_baseline_lane(job: dict, label: str, *, require_scope: bool) -> None:
     expected_online = ("dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
                        "--configuration Release --no-build -- verify-baseline --repo-root . "
                        "--manifest eng/baselines/2.1.2/manifest.json "
-                       "--packages-dir artifacts/baselines/2.1.2")
+                       "--packages-dir artifacts/baselines/2.1.2 --mode integrity")
     forbidden = ("curl", "wget", "Invoke-WebRequest", "http://", "https://")
     require(not any(token.lower() in offline_run.lower() for token in forbidden),
             f"{label} offline baseline step must not be network-capable.")

@@ -444,11 +444,16 @@ public sealed class ProcessRunnerTests
     {
         var terminator = new RecordingTerminator();
         var runner = new ProcessRunner(terminator, TimeSpan.FromSeconds(2));
+        var signalName = $"smartpipe-timeout-target-started-{Guid.NewGuid():N}";
+        using var signal = CreateSignalServer(signalName);
 
-        var exception = await Assert.ThrowsAsync<ProcessRunnerException>(
-            () => runner.RunAsync(
-                CreateFixtureRequest("wait", TimeSpan.FromMilliseconds(250)),
-                TestContext.Current.CancellationToken));
+        var runTask = runner.RunAsync(
+            CreateFixtureRequest(["signal-wait", signalName], TimeSpan.FromSeconds(5)),
+            TestContext.Current.CancellationToken);
+        var signalTask = WaitForSignalAsync(signal);
+        Assert.Same(signalTask, await Task.WhenAny(signalTask, runTask));
+        await signalTask;
+        var exception = await Assert.ThrowsAsync<ProcessRunnerException>(() => runTask);
 
         Assert.Equal(ProcessFailureKind.Timeout, exception.FailureKind);
         Assert.NotNull(terminator.ProcessId);
