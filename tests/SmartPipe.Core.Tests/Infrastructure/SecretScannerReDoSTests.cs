@@ -218,21 +218,32 @@ public class SecretScannerReDoSTests
     public void FixedSeedNestedEncodingBeyondRecursionLimit_ShouldFailClosedWithoutAmplification()
     {
         var random = new Random(20260702);
+        var inputs = new string[16];
 
-        for (var i = 0; i < 16; i++)
-        {
-            var bytes = new byte[256];
-            random.NextBytes(bytes);
-            var encoded = "clean-" + Convert.ToHexString(bytes);
-            for (var depth = 0; depth <= SecretScanner.MaxRecursionDepth; depth++)
-                encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(encoded));
+        for (var index = 0; index < inputs.Length; index++)
+            inputs[index] = CreateNestedEncodedInput(random);
 
-            var stopwatch = Stopwatch.StartNew();
-            var result = SecretScanner.Scan(encoded);
-            stopwatch.Stop();
+        var warmupInput = CreateNestedEncodedInput(new Random(20260701));
+        SecretScanner.Scan(warmupInput).Should().Be(SecretScanResult.Indeterminate);
 
-            result.Should().Be(SecretScanResult.Indeterminate);
-            stopwatch.ElapsedMilliseconds.Should().BeLessThan(100);
-        }
+        var results = new SecretScanResult[inputs.Length];
+        var stopwatch = Stopwatch.StartNew();
+        for (var index = 0; index < inputs.Length; index++)
+            results[index] = SecretScanner.Scan(inputs[index]);
+        stopwatch.Stop();
+
+        results.Should().OnlyContain(result => result == SecretScanResult.Indeterminate);
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(100));
+    }
+
+    private static string CreateNestedEncodedInput(Random random)
+    {
+        var bytes = new byte[256];
+        random.NextBytes(bytes);
+        var encoded = "clean-" + Convert.ToHexString(bytes);
+        for (var depth = 0; depth <= SecretScanner.MaxRecursionDepth; depth++)
+            encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(encoded));
+
+        return encoded;
     }
 }
