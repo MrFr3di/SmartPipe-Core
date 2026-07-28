@@ -68,6 +68,52 @@ Factory APIs are strict. `TransformFactory` and `ToFactory` require a pipeline
 created with `.FromFactory(...)`; use `.Transform(instance)` and `.To(instance)`
 for instance pipelines.
 
+This single-use rule applies to every legacy instance registration and instance
+observer, including components that advertise the old `Reusable` or
+`SingletonExternal` lifetime. Repeated legacy runs must use an all-factory chain.
+The sole internal adapter converts those registrations to generic component
+descriptors and calls `StartDeferred`; there is no separate legacy activation or
+executor lifecycle. A second/concurrent instance start fails before activation.
+
+Legacy `Run`, `To`, and `ToFactory` remain non-blocking with respect to component
+initialization. Startup faults are observed through `Completion`. An unexpected
+user `OperationCanceledException` without a requested cancellation is Faulted;
+only requested cancellation produces Cancelled or Aborted state.
+
+### Canonical Definition Foundations
+
+The 2.2 canonical model uses exact `PipelineKey` and `PipelineStageKey` values.
+They preserve input text, compare ordinally with case sensitivity, and reject an
+uninitialized default value at API boundaries. `PipelineActivationContext`
+binds one definition key to a non-empty run identifier and optional external
+services and time provider; Core owns neither dependency and creates no scope.
+
+New component descriptors keep ownership explicit. `RuntimeOwned` and
+`ScopeOwned` are lazy per-run factories and are initialized by Core. Only
+`RuntimeOwned` components are disposed by Core. `Borrowed` captures an exact
+externally owned instance, defaults to no initialization, is never disposed by
+Core, and is reserved for single-use definitions.
+
+Definition options are defensively materialized after validation. If activation
+receives an explicit `TimeProvider`, its adapter wins; otherwise an explicitly
+configured `PipelineRuntimeOptions.Clock` is preserved; otherwise the system
+clock singleton is used. A run must use that one resolved clock throughout.
+
+`PipelineDefinitionBuilder.From` requires an explicit key and retains only typed
+component descriptors. Fluent calls branch immutable copied state; `Build()` and
+terminal `To()` run the same pure structural validator and never invoke factories.
+The resulting generic definition exposes copied read-only stage metadata and a
+defensive runtime-options materialization. Compilation repeats validation and is
+cached with `LazyThreadSafetyMode.ExecutionAndPublication`; it creates no runtime
+resource.
+
+A canonical definition is reusable only when its source, stages, and optional
+sink are all per-run descriptors and it contains neither an observer instance nor
+dead-letter options. Observer instances and every object retained by
+`StageDeadLetterOptions<T>` are borrowed. In particular, Core never disposes the
+dead-letter stream, serializer, or redactor, and the definition is single-use even
+if a caller believes those objects support concurrent access.
+
 ## Channels
 
 Runtime input, output, and buffered observer channels are bounded and created by
@@ -161,6 +207,54 @@ task. For a started run, external disposal requests cancellation, waits for the
 run task to finish its owned cleanup, and then disposes executor-level
 primitives. If the runtime was never started, disposal performs component
 cleanup itself.
+
+### Definition Activation Ownership
+
+The generic 2.2 definition model creates a fresh activated graph per run. Its
+activation order is source, stages in definition order, then the optional sink.
+Each component follows one sequence: factory, ownership-ledger append, optional
+initialization. The ledger append happens before initialization so a component
+whose initialization fails can still be cleaned up.
+
+Only `RuntimeOwned` leases carry a cleanup callback. `ScopeOwned` and borrowed
+instances remain owned by their provider or caller and are never disposed by
+Core. Normal graph disposal and partial-activation rollback use the same cached,
+reverse-order cleanup task; concurrent callers neither duplicate callbacks nor
+short-circuit after a cleanup failure.
+
+Validation and pre-cancellation happen before a non-reusable definition is
+atomically claimed. Failures after the claim consume it permanently. A clean
+rollback preserves the original exception; rollback failures are reported as
+ordered cleanup errors on `PipelineActivationException`, whose `InnerException`
+remains the original activation or cancellation exception.
+
+### Definition Startup Readiness
+
+`PipelineDefinition<TInput,TOutput>.StartAsync` returns a runtime-created run
+only after all components are initialized, executor state is `Running`, and the
+started event has completed inline dispatch or buffered acceptance. The output
+reader and lifecycle task are created once before activation and are reused by
+the attached executor; there is no bridge channel or proxy execution path.
+
+The overload without an activation context generates a non-empty run identifier,
+supplies no services, and leaves `TimeProvider` implicit. An explicitly configured
+`PipelineRuntimeOptions.Clock` therefore wins over the system default. An explicit
+activation-context `TimeProvider` wins over that runtime clock, and the resolved
+clock is shared by startup, events, metrics, retries, and timeouts.
+
+A deferred run can be cancelled, aborted, drained, disposed, or have its outputs
+observed before readiness. Cancellation and abort cancel activation; disposal
+waits for rollback; drain waits for executor attachment or propagates startup
+failure. Canonical startup failure is returned only after the owned completion
+has observed cleanup. A run returned successfully is `Running` or terminal,
+never `NotStarted`.
+
+Runtime-created `PipelineRun<TOutput>` handles expose their exact `PipelineKey`
+and `Guid RunId`. The shipped public constructor creates compatibility handles
+with a default key and empty run identifier. `WithLifetime` propagates identity
+while replacing, not composing, completion and disposal. Every handle invokes
+its disposal delegate at most once; concurrent calls share one task and cached
+exception, and no user cleanup executes while the cache lock is held.
 
 ## Failure Handling
 

@@ -9,32 +9,20 @@ namespace SmartPipe.Core;
 
 internal sealed class TypedPipelineSpec<TInput, TOutput>
 {
-    private readonly IReadOnlyList<ITypedPipelineStage> _stages;
-    private int _runtimeCreated;
-
     public TypedPipelineSpec(
         string pipelineId,
         IPipelineSource<TInput> source,
         IReadOnlyList<ITypedPipelineStage> stages,
-        ComponentOwnershipOptions? ownershipOptions = null,
-        LineageMode lineageMode = LineageMode.Minimal,
-        bool isFactoryBased = false,
-        IEnumerable<PipelineObserverRegistration>? observers = null,
-        PipelineRuntimeOptions? runtimeOptions = null,
-        bool forcePipelineId = false
-    )
+        LineageMode lineageMode,
+        IReadOnlyList<PipelineObserverRegistration> observers,
+        bool forcePipelineId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pipelineId);
-        runtimeOptions ??= new PipelineRuntimeOptions();
-        runtimeOptions.Validate();
         PipelineId = pipelineId;
         Source = source ?? throw new ArgumentNullException(nameof(source));
-        _stages = stages ?? throw new ArgumentNullException(nameof(stages));
-        OwnershipOptions = ownershipOptions ?? ComponentOwnershipOptions.Default;
+        Stages = stages ?? throw new ArgumentNullException(nameof(stages));
         LineageMode = lineageMode;
-        IsFactoryBased = isFactoryBased;
-        Observers = (observers ?? []).ToArray();
-        RuntimeOptions = runtimeOptions;
+        Observers = observers ?? throw new ArgumentNullException(nameof(observers));
         ForcePipelineId = forcePipelineId;
     }
 
@@ -42,180 +30,19 @@ internal sealed class TypedPipelineSpec<TInput, TOutput>
 
     public IPipelineSource<TInput> Source { get; }
 
-    public ComponentOwnershipOptions OwnershipOptions { get; }
-
     public LineageMode LineageMode { get; }
 
-    public IReadOnlyList<ITypedPipelineStage> Stages => _stages;
-
-    public bool IsFactoryBased { get; }
+    public IReadOnlyList<ITypedPipelineStage> Stages { get; }
 
     public IReadOnlyList<PipelineObserverRegistration> Observers { get; }
 
-    public PipelineRuntimeOptions RuntimeOptions { get; }
-
     public bool ForcePipelineId { get; }
-
-    public bool IsReusable =>
-        IsFactoryBased
-        || IsComponentReusable(Source)
-            && _stages.All(stage => IsComponentReusable(stage.Component));
-
-    public TypedPipelineSpec<TInput, TNext> AddStage<TNext>(
-        IPipelineTransformer<TOutput, TNext> transformer,
-        StageFailureOptions? failureOptions = null,
-        StageDeadLetterOptions<TOutput>? deadLetterOptions = null
-    )
-    {
-        ArgumentNullException.ThrowIfNull(transformer);
-        var stages = _stages
-            .Concat([
-                new TypedPipelineStage<TOutput, TNext>(
-                    transformer,
-                    _stages.Count + 1,
-                    failureOptions,
-                    deadLetterOptions
-                ),
-            ])
-            .ToArray();
-
-        return new TypedPipelineSpec<TInput, TNext>(
-            PipelineId,
-            Source,
-            stages,
-            OwnershipOptions,
-            LineageMode,
-            IsFactoryBased,
-            Observers,
-            RuntimeOptions,
-            ForcePipelineId
-        );
-    }
-
-    public TypedPipelineSpec<TInput, TOutput> WithObserver(PipelineObserverRegistration observer)
-    {
-        ArgumentNullException.ThrowIfNull(observer);
-        return new TypedPipelineSpec<TInput, TOutput>(
-            PipelineId,
-            Source,
-            _stages,
-            OwnershipOptions,
-            LineageMode,
-            IsFactoryBased,
-            Observers.Concat([observer]),
-            RuntimeOptions,
-            ForcePipelineId
-        );
-    }
-
-    public TypedPipelineSpec<TInput, TOutput> WithPipelineId(string pipelineId)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(pipelineId);
-        return new TypedPipelineSpec<TInput, TOutput>(
-            pipelineId,
-            Source,
-            _stages,
-            OwnershipOptions,
-            LineageMode,
-            IsFactoryBased,
-            Observers,
-            RuntimeOptions,
-            forcePipelineId: true
-        );
-    }
-
-    public TypedPipelineSpec<TInput, TOutput> WithRuntimeOptions(PipelineRuntimeOptions options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        options.Validate();
-        return new TypedPipelineSpec<TInput, TOutput>(
-            PipelineId,
-            Source,
-            _stages,
-            OwnershipOptions,
-            LineageMode,
-            IsFactoryBased,
-            Observers,
-            options,
-            ForcePipelineId
-        );
-    }
-
-    public PipelineDefinition CreateDefinition(
-        IPipelineSink<TOutput>? sink,
-        bool sinkIsFactoryBased = false
-    )
-    {
-        MarkRuntimeCreated(sink);
-        var components = new List<PipelineComponentRegistration>
-        {
-            DescribeComponent(Source, IsFactoryBased),
-        };
-
-        foreach (var stage in _stages)
-            components.Add(DescribeComponent(stage.Component, IsFactoryBased));
-
-        if (sink is not null)
-            components.Add(DescribeComponent(sink, sinkIsFactoryBased));
-
-        return new PipelineDefinition(
-            PipelineId,
-            RuntimeOptions,
-            components,
-            _stages.Select(stage => new PipelineStageDefinition(
-                stage.StageId,
-                stage.StageName,
-                stage.InputType,
-                stage.OutputType,
-                stage.FailureOptions
-            )),
-            OwnershipOptions,
-            LineageMode
-        );
-    }
-
-    private static PipelineComponentRegistration DescribeComponent(
-        object component,
-        bool isFactoryBased
-    )
-    {
-        var descriptor = component as IPipelineComponentDescriptor;
-        return new PipelineComponentRegistration(
-            component.GetType(),
-            descriptor?.Lifetime ?? PipelineComponentLifetime.SingleUse,
-            descriptor?.OwnsResources ?? true,
-            isFactoryBased
-        );
-    }
-
-    private void MarkRuntimeCreated(IPipelineSink<TOutput>? sink)
-    {
-        var sinkReusable = sink is null || IsComponentReusable(sink);
-        if (IsReusable && sinkReusable)
-            return;
-
-        if (Interlocked.Exchange(ref _runtimeCreated, 1) == 1)
-        {
-            throw new InvalidOperationException(
-                "This pipeline definition contains single-use component instances and cannot create multiple runtimes. "
-                    + "Use factory-based registration or components that declare reusable lifetime."
-            );
-        }
-    }
-
-    private static bool IsComponentReusable(object component)
-    {
-        return component
-            is IPipelineComponentDescriptor
-        {
-            Lifetime: PipelineComponentLifetime.Reusable
-                    or PipelineComponentLifetime.SingletonExternal
-        };
-    }
 }
 
 internal interface ITypedPipelineStage
 {
+    PipelineStageKey Key { get; }
+
     string StageId { get; }
 
     string StageName { get; }
@@ -269,7 +96,6 @@ internal interface ITypedPipelineStage
         CancellationToken ct
     );
 
-    ValueTask DisposeAsync(ComponentOwnershipOptions ownershipOptions);
 }
 
 internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
@@ -282,14 +108,33 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
         int index,
         StageFailureOptions? failureOptions = null,
         StageDeadLetterOptions<TInput>? deadLetterOptions = null
-    )
+    ) : this(
+        transformer,
+        new PipelineStageKey($"stage-{index}"),
+        transformer?.GetType().Name ?? throw new ArgumentNullException(nameof(transformer)),
+        failureOptions,
+        deadLetterOptions)
+    {
+    }
+
+    public TypedPipelineStage(
+        IPipelineTransformer<TInput, TOutput> transformer,
+        PipelineStageKey key,
+        string name,
+        StageFailureOptions? failureOptions = null,
+        StageDeadLetterOptions<TInput>? deadLetterOptions = null)
     {
         _transformer = transformer ?? throw new ArgumentNullException(nameof(transformer));
+        PipelineStageKeyGuard.ThrowIfInvalid(key, nameof(key));
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        Key = key;
         FailureOptions = failureOptions ?? StageFailureOptions.Default;
         _deadLetterOptions = deadLetterOptions;
-        StageId = $"stage-{index}";
-        StageName = transformer.GetType().Name;
+        StageId = key.Value;
+        StageName = name;
     }
+
+    public PipelineStageKey Key { get; }
 
     public string StageId { get; }
 
@@ -544,14 +389,6 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
         return new DeadLetterWriteResult(input.TraceId, input.Attempt, StageId, StageName);
     }
 
-    public ValueTask DisposeAsync(ComponentOwnershipOptions ownershipOptions)
-    {
-        if (!ShouldDispose(_transformer, ownershipOptions))
-            return ValueTask.CompletedTask;
-
-        return _transformer.DisposeAsync();
-    }
-
     private IReadOnlyList<LineageEntry> AppendLineage(
         IReadOnlyList<LineageEntry> current,
         LineageMode lineageMode,
@@ -594,14 +431,6 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
         };
     }
 
-    private static bool ShouldDispose(object component, ComponentOwnershipOptions ownershipOptions)
-    {
-        if (component is not IPipelineComponentDescriptor descriptor)
-            return true;
-
-        return descriptor.Lifetime != PipelineComponentLifetime.SingletonExternal
-            || ownershipOptions.DisposeExternalComponents;
-    }
 }
 
 internal readonly record struct TypedStageExecutionResult(
@@ -827,30 +656,60 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private int _stopAcceptingRequested;
     private int _sourceStopReason;
     private int _publicCancellationPending;
+    private readonly TaskCompletionSource? _startupSignal;
+    private readonly PipelineKey _pipelineKey;
+    private readonly Guid _runId;
 
-    public TypedPipelineExecutor(
+    internal TypedPipelineExecutor(
+        PipelineKey pipelineKey,
+        Guid runId,
+        ActivatedPipelineGraph<TInput, TOutput> graph,
+        PipelineRuntimeOptions options,
+        LineageMode lineageMode,
+        bool forcePipelineId,
+        Channel<PipelineOutput<TOutput>> outputs,
+        CancellationToken cancellationToken,
+        TaskCompletionSource startupSignal)
+        : this(
+            CreateCanonicalRuntime(pipelineKey, runId, graph, options, lineageMode),
+            CreateCanonicalSpec(pipelineKey, graph, lineageMode, forcePipelineId),
+            graph.Sink,
+            cancellationToken,
+            graph.Lifetime,
+            outputs,
+            startupSignal,
+            pipelineKey,
+            runId)
+    {
+    }
+
+    private TypedPipelineExecutor(
         PipelineRuntime runtime,
         TypedPipelineSpec<TInput, TOutput> spec,
         IPipelineSink<TOutput>? sink,
-        CancellationToken ct
-    )
+        CancellationToken cancellationToken,
+        PipelineActivationLedger lifetime,
+        Channel<PipelineOutput<TOutput>>? outputs,
+        TaskCompletionSource? startupSignal,
+        PipelineKey pipelineKey,
+        Guid runId)
     {
         _publicCompletion = _publicCompletionSource.Task.Unwrap();
-        _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
-        _spec = spec ?? throw new ArgumentNullException(nameof(spec));
+        _runtime = runtime;
+        _spec = spec;
         _sink = sink;
+        _startupSignal = startupSignal;
+        _pipelineKey = pipelineKey;
+        _runId = runId;
         _options = _runtime.Options;
         _clock = _options.Clock;
         _time = new PipelineTime(_clock);
         _metrics = new SmartPipeMetricsRecorder(_clock);
         _lateAttemptRegistry = new LateStageAttemptRegistry(_time);
         _componentLifetime = new PipelineComponentLifetimeManager<TInput, TOutput>(
-            _spec.Source,
-            _spec.Stages,
-            _sink,
-            _spec.OwnershipOptions,
+            lifetime,
             _lateAttemptRegistry);
-        _outputs = CreateOutputChannel(_options, OnOutputDropped);
+        _outputs = outputs ?? CreateOutputChannel(_options, OnOutputDropped);
         _outputEmitter = new PipelineOutputEmitter<TOutput>(
             _outputs.Writer,
             _options,
@@ -890,7 +749,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _time,
             OnObserverEventDropped
         );
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _sourceCts = new CancellationTokenSource();
         _processingCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
         _sourceCancellationRegistration = _cts.Token.Register(
@@ -902,7 +761,50 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             : null;
     }
 
-    private static Channel<PipelineOutput<TOutput>> CreateOutputChannel(
+    private static PipelineRuntime CreateCanonicalRuntime(
+        PipelineKey pipelineKey,
+        Guid runId,
+        ActivatedPipelineGraph<TInput, TOutput> graph,
+        PipelineRuntimeOptions options,
+        LineageMode lineageMode)
+    {
+        PipelineKeyGuard.ThrowIfInvalid(pipelineKey, nameof(pipelineKey));
+        if (runId == Guid.Empty)
+            throw new ArgumentException("RunId must not be empty.", nameof(runId));
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var definition = new PipelineDefinition(
+            pipelineKey.Value,
+            options,
+            components: null,
+            graph.Stages.Select(stage => new PipelineStageDefinition(
+                stage.StageId,
+                stage.StageName,
+                stage.InputType,
+                stage.OutputType,
+                stage.FailureOptions)),
+            ComponentOwnershipOptions.Default,
+            lineageMode);
+        return new PipelineRuntime(
+            PipelineExecutionPlan.Compile(definition),
+            runId.ToString("N"));
+    }
+
+    private static TypedPipelineSpec<TInput, TOutput> CreateCanonicalSpec(
+        PipelineKey pipelineKey,
+        ActivatedPipelineGraph<TInput, TOutput> graph,
+        LineageMode lineageMode,
+        bool forcePipelineId) =>
+        new(
+            pipelineKey.Value,
+            graph.Source,
+            graph.Stages,
+            lineageMode,
+            graph.Observers,
+            forcePipelineId);
+
+    internal static Channel<PipelineOutput<TOutput>> CreateOutputChannel(
         PipelineRuntimeOptions options,
         Action<PipelineOutput<TOutput>> itemDropped)
     {
@@ -913,6 +815,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             options.OutputFullMode,
             itemDropped);
     }
+
+    internal void RecordOutputDropped(PipelineOutput<TOutput> output) =>
+        OnOutputDropped(output);
 
     public PipelineRun<TOutput> Start()
     {
@@ -947,7 +852,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             TryDrainAsync,
             AbortAsync,
             DisposeAsync,
-            CaptureMetricsSnapshot
+            CaptureMetricsSnapshot,
+            _pipelineKey,
+            _runId
         );
     }
 
@@ -1164,7 +1071,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     _processingCts.Token
                 )
                 .ConfigureAwait(false);
-            await _componentLifetime.InitializeAsync(_processingCts.Token).ConfigureAwait(false);
+            _startupSignal?.TrySetResult();
 
             if (_options.EffectiveMaxConcurrency == 1)
                 await RunSequentialProcessingAsync(_sourceCts.Token, _processingCts.Token).ConfigureAwait(false);
@@ -1214,8 +1121,19 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         ]).ConfigureAwait(false);
 
         _sinkExecutor.Dispose();
+        CompleteStartupFailure(outcome);
         CompletePublicRun(outcome);
         outcome.CompletionError?.Throw();
+    }
+
+    private void CompleteStartupFailure(TerminalOutcome outcome)
+    {
+        if (_startupSignal is null || _startupSignal.Task.IsCompleted)
+            return;
+
+        _startupSignal.TrySetException(
+            outcome.Exception
+            ?? new InvalidOperationException("Pipeline startup ended without a startup outcome."));
     }
 
     private TerminalOutcome DetermineTerminalOutcome(

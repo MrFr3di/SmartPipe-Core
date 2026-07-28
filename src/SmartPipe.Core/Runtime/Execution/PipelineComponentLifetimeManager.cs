@@ -6,37 +6,19 @@ namespace SmartPipe.Core;
 
 internal sealed class PipelineComponentLifetimeManager<TInput, TOutput>
 {
-    private readonly IPipelineSource<TInput> _source;
-    private readonly IReadOnlyList<ITypedPipelineStage> _stages;
-    private readonly IPipelineSink<TOutput>? _sink;
-    private readonly ComponentOwnershipOptions _ownershipOptions;
+    private readonly PipelineActivationLedger _lifetime;
     private readonly LateStageAttemptRegistry _lateAttemptRegistry;
     private readonly ConcurrentDictionary<string, Func<ValueTask>> _deferredStageDisposals = [];
     private readonly object _disposeGate = new();
     private Task<PipelineComponentCleanupResult>? _disposeTask;
 
     public PipelineComponentLifetimeManager(
-        IPipelineSource<TInput> source,
-        IReadOnlyList<ITypedPipelineStage> stages,
-        IPipelineSink<TOutput>? sink,
-        ComponentOwnershipOptions ownershipOptions,
+        PipelineActivationLedger lifetime,
         LateStageAttemptRegistry lateAttemptRegistry)
     {
-        _source = source ?? throw new ArgumentNullException(nameof(source));
-        _stages = stages ?? throw new ArgumentNullException(nameof(stages));
-        _sink = sink;
-        _ownershipOptions = ownershipOptions;
-        _lateAttemptRegistry = lateAttemptRegistry ?? throw new ArgumentNullException(nameof(lateAttemptRegistry));
-    }
-
-    public async ValueTask InitializeAsync(CancellationToken ct)
-    {
-        await _source.InitializeAsync(ct).ConfigureAwait(false);
-        foreach (var stage in _stages)
-            await stage.InitializeAsync(ct).ConfigureAwait(false);
-
-        if (_sink is not null)
-            await _sink.InitializeAsync(ct).ConfigureAwait(false);
+        _lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
+        _lateAttemptRegistry = lateAttemptRegistry
+            ?? throw new ArgumentNullException(nameof(lateAttemptRegistry));
     }
 
     public ValueTask<PipelineComponentCleanupResult> DisposeAsync()
@@ -47,8 +29,7 @@ internal sealed class PipelineComponentLifetimeManager<TInput, TOutput>
         {
             if (_disposeTask is null)
             {
-                starter = new TaskCompletionSource<PipelineComponentCleanupResult>(
-                    TaskCreationOptions.RunContinuationsAsynchronously);
+                starter = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 _disposeTask = starter.Task;
             }
 
@@ -58,7 +39,7 @@ internal sealed class PipelineComponentLifetimeManager<TInput, TOutput>
         if (starter is not null)
             _ = RunDisposeAsync(starter);
 
-        return new ValueTask<PipelineComponentCleanupResult>(task);
+        return new(task);
     }
 
     private async Task RunDisposeAsync(TaskCompletionSource<PipelineComponentCleanupResult> completion)
@@ -76,32 +57,25 @@ internal sealed class PipelineComponentLifetimeManager<TInput, TOutput>
     private async ValueTask<PipelineComponentCleanupResult> DisposeCoreAsync()
     {
         var lateAttemptErrors = await _lateAttemptRegistry.WaitForAllAsync().ConfigureAwait(false);
-        List<Func<ValueTask>> actions = [];
+        var cleanupErrors = await _lifetime.DisposeAsync(DisposeLeaseAsync).ConfigureAwait(false);
+        var disposeErrors = cleanupErrors.ToArray();
+        return new(
+            lateAttemptErrors.Concat(disposeErrors).ToArray(),
+            disposeErrors);
+    }
 
-        if (_sink is not null && ShouldDispose(_sink))
-            actions.Add(() => _sink.DisposeAsync());
-
-        for (int i = _stages.Count - 1; i >= 0; i--)
+    private ValueTask DisposeLeaseAsync(
+        ActivatedComponentLease lease,
+        Func<ValueTask> cleanup)
+    {
+        if (lease.StageKey is { } stageKey
+            && _lateAttemptRegistry.HasRunningAttempt(stageKey.Value))
         {
-            var stage = _stages[i];
-            if (_lateAttemptRegistry.HasRunningAttempt(stage.StageId))
-            {
-                _deferredStageDisposals.TryAdd(
-                    stage.StageId,
-                    () => stage.DisposeAsync(_ownershipOptions));
-                continue;
-            }
-
-            actions.Add(() => stage.DisposeAsync(_ownershipOptions));
+            _deferredStageDisposals.TryAdd(stageKey.Value, cleanup);
+            return ValueTask.CompletedTask;
         }
 
-        if (ShouldDispose(_source))
-            actions.Add(() => _source.DisposeAsync());
-
-        var cleanupErrors = await RuntimeCleanup.CollectAsync(actions).ConfigureAwait(false);
-        return new PipelineComponentCleanupResult(
-            lateAttemptErrors.Concat(cleanupErrors).ToArray(),
-            cleanupErrors);
+        return cleanup();
     }
 
     public async ValueTask<Exception[]> DisposeDeferredStagesAsync()
@@ -128,15 +102,6 @@ internal sealed class PipelineComponentLifetimeManager<TInput, TOutput>
         }
 
         return errors?.ToArray() ?? [];
-    }
-
-    private bool ShouldDispose(object component)
-    {
-        if (component is not IPipelineComponentDescriptor descriptor)
-            return true;
-
-        return descriptor.Lifetime != PipelineComponentLifetime.SingletonExternal
-            || _ownershipOptions.DisposeExternalComponents;
     }
 }
 

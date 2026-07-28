@@ -11,200 +11,6 @@ namespace SmartPipe.Core.Tests.Engine;
 public sealed class TypedPipelineLifecycleTests
 {
     [Fact]
-    public async Task Start_ThrowsOnSecondCall()
-    {
-        var transformer = new BlockingLifecycleTransformer<int>();
-        await using var executor = CreateLifecycleExecutor(
-            new CountingLifecycleSource<int>(1),
-            transformer);
-
-        var run = executor.Start();
-
-        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        var act = () => executor.Start();
-
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*already been started*");
-
-        await run.CancelAsync();
-        await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
-            .Should().ThrowAsync<OperationCanceledException>();
-        await run.DisposeAsync();
-    }
-
-    [Fact]
-    public async Task Start_ThrowsAfterCompletion()
-    {
-        await using var executor = CreateLifecycleExecutor(
-            new CountingLifecycleSource<int>(1, 2, 3),
-            new PassThroughLifecycleTransformer<int>());
-
-        var run = executor.Start();
-
-        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
-        run.State.Should().Be(PipelineRunState.Completed);
-
-        var act = () => executor.Start();
-
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*already been started*");
-        await run.DisposeAsync();
-    }
-
-    [Fact]
-    public async Task Start_ThrowsAfterDispose()
-    {
-        var transformer = new BlockingLifecycleTransformer<int>();
-        await using var executor = CreateLifecycleExecutor(
-            new CountingLifecycleSource<int>(1),
-            transformer);
-
-        var run = executor.Start();
-
-        await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        var disposeTask = run.DisposeAsync().AsTask();
-        await transformer.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await disposeTask.WaitAsync(TimeSpan.FromSeconds(5));
-
-        var act = () => executor.Start();
-
-        act.Should().Throw<ObjectDisposedException>()
-            .WithMessage("*pipeline runtime*");
-    }
-
-    [Fact]
-    public async Task Start_AfterNeverStartedDispose_ShouldThrowObjectDisposedException()
-    {
-        await using var executor = CreateLifecycleExecutor(
-            new CountingLifecycleSource<int>(1),
-            new PassThroughLifecycleTransformer<int>());
-
-        await executor.DisposeAsync();
-
-        var act = () => executor.Start();
-
-        act.Should().Throw<ObjectDisposedException>()
-            .WithMessage("*pipeline runtime*");
-    }
-
-    [Fact]
-    [Trait("Category", "ConcurrencyRegression")]
-    public async Task StartDisposeRace_ShouldPublishRunOrRejectStartWithoutPartialState()
-    {
-        for (var iteration = 0; iteration < 128; iteration++)
-        {
-            var transformer = new BlockingLifecycleTransformer<int>();
-            await using var executor = CreateLifecycleExecutor(
-                new CountingLifecycleSource<int>(1),
-                transformer);
-            using var barrier = new Barrier(2);
-
-            var startTask = Task.Run(() =>
-            {
-                barrier.SignalAndWait();
-                try
-                {
-                    return (Run: executor.Start(), Error: (Exception?)null);
-                }
-                catch (Exception ex)
-                {
-                    return (Run: (PipelineRun<int>?)null, Error: ex);
-                }
-            });
-            var disposeTask = Task.Run(async () =>
-            {
-                barrier.SignalAndWait();
-                await executor.DisposeAsync();
-            });
-
-            var start = await startTask.WaitAsync(TimeSpan.FromSeconds(5));
-            await disposeTask.WaitAsync(TimeSpan.FromSeconds(5));
-
-            if (start.Run is not null)
-            {
-                await FluentActions.Awaiting(() => start.Run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
-                    .Should().ThrowAsync<OperationCanceledException>();
-                start.Run.State.Should().BeOneOf(PipelineRunState.Cancelled, PipelineRunState.Aborted);
-            }
-            else
-            {
-                start.Error.Should().BeOfType<ObjectDisposedException>();
-            }
-        }
-    }
-
-    [Fact]
-    [Trait("Category", "ConcurrencyRegression")]
-    public async Task Start_AllowsOnlyOneConcurrentCaller()
-    {
-        var transformer = new BlockingLifecycleTransformer<int>();
-        await using var executor = CreateLifecycleExecutor(
-            new CountingLifecycleSource<int>(1),
-            transformer);
-        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        var attempts = Enumerable.Range(0, 64)
-            .Select(_ => Task.Run(async () =>
-            {
-                await gate.Task.ConfigureAwait(false);
-                try
-                {
-                    return (Run: executor.Start(), Exception: (Exception?)null);
-                }
-                catch (Exception ex)
-                {
-                    return (Run: (PipelineRun<int>?)null, Exception: ex);
-                }
-            }))
-            .ToArray();
-
-        gate.SetResult();
-
-        var results = await Task.WhenAll(attempts);
-        var successfulRuns = results
-            .Where(result => result.Run is not null)
-            .Select(result => result.Run!)
-            .ToArray();
-
-        try
-        {
-            successfulRuns.Should().ContainSingle();
-            results.Count(result => result.Exception is InvalidOperationException).Should().Be(63);
-            results.Count(result => result.Exception is not null
-                && result.Exception is not InvalidOperationException).Should().Be(0);
-
-            var run = successfulRuns.Single();
-            await transformer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            await run.CancelAsync();
-            await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
-                .Should().ThrowAsync<OperationCanceledException>();
-            await run.DisposeAsync();
-        }
-        finally
-        {
-            foreach (var run in successfulRuns)
-                await run.DisposeAsync();
-        }
-    }
-
-    [Fact]
-    public async Task Start_SingleRunLifecycleStillCompletes()
-    {
-        await using var executor = CreateLifecycleExecutor(
-            new CountingLifecycleSource<int>(1, 2, 3),
-            new PassThroughLifecycleTransformer<int>());
-
-        var run = executor.Start();
-
-        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
-
-        run.State.Should().Be(PipelineRunState.Completed);
-        await run.DisposeAsync();
-    }
-
-    [Fact]
     public async Task TypedPipeline_Drain_StopsReadingNewSourceItems()
     {
         var transformer = new BlockingLifecycleTransformer<int>();
@@ -433,7 +239,7 @@ public sealed class TypedPipelineLifecycleTests
     }
 
     [Fact]
-    public async Task TypedPipeline_CompletionOutcome_IsConsistentWhenFaulted()
+    public async Task TypedPipeline_ActivationFailure_IsPublishedWithoutRuntimeTerminalEvent()
     {
         var observer = new RecordingTerminalObserver();
 
@@ -451,8 +257,7 @@ public sealed class TypedPipelineLifecycleTests
         await FluentActions.Awaiting(() => run.Outputs.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
             .Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("source initialize boom");
-        observer.TerminalEvents.Should().ContainSingle()
-            .Which.Should().BeOfType<PipelineFaultedEvent>();
+        observer.TerminalEvents.Should().BeEmpty();
     }
 
     [Fact]
@@ -484,9 +289,7 @@ public sealed class TypedPipelineLifecycleTests
             .Should().ThrowAsync<AggregateException>();
         outputException.Which.InnerException.Should().BeSameAs(expected);
 
-        var faulted = observer.TerminalEvents.Should().ContainSingle()
-            .Which.Should().BeOfType<PipelineFaultedEvent>().Which;
-        faulted.Exception.Should().BeSameAs(expected);
+        observer.TerminalEvents.Should().BeEmpty();
     }
 
     [Fact]
@@ -604,8 +407,7 @@ public sealed class TypedPipelineLifecycleTests
             .Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("source initialize boom");
         run.State.Should().Be(PipelineRunState.Faulted);
-        observer.TerminalEvents.Should().ContainSingle()
-            .Which.Should().BeOfType<PipelineFaultedEvent>();
+        observer.TerminalEvents.Should().BeEmpty();
     }
 
     [Fact]
@@ -677,7 +479,7 @@ public sealed class TypedPipelineLifecycleTests
     }
 
     [Fact]
-    public async Task TypedPipeline_Dispose_AfterProcessingAndCleanupFailure_ShouldThrowCleanupPortionOnly()
+    public async Task TypedPipeline_Dispose_AfterActivationAndRollbackFailure_DoesNotDuplicateCleanup()
     {
         var processing = new InvalidOperationException("source initialize boom");
         var cleanup = new ApplicationException("source cleanup boom");
@@ -688,17 +490,18 @@ public sealed class TypedPipelineLifecycleTests
             .Transform(new PassThroughLifecycleTransformer<int>())
             .Run();
 
-        var completion = await FluentActions.Awaiting(() => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
-            .Should().ThrowAsync<AggregateException>();
-        completion.Which.InnerExceptions.Should().Equal(processing, cleanup);
+        var completion = await FluentActions.Awaiting(
+                () => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<PipelineActivationException>();
+        completion.Which.InnerException.Should().BeSameAs(processing);
+        completion.Which.CleanupExceptions.Should().ContainSingle()
+            .Which.Should().BeSameAs(cleanup);
 
-        await FluentActions.Awaiting(async () => await run.DisposeAsync())
-            .Should().ThrowAsync<ApplicationException>()
-            .Where(ex => ReferenceEquals(ex, cleanup));
+        await run.DisposeAsync();
     }
 
     [Fact]
-    public async Task TypedPipeline_ProcessingAndCleanupFailure_ShouldUseSingleTerminalExceptionInstance()
+    public async Task TypedPipeline_ActivationAndRollbackFailure_ShouldUseSingleExceptionInstance()
     {
         var processing = new InvalidOperationException("source initialize boom");
         var cleanup = new ApplicationException("source cleanup boom");
@@ -711,13 +514,15 @@ public sealed class TypedPipelineLifecycleTests
 
         var outputException = await FluentActions.Awaiting(
                 () => run.Outputs.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
-            .Should().ThrowAsync<AggregateException>();
+            .Should().ThrowAsync<PipelineActivationException>();
         var runException = await FluentActions.Awaiting(
                 () => run.Completion.WaitAsync(TimeSpan.FromSeconds(5)))
-            .Should().ThrowAsync<AggregateException>();
+            .Should().ThrowAsync<PipelineActivationException>();
 
         runException.Which.Should().BeSameAs(outputException.Which);
-        runException.Which.InnerExceptions.Should().Equal(processing, cleanup);
+        runException.Which.InnerException.Should().BeSameAs(processing);
+        runException.Which.CleanupExceptions.Should().ContainSingle()
+            .Which.Should().BeSameAs(cleanup);
     }
 
     [Fact]
@@ -771,43 +576,6 @@ public sealed class TypedPipelineLifecycleTests
 
         await Task.WhenAll(disposeTasks).WaitAsync(TimeSpan.FromSeconds(5));
         source.DisposeCount.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task TypedPipeline_Dispose_NeverStartedPerformsComponentCleanup()
-    {
-        var source = new BlockingAfterFirstLifecycleSource<int>(1);
-        var transformer = new BlockingLifecycleTransformer<int>();
-        var sink = new TrackingLifecycleSink<int>();
-        await using var executor = CreateLifecycleExecutor(source, transformer, sink);
-
-        await executor.DisposeAsync();
-
-        source.DisposeCount.Should().Be(1);
-        transformer.DisposeCount.Should().Be(1);
-        sink.DisposeCount.Should().Be(1);
-    }
-
-    private static TypedPipelineExecutor<int, int> CreateLifecycleExecutor(
-        IPipelineSource<int>? source = null,
-        IPipelineTransformer<int, int>? transformer = null,
-        IPipelineSink<int>? sink = null)
-    {
-        source ??= new CountingLifecycleSource<int>(1);
-        transformer ??= new PassThroughLifecycleTransformer<int>();
-
-        var spec = new TypedPipelineSpec<int, int>(
-            "double-start-test-pipeline",
-            source,
-            [new TypedPipelineStage<int, int>(transformer, 1)]);
-        var definition = spec.CreateDefinition(sink);
-        var runtime = new PipelineRuntime(PipelineExecutionPlan.Compile(definition));
-
-        return new TypedPipelineExecutor<int, int>(
-            runtime,
-            spec,
-            sink,
-            CancellationToken.None);
     }
 
     private static async Task<PipelineOutput<int>[]> ReadOutputsAsync(
