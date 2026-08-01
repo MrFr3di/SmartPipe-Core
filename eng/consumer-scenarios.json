@@ -143,7 +143,7 @@
       "mode": "build-and-run",
       "templatePath": "tests/Consumers/Scenarios/dependency-injection-facade-source/Consumer.csproj",
       "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions"],
-      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions", "SmartPipe.Extensions.Json"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json"],
       "forbiddenDependencies": [],
       "baselineVersion": null,
       "timeout": "00:05:00",
