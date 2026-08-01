@@ -307,6 +307,16 @@
           "SmartPipe.Core": "[2.2.0, )"
         }
       },
+      "smartpipe.extensions.hosting": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.8, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.8, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.8, )",
+          "SmartPipe.Core": "[2.2.0, )",
+          "SmartPipe.Extensions.DependencyInjection": "[2.2.0, )"
+        }
+      },
       "smartpipe.extensions.json": {
         "type": "Project",
         "dependencies": {
