@@ -137,3 +137,5 @@ SmartPipe.Core.PipelineActivationException.PipelineKey.get -> SmartPipe.Core.Pip
 SmartPipe.Core.PipelineActivationException.RunId.get -> System.Guid
 SmartPipe.Core.PipelineRun<TOutput>.PipelineKey.get -> SmartPipe.Core.PipelineKey
 SmartPipe.Core.PipelineRun<TOutput>.RunId.get -> System.Guid
+SmartPipe.Core.PipelineRun<TOutput>.InputCapacity.get -> int
+SmartPipe.Core.PipelineRun<TOutput>.OutputCapacity.get -> int

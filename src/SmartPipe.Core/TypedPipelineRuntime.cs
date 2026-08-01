@@ -809,12 +809,15 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         Action<PipelineOutput<TOutput>> itemDropped)
     {
         options.Validate();
-        var capacity = options.OutputCapacity ?? DefaultOutputCapacity;
+        var capacity = GetEffectiveOutputCapacity(options);
         return PipelineChannelFactory.CreateOutput<TOutput>(
             capacity,
             options.OutputFullMode,
             itemDropped);
     }
+
+    internal static int GetEffectiveOutputCapacity(PipelineRuntimeOptions options) =>
+        options.OutputCapacity ?? DefaultOutputCapacity;
 
     internal void RecordOutputDropped(PipelineOutput<TOutput> output) =>
         OnOutputDropped(output);
@@ -854,7 +857,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             DisposeAsync,
             CaptureMetricsSnapshot,
             _pipelineKey,
-            _runId
+            _runId,
+            _options.InputCapacity,
+            GetEffectiveOutputCapacity(_options)
         );
     }
 
