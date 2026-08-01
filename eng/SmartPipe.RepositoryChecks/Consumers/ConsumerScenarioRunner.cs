@@ -12,7 +12,13 @@ using SmartPipe.RepositoryChecks.Serialization;
 
 namespace SmartPipe.RepositoryChecks.Consumers;
 
-internal sealed record RunConsumersOptions(string RepositoryRoot, string Set, string PackageDirectory, string PackageVersion, string ManifestPath);
+internal sealed record RunConsumersOptions(
+    string RepositoryRoot,
+    string Set,
+    string PackageDirectory,
+    string PackageVersion,
+    string ManifestPath,
+    string? Category = null);
 
 internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner = null)
 {
@@ -22,7 +28,10 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
     {
         var graph = await new PackageGraphLoader().LoadAsync(options.RepositoryRoot, "eng/package-graph.json", ct).ConfigureAwait(false);
         var document = await new ConsumerScenarioLoader().LoadAsync(options.RepositoryRoot, options.ManifestPath, graph, ct).ConfigureAwait(false);
-        var scenarios = document.Scenarios.Where(x => x.Set == options.Set).ToArray();
+        var scenarios = document.Scenarios
+            .Where(scenario => scenario.Set == options.Set
+                && (options.Category is null || scenario.Category == options.Category))
+            .ToArray();
         if (scenarios.Length == 0) throw new ConsumerScenarioException("SPCONS010", $"Consumer set '{options.Set}' is empty.");
         var centralPackages = await new CentralPackageVersionReader().VerifyAsync(
             options.RepositoryRoot,

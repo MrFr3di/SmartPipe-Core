@@ -50,7 +50,13 @@ internal sealed record VerifyPackageOwnershipOptions(string RepositoryRoot, stri
 internal sealed record VerifyReleaseVersionOptions(string RepositoryRoot, string Tag, PackageGraphMode Mode, string PackageDirectory) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record ScaffoldPackageOptions(string RepositoryRoot, string PackageId, bool DryRun, string? OutputReport) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record ListPackagesOptions(string RepositoryRoot, PackageLifecycle Lifecycle) : RepositoryCheckCommand(RepositoryRoot);
-internal sealed record RunConsumersCommandOptions(string RepositoryRoot, string Set, string PackageDirectory, string PackageVersion, string ManifestPath) : RepositoryCheckCommand(RepositoryRoot);
+internal sealed record RunConsumersCommandOptions(
+    string RepositoryRoot,
+    string Set,
+    string PackageDirectory,
+    string PackageVersion,
+    string ManifestPath,
+    string? Category) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record PackPackagesOptions(string RepositoryRoot, PackageGraphMode Mode, string Configuration, string PackageVersion, string OutputDirectory, string ManifestPath) : RepositoryCheckCommand(RepositoryRoot);
 
 internal sealed class CommandLineException(string message) : Exception(message);
@@ -143,7 +149,7 @@ internal static class CommandLineParser
 
     private static RunConsumersCommandOptions ParseRunConsumers(ReadOnlySpan<string> args)
     {
-        string? root = null; string? set = null; string? packages = null; string? version = null; string manifest = "eng/consumer-scenarios.json";
+        string? root = null; string? set = null; string? packages = null; string? version = null; string manifest = "eng/consumer-scenarios.json"; string? category = null;
         var seen = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < args.Length; i += 2)
         {
@@ -156,6 +162,7 @@ internal static class CommandLineParser
                 case "--package-directory": packages = args[i + 1]; break;
                 case "--package-version": version = args[i + 1]; break;
                 case "--manifest": manifest = args[i + 1]; break;
+                case "--category": category = args[i + 1]; break;
                 default: throw new CommandLineException($"Unknown run-consumers option '{args[i]}'.");
             }
         }
@@ -164,7 +171,11 @@ internal static class CommandLineParser
         if (set != "current") throw new CommandLineException("Option '--set' must be 'current'.");
         if (string.IsNullOrWhiteSpace(packages) || string.IsNullOrWhiteSpace(version)) throw new CommandLineException("run-consumers requires '--package-directory' and '--package-version'.");
         var resolvedManifest = ResolveWithinRoot(root, manifest, "--manifest");
-        return new(root, set, ResolveWithinRoot(root, packages, "--package-directory"), version, Path.GetRelativePath(root, resolvedManifest).Replace('\\', '/'));
+        if (category is not null
+            && (category.Length == 0
+                || category.Any(character => character is not (>= 'a' and <= 'z' or >= '0' and <= '9' or '-'))))
+            throw new CommandLineException("Option '--category' must contain lowercase letters, digits, or hyphens.");
+        return new(root, set, ResolveWithinRoot(root, packages, "--package-directory"), version, Path.GetRelativePath(root, resolvedManifest).Replace('\\', '/'), category);
     }
 
     private static ScaffoldPackageOptions ParseScaffoldPackage(ReadOnlySpan<string> args)

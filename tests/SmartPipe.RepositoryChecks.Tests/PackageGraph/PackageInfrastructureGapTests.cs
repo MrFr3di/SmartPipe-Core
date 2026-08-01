@@ -7,6 +7,36 @@ namespace SmartPipe.RepositoryChecks.Tests.PackageGraph;
 public sealed class PackageInfrastructureGapTests
 {
     [Fact]
+    public async Task HostingPackage_IsActiveAndProjectExists()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var graph = await new PackageGraphLoader().LoadAsync(
+            root,
+            "eng/package-graph.json",
+            TestContext.Current.CancellationToken);
+        var hosting = Assert.Single(graph.Packages, package =>
+            package.Id == "SmartPipe.Extensions.Hosting");
+
+        Assert.Equal(PackageLifecycle.Active, hosting.Lifecycle);
+        Assert.True(
+            File.Exists(Path.Combine(root, hosting.ProjectPath)),
+            $"Hosting project is missing: {hosting.ProjectPath}");
+    }
+
+    [Fact]
+    public async Task FacadeCurrentComposition_IncludesCanonicalHostingLeaf()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var graph = await new PackageGraphLoader().LoadAsync(
+            root,
+            "eng/package-graph.json",
+            TestContext.Current.CancellationToken);
+        var facade = Assert.Single(graph.Packages, package => package.Id == "SmartPipe.Extensions");
+
+        Assert.Contains("SmartPipe.Extensions.Hosting", facade.CurrentDependencies.RequiredSmartPipePackages);
+    }
+
+    [Fact]
     public async Task Loader_DefaultContractRejectsCatalogWithoutAllExactNineteenIds()
     {
         using var fixture = new RepositoryTestDirectory();

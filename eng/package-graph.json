@@ -45,7 +45,12 @@
         "dependency-injection-facade-source",
         "dependency-injection-facade-binary-2.1.2",
         "dependency-injection-trim",
-        "dependency-injection-nativeaot"
+        "dependency-injection-nativeaot",
+        "hosting-direct",
+        "hosting-facade-source",
+        "hosting-facade-binary-2.1.2",
+        "hosting-trim",
+        "hosting-nativeaot"
       ]
     },
     {
@@ -192,7 +197,8 @@
         "json-direct",
         "legacy-binary-2.1.2",
         "json-nativeaot",
-        "dependency-injection-facade-binary-2.1.2"
+        "dependency-injection-facade-binary-2.1.2",
+        "hosting-facade-binary-2.1.2"
       ]
     },
     {
@@ -538,7 +544,11 @@
         "dependency-injection-facade-source",
         "dependency-injection-facade-binary-2.1.2",
         "dependency-injection-trim",
-        "dependency-injection-nativeaot"
+        "dependency-injection-nativeaot",
+        "hosting-direct",
+        "hosting-facade-binary-2.1.2",
+        "hosting-trim",
+        "hosting-nativeaot"
       ]
     },
     {
@@ -582,9 +592,9 @@
     {
       "id": "SmartPipe.Extensions.Hosting",
       "projectPath": "src/SmartPipe.Extensions.Hosting/SmartPipe.Extensions.Hosting.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-04",
-      "scaffoldKind": "host-integration",
+      "scaffoldKind": null,
       "publishOrder": 16,
       "baselineVersion": null,
       "aotContract": "full",
@@ -595,7 +605,9 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Hosting.Abstractions"
+          "Microsoft.Extensions.DependencyInjection.Abstractions",
+          "Microsoft.Extensions.Hosting.Abstractions",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -608,7 +620,9 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Hosting.Abstractions"
+          "Microsoft.Extensions.DependencyInjection.Abstractions",
+          "Microsoft.Extensions.Hosting.Abstractions",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -616,7 +630,11 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "hosting-direct"
+        "hosting-direct",
+        "hosting-facade-source",
+        "hosting-facade-binary-2.1.2",
+        "hosting-trim",
+        "hosting-nativeaot"
       ]
     },
     {
@@ -710,6 +728,7 @@
         "requiredSmartPipePackages": [
           "SmartPipe.Core",
           "SmartPipe.Extensions.DependencyInjection",
+          "SmartPipe.Extensions.Hosting",
           "SmartPipe.Extensions.Json"
         ],
         "allowedSmartPipePackages": [],
@@ -815,7 +834,9 @@
         "extensions-meta",
         "legacy-binary-2.1.2",
         "dependency-injection-facade-source",
-        "dependency-injection-facade-binary-2.1.2"
+        "dependency-injection-facade-binary-2.1.2",
+        "hosting-facade-source",
+        "hosting-facade-binary-2.1.2"
       ]
     }
   ]

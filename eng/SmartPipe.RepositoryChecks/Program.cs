@@ -172,7 +172,7 @@ internal static class Program
                     return ExitCodes.Success;
 
                 case RunConsumersCommandOptions consumers:
-                    var consumerResults = await new ConsumerScenarioRunner().RunAsync(new(consumers.RepositoryRoot, consumers.Set, consumers.PackageDirectory, consumers.PackageVersion, consumers.ManifestPath), cancellation.Token).ConfigureAwait(false);
+                    var consumerResults = await new ConsumerScenarioRunner().RunAsync(new(consumers.RepositoryRoot, consumers.Set, consumers.PackageDirectory, consumers.PackageVersion, consumers.ManifestPath, consumers.Category), cancellation.Token).ConfigureAwait(false);
                     foreach (var consumer in consumerResults) Console.WriteLine($"SP220_CONSUMER_OK scenario={consumer.Scenario} durationMs={consumer.DurationMs} dependencies={consumer.ObservedSmartPipeDependencies.Count}");
                     Console.WriteLine($"SP220_CONSUMERS_OK scenarios={consumerResults.Count} set={consumers.Set}");
                     return ExitCodes.Success;

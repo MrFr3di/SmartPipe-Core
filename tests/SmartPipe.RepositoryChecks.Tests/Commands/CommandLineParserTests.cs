@@ -182,6 +182,23 @@ public sealed class CommandLineParserTests
         Assert.Equal("eng/baselines/2.1.2", command.OutputDirectory);
     }
 
+    [Fact]
+    public void Parse_RunConsumersAcceptsHostingCategory()
+    {
+        using var repository = new CommandRepository();
+
+        var command = Assert.IsType<RunConsumersCommandOptions>(CommandLineParser.Parse(
+        [
+            "run-consumers", "--repo-root", repository.Path,
+            "--set", "current",
+            "--package-directory", "packages",
+            "--package-version", "2.2.0",
+            "--category", "hosting",
+        ]));
+
+        Assert.Equal("hosting", command.Category);
+    }
+
     private static string[] CaptureArgs(string repositoryRoot)
     {
         var workflowEvidence = Path.Combine(repositoryRoot, "workflow.json");
