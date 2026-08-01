@@ -361,8 +361,8 @@ def validate(documents: dict[str, dict]) -> None:
             and checkout.get("with", {}).get("persist-credentials") is False,
             "Windows baseline contract checkout must pin SHA and disable credentials.")
     baseline_runs = runs(baseline_windows_steps)
-    require("dotnet restore SmartPipe.Core.slnx --locked-mode" in baseline_runs,
-            "Windows baseline contract lane must perform locked restore.")
+    require("dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true" in baseline_runs,
+            "Windows baseline contract lane must disable the SDK library-packs source during locked restore.")
     build = named_step(baseline_windows_steps, "Build repository checks")
     require("-warnaserror" in str(build.get("run", "")),
             "Windows baseline contract build must treat warnings as errors.")

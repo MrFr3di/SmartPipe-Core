@@ -73,7 +73,7 @@ jobs:
           global-json-file: global.json
 
       - name: Restore locked
-        run: dotnet restore SmartPipe.Core.slnx --locked-mode
+        run: dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true
 
       - name: Build repository checks
         run: dotnet build tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj --configuration Release --no-restore -warnaserror

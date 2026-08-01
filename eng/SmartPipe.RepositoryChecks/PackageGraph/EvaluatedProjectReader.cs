@@ -41,7 +41,7 @@ internal sealed class EvaluatedProjectReader(IProcessRunner? runner = null, stri
             var packageReferences = ReadItems(items, "PackageReference").Select(item => new EvaluatedPackageReference(
                 item.GetProperty("Identity").GetString()!, Metadata(item, "PrivateAssets"), Metadata(item, "IncludeAssets"), Metadata(item, "ExcludeAssets"))).ToArray();
             var projectReferences = ReadItems(items, "ProjectReference").Select(item =>
-                Path.GetFullPath(item.TryGetProperty("FullPath", out var path) ? path.GetString()! : item.GetProperty("Identity").GetString()!, Path.GetDirectoryName(fullPath)!)).ToArray();
+                Path.GetFullPath(item.GetProperty("Identity").GetString()!, Path.GetDirectoryName(fullPath)!)).ToArray();
             var frameworks = Property("TargetFrameworks").Length > 0 ? Property("TargetFrameworks").Split(';') : [Property("TargetFramework")];
             return new(fullPath, Property("PackageId"), Property("Version"), Property("PackageVersion"), frameworks,
                 IsTrue(Property("SmartPipePackage")), IsTrue(Property("IsPackable")), packageReferences, projectReferences,
