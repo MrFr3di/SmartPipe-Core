@@ -193,9 +193,13 @@ def assert_consumer_contract() -> None:
     expected = {
         "core-direct", "json-direct", "extensions-meta", "legacy-binary-2.1.2",
         "core-trim", "core-nativeaot", "json-nativeaot",
+        "dependency-injection-direct", "dependency-injection-keyed",
+        "dependency-injection-from-keyed-services", "dependency-injection-facade-source",
+        "dependency-injection-facade-binary-2.1.2", "dependency-injection-trim",
+        "dependency-injection-nativeaot",
     }
-    require(len(current) == 7 and {scenario["id"] for scenario in current} == expected,
-            "Current consumer set must contain the exact seven scenarios.")
+    require(len(current) == 14 and {scenario["id"] for scenario in current} == expected,
+            "Current consumer set must contain the exact fourteen scenarios.")
     meta = next(scenario for scenario in current if scenario["id"] == "extensions-meta")
     require(meta["packageIds"] == ["SmartPipe.Extensions"],
             "extensions-meta must directly reference only the facade package.")
@@ -234,8 +238,18 @@ def validate(documents: dict[str, dict]) -> None:
             "Reusable validation must perform exactly one locked-mode solution restore.")
     build_step = named_step(reusable_steps, "Build")
     repository_test_step = named_step(reusable_steps, "Repository baseline contract tests")
+    di_test_step = named_step(reusable_steps, "Dependency Injection tests")
+    di_test_run = " ".join(str(di_test_step.get("run", "")).split())
+    expected_di_test = ("dotnet test --project "
+                       "tests/SmartPipe.Extensions.DependencyInjection.Tests/"
+                       "SmartPipe.Extensions.DependencyInjection.Tests.csproj "
+                       "--configuration Release --no-build --minimum-expected-tests 1")
+    require(di_test_run == expected_di_test,
+            "Reusable validation must run the exact DI test project command.")
     require(reusable_steps.index(build_step) < reusable_steps.index(repository_test_step),
             "Reusable repository baseline tests must run after Build.")
+    require(reusable_steps.index(build_step) < reusable_steps.index(di_test_step),
+            "Reusable DI tests must run after Build.")
     for name in ("Verify central package management", "Verify package projects"):
         require(reusable_steps.index(build_step) < reusable_steps.index(named_step(reusable_steps, name)),
                 f"Reusable {name} must run after Build because it uses --no-build.")
@@ -246,7 +260,7 @@ def validate(documents: dict[str, dict]) -> None:
         "Verify central package management", "Verify package projects",
         "Format verify", "Build", "Repository baseline contract tests",
         "Verify SP220-00 scope", "Core tests with coverage", "Core stress tests",
-        "Extensions tests", "JSON Extensions tests", "Core correctness regressions",
+        "Extensions tests", "Dependency Injection tests", "JSON Extensions tests", "Core correctness regressions",
         "Core concurrency regressions", "Extensions correctness regressions",
         "PR concurrency regression repeat", "Test and benchmark warning gate",
         "Pack packages from graph", "Provision and verify 2.1.2 baseline",

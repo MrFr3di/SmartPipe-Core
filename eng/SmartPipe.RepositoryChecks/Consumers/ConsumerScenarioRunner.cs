@@ -7,6 +7,7 @@ using SmartPipe.RepositoryChecks.Baselines;
 using SmartPipe.RepositoryChecks.Infrastructure;
 using SmartPipe.RepositoryChecks.NuGet;
 using SmartPipe.RepositoryChecks.PackageGraph;
+using SmartPipe.RepositoryChecks.Packaging;
 using SmartPipe.RepositoryChecks.Serialization;
 
 namespace SmartPipe.RepositoryChecks.Consumers;
@@ -23,12 +24,28 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         var document = await new ConsumerScenarioLoader().LoadAsync(options.RepositoryRoot, options.ManifestPath, graph, ct).ConfigureAwait(false);
         var scenarios = document.Scenarios.Where(x => x.Set == options.Set).ToArray();
         if (scenarios.Length == 0) throw new ConsumerScenarioException("SPCONS010", $"Consumer set '{options.Set}' is empty.");
+        var centralPackages = await new CentralPackageVersionReader().VerifyAsync(
+            options.RepositoryRoot,
+            CentralPackageValidationMode.Current,
+            ct).ConfigureAwait(false);
+        if (!centralPackages.Success)
+        {
+            throw new ConsumerScenarioException("SPCONS019", "Repository central package versions are invalid.");
+        }
+
+        var externalPackageVersions = centralPackages.Versions
+            .Where(static pair => !pair.Key.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         var results = new List<ConsumerScenarioResult>();
-        foreach (var scenario in scenarios) results.Add(await RunScenarioAsync(options, scenario, ct).ConfigureAwait(false));
+        foreach (var scenario in scenarios) results.Add(await RunScenarioAsync(options, scenario, externalPackageVersions, ct).ConfigureAwait(false));
         return results;
     }
 
-    private async Task<ConsumerScenarioResult> RunScenarioAsync(RunConsumersOptions options, ConsumerScenario scenario, CancellationToken ct)
+    private async Task<ConsumerScenarioResult> RunScenarioAsync(
+        RunConsumersOptions options,
+        ConsumerScenario scenario,
+        IReadOnlyDictionary<string, string> externalPackageVersions,
+        CancellationToken ct)
     {
         var started = Stopwatch.StartNew();
         var runId = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfff", System.Globalization.CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N")[..8];
@@ -48,7 +65,12 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             feed = await ProvisionVerifiedBaselineFeedAsync(options.RepositoryRoot, workspace, scenario.BaselineVersion!, logs, scenario.Timeout, events, ct).ConfigureAwait(false);
             version = scenario.BaselineVersion!;
         }
-        _ = await new ConsumerCentralPackagesWriter().WriteAsync(workspace, scenario.PackageIds, version, ct).ConfigureAwait(false);
+        _ = await new ConsumerCentralPackagesWriter().WriteAsync(
+            workspace,
+            scenario.PackageIds,
+            version,
+            externalPackageVersions,
+            ct).ConfigureAwait(false);
         var config = await new LocalNuGetConfigWriter().WriteAsync(
             workspace,
             feed,

@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SmartPipe.Core\SmartPipe.Core.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.DependencyInjection\SmartPipe.Extensions.DependencyInjection.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Json\SmartPipe.Extensions.Json.csproj" />
   </ItemGroup>
 

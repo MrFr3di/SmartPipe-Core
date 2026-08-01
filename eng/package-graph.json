@@ -38,7 +38,14 @@
         "legacy-binary-2.1.2",
         "core-trim",
         "core-nativeaot",
-        "json-nativeaot"
+        "json-nativeaot",
+        "dependency-injection-direct",
+        "dependency-injection-keyed",
+        "dependency-injection-from-keyed-services",
+        "dependency-injection-facade-source",
+        "dependency-injection-facade-binary-2.1.2",
+        "dependency-injection-trim",
+        "dependency-injection-nativeaot"
       ]
     },
     {
@@ -184,7 +191,8 @@
       "consumerScenarios": [
         "json-direct",
         "legacy-binary-2.1.2",
-        "json-nativeaot"
+        "json-nativeaot",
+        "dependency-injection-facade-binary-2.1.2"
       ]
     },
     {
@@ -492,9 +500,9 @@
     {
       "id": "SmartPipe.Extensions.DependencyInjection",
       "projectPath": "src/SmartPipe.Extensions.DependencyInjection/SmartPipe.Extensions.DependencyInjection.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-03",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 14,
       "baselineVersion": null,
       "aotContract": "full",
@@ -524,7 +532,13 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "dependency-injection-direct"
+        "dependency-injection-direct",
+        "dependency-injection-keyed",
+        "dependency-injection-from-keyed-services",
+        "dependency-injection-facade-source",
+        "dependency-injection-facade-binary-2.1.2",
+        "dependency-injection-trim",
+        "dependency-injection-nativeaot"
       ]
     },
     {
@@ -695,6 +709,7 @@
       "currentDependencies": {
         "requiredSmartPipePackages": [
           "SmartPipe.Core",
+          "SmartPipe.Extensions.DependencyInjection",
           "SmartPipe.Extensions.Json"
         ],
         "allowedSmartPipePackages": [],
@@ -798,7 +813,9 @@
       ],
       "consumerScenarios": [
         "extensions-meta",
-        "legacy-binary-2.1.2"
+        "legacy-binary-2.1.2",
+        "dependency-injection-facade-source",
+        "dependency-injection-facade-binary-2.1.2"
       ]
     }
   ]

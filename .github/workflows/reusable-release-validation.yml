@@ -103,6 +103,9 @@ jobs:
     - name: Extensions tests
       run: dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build --verbosity normal -c Release
 
+    - name: Dependency Injection tests
+      run: dotnet test --project tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
     - name: JSON Extensions tests
       run: dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build --verbosity normal -c Release
 
