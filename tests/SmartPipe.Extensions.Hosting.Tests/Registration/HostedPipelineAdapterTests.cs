@@ -93,6 +93,20 @@ public sealed class HostedPipelineAdapterTests
         services.AddSingleton<IHostApplicationLifetime>(lifetime);
         services.AddSingleton<ILogger<SmartPipeHostedOrchestrator>>(
             NullLogger<SmartPipeHostedOrchestrator>.Instance);
+        services.AddSingleton<ISmartPipeRegistry>(new TestSmartPipeRegistry(
+            [
+                new SmartPipeRegistrationDescriptor
+                {
+                    Key = new PipelineKey("orders"),
+                    InputType = typeof(int),
+                    OutputType = typeof(int),
+                    DefinitionType = typeof(PipelineDefinition<int, int>),
+                    FactoryType = typeof(ISmartPipeRunFactory<int, int>),
+                    DisplayName = "orders",
+                    RegistrationOrder = 0,
+                    IsReusable = true,
+                },
+            ]));
         var registration = new TestRegistrationBuilder(
             services,
             new PipelineKey("orders"),
@@ -118,7 +132,6 @@ public sealed class HostedPipelineAdapterTests
             InputType = typeof(int),
             OutputType = typeof(int),
             Order = 0,
-            RegistrationOrder = 0,
             DrainTimeout = TimeSpan.FromSeconds(30),
             FailureBehavior = SmartPipeHostedPipelineFailureBehavior.StopApplication,
             CompletionBehavior = SmartPipeHostedCompletionBehavior.KeepHostAlive,

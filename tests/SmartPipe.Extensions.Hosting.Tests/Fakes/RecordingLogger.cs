@@ -6,6 +6,8 @@ internal sealed class RecordingLogger<T> : ILogger<T>
 {
     internal List<Entry> Entries { get; } = [];
 
+    internal Action<Entry>? EntryObserver { get; init; }
+
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
     public bool IsEnabled(LogLevel logLevel) => true;
@@ -20,7 +22,9 @@ internal sealed class RecordingLogger<T> : ILogger<T>
         var properties = state is IEnumerable<KeyValuePair<string, object?>> values
             ? values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
             : new Dictionary<string, object?>();
-        Entries.Add(new(logLevel, formatter(state, exception), exception, properties));
+        var entry = new Entry(logLevel, formatter(state, exception), exception, properties);
+        Entries.Add(entry);
+        EntryObserver?.Invoke(entry);
     }
 
     internal sealed record Entry(

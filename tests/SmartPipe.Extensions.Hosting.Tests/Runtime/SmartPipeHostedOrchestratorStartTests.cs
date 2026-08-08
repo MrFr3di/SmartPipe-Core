@@ -1,5 +1,7 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging.Abstractions;
 using SmartPipe.Core;
+using SmartPipe.Extensions.DependencyInjection;
 using SmartPipe.Extensions.Hosting.Tests.Fakes;
 
 namespace SmartPipe.Extensions.Hosting.Tests.Runtime;
@@ -26,31 +28,34 @@ public sealed class SmartPipeHostedOrchestratorStartTests
         var cReady = NewRunGate();
         var bReady = NewRunGate();
         var aReady = NewRunGate();
+        var cStarted = NewSignal();
         var bStarted = NewSignal();
         var aStarted = NewSignal();
         var registrations = new[]
         {
-            CreateRegistration("a", order: 1, registrationOrder: 0, _ =>
+            CreateRegistration("a", order: 1, _ =>
             {
                 starts.Add("a");
                 aStarted.TrySetResult();
                 return aReady.Task;
             }),
-            CreateRegistration("b", order: 0, registrationOrder: 2, _ =>
+            CreateRegistration("c", order: 0, _ =>
+            {
+                starts.Add("c");
+                cStarted.TrySetResult();
+                return cReady.Task;
+            }),
+            CreateRegistration("b", order: 0, _ =>
             {
                 starts.Add("b");
                 bStarted.TrySetResult();
                 return bReady.Task;
             }),
-            CreateRegistration("c", order: 0, registrationOrder: 1, _ =>
-            {
-                starts.Add("c");
-                return cReady.Task;
-            }),
         };
         using var orchestrator = CreateOrchestrator(lifetime, registrations);
 
         var start = orchestrator.StartAsync(TestContext.Current.CancellationToken);
+        await cStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
         Assert.Equal(["c"], starts);
         Assert.Null(orchestrator.ExecuteTask);
 
@@ -76,7 +81,12 @@ public sealed class SmartPipeHostedOrchestratorStartTests
     {
         using var lifetime = new RecordingHostApplicationLifetime();
         var ready = NewRunGate();
-        var registration = CreateRegistration("orders", 0, 0, _ => ready.Task);
+        var factoryStarted = NewSignal();
+        var registration = CreateRegistration("orders", 0, _ =>
+        {
+            factoryStarted.TrySetResult();
+            return ready.Task;
+        });
         using var orchestrator = CreateOrchestrator(lifetime, [registration]);
 
         var starts = Enumerable.Range(0, 32)
@@ -84,9 +94,86 @@ public sealed class SmartPipeHostedOrchestratorStartTests
             .ToArray();
 
         Assert.All(starts, task => Assert.Same(starts[0], task));
+        await factoryStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
         Assert.Equal(1, registration.StartCalls);
         ready.SetResult(new ControlledHostedRun("orders"));
         await Task.WhenAll(starts);
+    }
+
+    [Fact]
+    public async Task ConcurrentStartAsyncCallers_ShareFirstCallerCancellationOwnership()
+    {
+        using var lifetime = new RecordingHostApplicationLifetime();
+        using var firstCancellation = new CancellationTokenSource();
+        using var laterCancellation = new CancellationTokenSource();
+        var factoryStarted = NewSignal();
+        var neverReady = NewSignal();
+        var registration = CreateRegistration("orders", 0, async token =>
+        {
+            factoryStarted.TrySetResult();
+            await neverReady.Task.WaitAsync(token);
+            throw new InvalidOperationException("Unreachable.");
+        });
+        using var orchestrator = CreateOrchestrator(lifetime, [registration]);
+
+        var first = orchestrator.StartAsync(firstCancellation.Token);
+        var later = orchestrator.StartAsync(laterCancellation.Token);
+        await factoryStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        laterCancellation.Cancel();
+
+        Assert.Same(first, later);
+        Assert.False(registration.StartToken.IsCancellationRequested);
+
+        firstCancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+
+        Assert.True(registration.StartToken.IsCancellationRequested);
+        Assert.Equal(HostedOrchestratorState.Faulted, orchestrator.State);
+    }
+
+    [Fact]
+    public void Constructor_MissingCanonicalRegistrationFailsClosed()
+    {
+        using var lifetime = new RecordingHostApplicationLifetime();
+        var registration = CreateRegistration(
+            "orders",
+            0,
+            _ => Task.FromResult<IHostedPipelineRun>(new ControlledHostedRun("orders")));
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            new SmartPipeHostedOrchestrator(
+                [registration],
+                new FixedRegistry(null),
+                lifetime,
+                NullLogger<SmartPipeHostedOrchestrator>.Instance));
+
+        Assert.Contains("no canonical DI registration", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Constructor_MismatchedCanonicalMetadataFailsClosed(int mismatch)
+    {
+        using var lifetime = new RecordingHostApplicationLifetime();
+        var registration = CreateRegistration(
+            "orders",
+            0,
+            _ => Task.FromResult<IHostedPipelineRun>(new ControlledHostedRun("orders")));
+        var canonical = CreateCanonicalDescriptor(
+            mismatch == 0 ? new PipelineKey("other") : new PipelineKey("orders"),
+            mismatch == 1 ? typeof(string) : typeof(int),
+            mismatch == 2 ? typeof(string) : typeof(int));
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            new SmartPipeHostedOrchestrator(
+                [registration],
+                new FixedRegistry(canonical),
+                lifetime,
+                NullLogger<SmartPipeHostedOrchestrator>.Instance));
+
+        Assert.Contains("does not match", error.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -99,7 +186,7 @@ public sealed class SmartPipeHostedOrchestratorStartTests
         var primary = new InvalidOperationException("start");
         var calls = new List<string>();
         var registrations = Enumerable.Range(0, 3).Select(index =>
-            CreateRegistration($"p{index}", 0, index, _ =>
+            CreateRegistration($"p{index}", 0, _ =>
             {
                 if (index == failureIndex)
                     return Task.FromException<IHostedPipelineRun>(primary);
@@ -138,9 +225,9 @@ public sealed class SmartPipeHostedOrchestratorStartTests
         };
         var registrations = new[]
         {
-            CreateRegistration("a", 0, 0, _ => Task.FromResult<IHostedPipelineRun>(a)),
-            CreateRegistration("b", 0, 1, _ => Task.FromResult<IHostedPipelineRun>(b)),
-            CreateRegistration("c", 0, 2, _ => Task.FromException<IHostedPipelineRun>(primary)),
+            CreateRegistration("a", 0, _ => Task.FromResult<IHostedPipelineRun>(a)),
+            CreateRegistration("b", 0, _ => Task.FromResult<IHostedPipelineRun>(b)),
+            CreateRegistration("c", 0, _ => Task.FromException<IHostedPipelineRun>(primary)),
         };
         using var orchestrator = CreateOrchestrator(lifetime, registrations);
 
@@ -159,8 +246,8 @@ public sealed class SmartPipeHostedOrchestratorStartTests
         cancellation.Cancel();
         var registrations = new[]
         {
-            CreateRegistration("a", 0, 0, _ => Task.FromResult<IHostedPipelineRun>(run)),
-            CreateRegistration("b", 0, 1, _ => Task.FromCanceled<IHostedPipelineRun>(cancellation.Token)),
+            CreateRegistration("a", 0, _ => Task.FromResult<IHostedPipelineRun>(run)),
+            CreateRegistration("b", 0, _ => Task.FromCanceled<IHostedPipelineRun>(cancellation.Token)),
         };
         using var orchestrator = CreateOrchestrator(lifetime, registrations);
 
@@ -174,26 +261,27 @@ public sealed class SmartPipeHostedOrchestratorStartTests
     private static SmartPipeHostedOrchestrator CreateOrchestrator(
         RecordingHostApplicationLifetime lifetime,
         IEnumerable<IHostedPipelineRegistration> registrations) =>
-        new(registrations, lifetime, NullLogger<SmartPipeHostedOrchestrator>.Instance);
+        new(
+            registrations,
+            TestSmartPipeRegistry.FromHosted(registrations),
+            lifetime,
+            NullLogger<SmartPipeHostedOrchestrator>.Instance);
 
     private static ControlledHostedRegistration CreateRegistration(
         string key,
         int order,
-        int registrationOrder,
         Func<CancellationToken, Task<IHostedPipelineRun>> start) =>
-        new(CreateDescriptor(key, order, registrationOrder), start);
+        new(CreateDescriptor(key, order), start);
 
     private static HostedPipelineDescriptor CreateDescriptor(
         string key,
-        int order,
-        int registrationOrder) =>
+        int order) =>
         new()
         {
             Key = new PipelineKey(key),
             InputType = typeof(int),
             OutputType = typeof(int),
             Order = order,
-            RegistrationOrder = registrationOrder,
             DrainTimeout = TimeSpan.FromSeconds(30),
             FailureBehavior = SmartPipeHostedPipelineFailureBehavior.StopApplication,
             CompletionBehavior = SmartPipeHostedCompletionBehavior.KeepHostAlive,
@@ -204,4 +292,39 @@ public sealed class SmartPipeHostedOrchestratorStartTests
 
     private static TaskCompletionSource NewSignal() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private static SmartPipeRegistrationDescriptor CreateCanonicalDescriptor(
+        PipelineKey key,
+        Type inputType,
+        Type outputType) =>
+        new()
+        {
+            Key = key,
+            InputType = inputType,
+            OutputType = outputType,
+            DefinitionType = typeof(PipelineDefinition<int, int>),
+            FactoryType = typeof(ISmartPipeRunFactory<int, int>),
+            DisplayName = key.Value,
+            RegistrationOrder = 0,
+            IsReusable = true,
+        };
+
+    private sealed class FixedRegistry(SmartPipeRegistrationDescriptor? descriptor)
+        : ISmartPipeRegistry
+    {
+        public IReadOnlyList<SmartPipeRegistrationDescriptor> GetRegistrations() =>
+            descriptor is null ? [] : [descriptor];
+
+        public SmartPipeRegistrationDescriptor GetRegistration(PipelineKey key) =>
+            descriptor ?? throw new KeyNotFoundException();
+
+        public bool TryGetRegistration(
+            PipelineKey key,
+            [NotNullWhen(true)]
+            out SmartPipeRegistrationDescriptor? registration)
+        {
+            registration = descriptor;
+            return registration is not null;
+        }
+    }
 }

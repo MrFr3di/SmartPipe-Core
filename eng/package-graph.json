@@ -759,7 +759,10 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
+          "Microsoft.Extensions.Diagnostics.HealthChecks",
+          "Microsoft.Extensions.Hosting.Abstractions",
           "Microsoft.Extensions.Http",
+          "Microsoft.Extensions.Options",
           "Microsoft.Extensions.Resilience",
           "Microsoft.Extensions.Logging.Abstractions"
         ],
@@ -817,17 +820,24 @@
         },
         {
           "dependency": "Microsoft.Extensions.Hosting.Abstractions",
-          "reason": "Hosted types remain embedded until extraction",
+          "reason": "Legacy SmartPipeHosted public identities remain facade-owned",
           "ownerEpic": "SP220-04",
-          "expiresBeforeRelease": true,
-          "evidence": "hosted public types"
+          "expiresBeforeRelease": false,
+          "evidence": "SmartPipe.Extensions shipped SmartPipeHosted public API"
         },
         {
           "dependency": "Microsoft.Extensions.Diagnostics.HealthChecks",
-          "reason": "Health types remain embedded until extraction",
+          "reason": "Legacy health monitor, options, and check identities remain facade-owned",
           "ownerEpic": "SP220-05",
-          "expiresBeforeRelease": true,
-          "evidence": "health public types"
+          "expiresBeforeRelease": false,
+          "evidence": "SmartPipe.Extensions shipped health-check public API"
+        },
+        {
+          "dependency": "Microsoft.Extensions.Options",
+          "reason": "Legacy Hosting and Health public signatures expose IOptions",
+          "ownerEpic": "SP220-04/SP220-05",
+          "expiresBeforeRelease": false,
+          "evidence": "SmartPipe.Extensions shipped Hosting and Health IOptions signatures"
         }
       ],
       "consumerScenarios": [

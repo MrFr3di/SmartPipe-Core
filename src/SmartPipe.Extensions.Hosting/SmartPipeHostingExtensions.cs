@@ -35,7 +35,6 @@ public static class SmartPipeHostingExtensions
             InputType = typeof(TInput),
             OutputType = typeof(TOutput),
             Order = snapshot.Order,
-            RegistrationOrder = reservation.RegistrationOrder,
             DrainTimeout = snapshot.DrainTimeout,
             FailureBehavior = snapshot.FailureBehavior,
             CompletionBehavior = snapshot.CompletionBehavior,

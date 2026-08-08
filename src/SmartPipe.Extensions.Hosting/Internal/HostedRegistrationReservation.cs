@@ -8,14 +8,12 @@ internal sealed class HostedRegistrationReservation
         SmartPipeHostedRegistrationStore store,
         PipelineKey key,
         Type inputType,
-        Type outputType,
-        int registrationOrder)
+        Type outputType)
     {
         Store = store;
         Key = key;
         InputType = inputType;
         OutputType = outputType;
-        RegistrationOrder = registrationOrder;
     }
 
     internal SmartPipeHostedRegistrationStore Store { get; }
@@ -25,8 +23,6 @@ internal sealed class HostedRegistrationReservation
     internal Type InputType { get; }
 
     internal Type OutputType { get; }
-
-    internal int RegistrationOrder { get; }
 
     internal HostedPipelineDescriptor? Descriptor { get; set; }
 

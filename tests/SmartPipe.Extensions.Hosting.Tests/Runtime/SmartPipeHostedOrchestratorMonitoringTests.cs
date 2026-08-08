@@ -46,6 +46,42 @@ public sealed class SmartPipeHostedOrchestratorMonitoringTests
     }
 
     [Fact]
+    public async Task CompletionLoggingThatStartsStop_PreventsApplicationStopPolicy()
+    {
+        var completion = NewCompletion();
+        var run = new ControlledHostedRun("orders") { Completion = completion.Task };
+        using var lifetime = new RecordingHostApplicationLifetime();
+        SmartPipeHostedOrchestrator? orchestrator = null;
+        Task? stop = null;
+        var logger = new RecordingLogger<SmartPipeHostedOrchestrator>
+        {
+            EntryObserver = entry =>
+            {
+                if (entry.Properties.TryGetValue("Operation", out var operation)
+                    && Equals(operation, "Monitor"))
+                {
+                    stop = orchestrator!.StopAsync(CancellationToken.None);
+                }
+            },
+        };
+        orchestrator = CreateOrchestrator(
+            lifetime,
+            logger,
+            [CreateRegistration(run, completionBehavior: SmartPipeHostedCompletionBehavior.StopApplication)]);
+        using (orchestrator)
+        {
+            await orchestrator.StartAsync(TestContext.Current.CancellationToken);
+
+            completion.SetResult();
+            await orchestrator.ExecuteTask!.WaitAsync(TestContext.Current.CancellationToken);
+            await stop!.WaitAsync(TestContext.Current.CancellationToken);
+
+            Assert.Equal(0, lifetime.StopApplicationCalls);
+            Assert.Equal(HostedOrchestratorState.Stopped, orchestrator.State);
+        }
+    }
+
+    [Fact]
     public async Task Fault_StopApplicationRequestsShutdownWithoutFaultingMonitor()
     {
         var error = new InvalidOperationException("fault");
@@ -81,7 +117,7 @@ public sealed class SmartPipeHostedOrchestratorMonitoringTests
             logger,
             [
                 CreateRegistration(first, failureBehavior: SmartPipeHostedPipelineFailureBehavior.Rethrow),
-                CreateRegistration(second, registrationOrder: 1),
+                CreateRegistration(second),
             ]);
         await orchestrator.StartAsync(TestContext.Current.CancellationToken);
 
@@ -110,7 +146,7 @@ public sealed class SmartPipeHostedOrchestratorMonitoringTests
             logger,
             [
                 CreateRegistration(first, failureBehavior: behavior),
-                CreateRegistration(second, registrationOrder: 1),
+                CreateRegistration(second),
             ]);
         await orchestrator.StartAsync(TestContext.Current.CancellationToken);
 
@@ -150,7 +186,6 @@ public sealed class SmartPipeHostedOrchestratorMonitoringTests
                 CreateRegistration(first, failureBehavior: SmartPipeHostedPipelineFailureBehavior.Rethrow),
                 CreateRegistration(
                     second,
-                    registrationOrder: 1,
                     failureBehavior: SmartPipeHostedPipelineFailureBehavior.Rethrow),
             ]);
 
@@ -166,11 +201,10 @@ public sealed class SmartPipeHostedOrchestratorMonitoringTests
         RecordingHostApplicationLifetime lifetime,
         RecordingLogger<SmartPipeHostedOrchestrator> logger,
         IEnumerable<IHostedPipelineRegistration> registrations) =>
-        new(registrations, lifetime, logger);
+        new(registrations, TestSmartPipeRegistry.FromHosted(registrations), lifetime, logger);
 
     private static ControlledHostedRegistration CreateRegistration(
         ControlledHostedRun run,
-        int registrationOrder = 0,
         SmartPipeHostedPipelineFailureBehavior failureBehavior =
             SmartPipeHostedPipelineFailureBehavior.StopApplication,
         SmartPipeHostedCompletionBehavior completionBehavior =
@@ -182,7 +216,6 @@ public sealed class SmartPipeHostedOrchestratorMonitoringTests
                 InputType = typeof(int),
                 OutputType = typeof(int),
                 Order = 0,
-                RegistrationOrder = registrationOrder,
                 DrainTimeout = TimeSpan.FromSeconds(30),
                 FailureBehavior = failureBehavior,
                 CompletionBehavior = completionBehavior,

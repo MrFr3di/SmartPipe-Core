@@ -1,5 +1,6 @@
 using SmartPipe.Core;
 using SmartPipe.Extensions.Hosting.Tests.Fakes;
+using Microsoft.Extensions.Logging;
 
 namespace SmartPipe.Extensions.Hosting.Tests.Runtime;
 
@@ -22,6 +23,50 @@ public sealed class HostedPipelineControllerTests
         Assert.Same(run, started);
         Assert.Equal(1, registration.StartCalls);
         Assert.Equal(cancellation.Token, registration.StartToken);
+    }
+
+    [Fact]
+    public async Task StartAsync_ExpectedCancellationLogsInformationWithoutException()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var expected = new OperationCanceledException(CancellationToken.None);
+        var registration = new ControlledHostedRegistration(
+            CreateDescriptor("orders"),
+            _ => Task.FromException<IHostedPipelineRun>(expected));
+        var logger = new RecordingLogger<SmartPipeHostedOrchestrator>();
+
+        var thrown = await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            new HostedPipelineController(logger).StartAsync(registration, cancellation.Token));
+
+        Assert.Same(expected, thrown);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Information, entry.Level);
+        Assert.Null(entry.Exception);
+        Assert.Equal("Start", entry.Properties["Operation"]);
+        Assert.DoesNotContain(logger.Entries, candidate => candidate.Level == LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task StartAsync_UnrelatedCancellationLogsErrorWithSameException()
+    {
+        using var unrelatedCancellation = new CancellationTokenSource();
+        unrelatedCancellation.Cancel();
+        var unexpected = new OperationCanceledException(unrelatedCancellation.Token);
+        var registration = new ControlledHostedRegistration(
+            CreateDescriptor("orders"),
+            _ => Task.FromException<IHostedPipelineRun>(unexpected));
+        var logger = new RecordingLogger<SmartPipeHostedOrchestrator>();
+
+        var thrown = await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            new HostedPipelineController(logger).StartAsync(
+                registration,
+                TestContext.Current.CancellationToken));
+
+        Assert.Same(unexpected, thrown);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Error, entry.Level);
+        Assert.Same(unexpected, entry.Exception);
     }
 
     [Fact]
@@ -267,7 +312,6 @@ public sealed class HostedPipelineControllerTests
             InputType = typeof(int),
             OutputType = typeof(int),
             Order = 0,
-            RegistrationOrder = 0,
             DrainTimeout = drainTimeout ?? TimeSpan.FromSeconds(30),
             FailureBehavior = SmartPipeHostedPipelineFailureBehavior.StopApplication,
             CompletionBehavior = SmartPipeHostedCompletionBehavior.KeepHostAlive,

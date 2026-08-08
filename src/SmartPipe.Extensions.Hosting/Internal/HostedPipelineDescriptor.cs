@@ -12,8 +12,6 @@ internal sealed record HostedPipelineDescriptor
 
     internal required int Order { get; init; }
 
-    internal required int RegistrationOrder { get; init; }
-
     internal required TimeSpan DrainTimeout { get; init; }
 
     internal required SmartPipeHostedPipelineFailureBehavior FailureBehavior { get; init; }

@@ -22,6 +22,11 @@ internal sealed class HostedPipelineController
             LogOperation(LogLevel.Information, "Start", registration.Descriptor, run);
             return run;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            LogOperation(LogLevel.Information, "Start", registration.Descriptor, null);
+            throw;
+        }
         catch (Exception error)
         {
             LogOperation(LogLevel.Error, "Start", registration.Descriptor, null, error);

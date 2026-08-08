@@ -8,7 +8,7 @@ public sealed class SmartPipeHostedRegistrationStoreTests
     [Fact]
     public void EmptyStore_ReturnsEmptyImmutableSnapshot()
     {
-        var snapshot = new SmartPipeHostedRegistrationStore().SnapshotOrdered();
+        var snapshot = new SmartPipeHostedRegistrationStore().Snapshot();
 
         Assert.True(snapshot.IsEmpty);
     }
@@ -22,7 +22,7 @@ public sealed class SmartPipeHostedRegistrationStoreTests
 
         store.Commit(reservation, descriptor);
 
-        Assert.Same(descriptor, Assert.Single(store.SnapshotOrdered()));
+        Assert.Same(descriptor, Assert.Single(store.Snapshot()));
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public sealed class SmartPipeHostedRegistrationStoreTests
 
         Assert.Throws<InvalidOperationException>(() =>
             store.Reserve(new PipelineKey("shared"), typeof(string), typeof(string)));
-        Assert.Single(store.SnapshotOrdered());
+        Assert.Single(store.Snapshot());
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public sealed class SmartPipeHostedRegistrationStoreTests
         var descriptor = CreateDescriptor(retry, order: 0);
         store.Commit(retry, descriptor);
 
-        Assert.Same(descriptor, Assert.Single(store.SnapshotOrdered()));
+        Assert.Same(descriptor, Assert.Single(store.Snapshot()));
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class SmartPipeHostedRegistrationStoreTests
         store.Rollback(committed);
         store.Rollback(foreign);
 
-        Assert.Single(store.SnapshotOrdered());
+        Assert.Single(store.Snapshot());
         Assert.Throws<InvalidOperationException>(() =>
             store.Reserve(new PipelineKey("committed"), typeof(int), typeof(string)));
         Assert.Throws<InvalidOperationException>(() =>
@@ -92,26 +92,16 @@ public sealed class SmartPipeHostedRegistrationStoreTests
     }
 
     [Fact]
-    public void Snapshot_OrdersByOrderThenRegistrationOrderThenOrdinalKey()
+    public void Snapshot_OrdersOnlyByOrdinalKey()
     {
         var store = new SmartPipeHostedRegistrationStore();
-        Commit(store, "z-last", order: 2);
-        Commit(store, "first-registered", order: 1);
-        Commit(store, "second-registered", order: 1);
+        Commit(store, "z", order: -1);
+        Commit(store, "a", order: 1);
+        Commit(store, "m", order: 0);
 
         Assert.Equal(
-            ["first-registered", "second-registered", "z-last"],
-            store.SnapshotOrdered().Select(item => item.Key.Value));
-
-        var tieStore = new SmartPipeHostedRegistrationStore();
-        var z = tieStore.Reserve(new PipelineKey("z"), typeof(int), typeof(int));
-        var a = tieStore.Reserve(new PipelineKey("a"), typeof(int), typeof(int));
-        tieStore.Commit(z, CreateDescriptor(z, order: 0, registrationOrder: 7));
-        tieStore.Commit(a, CreateDescriptor(a, order: 0, registrationOrder: 7));
-
-        Assert.Equal(
-            ["a", "z"],
-            tieStore.SnapshotOrdered().Select(item => item.Key.Value));
+            ["a", "m", "z"],
+            store.Snapshot().Select(item => item.Key.Value));
     }
 
     [Fact]
@@ -119,12 +109,12 @@ public sealed class SmartPipeHostedRegistrationStoreTests
     {
         var store = new SmartPipeHostedRegistrationStore();
         Commit(store, "first", order: 0);
-        var snapshot = store.SnapshotOrdered();
+        var snapshot = store.Snapshot();
 
         Commit(store, "second", order: 0);
 
         Assert.Equal(["first"], snapshot.Select(item => item.Key.Value));
-        Assert.Equal(["first", "second"], store.SnapshotOrdered().Select(item => item.Key.Value));
+        Assert.Equal(["first", "second"], store.Snapshot().Select(item => item.Key.Value));
     }
 
     [Fact]
@@ -167,17 +157,17 @@ public sealed class SmartPipeHostedRegistrationStoreTests
             start.Wait(cancellationToken);
             do
             {
-                AssertOrderedAndUnique(store.SnapshotOrdered());
+                AssertOrderedAndUnique(store.Snapshot());
             }
             while (!writer.IsCompleted);
 
-            AssertOrderedAndUnique(store.SnapshotOrdered());
+            AssertOrderedAndUnique(store.Snapshot());
         }, cancellationToken)).ToArray();
 
         start.Set();
         await Task.WhenAll(readers.Append(writer));
 
-        Assert.Equal(100, store.SnapshotOrdered().Length);
+        Assert.Equal(100, store.Snapshot().Length);
     }
 
     [Fact]
@@ -197,15 +187,13 @@ public sealed class SmartPipeHostedRegistrationStoreTests
 
     private static HostedPipelineDescriptor CreateDescriptor(
         HostedRegistrationReservation reservation,
-        int order,
-        int? registrationOrder = null) =>
+        int order) =>
         new()
         {
             Key = reservation.Key,
             InputType = reservation.InputType,
             OutputType = reservation.OutputType,
             Order = order,
-            RegistrationOrder = registrationOrder ?? reservation.RegistrationOrder,
             DrainTimeout = TimeSpan.FromSeconds(30),
             FailureBehavior = SmartPipeHostedPipelineFailureBehavior.StopApplication,
             CompletionBehavior = SmartPipeHostedCompletionBehavior.KeepHostAlive,
@@ -218,9 +206,7 @@ public sealed class SmartPipeHostedRegistrationStoreTests
         Assert.Equal(
             snapshot.Select(item => item.Key.Value),
             snapshot
-                .OrderBy(item => item.Order)
-                .ThenBy(item => item.RegistrationOrder)
-                .ThenBy(item => item.Key.Value, StringComparer.Ordinal)
+                .OrderBy(item => item.Key.Value, StringComparer.Ordinal)
                 .Select(item => item.Key.Value));
     }
 }

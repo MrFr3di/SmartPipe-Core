@@ -7,7 +7,6 @@ internal sealed class SmartPipeHostedRegistrationStore
 {
     private readonly object _gate = new();
     private readonly Dictionary<PipelineKey, HostedRegistrationReservation> _registrations = [];
-    private int _nextRegistrationOrder;
 
     internal HostedRegistrationReservation Reserve(
         PipelineKey key,
@@ -34,8 +33,7 @@ internal sealed class SmartPipeHostedRegistrationStore
                 this,
                 key,
                 inputType,
-                outputType,
-                _nextRegistrationOrder++);
+                outputType);
             _registrations.Add(key, reservation);
             return reservation;
         }
@@ -90,7 +88,7 @@ internal sealed class SmartPipeHostedRegistrationStore
         }
     }
 
-    internal ImmutableArray<HostedPipelineDescriptor> SnapshotOrdered()
+    internal ImmutableArray<HostedPipelineDescriptor> Snapshot()
     {
         lock (_gate)
         {
@@ -98,9 +96,7 @@ internal sealed class SmartPipeHostedRegistrationStore
                 .Select(static reservation => reservation.Descriptor)
                 .Where(static descriptor => descriptor is not null)
                 .Select(static descriptor => descriptor!)
-                .OrderBy(static descriptor => descriptor.Order)
-                .ThenBy(static descriptor => descriptor.RegistrationOrder)
-                .ThenBy(static descriptor => descriptor.Key.Value, StringComparer.Ordinal)
+                .OrderBy(static descriptor => descriptor.Key.Value, StringComparer.Ordinal)
                 .ToImmutableArray();
         }
     }

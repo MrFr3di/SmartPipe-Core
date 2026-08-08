@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SmartPipe.Extensions.DependencyInjection;
 using System.Runtime.ExceptionServices;
 
 namespace SmartPipe.Extensions.Hosting;
@@ -15,22 +16,53 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
     private HostedOrchestratorState _state = HostedOrchestratorState.NotStarted;
     private Task? _startupTask;
     private Task? _stopTask;
+    private CancellationTokenSource? _startupStopSource;
+    private StartupFailureKind _startupFailureKind;
     private int _stopApplicationRequested;
 
     public SmartPipeHostedOrchestrator(
         IEnumerable<IHostedPipelineRegistration> registrations,
+        ISmartPipeRegistry registry,
         IHostApplicationLifetime lifetime,
         ILogger<SmartPipeHostedOrchestrator> logger)
     {
         ArgumentNullException.ThrowIfNull(registrations);
+        ArgumentNullException.ThrowIfNull(registry);
         _lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _controller = new HostedPipelineController(logger);
         _registrations = registrations
-            .OrderBy(static registration => registration.Descriptor.Order)
-            .ThenBy(static registration => registration.Descriptor.RegistrationOrder)
-            .ThenBy(static registration => registration.Descriptor.Key.Value, StringComparer.Ordinal)
+            .Select(registration => Materialize(registration, registry))
+            .OrderBy(static item => item.Registration.Descriptor.Order)
+            .ThenBy(static item => item.Canonical.RegistrationOrder)
+            .ThenBy(static item => item.Registration.Descriptor.Key.Value, StringComparer.Ordinal)
+            .Select(static item => item.Registration)
             .ToArray();
+    }
+
+    private static (
+        IHostedPipelineRegistration Registration,
+        SmartPipeRegistrationDescriptor Canonical) Materialize(
+            IHostedPipelineRegistration registration,
+            ISmartPipeRegistry registry)
+    {
+        ArgumentNullException.ThrowIfNull(registration);
+        var hosted = registration.Descriptor;
+        if (!registry.TryGetRegistration(hosted.Key, out var canonical))
+        {
+            throw new InvalidOperationException(
+                $"Hosted pipeline '{hosted.Key.Value}' has no canonical DI registration.");
+        }
+
+        if (canonical.Key != hosted.Key
+            || canonical.InputType != hosted.InputType
+            || canonical.OutputType != hosted.OutputType)
+        {
+            throw new InvalidOperationException(
+                $"Hosted pipeline '{hosted.Key.Value}' metadata does not match its canonical DI registration.");
+        }
+
+        return (registration, canonical);
     }
 
     internal HostedOrchestratorState State
@@ -44,6 +76,8 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
+        TaskCompletionSource launch;
+        Task startupTask;
         lock (_gate)
         {
             if (_startupTask is not null)
@@ -58,27 +92,102 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
                 throw new InvalidOperationException("The SmartPipe hosted orchestrator cannot be restarted.");
 
             _state = HostedOrchestratorState.Starting;
-            _startupTask = StartCoreAsync(cancellationToken);
-            return _startupTask;
+            var stopSource = new CancellationTokenSource();
+            var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                stopSource.Token);
+            launch = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _startupStopSource = stopSource;
+            startupTask = StartCoordinatorAsync(
+                launch.Task,
+                cancellationToken,
+                stopSource,
+                linkedSource);
+            _startupTask = startupTask;
         }
+
+        launch.SetResult();
+        return startupTask;
     }
 
     public override Task StopAsync(CancellationToken cancellationToken)
     {
+        TaskCompletionSource launch;
+        TaskCompletionSource<Exception?> cancellationCompleted;
+        CancellationTokenSource? stopSource;
+        Task stopTask;
         lock (_gate)
         {
             if (_stopTask is not null)
                 return _stopTask;
 
             _state = HostedOrchestratorState.Stopping;
-            _stopTask = StopCoreAsync(_startupTask, cancellationToken);
-            return _stopTask;
+            stopSource = _startupStopSource;
+            _startupStopSource = null;
+            launch = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            cancellationCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            stopTask = StopCoordinatorAsync(
+                launch.Task,
+                cancellationCompleted.Task,
+                stopSource,
+                _startupTask,
+                cancellationToken);
+            _stopTask = stopTask;
         }
+
+        Exception? cancellationError = null;
+        try
+        {
+            stopSource?.Cancel();
+        }
+        catch (Exception error)
+        {
+            cancellationError = error;
+        }
+
+        cancellationCompleted.SetResult(cancellationError);
+        launch.SetResult();
+        return stopTask;
     }
 
     public override void Dispose() => base.Dispose();
 
-    private async Task StartCoreAsync(CancellationToken cancellationToken)
+    private async Task StartCoordinatorAsync(
+        Task launch,
+        CancellationToken callerToken,
+        CancellationTokenSource stopSource,
+        CancellationTokenSource linkedSource)
+    {
+        await launch.ConfigureAwait(false);
+        try
+        {
+            await StartCoreAsync(
+                callerToken,
+                stopSource.Token,
+                linkedSource.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            var ownsStopSource = false;
+            lock (_gate)
+            {
+                if (ReferenceEquals(_startupStopSource, stopSource))
+                {
+                    _startupStopSource = null;
+                    ownsStopSource = true;
+                }
+            }
+
+            linkedSource.Dispose();
+            if (ownsStopSource)
+                stopSource.Dispose();
+        }
+    }
+
+    private async Task StartCoreAsync(
+        CancellationToken callerToken,
+        CancellationToken stopToken,
+        CancellationToken effectiveToken)
     {
         try
         {
@@ -86,20 +195,47 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
             {
                 var run = await _controller.StartAsync(
                     registration,
-                    cancellationToken).ConfigureAwait(false);
+                    effectiveToken).ConfigureAwait(false);
+                var stopping = false;
                 lock (_gate)
+                {
                     _started.Add((registration.Descriptor, run));
+                    stopping = _state == HostedOrchestratorState.Stopping;
+                }
+
+                ThrowIfStartupCannotContinue(
+                    callerToken,
+                    stopToken,
+                    effectiveToken,
+                    stopping);
             }
 
-            await base.StartAsync(cancellationToken).ConfigureAwait(false);
+            ThrowIfStartupCannotContinue(
+                callerToken,
+                stopToken,
+                effectiveToken,
+                IsStopping());
+            await base.StartAsync(effectiveToken).ConfigureAwait(false);
+            ThrowIfStartupCannotContinue(
+                callerToken,
+                stopToken,
+                effectiveToken,
+                IsStopping());
             lock (_gate)
             {
                 if (_state == HostedOrchestratorState.Starting)
+                {
                     _state = HostedOrchestratorState.Running;
+                    _startupFailureKind = StartupFailureKind.None;
+                    return;
+                }
             }
+
+            throw new StopRequestedOperationCanceledException(stopToken);
         }
         catch (Exception primary)
         {
+            var failureKind = ClassifyStartupFailure(primary, callerToken, stopToken);
             var cleanupErrors = new List<Exception>();
             (HostedPipelineDescriptor Descriptor, IHostedPipelineRun Run)[] started;
             lock (_gate)
@@ -126,7 +262,13 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
             lock (_gate)
             {
                 _started.Clear();
-                _state = HostedOrchestratorState.Faulted;
+                _startupFailureKind = failureKind;
+                if (failureKind != StartupFailureKind.StopCancellation
+                    || cleanupErrors.Count > 0
+                    || _state != HostedOrchestratorState.Stopping)
+                {
+                    _state = HostedOrchestratorState.Faulted;
+                }
             }
 
             if (cleanupErrors.Count == 0)
@@ -139,7 +281,32 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
         }
     }
 
-    private async Task StopCoreAsync(Task? startupTask, CancellationToken cancellationToken)
+    private async Task StopCoordinatorAsync(
+        Task launch,
+        Task<Exception?> cancellationCompleted,
+        CancellationTokenSource? stopSource,
+        Task? startupTask,
+        CancellationToken cancellationToken)
+    {
+        await launch.ConfigureAwait(false);
+        var cancellationError = await cancellationCompleted.ConfigureAwait(false);
+        try
+        {
+            await StopCoreAsync(
+                startupTask,
+                cancellationToken,
+                cancellationError).ConfigureAwait(false);
+        }
+        finally
+        {
+            stopSource?.Dispose();
+        }
+    }
+
+    private async Task StopCoreAsync(
+        Task? startupTask,
+        CancellationToken cancellationToken,
+        Exception? cancellationError)
     {
         var cleanupErrors = new List<Exception>();
         var monitorErrors = new List<Exception>();
@@ -152,11 +319,11 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
             }
             catch (AggregateException aggregate)
             {
-                monitorErrors.AddRange(aggregate.InnerExceptions);
+                CaptureStartupErrors(aggregate, monitorErrors);
             }
             catch (Exception error)
             {
-                monitorErrors.Add(error);
+                CaptureStartupErrors(error, monitorErrors);
             }
         }
 
@@ -207,7 +374,10 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
             }
         }
 
-        var errors = cleanupErrors.Concat(monitorErrors).ToArray();
+        var errors = cleanupErrors
+            .Concat(monitorErrors)
+            .Concat(Flatten(cancellationError))
+            .ToArray();
         lock (_gate)
         {
             _started.Clear();
@@ -225,6 +395,96 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
         if (errors.Length > 1)
             throw new AggregateException(errors);
     }
+
+    private bool IsStopping()
+    {
+        lock (_gate)
+            return _state == HostedOrchestratorState.Stopping;
+    }
+
+    private static void ThrowIfStartupCannotContinue(
+        CancellationToken callerToken,
+        CancellationToken stopToken,
+        CancellationToken effectiveToken,
+        bool stopping)
+    {
+        if (callerToken.IsCancellationRequested)
+            throw new OperationCanceledException(callerToken);
+
+        if (stopToken.IsCancellationRequested || stopping)
+            throw new StopRequestedOperationCanceledException(stopToken);
+
+        effectiveToken.ThrowIfCancellationRequested();
+    }
+
+    private static StartupFailureKind ClassifyStartupFailure(
+        Exception error,
+        CancellationToken callerToken,
+        CancellationToken stopToken)
+    {
+        if (error is not OperationCanceledException)
+            return StartupFailureKind.Fault;
+
+        if (callerToken.IsCancellationRequested)
+            return StartupFailureKind.CallerCancellation;
+
+        return error is StopRequestedOperationCanceledException
+            || stopToken.IsCancellationRequested
+                ? StartupFailureKind.StopCancellation
+                : StartupFailureKind.Fault;
+    }
+
+    private void CaptureStartupErrors(Exception error, List<Exception> errors)
+    {
+        StartupFailureKind failureKind;
+        lock (_gate)
+            failureKind = _startupFailureKind;
+
+        if (failureKind != StartupFailureKind.StopCancellation)
+        {
+            errors.AddRange(Flatten(error));
+            return;
+        }
+
+        var startupErrors = Flatten(error).ToArray();
+        var first = startupErrors.Length > 0 ? startupErrors[0] : null;
+        if (first is not OperationCanceledException)
+        {
+            errors.AddRange(startupErrors);
+            return;
+        }
+
+        errors.AddRange(startupErrors.Skip(1));
+    }
+
+    private static IEnumerable<Exception> Flatten(Exception? error)
+    {
+        if (error is null)
+            yield break;
+
+        if (error is not AggregateException aggregate)
+        {
+            yield return error;
+            yield break;
+        }
+
+        foreach (var inner in aggregate.InnerExceptions)
+        {
+            foreach (var leaf in Flatten(inner))
+                yield return leaf;
+        }
+    }
+
+    private enum StartupFailureKind
+    {
+        None,
+        StopCancellation,
+        CallerCancellation,
+        Fault,
+    }
+
+    private sealed class StopRequestedOperationCanceledException(CancellationToken token)
+        : OperationCanceledException("Hosted pipeline startup was stopped.", token);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -284,6 +544,7 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
         Exception error,
         IEnumerable<(HostedPipelineDescriptor Descriptor, IHostedPipelineRun Run)> remaining)
     {
+        SmartPipeHostedPipelineFailureBehavior behavior;
         lock (_gate)
         {
             if (_state is HostedOrchestratorState.Stopping
@@ -291,31 +552,34 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
                 or HostedOrchestratorState.Faulted)
                 return;
 
-            LogFault(item, error);
-            switch (item.Descriptor.FailureBehavior)
-            {
-                case SmartPipeHostedPipelineFailureBehavior.StopApplication:
-                    RequestStopApplication();
-                    break;
-                case SmartPipeHostedPipelineFailureBehavior.Rethrow:
-                    ObserveRemainingCompletions(remaining);
-                    ExceptionDispatchInfo.Capture(error).Throw();
-                    break;
-                case SmartPipeHostedPipelineFailureBehavior.MarkUnhealthyAndKeepHostAlive:
-                case SmartPipeHostedPipelineFailureBehavior.Ignore:
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(
-                        nameof(item.Descriptor.FailureBehavior),
-                        item.Descriptor.FailureBehavior,
-                        "Hosted pipeline failure behavior is invalid.");
-            }
+            behavior = item.Descriptor.FailureBehavior;
+        }
+
+        LogFault(item, error);
+        switch (behavior)
+        {
+            case SmartPipeHostedPipelineFailureBehavior.StopApplication:
+                RequestStopApplication();
+                break;
+            case SmartPipeHostedPipelineFailureBehavior.Rethrow:
+                ObserveRemainingCompletions(remaining);
+                ExceptionDispatchInfo.Capture(error).Throw();
+                break;
+            case SmartPipeHostedPipelineFailureBehavior.MarkUnhealthyAndKeepHostAlive:
+            case SmartPipeHostedPipelineFailureBehavior.Ignore:
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(item.Descriptor.FailureBehavior),
+                    item.Descriptor.FailureBehavior,
+                    "Hosted pipeline failure behavior is invalid.");
         }
     }
 
     private void HandleCompletion(
         (HostedPipelineDescriptor Descriptor, IHostedPipelineRun Run) item)
     {
+        var shouldStopApplication = false;
         lock (_gate)
         {
             if (_state is HostedOrchestratorState.Stopping
@@ -323,25 +587,38 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
                 or HostedOrchestratorState.Faulted)
                 return;
 
-            _logger.LogInformation(
-                "Hosted pipeline operation {Operation} for {PipelineKey} run {RunId}, order {Order}, failure behavior {FailureBehavior}, completion behavior {CompletionBehavior}, drain timeout {DrainTimeout}, state {PipelineState}.",
-                "Monitor",
-                item.Descriptor.Key.Value,
-                item.Run.RunId,
-                item.Descriptor.Order,
-                item.Descriptor.FailureBehavior,
-                item.Descriptor.CompletionBehavior,
-                item.Descriptor.DrainTimeout,
-                item.Run.State);
-            if (item.Descriptor.CompletionBehavior == SmartPipeHostedCompletionBehavior.StopApplication)
-                RequestStopApplication();
+            shouldStopApplication = item.Descriptor.CompletionBehavior
+                == SmartPipeHostedCompletionBehavior.StopApplication;
         }
+
+        _logger.LogInformation(
+            "Hosted pipeline operation {Operation} for {PipelineKey} run {RunId}, order {Order}, failure behavior {FailureBehavior}, completion behavior {CompletionBehavior}, drain timeout {DrainTimeout}, state {PipelineState}.",
+            "Monitor",
+            item.Descriptor.Key.Value,
+            item.Run.RunId,
+            item.Descriptor.Order,
+            item.Descriptor.FailureBehavior,
+            item.Descriptor.CompletionBehavior,
+            item.Descriptor.DrainTimeout,
+            item.Run.State);
+        if (shouldStopApplication)
+            RequestStopApplication();
     }
 
     private void RequestStopApplication()
     {
-        if (Interlocked.CompareExchange(ref _stopApplicationRequested, 1, 0) == 0)
-            _lifetime.StopApplication();
+        lock (_gate)
+        {
+            if (_state is HostedOrchestratorState.Stopping
+                or HostedOrchestratorState.Stopped
+                or HostedOrchestratorState.Faulted
+                || Interlocked.CompareExchange(ref _stopApplicationRequested, 1, 0) != 0)
+            {
+                return;
+            }
+        }
+
+        _lifetime.StopApplication();
     }
 
     private void LogFault(

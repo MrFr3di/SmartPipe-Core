@@ -36,18 +36,32 @@ and never builds an intermediate service provider.
 
 ## Lifecycle guarantees
 
-The orchestrator materializes registrations in `(Order, registration order,
-PipelineKey.Value ordinal)` order. It starts them sequentially and waits for each
-DI factory to return a ready run before starting the next. It stops exactly that
-materialized list in reverse order. `HostOptions.ServicesStartConcurrently` and
-`ServicesStopConcurrently` can affect peer hosted services, but never parallelize
-pipelines inside the SmartPipe orchestrator.
+The orchestrator materializes registrations in `(Order, canonical DI
+RegistrationOrder, PipelineKey.Value ordinal)` order. The tie-breaker comes from
+the registration sequence accepted by `AddSmartPipe().AddPipeline(...)`, not from
+the order of later `RunAsHostedService` calls. Missing or type-incompatible DI
+metadata fails host construction. The orchestrator starts registrations
+sequentially and waits for each DI factory to return a ready run before starting
+the next. It stops exactly that materialized list in reverse order.
+`HostOptions.ServicesStartConcurrently` and `ServicesStopConcurrently` can affect
+peer hosted services, but never parallelize pipelines inside the SmartPipe
+orchestrator.
 
 If startup of pipeline N fails or is cancelled, every previously started run is
 aborted and disposed in reverse order. Cleanup uses
 `CancellationToken.None`, so cancellation of the host startup token cannot skip
 safety cleanup. The primary startup exception remains first; rollback failures
 follow in actual reverse cleanup order.
+
+If shutdown begins while a pipeline factory is still starting, the orchestrator
+cancels a linked internal startup token and waits for startup to finish its own
+reverse rollback before continuing shutdown. A cooperative factory therefore
+unblocks promptly. A factory that ignores cancellation can delay shutdown until
+it returns; Hosting does not abandon startup or run cleanup concurrently. Caller
+startup cancellation remains a fault visible from both startup and shutdown;
+only a cancellation owned solely by `StopAsync` is suppressed by shutdown after
+successful rollback. Cancellation callback and rollback failures are never
+suppressed.
 
 Normal shutdown first attempts graceful drain. A timeout, caller cancellation,
 or drain fault always causes `AbortAsync(CancellationToken.None)` before
@@ -59,6 +73,11 @@ but does not skip abort or disposal.
 Start, stop, and disposal are idempotent under races. Natural completion is not
 an automatic restart signal: a hosted registration has at most one run for the
 lifetime of that orchestrator.
+
+An `OperationCanceledException` raised while the effective startup token is
+cancelled is logged once at `Information` without attaching the exception.
+Cancellation raised while that token is not cancelled is unexpected and remains
+an `Error` with the exception attached.
 
 ## Completion and failure behavior
 

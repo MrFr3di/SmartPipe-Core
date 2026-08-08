@@ -10,6 +10,48 @@ namespace SmartPipe.Extensions.Hosting.Tests.Integration;
 public sealed class GenericHostIntegrationTests
 {
     [Fact]
+    public async Task Host_EqualOrdersUseCanonicalDiRegistrationOrderAndReverseShutdown()
+    {
+        var disposalOrder = new ConcurrentQueue<string>();
+        var probes = new ConcurrentBag<ScopedProbe>();
+        var starts = new ConcurrentQueue<string>();
+        var first = new ControlledSource("first") { InitializeObserver = starts.Enqueue };
+        var second = new ControlledSource("second") { InitializeObserver = starts.Enqueue };
+        var builder = CreateBuilder();
+        AddScopedProbes(builder, disposalOrder, probes);
+        var smartPipe = builder.Services.AddSmartPipe();
+        var firstRegistration = smartPipe.AddPipeline(CreateDefinition(first));
+        var secondRegistration = smartPipe.AddPipeline(CreateDefinition(second));
+        secondRegistration.RunAsHostedService();
+        firstRegistration.RunAsHostedService();
+        using var host = builder.Build();
+
+        var start = host.StartAsync(TestContext.Current.CancellationToken);
+        var firstStarted = await Task.WhenAny(
+            first.InitializeCalled.Task,
+            second.InitializeCalled.Task).WaitAsync(TestContext.Current.CancellationToken);
+        if (ReferenceEquals(firstStarted, first.InitializeCalled.Task))
+            first.AllowInitialize.SetResult();
+        else
+            second.AllowInitialize.SetResult();
+
+        var secondStarted = ReferenceEquals(firstStarted, first.InitializeCalled.Task)
+            ? second.InitializeCalled.Task
+            : first.InitializeCalled.Task;
+        await secondStarted.WaitAsync(TestContext.Current.CancellationToken);
+        first.AllowInitialize.TrySetResult();
+        second.AllowInitialize.TrySetResult();
+        await start;
+
+        Assert.Equal(["first", "second"], starts);
+
+        await host.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(["second", "first"], disposalOrder);
+        Assert.All(probes, probe => Assert.True(probe.IsDisposed));
+    }
+
+    [Fact]
     public async Task Host_SequentiallyStartsSameTypeKeysAndReverseDisposesScopes()
     {
         var disposalOrder = new ConcurrentQueue<string>();
@@ -299,8 +341,11 @@ public sealed class GenericHostIntegrationTests
 
         internal bool IgnoreReadCancellation { get; init; }
 
+        internal Action<string>? InitializeObserver { get; init; }
+
         public async ValueTask InitializeAsync(CancellationToken ct = default)
         {
+            InitializeObserver?.Invoke(Key);
             InitializeCalled.TrySetResult();
             await AllowInitialize.Task.WaitAsync(ct);
             if (InitializeError is not null)
