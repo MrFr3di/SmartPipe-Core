@@ -9,6 +9,7 @@
     <Project Path="src/SmartPipe.Core/SmartPipe.Core.csproj" />
     <Project Path="src/SmartPipe.Extensions/SmartPipe.Extensions.csproj" />
     <Project Path="src/SmartPipe.Extensions.DependencyInjection/SmartPipe.Extensions.DependencyInjection.csproj" />
+    <Project Path="src/SmartPipe.Extensions.Hosting/SmartPipe.Extensions.Hosting.csproj" />
     <Project Path="src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -16,6 +17,7 @@
     <Project Path="tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj" />
     <Project Path="tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj" />
+    <Project Path="tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj" />
   </Folder>

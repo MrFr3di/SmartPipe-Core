@@ -263,7 +263,7 @@
       "strategy": "obsolete-wrapper",
       "migrationEpic": "SP220-04",
       "namespacePreserved": true,
-      "evidence": "legacy hosting compatibility types remain facade-owned"
+      "evidence": "legacy hosting compatibility types remain physically facade-owned"
     },
     {
       "typePattern": "SmartPipe.Extensions.SmartPipeRunHealthMonitor*",

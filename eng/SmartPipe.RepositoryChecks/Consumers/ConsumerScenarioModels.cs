@@ -15,6 +15,7 @@ internal sealed record ConsumerScenario
 {
     public required string Id { get; init; }
     public required string Set { get; init; }
+    public string? Category { get; init; }
     public required ConsumerMode Mode { get; init; }
     public required string TemplatePath { get; init; }
     public required IReadOnlyList<string> PackageIds { get; init; }

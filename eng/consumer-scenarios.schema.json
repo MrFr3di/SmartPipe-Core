@@ -13,8 +13,8 @@
     },
     "scenarios": {
       "type": "array",
-      "minItems": 14,
-      "maxItems": 14,
+      "minItems": 19,
+      "maxItems": 19,
       "items": { "$ref": "#/$defs/scenario" }
     }
   },
@@ -26,6 +26,7 @@
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
         "set": { "const": "current" },
+        "category": { "type": "string", "pattern": "^[a-z0-9-]+$" },
         "mode": { "enum": ["build-and-run", "publish-trimmed", "publish-native-aot", "binary-compatibility"] },
         "templatePath": { "type": "string", "pattern": "^tests/Consumers/Scenarios/[a-z0-9-]+/[^/]+\\.(cs|csproj)$" },
         "packageIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },

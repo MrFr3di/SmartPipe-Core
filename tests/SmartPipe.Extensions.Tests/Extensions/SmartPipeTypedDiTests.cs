@@ -462,6 +462,19 @@ public sealed class SmartPipeTypedDiTests
     }
 
     [Fact]
+    public void HostedServiceOptions_InfiniteDrainTimeout_RemainsRejected()
+    {
+        var options = new SmartPipeHostedServiceOptions
+        {
+            DrainTimeout = Timeout.InfiniteTimeSpan,
+        };
+
+        options.Invoking(x => x.Validate())
+            .Should().Throw<ArgumentOutOfRangeException>()
+            .Which.ParamName.Should().Be(nameof(SmartPipeHostedServiceOptions.DrainTimeout));
+    }
+
+    [Fact]
     public async Task HostedService_StopAsync_UsesConfiguredDrainTimeout()
     {
         var factory = new RecordingTypedFactory();

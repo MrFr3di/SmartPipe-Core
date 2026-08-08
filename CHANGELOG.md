@@ -2,6 +2,19 @@
 
 ## [2.2.0] — Development
 
+### Generic Host integration
+
+- Added `SmartPipe.Extensions.Hosting`, with one deterministic orchestrator for
+  canonical DI pipeline registrations keyed by `PipelineKey`.
+- Hosted pipelines start sequentially, stop in reverse order, roll back partial
+  startup, and abort before disposal when bounded graceful drain cannot finish.
+- Added explicit per-pipeline completion and failure policies, structured
+  lifecycle logging, real Generic Host integration tests, and direct, legacy,
+  trimming, and NativeAOT package consumers.
+- Preserved the 2.1 Hosting API physically in `SmartPipe.Extensions`; migration
+  to `AddPipeline(...).RunAsHostedService(...)` is explicit and does not redirect
+  legacy behavior into the canonical orchestrator.
+
 ### Core definition and lifecycle model
 
 - Added immutable typed definitions with explicit pipeline/stage keys, per-run

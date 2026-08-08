@@ -31,6 +31,15 @@ Source consumers and binaries compiled against 2.1.2 must exercise the retained
 signatures and constructor graph against the 2.2.0 package set. The cluster is a
 removal candidate for the next major release.
 
+Because the retained Hosting and Health public signatures expose `IOptions<>`,
+`SmartPipe.Extensions` carries a direct `Microsoft.Extensions.Options` dependency.
+Its legacy Hosting identities likewise require
+`Microsoft.Extensions.Hosting.Abstractions`, and its legacy health identities
+require `Microsoft.Extensions.Diagnostics.HealthChecks`. These three facade
+dependencies are evidence-backed, non-expiring 2.2 release allowances while the
+public identities remain facade-owned. They do not authorize the canonical
+Hosting leaf to add a direct Options dependency.
+
 ## Consequences
 
 The facade retains frozen legacy scope, hosted-service, and health-monitor ingress

@@ -46,6 +46,10 @@ internal sealed class ConsumerScenarioLoader
             if (string.IsNullOrWhiteSpace(scenario.Id) || !ids.Add(scenario.Id)) throw new ConsumerScenarioException("SPCONS003", $"Duplicate or empty scenario ID '{scenario.Id}'.");
             scenariosById.Add(scenario.Id, scenario);
             if (scenario.Set != "current") throw new ConsumerScenarioException("SPCONS004", $"Scenario '{scenario.Id}' has unsupported set '{scenario.Set}'.");
+            if (scenario.Category is not null
+                && (scenario.Category.Length == 0
+                    || scenario.Category.Any(character => character is not (>= 'a' and <= 'z' or >= '0' and <= '9' or '-'))))
+                throw new ConsumerScenarioException("SPCONS004", $"Scenario '{scenario.Id}' has invalid category '{scenario.Category}'.");
             var template = ResolveContained(root, scenario.TemplatePath, "templatePath");
             if (!File.Exists(template) || (File.GetAttributes(template) & FileAttributes.ReparsePoint) != 0) throw new ConsumerScenarioException("SPCONS005", $"Scenario template must be a tracked regular file: {scenario.TemplatePath}.");
             if (scenario.PackageIds.Count == 0 || scenario.PackageIds.Any(id => !graphIds.Contains(id))) throw new ConsumerScenarioException("SPCONS006", $"Scenario '{scenario.Id}' references an unknown package ID.");

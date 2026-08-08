@@ -197,9 +197,16 @@ def assert_consumer_contract() -> None:
         "dependency-injection-from-keyed-services", "dependency-injection-facade-source",
         "dependency-injection-facade-binary-2.1.2", "dependency-injection-trim",
         "dependency-injection-nativeaot",
+        "hosting-direct", "hosting-facade-source", "hosting-facade-binary-2.1.2",
+        "hosting-trim", "hosting-nativeaot",
     }
-    require(len(current) == 14 and {scenario["id"] for scenario in current} == expected,
-            "Current consumer set must contain the exact fourteen scenarios.")
+    require(len(current) == 19 and {scenario["id"] for scenario in current} == expected,
+            "Current consumer set must contain the exact nineteen scenarios.")
+    hosting = [scenario for scenario in current if scenario.get("category") == "hosting"]
+    require({scenario["id"] for scenario in hosting} == {
+        "hosting-direct", "hosting-facade-source", "hosting-facade-binary-2.1.2",
+        "hosting-trim", "hosting-nativeaot",
+    }, "Hosting consumer category must contain the exact five Hosting scenarios.")
     meta = next(scenario for scenario in current if scenario["id"] == "extensions-meta")
     require(meta["packageIds"] == ["SmartPipe.Extensions"],
             "extensions-meta must directly reference only the facade package.")
@@ -246,6 +253,15 @@ def validate(documents: dict[str, dict]) -> None:
                        "--configuration Release --no-build --minimum-expected-tests 1")
     require(di_test_run == expected_di_test,
             "Reusable validation must run the exact DI test project command.")
+    hosting_test = " ".join(str(named_step(reusable_steps, "Hosting tests").get("run", "")).split())
+    require(hosting_test == (
+        "dotnet test --project tests/SmartPipe.Extensions.Hosting.Tests/"
+        "SmartPipe.Extensions.Hosting.Tests.csproj --configuration Release --no-build "
+        "--minimum-expected-tests 1"),
+        "Reusable validation must run the complete Hosting test project.")
+    hosting_regressions = str(named_step(reusable_steps, "Hosting lifecycle regressions").get("run", ""))
+    require("--filter-query /[Category=HostingLifecycle]" in hosting_regressions,
+            "Reusable validation must run the Hosting lifecycle regression category.")
     require(reusable_steps.index(build_step) < reusable_steps.index(repository_test_step),
             "Reusable repository baseline tests must run after Build.")
     require(reusable_steps.index(build_step) < reusable_steps.index(di_test_step),
@@ -260,13 +276,15 @@ def validate(documents: dict[str, dict]) -> None:
         "Verify central package management", "Verify package projects",
         "Format verify", "Build", "Repository baseline contract tests",
         "Verify SP220-00 scope", "Core tests with coverage", "Core stress tests",
-        "Extensions tests", "Dependency Injection tests", "JSON Extensions tests", "Core correctness regressions",
+        "Extensions tests", "Dependency Injection tests", "Hosting lifecycle regressions", "Hosting tests",
+        "JSON Extensions tests", "Core correctness regressions",
         "Core concurrency regressions", "Extensions correctness regressions",
         "PR concurrency regression repeat", "Test and benchmark warning gate",
         "Pack packages from graph", "Provision and verify 2.1.2 baseline",
         "Verify package graph current", "Verify package metadata current",
         "Verify package ownership current", "Verify release versions current",
-        "Run current consumers", "Vulnerable package scan", "Verify direct production audit policy", "Deprecated package scan",
+        "Run current consumers", "Run Hosting consumers", "Vulnerable package scan",
+        "Verify direct production audit policy", "Deprecated package scan",
         "Outdated package report", "Docs link check",
         "Upload immutable packages and reports",
     )
@@ -293,6 +311,9 @@ def validate(documents: dict[str, dict]) -> None:
         require(token in pack_run, f"Graph-driven pack step must contain '{token}'.")
     require(reusable_text.count("pack-packages") == 1,
             "Reusable validation must invoke pack-packages exactly once.")
+    hosting_consumers = str(named_step(reusable_steps, "Run Hosting consumers").get("run", ""))
+    require("run-consumers" in hosting_consumers and "--category hosting" in hosting_consumers,
+            "Reusable validation must execute the Hosting consumer category.")
     require(re.search(r"\\bdotnet\\s+pack\\b", reusable_text) is None,
             "Reusable validation must not hard-code dotnet pack commands.")
     require("validate-json-package-split.ps1" not in reusable_text,
@@ -324,14 +345,33 @@ def validate(documents: dict[str, dict]) -> None:
     upload_path = str(upload.get("with", {}).get("path", ""))
     require("artifacts/packages" in upload_path
             and "artifacts/consumers/**/result.json" in upload_path
-            and "artifacts/audit" in upload_path,
-            "Reusable validation must upload package artifacts, consumer reports, and audit reports together.")
+            and "artifacts/audit" in upload_path
+            and "eng/package-graph.json" in upload_path,
+            "Reusable validation must upload package graph, packages, consumer reports, and audit reports together.")
 
     validation = ci["jobs"].get("validation")
     require(validation == {
         "uses": "./.github/workflows/reusable-release-validation.yml",
         "permissions": {"contents": "read"},
     }, "CI validation must be the exact reusable workflow caller with read-only contents permission.")
+    pull_request = ci.get("on", {}).get("pull_request", {})
+    require("paths-ignore" not in pull_request,
+            "CI pull requests must not exclude Hosting package, tests, or docs paths.")
+    hosting_integration = ci["jobs"].get("hosting-integration")
+    require(isinstance(hosting_integration, dict)
+            and hosting_integration.get("name") == "Hosting integration (${{ matrix.os }})"
+            and hosting_integration.get("runs-on") == "${{ matrix.os }}",
+            "CI must define the Hosting integration OS matrix.")
+    hosting_matrix = hosting_integration.get("strategy", {}).get("matrix", {}).get("os")
+    require(hosting_matrix == ["ubuntu-latest", "windows-latest"],
+            "Hosting integration must run on Linux and Windows.")
+    hosting_steps = steps(hosting_integration, "hosting-integration")
+    hosting_runs = runs(hosting_steps)
+    integration_run = str(named_step(
+        hosting_steps, "Generic Host ordering and cancellation tests").get("run", ""))
+    require("--filter-class SmartPipe.Extensions.Hosting.Tests.Integration.GenericHostIntegrationTests"
+            in integration_run,
+            "Hosting OS matrix must run the real Generic Host integration tests.")
     windows = ci["jobs"].get("json-file-windows")
     require(isinstance(windows, dict) and windows.get("runs-on") == "windows-latest",
             "CI must define the Windows JSON lane on windows-latest.")
@@ -385,7 +425,7 @@ def validate(documents: dict[str, dict]) -> None:
             "Windows lifecycle filter must not use the obsolete "
             "SmartPipe.Extensions.Tests.Sinks namespace.")
 
-    all_runs = windows_runs + reusable_runs
+    all_runs = windows_runs + hosting_runs + reusable_runs
     filtered = [command for command in all_runs
                 if "--filter-class" in command or "--filter-query" in command]
     require(bool(filtered),
@@ -513,6 +553,10 @@ def _remove_reusable_step(documents: dict[str, dict], name: str) -> None:
     job["steps"] = [step for step in job["steps"] if step.get("name") != name]
 
 
+def _remove_hosting_matrix(documents: dict[str, dict]) -> None:
+    del documents["ci.yml"]["jobs"]["hosting-integration"]
+
+
 def _move_graph_before_integrity(documents: dict[str, dict]) -> None:
     job_steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
     graph = named_step(job_steps, "Verify package graph current")
@@ -601,6 +645,21 @@ def main() -> int:
         documents,
         lambda docs: _remove_reusable_step(docs, "Core tests with coverage"),
         "Core tests with coverage",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Hosting tests"),
+        "Hosting tests",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Run Hosting consumers"),
+        "Run Hosting consumers",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_hosting_matrix,
+        "Hosting integration OS matrix",
     )
     assert_mutation_rejected(
         documents,
