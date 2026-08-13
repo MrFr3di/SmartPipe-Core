@@ -1,0 +1,68 @@
+#nullable enable
+const SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckNames.AggregateLiveness = "smartpipe:liveness" -> string!
+const SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckNames.AggregateReadiness = "smartpipe:readiness" -> string!
+const SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckTags.Aggregate = "smartpipe-aggregate" -> string!
+const SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckTags.Liveness = "smartpipe-liveness" -> string!
+const SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckTags.Readiness = "smartpipe-readiness" -> string!
+const SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckTags.SmartPipe = "smartpipe" -> string!
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateHealthChecksBuilderExtensions
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateLivenessOptions
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateLivenessOptions.IncludeAllRegisteredPipelines.get -> bool
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateLivenessOptions.IncludeAllRegisteredPipelines.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateLivenessOptions.IncludedPipelines.get -> System.Collections.Generic.IList<SmartPipe.Core.PipelineKey>!
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateLivenessOptions.Liveness.get -> SmartPipe.Extensions.HealthChecks.SmartPipeLivenessOptions!
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateLivenessOptions.MaximumReportedProblemKeys.get -> int
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateLivenessOptions.MaximumReportedProblemKeys.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateLivenessOptions.SmartPipeAggregateLivenessOptions() -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateReadinessOptions
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateReadinessOptions.IncludeAllRegisteredPipelines.get -> bool
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateReadinessOptions.IncludeAllRegisteredPipelines.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateReadinessOptions.IncludedPipelines.get -> System.Collections.Generic.IList<SmartPipe.Core.PipelineKey>!
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateReadinessOptions.MaximumReportedProblemKeys.get -> int
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateReadinessOptions.MaximumReportedProblemKeys.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateReadinessOptions.Readiness.get -> SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions!
+SmartPipe.Extensions.HealthChecks.SmartPipeAggregateReadinessOptions.SmartPipeAggregateReadinessOptions() -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckNames
+SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckRegistrationExtensions
+SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckTags
+SmartPipe.Extensions.HealthChecks.SmartPipeLivenessOptions
+SmartPipe.Extensions.HealthChecks.SmartPipeLivenessOptions.FailOnActivationFailure.get -> bool
+SmartPipe.Extensions.HealthChecks.SmartPipeLivenessOptions.FailOnActivationFailure.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeLivenessOptions.FailOnLatestFault.get -> bool
+SmartPipe.Extensions.HealthChecks.SmartPipeLivenessOptions.FailOnLatestFault.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeLivenessOptions.MaximumReportedProblemRuns.get -> int
+SmartPipe.Extensions.HealthChecks.SmartPipeLivenessOptions.MaximumReportedProblemRuns.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeLivenessOptions.SmartPipeLivenessOptions() -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.FailOnLatestFailure.get -> bool
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.FailOnLatestFailure.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.InitialActivityGracePeriod.get -> System.TimeSpan
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.InitialActivityGracePeriod.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.InitialActivityStatus.get -> Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.InitialActivityStatus.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.MaximumReportedProblemRuns.get -> int
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.MaximumReportedProblemRuns.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.QueuePressureStatus.get -> Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.QueuePressureStatus.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.QueueUtilizationDegradedThreshold.get -> double?
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.QueueUtilizationDegradedThreshold.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.RequireInitialActivity.get -> bool
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.RequireInitialActivity.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.RunRequirement.get -> SmartPipe.Extensions.HealthChecks.SmartPipeReadinessRunRequirement
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.RunRequirement.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.SmartPipeReadinessOptions() -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.StaleActivityStatus.get -> Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.StaleActivityStatus.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.StaleAfter.get -> System.TimeSpan?
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions.StaleAfter.set -> void
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessRunRequirement
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessRunRequirement.ActiveOrSuccessfulCompletion = 2 -> SmartPipe.Extensions.HealthChecks.SmartPipeReadinessRunRequirement
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessRunRequirement.ActiveRunRequired = 1 -> SmartPipe.Extensions.HealthChecks.SmartPipeReadinessRunRequirement
+SmartPipe.Extensions.HealthChecks.SmartPipeReadinessRunRequirement.RegistrationOnly = 0 -> SmartPipe.Extensions.HealthChecks.SmartPipeReadinessRunRequirement
+static SmartPipe.Extensions.HealthChecks.SmartPipeAggregateHealthChecksBuilderExtensions.AddSmartPipeAggregateLiveness(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, System.Action<SmartPipe.Extensions.HealthChecks.SmartPipeAggregateLivenessOptions!>? configure = null, string? name = null, Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static SmartPipe.Extensions.HealthChecks.SmartPipeAggregateHealthChecksBuilderExtensions.AddSmartPipeAggregateReadiness(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, System.Action<SmartPipe.Extensions.HealthChecks.SmartPipeAggregateReadinessOptions!>? configure = null, string? name = null, Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckNames.Liveness(SmartPipe.Core.PipelineKey key) -> string!
+static SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckNames.PipelineTag(SmartPipe.Core.PipelineKey key) -> string!
+static SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckNames.Readiness(SmartPipe.Core.PipelineKey key) -> string!
+static SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckRegistrationExtensions.AddLiveness<TInput, TOutput>(this SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistrationBuilder<TInput, TOutput>! registration, System.Action<SmartPipe.Extensions.HealthChecks.SmartPipeLivenessOptions!>? configure = null, string? name = null, Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null) -> SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistrationBuilder<TInput, TOutput>!
+static SmartPipe.Extensions.HealthChecks.SmartPipeHealthCheckRegistrationExtensions.AddReadiness<TInput, TOutput>(this SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistrationBuilder<TInput, TOutput>! registration, System.Action<SmartPipe.Extensions.HealthChecks.SmartPipeReadinessOptions!>? configure = null, string? name = null, Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null) -> SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistrationBuilder<TInput, TOutput>!

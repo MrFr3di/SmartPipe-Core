@@ -40,6 +40,7 @@ public sealed class RunRegistryTests
         services.AddSmartPipe().AddPipeline(definition);
         await using var root = services.BuildServiceProvider();
         var registry = root.GetRequiredService<ISmartPipeRunRegistry>();
+        var observations = root.GetRequiredService<ISmartPipeRunObservationSource>();
         var factory = root.GetRequiredKeyedService<ISmartPipeRunFactory<int, int>>("active");
 
         Assert.Same(root.GetRequiredService<SmartPipeRunRegistry>(), registry);
@@ -65,6 +66,9 @@ public sealed class RunRegistryTests
 
         Assert.Empty(registry.GetActiveRuns(definition.Key));
         Assert.Equal(1, scopeDisposal.DisposeCalls);
+        Assert.Equal(
+            SmartPipeRunObservationOutcome.Completed,
+            observations.Capture(definition.Key).LatestTerminal?.Outcome);
     }
 
     [Fact]
@@ -104,6 +108,7 @@ public sealed class RunRegistryTests
         Assert.Throws<NotSupportedException>(() =>
             ((IList<SmartPipeRunSnapshot>)snapshots).Add(snapshots[0]));
 
+        timeProvider.UtcNow = DateTimeOffset.UnixEpoch.AddMinutes(4);
         gate.SetResult();
         await Task.WhenAll(runs.Select(run => run.Completion));
         Assert.Empty(registry.GetActiveRuns(definition.Key));
@@ -124,6 +129,7 @@ public sealed class RunRegistryTests
         services.AddSmartPipe().AddPipeline(definition);
         await using var root = services.BuildServiceProvider();
         var registry = root.GetRequiredService<ISmartPipeRunRegistry>();
+        var observations = root.GetRequiredService<ISmartPipeRunObservationSource>();
         var factory = root.GetRequiredKeyedService<ISmartPipeRunFactory<int, int>>("dispose");
         var run = await factory.StartAsync(TestContext.Current.CancellationToken);
         Assert.Single(registry.GetActiveRuns(definition.Key));
@@ -137,6 +143,7 @@ public sealed class RunRegistryTests
         Assert.Same(first, third);
         Assert.True(run.Completion.IsCompleted);
         Assert.Empty(registry.GetActiveRuns(definition.Key));
+        Assert.Equal(1, observations.Capture(definition.Key).LatestTerminal?.Sequence);
     }
 
     [Fact]

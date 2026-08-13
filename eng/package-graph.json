@@ -50,7 +50,11 @@
         "hosting-facade-source",
         "hosting-facade-binary-2.1.2",
         "hosting-trim",
-        "hosting-nativeaot"
+        "hosting-nativeaot",
+        "health-checks-direct",
+        "health-checks-aspnet",
+        "health-checks-trim",
+        "health-checks-nativeaot"
       ]
     },
     {
@@ -548,7 +552,11 @@
         "hosting-direct",
         "hosting-facade-binary-2.1.2",
         "hosting-trim",
-        "hosting-nativeaot"
+        "hosting-nativeaot",
+        "health-checks-direct",
+        "health-checks-aspnet",
+        "health-checks-trim",
+        "health-checks-nativeaot"
       ]
     },
     {
@@ -640,9 +648,9 @@
     {
       "id": "SmartPipe.Extensions.HealthChecks",
       "projectPath": "src/SmartPipe.Extensions.HealthChecks/SmartPipe.Extensions.HealthChecks.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-05",
-      "scaffoldKind": "host-integration",
+      "scaffoldKind": null,
       "publishOrder": 17,
       "baselineVersion": null,
       "aotContract": "full",
@@ -653,7 +661,9 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Diagnostics.HealthChecks"
+          "Microsoft.Extensions.DependencyInjection.Abstractions",
+          "Microsoft.Extensions.Diagnostics.HealthChecks",
+          "Microsoft.Extensions.Options"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions",
@@ -667,7 +677,9 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Diagnostics.HealthChecks"
+          "Microsoft.Extensions.DependencyInjection.Abstractions",
+          "Microsoft.Extensions.Diagnostics.HealthChecks",
+          "Microsoft.Extensions.Options"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions",
@@ -676,7 +688,10 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "health-checks-direct"
+        "health-checks-direct",
+        "health-checks-aspnet",
+        "health-checks-trim",
+        "health-checks-nativeaot"
       ]
     },
     {

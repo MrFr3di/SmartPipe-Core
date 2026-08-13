@@ -4,6 +4,53 @@ namespace SmartPipe.RepositoryChecks.Tests.PackageGraph;
 
 public sealed class PackageGraphValidatorTests
 {
+    [Fact]
+    public async Task HealthChecksProject_RejectsHostingReference()
+    {
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(
+            root,
+            "eng/package-graph.json",
+            TestContext.Current.CancellationToken);
+        var node = Assert.Single(
+            graph.Packages,
+            package => package.Id == "SmartPipe.Extensions.HealthChecks");
+        var project = new EvaluatedProject(
+            FullPath(root, node.ProjectPath),
+            node.Id,
+            graph.ReleaseVersion,
+            graph.ReleaseVersion,
+            ["net10.0"],
+            true,
+            true,
+            [
+                new("Microsoft.Extensions.DependencyInjection.Abstractions", null, null, null),
+                new("Microsoft.Extensions.Diagnostics.HealthChecks", null, null, null),
+                new("Microsoft.Extensions.Options", null, null, null),
+            ],
+            [
+                FullPath(root, "src/SmartPipe.Core/SmartPipe.Core.csproj"),
+                FullPath(root, "src/SmartPipe.Extensions.DependencyInjection/SmartPipe.Extensions.DependencyInjection.csproj"),
+                FullPath(root, "src/SmartPipe.Extensions.Hosting/SmartPipe.Extensions.Hosting.csproj"),
+            ],
+            null,
+            true,
+            "README.md",
+            "README.md",
+            "icon.png");
+
+        var violations = new PackageGraphValidator().ValidateProject(
+            graph,
+            node,
+            project,
+            PackageGraphMode.Current);
+
+        Assert.Contains(
+            violations,
+            violation => violation.Code == "SPGRAPH048"
+                && violation.Dependency == "SmartPipe.Extensions.Hosting");
+    }
+
     [Theory]
     [InlineData("facade", "SPGRAPH049")]
     [InlineData("unknown-external", "SPGRAPH046")]
@@ -190,4 +237,10 @@ public sealed class PackageGraphValidatorTests
         ]
         };
     }
+
+    private static string RepositoryRoot() =>
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+
+    private static string FullPath(string root, string relativePath) =>
+        Path.GetFullPath(relativePath.Replace('/', Path.DirectorySeparatorChar), root);
 }

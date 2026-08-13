@@ -2,6 +2,13 @@
 
 ## [2.2.0] — Development
 
+### Health checks
+
+- Added `SmartPipe.Extensions.HealthChecks` with exact-`PipelineKey` liveness, readiness, aggregate checks, isolated named options, stable names/tags, and bounded primitive result data.
+- Added one latest immutable terminal observation per key to canonical DI lifecycle tracking, including activation failures without exception/run/scope retention.
+- Preserved the 2.1 generic-pair health API physically in `SmartPipe.Extensions`; canonical checks are an explicit migration and do not type-forward legacy health identities.
+- Added direct, ASP.NET endpoint-tag, trimmed, and NativeAOT package consumers.
+
 ### Generic Host integration
 
 - Added `SmartPipe.Extensions.Hosting`, with one deterministic orchestrator for

@@ -9,12 +9,12 @@ namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 public sealed class ConsumerScenarioSchemaTests
 {
     [Fact]
-    public async Task CurrentManifest_HasExactlyNineteenStrictScenarios()
+    public async Task CurrentManifest_HasExactlyTwentyThreeStrictScenarios()
     {
         var root = RepositoryRoot();
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var document = await new ConsumerScenarioLoader().LoadAsync(root, "eng/consumer-scenarios.json", graph, TestContext.Current.CancellationToken);
-        Assert.Equal(19, document.Scenarios.Count);
+        Assert.Equal(23, document.Scenarios.Count);
         Assert.Equal(
             [
                 "core-direct",
@@ -36,11 +36,18 @@ public sealed class ConsumerScenarioSchemaTests
                 "hosting-facade-binary-2.1.2",
                 "hosting-trim",
                 "hosting-nativeaot",
+                "health-checks-direct",
+                "health-checks-aspnet",
+                "health-checks-trim",
+                "health-checks-nativeaot",
             ],
             document.Scenarios.Select(x => x.Id));
         Assert.All(
             document.Scenarios.Where(scenario => scenario.Id.StartsWith("hosting-", StringComparison.Ordinal)),
             scenario => Assert.Equal("hosting", scenario.Category));
+        Assert.All(
+            document.Scenarios.Where(scenario => scenario.Id.StartsWith("health-checks-", StringComparison.Ordinal)),
+            scenario => Assert.Equal("health-checks", scenario.Category));
     }
 
     [Theory]

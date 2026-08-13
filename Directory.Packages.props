@@ -31,6 +31,7 @@
     <PackageVersion Include="Moq" Version="4.20.72" />
     <PackageVersion Include="SmartPipe.Core" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.DependencyInjection" Version="2.2.0" />
+    <PackageVersion Include="SmartPipe.Extensions.HealthChecks" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.Hosting" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.Json" Version="2.2.0" />

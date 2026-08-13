@@ -199,14 +199,21 @@ def assert_consumer_contract() -> None:
         "dependency-injection-nativeaot",
         "hosting-direct", "hosting-facade-source", "hosting-facade-binary-2.1.2",
         "hosting-trim", "hosting-nativeaot",
+        "health-checks-direct", "health-checks-aspnet", "health-checks-trim",
+        "health-checks-nativeaot",
     }
-    require(len(current) == 19 and {scenario["id"] for scenario in current} == expected,
-            "Current consumer set must contain the exact nineteen scenarios.")
+    require(len(current) == 23 and {scenario["id"] for scenario in current} == expected,
+            "Current consumer set must contain the exact twenty-three scenarios.")
     hosting = [scenario for scenario in current if scenario.get("category") == "hosting"]
     require({scenario["id"] for scenario in hosting} == {
         "hosting-direct", "hosting-facade-source", "hosting-facade-binary-2.1.2",
         "hosting-trim", "hosting-nativeaot",
     }, "Hosting consumer category must contain the exact five Hosting scenarios.")
+    health_checks = [scenario for scenario in current if scenario.get("category") == "health-checks"]
+    require({scenario["id"] for scenario in health_checks} == {
+        "health-checks-direct", "health-checks-aspnet", "health-checks-trim",
+        "health-checks-nativeaot",
+    }, "HealthChecks consumer category must contain the exact four HealthChecks scenarios.")
     meta = next(scenario for scenario in current if scenario["id"] == "extensions-meta")
     require(meta["packageIds"] == ["SmartPipe.Extensions"],
             "extensions-meta must directly reference only the facade package.")
@@ -259,6 +266,12 @@ def validate(documents: dict[str, dict]) -> None:
         "SmartPipe.Extensions.Hosting.Tests.csproj --configuration Release --no-build "
         "--minimum-expected-tests 1"),
         "Reusable validation must run the complete Hosting test project.")
+    health_checks_test = " ".join(str(named_step(reusable_steps, "HealthChecks tests").get("run", "")).split())
+    require(health_checks_test == (
+        "dotnet test --project tests/SmartPipe.Extensions.HealthChecks.Tests/"
+        "SmartPipe.Extensions.HealthChecks.Tests.csproj --configuration Release --no-build "
+        "--minimum-expected-tests 1"),
+        "Reusable validation must run the complete HealthChecks test project with the MTP non-empty gate.")
     hosting_regressions = str(named_step(reusable_steps, "Hosting lifecycle regressions").get("run", ""))
     require("--filter-query /[Category=HostingLifecycle]" in hosting_regressions,
             "Reusable validation must run the Hosting lifecycle regression category.")
@@ -276,14 +289,14 @@ def validate(documents: dict[str, dict]) -> None:
         "Verify central package management", "Verify package projects",
         "Format verify", "Build", "Repository baseline contract tests",
         "Verify SP220-00 scope", "Core tests with coverage", "Core stress tests",
-        "Extensions tests", "Dependency Injection tests", "Hosting lifecycle regressions", "Hosting tests",
+        "Extensions tests", "Dependency Injection tests", "HealthChecks tests", "Hosting lifecycle regressions", "Hosting tests",
         "JSON Extensions tests", "Core correctness regressions",
         "Core concurrency regressions", "Extensions correctness regressions",
         "PR concurrency regression repeat", "Test and benchmark warning gate",
         "Pack packages from graph", "Provision and verify 2.1.2 baseline",
         "Verify package graph current", "Verify package metadata current",
         "Verify package ownership current", "Verify release versions current",
-        "Run current consumers", "Run Hosting consumers", "Vulnerable package scan",
+        "Run current consumers", "Run Hosting consumers", "Run HealthChecks consumers", "Vulnerable package scan",
         "Verify direct production audit policy", "Deprecated package scan",
         "Outdated package report", "Docs link check",
         "Upload immutable packages and reports",
@@ -295,7 +308,7 @@ def validate(documents: dict[str, dict]) -> None:
         "Test and benchmark warning gate", "Pack packages from graph",
         "Provision and verify 2.1.2 baseline", "Verify package graph current",
         "Verify package metadata current", "Verify package ownership current",
-        "Verify release versions current", "Run current consumers",
+        "Verify release versions current", "Run current consumers", "Run HealthChecks consumers",
         "Vulnerable package scan", "Verify direct production audit policy",
         "Deprecated package scan", "Outdated package report",
         "Upload immutable packages and reports",
@@ -314,6 +327,20 @@ def validate(documents: dict[str, dict]) -> None:
     hosting_consumers = str(named_step(reusable_steps, "Run Hosting consumers").get("run", ""))
     require("run-consumers" in hosting_consumers and "--category hosting" in hosting_consumers,
             "Reusable validation must execute the Hosting consumer category.")
+    health_checks_consumers = str(named_step(reusable_steps, "Run HealthChecks consumers").get("run", ""))
+    require("run-consumers" in health_checks_consumers and "--category health-checks" in health_checks_consumers,
+            "Reusable validation must execute the HealthChecks consumer category.")
+    concurrency_job = reusable["jobs"].get("health-checks-concurrency")
+    require(isinstance(concurrency_job, dict),
+            "Reusable validation must define the HealthChecks concurrency OS matrix.")
+    require(concurrency_job.get("strategy", {}).get("matrix", {}).get("os") ==
+            ["ubuntu-latest", "windows-latest"],
+            "HealthChecks concurrency matrix must run on Linux and Windows.")
+    concurrency_steps = steps(concurrency_job, "reusable health-checks-concurrency")
+    for step_name in ("Run bounded observation concurrency", "Run concurrent health evaluation"):
+        command = str(named_step(concurrency_steps, step_name).get("run", ""))
+        require("--minimum-expected-tests 1" in command,
+                f"{step_name} must fail when its MTP filter selects zero tests.")
     require(re.search(r"\\bdotnet\\s+pack\\b", reusable_text) is None,
             "Reusable validation must not hard-code dotnet pack commands.")
     require("validate-json-package-split.ps1" not in reusable_text,

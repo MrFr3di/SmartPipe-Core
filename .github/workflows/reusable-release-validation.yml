@@ -106,6 +106,9 @@ jobs:
     - name: Dependency Injection tests
       run: dotnet test --project tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
 
+    - name: HealthChecks tests
+      run: dotnet test --project tests/SmartPipe.Extensions.HealthChecks.Tests/SmartPipe.Extensions.HealthChecks.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
     - name: Hosting lifecycle regressions
       run: dotnet test --project tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --configuration Release --no-build --filter-query /[Category=HostingLifecycle] --minimum-expected-tests 1
 
@@ -121,6 +124,7 @@ jobs:
         dotnet build tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-restore -c Release -warnaserror
         dotnet build tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-restore -c Release -warnaserror
         dotnet build tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --no-restore -c Release -warnaserror
+        dotnet build tests/SmartPipe.Extensions.HealthChecks.Tests/SmartPipe.Extensions.HealthChecks.Tests.csproj --no-restore -c Release -warnaserror
         dotnet build benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj --no-restore -c Release -warnaserror
 
     - name: Set package version
@@ -164,6 +168,9 @@ jobs:
     - name: Run Hosting consumers
       run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --category hosting --package-directory artifacts/packages --package-version "$PACKAGE_VERSION"
 
+    - name: Run HealthChecks consumers
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --category health-checks --package-directory artifacts/packages --package-version "$PACKAGE_VERSION"
+
     - name: Vulnerable package scan
       shell: bash
       run: |
@@ -197,3 +204,34 @@ jobs:
           artifacts/audit
           eng/package-graph.json
         if-no-files-found: error
+
+  health-checks-concurrency:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        persist-credentials: false
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+      with:
+        global-json-file: global.json
+
+    - name: Restore locked
+      run: dotnet restore SmartPipe.Core.slnx --locked-mode
+
+    - name: Build concurrency projects
+      run: |
+        dotnet build tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj --configuration Release --no-restore -warnaserror
+        dotnet build tests/SmartPipe.Extensions.HealthChecks.Tests/SmartPipe.Extensions.HealthChecks.Tests.csproj --configuration Release --no-restore -warnaserror
+
+    - name: Run bounded observation concurrency
+      run: dotnet test --project tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj --configuration Release --no-build --filter-method SmartPipe.Extensions.DependencyInjection.Tests.RunObservationStoreTests.ConcurrentTerminalCommitsAcrossKeysRemainBoundedAndStrictlySequenced --minimum-expected-tests 1
+
+    - name: Run concurrent health evaluation
+      run: dotnet test --project tests/SmartPipe.Extensions.HealthChecks.Tests/SmartPipe.Extensions.HealthChecks.Tests.csproj --configuration Release --no-build --filter-method SmartPipe.Extensions.HealthChecks.Tests.HealthChecksContractTests.ConcurrentHealthChecksRemainDeterministic --minimum-expected-tests 1
