@@ -139,7 +139,8 @@ internal sealed class ActiveExecPlanLoader
     private const string ExpectedBaseRef = "origin/sp220/checkpoint-c";
     private static readonly Regex JsonFence = new(
         @"\A\s*```json\r?\n(?<json>.*?)\r?\n```\s*\z",
-        RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.CultureInvariant);
+        RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.CultureInvariant,
+        TimeSpan.FromSeconds(1));
 
     public async Task<ActiveExecPlan> LoadAsync(string repositoryRoot, CancellationToken cancellationToken)
     {

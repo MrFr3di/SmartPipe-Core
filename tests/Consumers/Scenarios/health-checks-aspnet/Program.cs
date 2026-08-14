@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using SmartPipe.Core;
 using SmartPipe.Extensions.DependencyInjection;
 using SmartPipe.Extensions.HealthChecks;
+using HealthChecksAspNet;
 
 var builder = WebApplication.CreateBuilder(args);
 var registration = builder.Services.AddSmartPipe().AddPipeline(
@@ -25,14 +26,17 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 Console.WriteLine("CONSUMER_OK health-checks-aspnet");
 await app.DisposeAsync();
 
-internal sealed class EmptySource : IPipelineSource<int>
+namespace HealthChecksAspNet
 {
-    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
-    public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
-        [EnumeratorCancellation] CancellationToken ct = default)
+    internal sealed class EmptySource : IPipelineSource<int>
     {
-        await Task.CompletedTask;
-        yield break;
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

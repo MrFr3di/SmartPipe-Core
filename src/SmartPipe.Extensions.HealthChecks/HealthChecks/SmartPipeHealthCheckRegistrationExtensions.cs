@@ -89,27 +89,27 @@ public static class SmartPipeHealthCheckRegistrationExtensions
         if (timeout is { } configuredTimeout && configuredTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
         var before = services.ToArray();
         var store = GetOrCreateStore(services);
-        var reservation = store.Reserve(name);
-        try
+        store.Register(name, () =>
         {
-            services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IValidateOptions<HealthCheckServiceOptions>, SmartPipeHealthCheckOptionsValidator>());
-            registerOptions(services);
-            services.AddHealthChecks().Add(new HealthCheckRegistration(
-                name,
-                factory,
-                failureStatus,
-                tags,
-                timeout));
-            reservation.Commit();
-        }
-        catch
-        {
-            for (var index = services.Count - 1; index >= 0; index--)
-                if (!before.Any(existing => ReferenceEquals(existing, services[index]))) services.RemoveAt(index);
-            reservation.Rollback();
-            throw;
-        }
+            try
+            {
+                services.TryAddEnumerable(
+                    ServiceDescriptor.Singleton<IValidateOptions<HealthCheckServiceOptions>, SmartPipeHealthCheckOptionsValidator>());
+                registerOptions(services);
+                services.AddHealthChecks().Add(new HealthCheckRegistration(
+                    name,
+                    factory,
+                    failureStatus,
+                    tags,
+                    timeout));
+            }
+            catch
+            {
+                for (var index = services.Count - 1; index >= 0; index--)
+                    if (!before.Any(existing => ReferenceEquals(existing, services[index]))) services.RemoveAt(index);
+                throw;
+            }
+        });
     }
 
     internal static string ValidName(string? name, string defaultName)

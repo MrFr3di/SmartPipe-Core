@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SmartPipe.Core;
 using SmartPipe.Extensions.DependencyInjection;
 using SmartPipe.Extensions.HealthChecks;
+using HealthChecksDirect;
 
 var services = new ServiceCollection();
 services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
@@ -42,14 +43,17 @@ static PipelineDefinition<int, int> Definition(string key) =>
                 static (_, _) => ValueTask.FromResult<IPipelineSource<int>>(new EmptySource())))
         .Build();
 
-internal sealed class EmptySource : IPipelineSource<int>
+namespace HealthChecksDirect
 {
-    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
-    public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
-        [EnumeratorCancellation] CancellationToken ct = default)
+    internal sealed class EmptySource : IPipelineSource<int>
     {
-        await Task.CompletedTask;
-        yield break;
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
