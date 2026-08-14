@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main, upd, release/2.2.0 ]
   pull_request:
-    branches: [ main, release/2.2.0 ]
+    branches: [ main, release/2.2.0, sp220/checkpoint-c ]
   schedule:
     - cron: '27 3 * * 1'
 

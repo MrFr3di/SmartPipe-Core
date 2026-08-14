@@ -25,6 +25,7 @@ FILES = {
     for name in (
         "ci.yml",
         "codeql.yml",
+        "dependency-review.yml",
         "reusable-release-validation.yml",
         "publish-nuget.yml",
     )
@@ -291,12 +292,44 @@ def assert_consumer_contract() -> None:
 def validate(documents: dict[str, dict]) -> None:
     reusable = documents["reusable-release-validation.yml"]
     ci = documents["ci.yml"]
+    codeql = documents["codeql.yml"]
+    dependency_review = documents["dependency-review.yml"]
     publish = documents["publish-nuget.yml"]
+
+    for workflow_name, workflow in (
+        ("ci.yml", ci),
+        ("codeql.yml", codeql),
+        ("dependency-review.yml", dependency_review),
+    ):
+        branches = workflow.get("on", {}).get("pull_request", {}).get("branches", [])
+        require("sp220/checkpoint-c" in branches,
+                f"{workflow_name} pull_request must include sp220/checkpoint-c.")
 
     for event in ("push", "pull_request"):
         branches = ci.get("on", {}).get(event, {}).get("branches", [])
         require("release/2.2.0" in branches,
                 f"CI {event} must include release/2.2.0.")
+
+    expected_triggers = {
+        "ci.yml": {
+            "workflow_dispatch": None,
+            "push": {"branches": ["main", "upd", "release/2.2.0"]},
+            "pull_request": {
+                "branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-c"]
+            },
+        },
+        "codeql.yml": {
+            "push": {"branches": ["main", "upd", "release/2.2.0"]},
+            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c"]},
+            "schedule": [{"cron": "27 3 * * 1"}],
+        },
+        "dependency-review.yml": {
+            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c"]},
+        },
+    }
+    for workflow_name, expected in expected_triggers.items():
+        require(documents[workflow_name].get("on") == expected,
+                f"{workflow_name} trigger contract changed.")
 
     workflow_call = reusable.get("on", {}).get("workflow_call")
     require(isinstance(workflow_call, dict), "Reusable validation must declare on.workflow_call.")
@@ -611,6 +644,21 @@ def _remove_release_branch(documents: dict[str, dict]) -> None:
     branches.remove("release/2.2.0")
 
 
+def _remove_ci_checkpoint_branch(documents: dict[str, dict]) -> None:
+    branches = documents["ci.yml"]["on"]["pull_request"]["branches"]
+    branches.remove("sp220/checkpoint-c")
+
+
+def _remove_codeql_checkpoint_branch(documents: dict[str, dict]) -> None:
+    branches = documents["codeql.yml"]["on"]["pull_request"]["branches"]
+    branches.remove("sp220/checkpoint-c")
+
+
+def _remove_dependency_review_checkpoint_branch(documents: dict[str, dict]) -> None:
+    branches = documents["dependency-review.yml"]["on"]["pull_request"]["branches"]
+    branches.remove("sp220/checkpoint-c")
+
+
 def _remove_linux_offline_verification(documents: dict[str, dict]) -> None:
     job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
     job["steps"] = [step for step in job["steps"]
@@ -783,6 +831,21 @@ def main() -> int:
         "global.json as the SDK source",
     )
     assert_mutation_rejected(documents, _remove_release_branch, "release/2.2.0")
+    assert_mutation_rejected(
+        documents,
+        _remove_ci_checkpoint_branch,
+        "ci.yml pull_request must include sp220/checkpoint-c",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_codeql_checkpoint_branch,
+        "codeql.yml pull_request must include sp220/checkpoint-c",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_dependency_review_checkpoint_branch,
+        "dependency-review.yml pull_request must include sp220/checkpoint-c",
+    )
     assert_mutation_rejected(documents, _remove_linux_offline_verification, "Verify 2.1.2 baseline offline")
     assert_mutation_rejected(documents, _make_windows_offline_network_capable, "must not be network-capable")
     assert_mutation_rejected(documents, _remove_repository_test_minimum, "--minimum-expected-tests 1")
