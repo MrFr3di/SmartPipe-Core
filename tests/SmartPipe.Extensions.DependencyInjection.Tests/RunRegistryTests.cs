@@ -141,9 +141,12 @@ public sealed class RunRegistryTests
 
         Assert.Same(first, second);
         Assert.Same(first, third);
-        Assert.True(run.Completion.IsCompleted);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.Completion);
+        Assert.True(run.Completion.IsCanceled);
         Assert.Empty(registry.GetActiveRuns(definition.Key));
-        Assert.Equal(1, observations.Capture(definition.Key).LatestTerminal?.Sequence);
+        var terminal = observations.Capture(definition.Key).LatestTerminal;
+        Assert.Equal(SmartPipeRunObservationOutcome.Cancelled, terminal?.Outcome);
+        Assert.Equal(1, terminal?.Sequence);
     }
 
     [Fact]
