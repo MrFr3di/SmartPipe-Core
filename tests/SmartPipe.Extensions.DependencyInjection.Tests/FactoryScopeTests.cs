@@ -47,7 +47,8 @@ public sealed class FactoryScopeTests
             definition,
             scopeFactory,
             new RejectingTimeProvider(),
-            new SmartPipeRunRegistry());
+            new SmartPipeRunRegistry(),
+            new TestObservationStore());
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
@@ -76,7 +77,8 @@ public sealed class FactoryScopeTests
             definition,
             scopeFactory,
             TimeProvider.System,
-            new SmartPipeRunRegistry());
+            new SmartPipeRunRegistry(),
+            new TestObservationStore());
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => factory.StartAsync(cancellation.Token));
@@ -101,7 +103,8 @@ public sealed class FactoryScopeTests
             definition,
             scopeFactory,
             TimeProvider.System,
-            registry);
+            registry,
+            new TestObservationStore());
 
         var first = await factory.StartAsync(TestContext.Current.CancellationToken);
         await first.Completion;
@@ -134,7 +137,8 @@ public sealed class FactoryScopeTests
             definition,
             scopeFactory,
             TimeProvider.System,
-            registry);
+            registry,
+            new TestObservationStore());
 
         var first = await factory.StartAsync(TestContext.Current.CancellationToken);
         await first.Completion;
@@ -170,7 +174,8 @@ public sealed class FactoryScopeTests
             definition,
             scopeFactory,
             TimeProvider.System,
-            new SmartPipeRunRegistry());
+            new SmartPipeRunRegistry(),
+            new TestObservationStore());
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => factory.StartAsync(TestContext.Current.CancellationToken));
@@ -197,7 +202,8 @@ public sealed class FactoryScopeTests
             definition,
             new ThrowingDisposeScopeFactory(root, scopeDisposeError),
             TimeProvider.System,
-            new ThrowingRunRegistry(registrationError));
+            new ThrowingRunRegistry(registrationError),
+            new TestObservationStore());
 
         var error = await Assert.ThrowsAsync<AggregateException>(
             () => factory.StartAsync(TestContext.Current.CancellationToken));
@@ -471,6 +477,25 @@ public sealed class FactoryScopeTests
         public IDisposable Register<TInput, TOutput>(
             PipelineRun<TOutput> run,
             DateTimeOffset startedAtUtc) => throw _error;
+    }
+
+    private sealed class TestObservationStore : ISmartPipeMutableRunObservationStore
+    {
+        private long _sequence;
+
+        public SmartPipeTerminalRunObservation RecordTerminal(SmartPipeTerminalRunCandidate candidate) => new()
+        {
+            Identity = candidate.Identity,
+            InputType = candidate.InputType,
+            OutputType = candidate.OutputType,
+            Outcome = candidate.Outcome,
+            StartedAtUtc = candidate.StartedAtUtc,
+            CompletedAtUtc = candidate.CompletedAtUtc,
+            Metrics = candidate.Metrics,
+            InputCapacity = candidate.InputCapacity,
+            OutputCapacity = candidate.OutputCapacity,
+            Sequence = Interlocked.Increment(ref _sequence),
+        };
     }
 
     private sealed class ThrowingDisposeScopeFactory : IServiceScopeFactory

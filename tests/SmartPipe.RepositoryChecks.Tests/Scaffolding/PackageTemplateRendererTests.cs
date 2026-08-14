@@ -14,7 +14,6 @@ public sealed class PackageTemplateRendererTests
     [InlineData("SmartPipe.Extensions.Channels", "CoreLeaf", "1bc7c64f427265aa7849c734b3a8f9eceba03b6adb6d37d7e12cad08d0ad8a69")]
     [InlineData("SmartPipe.Extensions.Csv", "FrameworkIntegration", "177f4386223f16c8666b01f54ef34018f925f14704d85c04d2d812f065fa3fd5")]
     [InlineData("SmartPipe.Extensions.Http.Json", "ComposedIntegration", "4b28a61c212a2815d0b7830c846ba1b5e14daad2ffe1678ac528c482fae758d0")]
-    [InlineData("SmartPipe.Extensions.HealthChecks", "HostIntegration", "fd58368e2a7d36b55a26284828410f78dbd4d4ac917e59c7058bb3e979c6fb3d")]
     [InlineData("SmartPipe.Testing", "Testing", "7312db365c704bd43f5d0f2f8a364a5ca067a055a143be9ce1743f26283289e3")]
     public async Task Render_AllKindsAreDeterministicLfOnlySnapshots(string id, string kind, string expectedSnapshot)
     {

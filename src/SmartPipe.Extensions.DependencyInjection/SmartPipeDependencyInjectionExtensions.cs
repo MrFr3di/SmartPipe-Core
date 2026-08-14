@@ -33,6 +33,9 @@ public static class SmartPipeDependencyInjectionExtensions
             ServiceDescriptor.Singleton(runRegistry),
             ServiceDescriptor.Singleton<ISmartPipeRunRegistry>(ResolveRunRegistry),
             ServiceDescriptor.Singleton<ISmartPipeMutableRunRegistry>(ResolveMutableRunRegistry),
+            ServiceDescriptor.Singleton<SmartPipeRunObservationStore>(CreateRunObservationStore),
+            ServiceDescriptor.Singleton<ISmartPipeRunObservationSource>(ResolveRunObservationSource),
+            ServiceDescriptor.Singleton<ISmartPipeMutableRunObservationStore>(ResolveMutableRunObservationStore),
         };
         if (!services.Any(static descriptor =>
             descriptor.ServiceType == typeof(TimeProvider) && !descriptor.IsKeyedService))
@@ -85,7 +88,8 @@ public static class SmartPipeDependencyInjectionExtensions
                     provider.GetRequiredKeyedService<PipelineDefinition<TInput, TOutput>>(serviceKey),
                     provider.GetRequiredService<IServiceScopeFactory>(),
                     provider.GetRequiredService<TimeProvider>(),
-                    provider.GetRequiredService<ISmartPipeMutableRunRegistry>())),
+                    provider.GetRequiredService<ISmartPipeMutableRunRegistry>(),
+                    provider.GetRequiredService<ISmartPipeMutableRunObservationStore>())),
         ];
 
         var reservation = infrastructure.Store.Reserve(key);
@@ -152,6 +156,18 @@ public static class SmartPipeDependencyInjectionExtensions
     private static ISmartPipeMutableRunRegistry ResolveMutableRunRegistry(IServiceProvider provider) =>
         provider.GetRequiredService<SmartPipeRunRegistry>();
 
+    private static SmartPipeRunObservationStore CreateRunObservationStore(IServiceProvider provider) =>
+        new(
+            provider.GetRequiredService<ISmartPipeRegistry>(),
+            provider.GetRequiredService<ISmartPipeRunRegistry>(),
+            provider.GetRequiredService<TimeProvider>());
+
+    private static ISmartPipeRunObservationSource ResolveRunObservationSource(IServiceProvider provider) =>
+        provider.GetRequiredService<SmartPipeRunObservationStore>();
+
+    private static ISmartPipeMutableRunObservationStore ResolveMutableRunObservationStore(IServiceProvider provider) =>
+        provider.GetRequiredService<SmartPipeRunObservationStore>();
+
     private static (SmartPipeRegistrationStore Store, SmartPipeRegistry Registry)? FindInfrastructure(
         IServiceCollection services)
     {
@@ -179,6 +195,15 @@ public static class SmartPipeDependencyInjectionExtensions
         var mutableRunRegistryAliasDescriptors = services
             .Where(static descriptor => descriptor.ServiceType == typeof(ISmartPipeMutableRunRegistry))
             .ToArray();
+        var observationStoreDescriptors = services
+            .Where(static descriptor => descriptor.ServiceType == typeof(SmartPipeRunObservationStore))
+            .ToArray();
+        var observationSourceDescriptors = services
+            .Where(static descriptor => descriptor.ServiceType == typeof(ISmartPipeRunObservationSource))
+            .ToArray();
+        var mutableObservationDescriptors = services
+            .Where(static descriptor => descriptor.ServiceType == typeof(ISmartPipeMutableRunObservationStore))
+            .ToArray();
 
         if (storeDescriptors.Length == 0
             && registryDescriptors.Length == 0
@@ -187,7 +212,10 @@ public static class SmartPipeDependencyInjectionExtensions
             && factoryProviderAliasDescriptors.Length == 0
             && runRegistryDescriptors.Length == 0
             && runRegistryAliasDescriptors.Length == 0
-            && mutableRunRegistryAliasDescriptors.Length == 0)
+            && mutableRunRegistryAliasDescriptors.Length == 0
+            && observationStoreDescriptors.Length == 0
+            && observationSourceDescriptors.Length == 0
+            && mutableObservationDescriptors.Length == 0)
         {
             return null;
         }
@@ -207,6 +235,15 @@ public static class SmartPipeDependencyInjectionExtensions
         var mutableRunRegistryAliasFactory = mutableRunRegistryAliasDescriptors.Length == 1
             ? mutableRunRegistryAliasDescriptors[0].ImplementationFactory
             : null;
+        var observationStoreFactory = observationStoreDescriptors.Length == 1
+            ? observationStoreDescriptors[0].ImplementationFactory
+            : null;
+        var observationSourceFactory = observationSourceDescriptors.Length == 1
+            ? observationSourceDescriptors[0].ImplementationFactory
+            : null;
+        var mutableObservationFactory = mutableObservationDescriptors.Length == 1
+            ? mutableObservationDescriptors[0].ImplementationFactory
+            : null;
         if (storeDescriptors.Length != 1
             || registryDescriptors.Length != 1
             || aliasDescriptors.Length != 1
@@ -215,6 +252,9 @@ public static class SmartPipeDependencyInjectionExtensions
             || runRegistryDescriptors.Length != 1
             || runRegistryAliasDescriptors.Length != 1
             || mutableRunRegistryAliasDescriptors.Length != 1
+            || observationStoreDescriptors.Length != 1
+            || observationSourceDescriptors.Length != 1
+            || mutableObservationDescriptors.Length != 1
             || storeDescriptors[0].ImplementationInstance is not SmartPipeRegistrationStore store
             || registryDescriptors[0].ImplementationInstance is not SmartPipeRegistry registry
             || !ReferenceEquals(registry.Store, store)
@@ -233,7 +273,16 @@ public static class SmartPipeDependencyInjectionExtensions
                 ((Func<IServiceProvider, ISmartPipeRunRegistry>)ResolveRunRegistry).Method
             || mutableRunRegistryAliasFactory is null
             || mutableRunRegistryAliasFactory.Method !=
-                ((Func<IServiceProvider, ISmartPipeMutableRunRegistry>)ResolveMutableRunRegistry).Method)
+                ((Func<IServiceProvider, ISmartPipeMutableRunRegistry>)ResolveMutableRunRegistry).Method
+            || observationStoreFactory is null
+            || observationStoreFactory.Method !=
+                ((Func<IServiceProvider, SmartPipeRunObservationStore>)CreateRunObservationStore).Method
+            || observationSourceFactory is null
+            || observationSourceFactory.Method !=
+                ((Func<IServiceProvider, ISmartPipeRunObservationSource>)ResolveRunObservationSource).Method
+            || mutableObservationFactory is null
+            || mutableObservationFactory.Method !=
+                ((Func<IServiceProvider, ISmartPipeMutableRunObservationStore>)ResolveMutableRunObservationStore).Method)
         {
             throw new InvalidOperationException("SmartPipe infrastructure registrations are corrupted or split-brain.");
         }

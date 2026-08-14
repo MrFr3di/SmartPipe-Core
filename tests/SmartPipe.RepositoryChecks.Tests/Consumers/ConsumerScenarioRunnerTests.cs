@@ -1,6 +1,8 @@
+using System.Text.Json;
 using SmartPipe.RepositoryChecks.Consumers;
 using SmartPipe.RepositoryChecks.Infrastructure;
 using SmartPipe.RepositoryChecks.NuGet;
+using SmartPipe.RepositoryChecks.Serialization;
 using SmartPipe.RepositoryChecks.Tests.Repository;
 using SmartPipe.RepositoryChecks.Tests.NuGet;
 
@@ -10,6 +12,134 @@ namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 [Collection(ExternalProcessCollection.Name)]
 public sealed class ConsumerScenarioRunnerTests
 {
+    [Fact]
+    public void ProcessFailure_IsBoundedSingleLineAndPointsToRelativeRetainedEvidence()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var relativeLog = "artifacts/consumers/failure/run/logs/stderr.log";
+        var logPath = fixture.Write(relativeLog, "secret=do-not-print\n" + new string('x', 32));
+        var result = new DotNetProcessResult(
+            17,
+            "",
+            "secret=do-not-print\r\n" + new string('x', 100_000),
+            Path.Combine(fixture.Path, "artifacts/consumers/failure/run/logs/stdout.log"),
+            logPath,
+            Path.Combine(fixture.Path, "dotnet") + " restore --configfile <argument>",
+            DateTimeOffset.UnixEpoch,
+            12);
+
+        var error = ConsumerScenarioRunner.BuildProcessFailure(result, fixture.Path);
+
+        Assert.Equal("SPCONS014", error.Code);
+        Assert.InRange(error.Message.Length, 1, 1024);
+        Assert.DoesNotContain('\r', error.Message);
+        Assert.DoesNotContain('\n', error.Message);
+        Assert.DoesNotContain("do-not-print", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Consumer command failed (17)", error.Message, StringComparison.Ordinal);
+        Assert.Contains(relativeLog, error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(fixture.Path, error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(File.Exists(logPath));
+    }
+
+    [Fact]
+    public void ProcessFailure_RejectsNewlineAndOversizedEvidencePaths()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var hostilePath = Path.Combine(
+            fixture.Path,
+            "artifacts",
+            "consumers",
+            "failure",
+            "run",
+            "logs",
+            new string('x', 2_000) + "\nsecret.log");
+        var result = new DotNetProcessResult(
+            9,
+            "",
+            "stderr",
+            hostilePath,
+            hostilePath,
+            "dotnet",
+            DateTimeOffset.UnixEpoch,
+            1);
+
+        var error = Assert.Throws<ConsumerScenarioException>(() =>
+            ConsumerScenarioRunner.BuildProcessFailure(result, fixture.Path));
+
+        Assert.Equal("SPCONS009", error.Code);
+        Assert.DoesNotContain('\r', error.Message);
+        Assert.DoesNotContain('\n', error.Message);
+        Assert.InRange(error.Message.Length, 1, 1024);
+        Assert.DoesNotContain("secret.log", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ProcessFailure_RejectsEvidenceOutsideRepositoryRoot()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var outsideLog = Path.Combine(fixture.Path, "..", "consumer.stderr.log");
+        var result = new DotNetProcessResult(
+            3,
+            "",
+            "stderr",
+            outsideLog,
+            outsideLog,
+            "dotnet",
+            DateTimeOffset.UnixEpoch,
+            1);
+
+        var error = Assert.Throws<ConsumerScenarioException>(() =>
+            ConsumerScenarioRunner.BuildProcessFailure(result, fixture.Path));
+
+        Assert.Equal("SPCONS009", error.Code);
+        Assert.DoesNotContain("consumer.stderr.log", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain('\r', error.Message);
+        Assert.DoesNotContain('\n', error.Message);
+    }
+
+    [Fact]
+    public void SuccessfulConsumerResult_SerializesWithSchemaVersionOneShape()
+    {
+        var result = new ConsumerScenarioResult(
+            1,
+            "fixture",
+            "passed",
+            "2.2.0",
+            true,
+            12,
+            ["SmartPipe.Core"],
+            [new("process", "dotnet build", 0, DateTimeOffset.UnixEpoch, 4, "logs/stdout.log", "logs/stderr.log")]);
+
+        var json = JsonSerializer.Serialize(result, RepositoryChecksJsonContext.Default.ConsumerScenarioResult)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .TrimEnd('\n');
+
+        Assert.Equal("""
+{
+  "schemaVersion": 1,
+  "scenario": "fixture",
+  "status": "passed",
+  "packageVersion": "2.2.0",
+  "restoreLocked": true,
+  "durationMs": 12,
+  "observedSmartPipeDependencies": [
+    "SmartPipe.Core"
+  ],
+  "commands": [
+    {
+      "phase": "process",
+      "command": "dotnet build",
+      "exitCode": 0,
+      "startedUtc": "1970-01-01T00:00:00+00:00",
+      "durationMs": 4,
+      "standardOutputLog": "logs/stdout.log",
+      "standardErrorLog": "logs/stderr.log"
+    }
+  ]
+}
+""".TrimEnd('\n'), json);
+    }
+
     [Fact]
     public async Task ProcessRunner_UsesArgumentListSpillsAndRedactsSecrets()
     {

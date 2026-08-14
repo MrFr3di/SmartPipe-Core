@@ -88,13 +88,17 @@ internal sealed class BaselineVerificationService
         }
 
         var diagnostics = new List<BaselineDiagnostic>();
+        var missingPackageFileNames = new HashSet<string>(StringComparer.Ordinal);
         BaselineManifest manifest;
         string baselineRoot;
+        string packagesDirectory;
         try
         {
             var root = RepositoryPaths.NormalizeRoot(options.RepositoryRoot);
-            _ = RepositoryPaths.NormalizeContainedFullPath(
-                root, Path.GetFullPath(options.PackagesDirectory), "packages directory");
+            packagesDirectory = Path.IsPathRooted(options.PackagesDirectory)
+                ? Path.GetFullPath(options.PackagesDirectory)
+                : Path.GetFullPath(options.PackagesDirectory.Replace('/', Path.DirectorySeparatorChar), root);
+            _ = RepositoryPaths.NormalizeContainedFullPath(root, packagesDirectory, "packages directory");
             var manifestPath = ResolveInputWithinRoot(root, options.ManifestPath, "manifest");
             baselineRoot = snapshotRootOverride ?? Path.GetDirectoryName(manifestPath)!;
             RepositoryPaths.RequireExistingRegularFile(root, manifestPath, "manifest");
@@ -132,6 +136,17 @@ internal sealed class BaselineVerificationService
                 {
                     throw new JsonException("Manifest snapshot paths must be unique after normalization.");
                 }
+            }
+
+            foreach (var package in manifest.Packages.OrderBy(static package => package.Id, StringComparer.Ordinal))
+            {
+                if (File.Exists(Path.Combine(packagesDirectory, package.FileName)))
+                {
+                    continue;
+                }
+
+                missingPackageFileNames.Add(package.FileName);
+                diagnostics.Add(new("SPB005", $"Required package is missing: {package.FileName}"));
             }
         }
         catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException or InvalidDataException)
@@ -236,13 +251,12 @@ internal sealed class BaselineVerificationService
         foreach (var package in manifest.Packages.OrderBy(static item => item.Id, StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var packagePath = Path.Combine(options.PackagesDirectory, package.FileName);
-            if (!File.Exists(packagePath))
+            if (missingPackageFileNames.Contains(package.FileName))
             {
-                diagnostics.Add(new("SPB005", $"Required package is missing: {package.FileName}"));
                 continue;
             }
 
+            var packagePath = Path.Combine(packagesDirectory, package.FileName);
             var hash = await Hashing.Sha256FileAsync(packagePath, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(hash, package.Sha256, StringComparison.Ordinal))
             {

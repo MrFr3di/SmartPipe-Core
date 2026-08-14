@@ -13,7 +13,6 @@
     "testing-direct",
     "http-json-direct",
     "opentelemetry-direct",
-    "health-checks-direct",
     "data-annotations-direct"
   ],
   "scenarios": [
@@ -246,6 +245,58 @@
       "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting"],
       "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting"],
       "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.HealthChecks", "SmartPipe.Extensions.Json", "Microsoft.Extensions.Diagnostics.HealthChecks", "OpenTelemetry.Api"],
+      "baselineVersion": null,
+      "timeout": "00:15:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "health-checks-direct",
+      "set": "current",
+      "category": "health-checks",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/health-checks-direct/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.HealthChecks"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.HealthChecks"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.Hosting"],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "health-checks-aspnet",
+      "set": "current",
+      "category": "health-checks",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/health-checks-aspnet/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.HealthChecks"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.HealthChecks"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.Hosting"],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "health-checks-trim",
+      "set": "current",
+      "category": "health-checks",
+      "mode": "publish-trimmed",
+      "templatePath": "tests/Consumers/Scenarios/health-checks-direct/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.HealthChecks"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.HealthChecks"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.Hosting"],
+      "baselineVersion": null,
+      "timeout": "00:10:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "health-checks-nativeaot",
+      "set": "current",
+      "category": "health-checks",
+      "mode": "publish-native-aot",
+      "templatePath": "tests/Consumers/Scenarios/health-checks-direct/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.HealthChecks"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.HealthChecks"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.Hosting"],
       "baselineVersion": null,
       "timeout": "00:15:00",
       "runSecondLockedRestore": true

@@ -45,8 +45,9 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         var externalPackageVersions = centralPackages.Versions
             .Where(static pair => !pair.Key.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase))
             .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+        var externalPackageIds = await ReadExternalPackageIdsAsync(options.RepositoryRoot, ct).ConfigureAwait(false);
         var results = new List<ConsumerScenarioResult>();
-        foreach (var scenario in scenarios) results.Add(await RunScenarioAsync(options, scenario, externalPackageVersions, ct).ConfigureAwait(false));
+        foreach (var scenario in scenarios) results.Add(await RunScenarioAsync(options, scenario, externalPackageVersions, externalPackageIds, ct).ConfigureAwait(false));
         return results;
     }
 
@@ -54,6 +55,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         RunConsumersOptions options,
         ConsumerScenario scenario,
         IReadOnlyDictionary<string, string> externalPackageVersions,
+        IReadOnlyList<string> externalPackageIds,
         CancellationToken ct)
     {
         var started = Stopwatch.StartNew();
@@ -85,17 +87,17 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             feed,
             ct,
             workspace,
-            await ReadExternalPackageIdsAsync(options.RepositoryRoot, ct).ConfigureAwait(false)).ConfigureAwait(false);
+            externalPackageIds).ConfigureAwait(false);
         var packages = Path.Combine(workspace, "packages");
         var rid = RuntimeIdentifier();
         var restore = new List<string> { "restore", project, "--configfile", config, "--packages", packages, "--use-lock-file" };
         if (scenario.Mode is ConsumerMode.PublishTrimmed or ConsumerMode.PublishNativeAot) { restore.Add("-r"); restore.Add(rid); }
         if (scenario.Mode == ConsumerMode.PublishNativeAot) restore.Add("-p:PublishAot=true");
-        await RunRequiredAsync("dotnet", restore, source, logs, scenario.Timeout, events, ct).ConfigureAwait(false);
+        await RunRequiredAsync("dotnet", restore, source, logs, options.RepositoryRoot, scenario.Timeout, events, ct).ConfigureAwait(false);
         if (scenario.RunSecondLockedRestore)
         {
             var locked = restore.ToList(); locked.Remove("--use-lock-file"); locked.Add("--locked-mode");
-            await RunRequiredAsync("dotnet", locked, source, logs, scenario.Timeout, events, ct).ConfigureAwait(false);
+            await RunRequiredAsync("dotnet", locked, source, logs, options.RepositoryRoot, scenario.Timeout, events, ct).ConfigureAwait(false);
         }
 
         string outputDirectory;
@@ -104,11 +106,11 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             outputDirectory = Path.Combine(workspace, "publish");
             var publish = new List<string> { "publish", project, "-c", "Release", "-r", rid, "--self-contained", "true", "--no-restore", "-o", outputDirectory, "-p:PublishTrimmed=true", "-p:TrimMode=link" };
             if (scenario.Mode == ConsumerMode.PublishNativeAot) publish.Add("-p:PublishAot=true");
-            await RunRequiredAsync("dotnet", publish, source, logs, scenario.Timeout, events, ct).ConfigureAwait(false);
+            await RunRequiredAsync("dotnet", publish, source, logs, options.RepositoryRoot, scenario.Timeout, events, ct).ConfigureAwait(false);
         }
         else
         {
-            await RunRequiredAsync("dotnet", ["build", project, "-c", "Release", "--no-restore"], source, logs, scenario.Timeout, events, ct).ConfigureAwait(false);
+            await RunRequiredAsync("dotnet", ["build", project, "-c", "Release", "--no-restore"], source, logs, options.RepositoryRoot, scenario.Timeout, events, ct).ConfigureAwait(false);
             outputDirectory = Path.Combine(source, "bin", "Release", "net10.0");
         }
 
@@ -118,7 +120,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         if (scenario.Mode == ConsumerMode.BinaryCompatibility)
             foreach (var replacement in await ReplaceRuntimeAssembliesWithoutBuildAsync(outputDirectory, options.PackageDirectory, options.PackageVersion, scenario.PackageIds, ct).ConfigureAwait(false)) events.Add(replacement);
         await InspectRuntimeArtifactsAsync(outputDirectory, scenario.Mode, ct).ConfigureAwait(false);
-        await ExecuteAsync(outputDirectory, project, scenario, logs, events, ct).ConfigureAwait(false);
+        await ExecuteAsync(outputDirectory, project, scenario, logs, options.RepositoryRoot, events, ct).ConfigureAwait(false);
         if (scenario.Mode == ConsumerMode.BinaryCompatibility) ValidateBinaryCompatibilityPhases(events, scenario.PackageIds.Count);
 
         var result = new ConsumerScenarioResult(1, scenario.Id, "passed", options.PackageVersion, scenario.RunSecondLockedRestore,
@@ -156,12 +158,26 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         return feed;
     }
 
-    private async Task<DotNetProcessResult> RunRequiredAsync(string fileName, IReadOnlyList<string> args, string cwd, string logs, TimeSpan timeout, List<ConsumerCommandEvent> events, CancellationToken ct)
+    private async Task<DotNetProcessResult> RunRequiredAsync(string fileName, IReadOnlyList<string> args, string cwd, string logs, string repositoryRoot, TimeSpan timeout, List<ConsumerCommandEvent> events, CancellationToken ct)
     {
         var result = await _processRunner.RunAsync(new(fileName, args, cwd, logs, timeout), ct).ConfigureAwait(false);
         events.Add(new("process", result.Command, result.ExitCode, result.StartedUtc, result.DurationMs, Normalize(result.StandardOutputLog, cwd), Normalize(result.StandardErrorLog, cwd)));
-        if (result.ExitCode != 0) throw new ConsumerScenarioException("SPCONS014", $"Consumer command failed ({result.ExitCode}): {result.Command}\n{result.StandardError}");
+        if (result.ExitCode != 0) throw BuildProcessFailure(result, repositoryRoot);
         return result;
+    }
+
+    internal static ConsumerScenarioException BuildProcessFailure(DotNetProcessResult result, string repositoryRoot)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        var root = Path.GetFullPath(repositoryRoot);
+        var stderrLog = Path.GetFullPath(result.StandardErrorLog);
+        EnsureContained(root, stderrLog);
+        var evidence = Path.GetRelativePath(root, stderrLog).Replace('\\', '/');
+        if (evidence.Length > 768 || evidence.IndexOfAny(['\r', '\n']) >= 0)
+            throw new ConsumerScenarioException("SPCONS009", "Consumer stderr evidence path is invalid.");
+        return new ConsumerScenarioException(
+            "SPCONS014",
+            $"Consumer command failed ({result.ExitCode}); stderr evidence: {evidence}");
     }
 
     private static async Task<IReadOnlyList<string>> InspectDependenciesAsync(string assetsPath, ConsumerScenario scenario, CancellationToken ct)
@@ -240,15 +256,15 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         }
     }
 
-    private async Task ExecuteAsync(string output, string project, ConsumerScenario scenario, string logs, List<ConsumerCommandEvent> events, CancellationToken ct)
+    private async Task ExecuteAsync(string output, string project, ConsumerScenario scenario, string logs, string repositoryRoot, List<ConsumerCommandEvent> events, CancellationToken ct)
     {
         var name = Path.GetFileNameWithoutExtension(project);
         if (scenario.Mode == ConsumerMode.PublishNativeAot)
         {
             var executable = Path.Combine(output, name + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
-            await RunRequiredAsync(executable, [], output, logs, scenario.Timeout, events, ct).ConfigureAwait(false);
+            await RunRequiredAsync(executable, [], output, logs, repositoryRoot, scenario.Timeout, events, ct).ConfigureAwait(false);
         }
-        else await RunRequiredAsync("dotnet", [Path.Combine(output, name + ".dll")], output, logs, scenario.Timeout, events, ct).ConfigureAwait(false);
+        else await RunRequiredAsync("dotnet", [Path.Combine(output, name + ".dll")], output, logs, repositoryRoot, scenario.Timeout, events, ct).ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<ConsumerCommandEvent>> ReplaceRuntimeAssembliesWithoutBuildAsync(string output, string feed, string version, IReadOnlyList<string> packageIds, CancellationToken ct)

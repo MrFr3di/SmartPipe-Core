@@ -11,6 +11,60 @@ namespace SmartPipe.RepositoryChecks.Tests.Commands;
 public sealed class BaselineOrchestrationTests
 {
     [Fact]
+    public async Task LegacyOnlineVerification_ProvisionsBeforeOfflineVerification()
+    {
+        var events = new List<string>();
+        var result = await BaselineCommandOrchestrator.VerifyAsync(
+            new VerifyBaselineOptions("root", "manifest", "packages", Offline: false),
+            (options, _) =>
+            {
+                events.Add("provision");
+                Assert.Equal("root", options.RepositoryRoot);
+                return Task.CompletedTask;
+            },
+            (options, _) =>
+            {
+                events.Add("verify");
+                Assert.True(options.Offline);
+                return Task.FromResult(new BaselineVerificationResult([]));
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success);
+        Assert.Equal(["provision", "verify"], events);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("malformed")]
+    public async Task ProvisionBaseline_InvalidManifestReturnsSchemaExitCode(string state)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "SmartPipe.ProvisionCliTests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var manifest = Path.Combine(root, "manifest.json");
+            Directory.CreateDirectory(root);
+            if (state == "malformed")
+            {
+                await File.WriteAllTextAsync(manifest, "{", TestContext.Current.CancellationToken);
+            }
+
+            var result = await Program.Main(
+            [
+                "provision-baseline", "--repo-root", root,
+                "--manifest", manifest,
+                "--packages-dir", Path.Combine(root, "packages"),
+            ]);
+
+            Assert.Equal(ExitCodes.SchemaOrManifestInvalid, result);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task CaptureThenOfflineVerify_Passes()
     {
         using var scenario = new BaselineScenario();
@@ -347,6 +401,61 @@ public sealed class BaselineOrchestrationTests
 
         Assert.True(result.Success, result.Format());
         Assert.Equal(callsAfterCapture, scenario.Fetcher.FetchCount);
+    }
+
+    [Fact]
+    public async Task MissingManifestPackage_SkipsThatPackageButReportsIndependentDiagnostics()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        File.Delete(Path.Combine(scenario.PackagesPath, "SmartPipe.Core.2.1.2.nupkg"));
+        await File.WriteAllTextAsync(
+            scenario.WorkflowPath,
+            "on:\n  push:\n    branches: [ main ]\n",
+            TestContext.Current.CancellationToken);
+        scenario.ProcessRunner.Requests.Clear();
+        scenario.SignatureVerifier.VerifiedPaths.Clear();
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "SPB005"
+            && diagnostic.Message == "Required package is missing: SmartPipe.Core.2.1.2.nupkg");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "SPB016"
+            && diagnostic.Actual == ".github/workflows/ci.yml");
+        Assert.Contains(scenario.ProcessRunner.Requests, request => request.FileName == "git");
+        Assert.NotEmpty(scenario.SignatureVerifier.VerifiedPaths);
+        Assert.DoesNotContain(scenario.SignatureVerifier.VerifiedPaths,
+            path => string.Equals(Path.GetFileName(path), "SmartPipe.Core.2.1.2.nupkg", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task MissingManifestPackages_AreReportedAsSortedSpb005Diagnostics()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        foreach (var package in Directory.EnumerateFiles(scenario.PackagesPath, "*.nupkg"))
+        {
+            File.Delete(package);
+        }
+
+        await File.WriteAllTextAsync(
+            scenario.WorkflowPath,
+            "on:\n  push:\n    branches: [ main ]\n",
+            TestContext.Current.CancellationToken);
+        scenario.ProcessRunner.Requests.Clear();
+        scenario.SignatureVerifier.VerifiedPaths.Clear();
+        var result = await scenario.VerifyAsync();
+
+        Assert.Equal(
+            [
+                "Required package is missing: SmartPipe.Core.2.1.2.nupkg",
+                "Required package is missing: SmartPipe.Extensions.2.1.2.nupkg",
+                "Required package is missing: SmartPipe.Extensions.Json.2.1.2.nupkg",
+            ],
+            result.Diagnostics.Where(diagnostic => diagnostic.Code == "SPB005").Select(diagnostic => diagnostic.Message));
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "SPB016");
+        Assert.Contains(scenario.ProcessRunner.Requests, request => request.FileName == "git");
+        Assert.Empty(scenario.SignatureVerifier.VerifiedPaths);
     }
 
     [Fact]

@@ -15,6 +15,128 @@ public sealed class CommandLineParserTests
         Assert.Equal("Unknown command 'ship-it'.", Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(["ship-it"])).Message);
 
     [Fact]
+    public void Parse_ReturnsProvisionBaselineOptions()
+    {
+        using var repository = new CommandRepository();
+
+        var command = Assert.IsType<ProvisionBaselineOptions>(CommandLineParser.Parse(
+        [
+            "provision-baseline", "--repo-root", repository.Path,
+            "--manifest", "eng/baselines/2.1.2/manifest.json",
+            "--packages-dir", repository.PackagesPath,
+        ]));
+
+        Assert.Equal(repository.Path, command.RepositoryRoot);
+        Assert.Equal(Path.Combine(repository.Path, "eng", "baselines", "2.1.2", "manifest.json"), command.ManifestPath);
+        Assert.Equal(repository.PackagesPath, command.PackagesDirectory);
+    }
+
+    [Fact]
+    public void Parse_ProvisionBaselineRejectsOfflineOption()
+    {
+        using var repository = new CommandRepository();
+
+        Assert.Equal("Unknown option '--offline'.", Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+        [
+            "provision-baseline", "--repo-root", repository.Path,
+            "--manifest", "eng/baselines/2.1.2/manifest.json",
+            "--packages-dir", repository.PackagesPath, "--offline",
+        ])).Message);
+    }
+
+    [Fact]
+    public void Parse_ProvisionBaselineRejectsPathsOutsideRepository()
+    {
+        using var repository = new CommandRepository();
+
+        var exception = Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+        [
+            "provision-baseline", "--repo-root", repository.Path,
+            "--manifest", "../manifest.json",
+            "--packages-dir", repository.PackagesPath,
+        ]));
+
+        Assert.Contains("inside the repository", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Parse_ReturnsVerificationProfileOptions()
+    {
+        using var repository = new CommandRepository();
+
+        var command = Assert.IsType<VerifyProfileOptions>(CommandLineParser.Parse(
+        [
+            "verify", "--profile", "repository-checks-fast", "--repo-root", repository.Path,
+            "--format", "jsonl", "--failures-only",
+        ]));
+
+        Assert.Equal(repository.Path, command.RepositoryRoot);
+        Assert.Equal("repository-checks-fast", command.Profile);
+        Assert.Equal(ProfileOutputFormat.Jsonl, command.Format);
+        Assert.True(command.FailuresOnly);
+    }
+
+    [Fact]
+    public void Parse_VerificationProfileDefaultsAreSafe()
+    {
+        using var repository = new CommandRepository();
+
+        var command = Assert.IsType<VerifyProfileOptions>(CommandLineParser.Parse(
+            ["verify", "--profile", "repository-checks-fast", "--repo-root", repository.Path]));
+
+        Assert.Equal(ProfileOutputFormat.Text, command.Format);
+        Assert.False(command.FailuresOnly);
+    }
+
+    [Theory]
+    [InlineData("--profile")]
+    [InlineData("--format")]
+    [InlineData("--repo-root")]
+    public void Parse_RejectsMissingVerificationProfileOptionValue(string option)
+    {
+        using var repository = new CommandRepository();
+        string[] args = option == "--profile"
+            ? ["verify", option]
+            : ["verify", "--profile", "repository-checks-fast", option];
+
+        Assert.Contains("requires a value", Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(args)).Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Parse_RejectsUnknownAndDuplicateVerificationProfileOptions()
+    {
+        using var repository = new CommandRepository();
+
+        Assert.Equal("Unknown option '--network'.", Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+            ["verify", "--profile", "repository-checks-fast", "--network", "true"])).Message);
+
+        Assert.Equal("Duplicate option '--failures-only'.", Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+            ["verify", "--profile", "repository-checks-fast", "--repo-root", repository.Path, "--failures-only", "--failures-only"])).Message);
+    }
+
+    [Theory]
+    [InlineData("xml")]
+    [InlineData("JSONL")]
+    public void Parse_RejectsInvalidVerificationProfileFormat(string format)
+    {
+        using var repository = new CommandRepository();
+
+        Assert.Contains("format", Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+        ["verify", "--profile", "repository-checks-fast", "--repo-root", repository.Path, "--format", format]
+        )).Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Parse_RejectsDuplicateVerificationProfileOption()
+    {
+        using var repository = new CommandRepository();
+
+        Assert.Equal("Duplicate option '--profile'.", Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+        ["verify", "--profile", "repository-checks-fast", "--profile", "sp220-05", "--repo-root", repository.Path]
+        )).Message);
+    }
+
+    [Fact]
     public void Parse_ReturnsNuGetAuditOptions()
     {
         using var repository = new CommandRepository();
@@ -100,11 +222,11 @@ public sealed class CommandLineParserTests
     }
 
     [Fact]
-    public void Parse_RejectsOfflineVerificationWithMissingPackage()
+    public void Parse_AllowsOfflineVerificationWithMissingManifestPackages()
     {
         using var repository = new CommandRepository();
 
-        var exception = Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+        var command = Assert.IsType<VerifyBaselineOptions>(CommandLineParser.Parse(
         [
             "verify-baseline", "--repo-root", repository.Path,
             "--manifest", "eng/baselines/2.1.2/manifest.json",
@@ -112,7 +234,7 @@ public sealed class CommandLineParserTests
             "--offline",
         ]));
 
-        Assert.Contains("SmartPipe.Core.2.1.2.nupkg", exception.Message, StringComparison.Ordinal);
+        Assert.True(command.Offline);
     }
 
     [Fact]

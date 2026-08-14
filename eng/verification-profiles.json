@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "name": "repository-checks-fast",
+      "checks": [
+        "verify-package-projects",
+        "verify-central-packages-current",
+        "verify-package-graph-current-source"
+      ]
+    },
+    {
+      "name": "sp220-05",
+      "checks": [
+        "verify-package-projects",
+        "verify-central-packages-current",
+        "verify-package-graph-current-source",
+        "verify-lock-files"
+      ]
+    }
+  ]
+}
