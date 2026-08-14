@@ -109,10 +109,6 @@ jobs:
       - name: Repository baseline contract tests
         run: dotnet test --project tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
 
-      - name: Verify SP220-00 scope
-        if: github.event_name == 'pull_request'
-        run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-sp220-scope --repo-root . --base-commit ${{ github.event.pull_request.base.sha }}
-
       - name: Provision 2.1.2 baseline packages
         run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- provision-baseline --repo-root . --manifest eng/baselines/2.1.2/manifest.json --packages-dir artifacts/baselines/2.1.2
 

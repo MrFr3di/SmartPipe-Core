@@ -130,7 +130,7 @@ def assert_repository_checks_profile(
             "RepositoryChecks profile must replace the duplicate central/package project steps.")
 
 
-def assert_baseline_lane(job: dict, label: str, *, require_scope: bool) -> None:
+def assert_baseline_lane(job: dict, label: str) -> None:
     job_steps = steps(job, label)
     repository_tests = named_step(job_steps, "Repository baseline contract tests")
     test_run = " ".join(str(repository_tests.get("run", "")).split())
@@ -140,21 +140,13 @@ def assert_baseline_lane(job: dict, label: str, *, require_scope: bool) -> None:
     require(test_run == expected_test,
             f"{label} repository tests must set --minimum-expected-tests 1.")
 
-    if require_scope:
-        checkouts = [step for step in job_steps
-                     if str(step.get("uses", "")).startswith("actions/checkout")]
-        require(len(checkouts) == 1
-                and checkouts[0].get("with", {}).get("fetch-depth") == 0,
-                f"{label} scope verification checkout must fetch full Git history.")
-        scope = named_step(job_steps, "Verify SP220-00 scope")
-        require(scope.get("if") == "github.event_name == 'pull_request'",
-                f"{label} scope verification must be PR-only.")
-        scope_run = " ".join(str(scope.get("run", "")).split())
-        expected_scope = ("dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
-                          "--configuration Release --no-build -- verify-sp220-scope --repo-root . "
-                          "--base-commit ${{ github.event.pull_request.base.sha }}")
-        require(scope_run == expected_scope,
-                f"{label} scope verification must use the pull request base SHA.")
+    checkouts = [step for step in job_steps
+                 if str(step.get("uses", "")).startswith("actions/checkout")]
+    require(len(checkouts) == 1
+            and checkouts[0].get("with", {}).get("fetch-depth") == 0,
+            f"{label} baseline verification checkout must fetch full Git history.")
+    require(not any(step.get("name") == "Verify SP220-00 scope" for step in job_steps),
+            f"{label} must not run the completed SP220-00 production freeze.")
 
     provision = named_step(job_steps, "Provision 2.1.2 baseline packages")
     offline = named_step(job_steps, "Verify 2.1.2 baseline offline")
@@ -376,12 +368,12 @@ def validate(documents: dict[str, dict]) -> None:
             "Reusable DI tests must run after Build.")
     assert_repository_checks_profile(reusable_steps, build_step, repository_test_step)
 
-    assert_baseline_lane(reusable_job, "Reusable Linux baseline lane", require_scope=True)
+    assert_baseline_lane(reusable_job, "Reusable Linux baseline lane")
 
     required_steps = (
         "Verify RepositoryChecks profile",
         "Format verify", "Build", "Repository baseline contract tests",
-        "Verify SP220-00 scope", "Core tests with coverage", "Core stress tests",
+        "Core tests with coverage", "Core stress tests",
         "Extensions tests", "Dependency Injection tests", "HealthChecks tests", "Hosting lifecycle regressions", "Hosting tests",
         "JSON Extensions tests", "Core correctness regressions",
         "Core concurrency regressions", "Extensions correctness regressions",
@@ -530,7 +522,7 @@ def validate(documents: dict[str, dict]) -> None:
     build = named_step(baseline_windows_steps, "Build repository checks")
     require("-warnaserror" in str(build.get("run", "")),
             "Windows baseline contract build must treat warnings as errors.")
-    assert_baseline_lane(baseline_windows, "Windows baseline contract lane", require_scope=True)
+    assert_baseline_lane(baseline_windows, "Windows baseline contract lane")
 
     explicit_names = []
     for file_name, document in documents.items():
@@ -853,7 +845,7 @@ def main() -> int:
     assert_mutation_rejected(
         documents,
         _make_linux_baseline_checkout_shallow,
-        "Reusable Linux baseline lane scope verification checkout must fetch full Git history.",
+        "Reusable Linux baseline lane baseline verification checkout must fetch full Git history.",
     )
     assert_mutation_rejected(
         documents,
