@@ -1,3 +1,4 @@
+using System.Text.Json;
 using SmartPipe.RepositoryChecks.Baselines;
 using SmartPipe.RepositoryChecks.Commands;
 using SmartPipe.RepositoryChecks.NuGet;
@@ -25,7 +26,7 @@ public sealed class BaselinePackageProvisionerTests
             var fetcher = new LowercaseFetcher();
 
             await new BaselinePackageProvisioner(fetcher).ProvisionAsync(
-                new VerifyBaselineOptions(root, manifestPath, packages, Offline: false),
+                new ProvisionBaselineOptions(root, manifestPath, packages),
                 TestContext.Current.CancellationToken);
 
             Assert.Empty(fetcher.Requests);
@@ -40,22 +41,47 @@ public sealed class BaselinePackageProvisionerTests
     }
 
     [Fact]
-    public async Task ProvisionAsync_RejectsOfflineOptionsWithoutFetching()
+    public async Task ProvisionAsync_RejectsMissingManifestBeforeCreatingPackagesDirectory()
     {
         var root = Path.Combine(Path.GetTempPath(), "SmartPipe.ProvisionerTests", Guid.NewGuid().ToString("N"));
         try
         {
             var packages = Path.Combine(root, "packages");
             var manifestPath = Path.Combine(root, "manifest.json");
-            Directory.CreateDirectory(packages);
-            await File.WriteAllTextAsync(manifestPath, BaselineManifestSerializer.Serialize(BaselineFixtures.CreateManifest()), TestContext.Current.CancellationToken);
+            Directory.CreateDirectory(root);
             var fetcher = new LowercaseFetcher();
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => new BaselinePackageProvisioner(fetcher).ProvisionAsync(
-                new VerifyBaselineOptions(root, manifestPath, packages, Offline: true),
+            await Assert.ThrowsAsync<FileNotFoundException>(() => new BaselinePackageProvisioner(fetcher).ProvisionAsync(
+                new ProvisionBaselineOptions(root, manifestPath, packages),
                 TestContext.Current.CancellationToken));
 
             Assert.Empty(fetcher.Requests);
+            Assert.False(Directory.Exists(packages));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ProvisionAsync_RejectsMalformedManifestBeforeCreatingPackagesDirectory()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "SmartPipe.ProvisionerTests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var packages = Path.Combine(root, "packages");
+            var manifestPath = Path.Combine(root, "manifest.json");
+            Directory.CreateDirectory(root);
+            await File.WriteAllTextAsync(manifestPath, "{", TestContext.Current.CancellationToken);
+            var fetcher = new LowercaseFetcher();
+
+            await Assert.ThrowsAsync<JsonException>(() => new BaselinePackageProvisioner(fetcher).ProvisionAsync(
+                new ProvisionBaselineOptions(root, manifestPath, packages),
+                TestContext.Current.CancellationToken));
+
+            Assert.Empty(fetcher.Requests);
+            Assert.False(Directory.Exists(packages));
         }
         finally
         {
@@ -82,7 +108,7 @@ public sealed class BaselinePackageProvisionerTests
 
             var fetcher = new LowercaseFetcher();
             await new BaselinePackageProvisioner(fetcher).ProvisionAsync(
-                new VerifyBaselineOptions(root, manifestPath, packages, Offline: false),
+                new ProvisionBaselineOptions(root, manifestPath, packages),
                 TestContext.Current.CancellationToken);
 
             var missing = manifest.Packages[0];

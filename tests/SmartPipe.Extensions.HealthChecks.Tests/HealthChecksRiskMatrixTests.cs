@@ -352,7 +352,7 @@ public sealed class HealthChecksRiskMatrixTests
     public async Task OverflowInAggregateDataIsSanitized()
     {
         var key = new PipelineKey("orders");
-        var source = new FixedSource(Observation("orders", [Run("orders", PipelineRunState.Running, metrics: Metrics(itemsProcessed: long.MaxValue)) , Run("orders", PipelineRunState.Running, metrics: Metrics(itemsProcessed: long.MaxValue))]));
+        var source = new FixedSource(Observation("orders", [Run("orders", PipelineRunState.Running, metrics: Metrics(itemsProcessed: long.MaxValue)), Run("orders", PipelineRunState.Running, metrics: Metrics(itemsProcessed: long.MaxValue))]));
         var services = new ServiceCollection();
         services.AddOptions<SmartPipeLivenessOptions>("probe");
         using var provider = services.BuildServiceProvider();
@@ -493,7 +493,7 @@ public sealed class HealthChecksRiskMatrixTests
     [Fact]
     public async Task AggregateThousandKeysDescriptionAndDataRemainBounded()
     {
-        var registrations = Enumerable.Range(0, 1000).Select(index => Descriptor($"key-{index}" )).ToArray();
+        var registrations = Enumerable.Range(0, 1000).Select(index => Descriptor($"key-{index}")).ToArray();
         var source = new RecordingSource(new ConcurrentQueue<string>(), key =>
             Observation(key.Value, terminal: Terminal(key.Value, SmartPipeRunObservationOutcome.Faulted)));
 

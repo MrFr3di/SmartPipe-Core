@@ -62,3 +62,41 @@ mode is stricter: it validates the complete target topology and required future
 consumer coverage, while any remaining planned work must be represented by an
 explicit graph allowance or `requiredAtRelease` entry. The final release
 checkpoint reruns the same commands against the exact merged commit.
+
+The reusable release workflow runs the read-only `sp220-05` profile after the
+Release build and before package/release gates:
+
+```text
+dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify --profile sp220-05 --format github --failures-only
+```
+
+The profile replaces duplicate central-package and project checks only.
+Packing, baseline provisioning/offline verification, package metadata and
+ownership, consumers, audit, and artifact upload remain specialized workflow
+gates. Consumer artifacts upload `result.json`; retained bounded logs stay in
+the local job workspace.
+
+## Agent context and exact-tree evidence
+
+The active ExecPlan is the only source for epic task identity, allowed paths,
+contracts, and the verification profile. RepositoryChecks reads the single
+regular markdown plan in `.agent/exec-plans/active`, validates its
+`smartpipe-agent-context:v1` block, and hashes that ignored file separately.
+The tracked plan slice is reported only as a repository-relative path and
+section heading.
+
+```powershell
+SmartPipe.RepositoryChecks.exe agent-context --epic SP220-05 --task T25 --format json
+SmartPipe.RepositoryChecks.exe verify-task --epic SP220-05 --task T25 --format text
+SmartPipe.RepositoryChecks.exe evidence --epic SP220-05 --format json
+```
+
+These agent-context commands are local-only workflow helpers; they are not CI
+gates and do not infer pull-request, merge, or release acceptance. They use the
+current HEAD, branch, `git status --porcelain=v1 -z`, and
+a deterministic changed-file fingerprint. Dirty trees are valid only when
+every changed path is inside the union of the active epic allowlists.
+`verify-task` captures state before and after its sequential offline profile;
+any state, HEAD, or plan-hash change produces bounded `SPAGENT001` evidence
+with exit code 5. Evidence records local facts and per-check exit codes only;
+it does not claim CI, pull-request, merge, or release acceptance.

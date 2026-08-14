@@ -30,6 +30,11 @@ FILES = {
     )
 }
 SHA_REF = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
+REPOSITORY_CHECKS_PROFILE_COMMAND = (
+    "dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+    "--configuration Release --no-build -- verify --profile sp220-05 "
+    "--format github --failures-only"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -73,6 +78,57 @@ def command_index(commands: list[str], token: str) -> int:
     return matches[0]
 
 
+def assert_repository_checks_profile(
+    reusable_steps: list[dict],
+    build_step: dict,
+    repository_test_step: dict,
+) -> None:
+    profile_steps = [step for step in reusable_steps
+                     if step.get("name") == "Verify RepositoryChecks profile"]
+    require(len(profile_steps) == 1,
+            "Reusable validation must define exactly one step named "
+            "'Verify RepositoryChecks profile'.")
+    profile_step = profile_steps[0]
+    profile_run = " ".join(str(profile_step.get("run", "")).split())
+    profile_invocations = [
+        " ".join(str(step.get("run", "")).split())
+        for step in reusable_steps
+        if "-- verify --profile " in str(step.get("run", ""))
+    ]
+    require(len(profile_invocations) == 1,
+            "Reusable validation must invoke exactly one RepositoryChecks profile.")
+    require(profile_run == REPOSITORY_CHECKS_PROFILE_COMMAND,
+            "Reusable validation must use the exact sp220-05 profile command.")
+    require(profile_invocations[0] == REPOSITORY_CHECKS_PROFILE_COMMAND,
+            "Reusable validation must invoke only the exact sp220-05 profile command.")
+
+    profile_index = reusable_steps.index(profile_step)
+    require(reusable_steps.index(build_step) < profile_index,
+            "RepositoryChecks profile must run after Build because it uses --no-build.")
+    require(profile_index < reusable_steps.index(repository_test_step),
+            "RepositoryChecks profile must run before Repository baseline contract tests.")
+
+    release_gate_names = (
+        "Test and benchmark warning gate", "Pack packages from graph",
+        "Provision 2.1.2 baseline packages", "Verify package graph current",
+        "Verify package metadata current", "Verify package ownership current",
+        "Verify release versions current", "Run current consumers",
+        "Run Hosting consumers", "Run HealthChecks consumers",
+        "Vulnerable package scan", "Verify direct production audit policy",
+        "Deprecated package scan", "Outdated package report",
+        "Upload immutable packages and reports",
+    )
+    for name in release_gate_names:
+        require(profile_index < reusable_steps.index(named_step(reusable_steps, name)),
+                f"RepositoryChecks profile must run before {name}.")
+
+    reusable_runs = runs(reusable_steps)
+    require(not any("verify-central-packages" in command or
+                    "verify-package-projects" in command
+                    for command in reusable_runs),
+            "RepositoryChecks profile must replace the duplicate central/package project steps.")
+
+
 def assert_baseline_lane(job: dict, label: str, *, require_scope: bool) -> None:
     job_steps = steps(job, label)
     repository_tests = named_step(job_steps, "Repository baseline contract tests")
@@ -99,26 +155,32 @@ def assert_baseline_lane(job: dict, label: str, *, require_scope: bool) -> None:
         require(scope_run == expected_scope,
                 f"{label} scope verification must use the pull request base SHA.")
 
-    online = named_step(job_steps, "Provision and verify 2.1.2 baseline")
+    provision = named_step(job_steps, "Provision 2.1.2 baseline packages")
     offline = named_step(job_steps, "Verify 2.1.2 baseline offline")
-    baseline_steps = [step for step in job_steps
-                      if "verify-baseline" in str(step.get("run", ""))]
-    require(len(baseline_steps) == 2,
-            f"{label} must run exactly one online and one offline baseline verification.")
-    online_run = " ".join(str(online.get("run", "")).split())
+    provision_steps = [step for step in job_steps
+                       if "provision-baseline" in str(step.get("run", ""))]
+    verify_steps = [step for step in job_steps
+                    if "verify-baseline" in str(step.get("run", ""))]
+    require(len(provision_steps) == 1 and len(verify_steps) == 1,
+            f"{label} must run exactly one baseline provisioning and one offline verification.")
+    provision_run = " ".join(str(provision.get("run", "")).split())
     offline_run = " ".join(str(offline.get("run", "")).split())
-    expected_online = ("dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+    expected_provision = ("dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+                          "--configuration Release --no-build -- provision-baseline --repo-root . "
+                          "--manifest eng/baselines/2.1.2/manifest.json "
+                          "--packages-dir artifacts/baselines/2.1.2")
+    expected_verify = ("dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
                        "--configuration Release --no-build -- verify-baseline --repo-root . "
                        "--manifest eng/baselines/2.1.2/manifest.json "
-                       "--packages-dir artifacts/baselines/2.1.2 --mode integrity")
+                       "--packages-dir artifacts/baselines/2.1.2 --offline --mode integrity")
     forbidden = ("curl", "wget", "Invoke-WebRequest", "http://", "https://")
     require(not any(token.lower() in offline_run.lower() for token in forbidden),
             f"{label} offline baseline step must not be network-capable.")
-    require(online_run == expected_online,
-            f"{label} online baseline command must provision and verify the exact manifest.")
-    require(offline_run == expected_online + " --offline",
+    require(provision_run == expected_provision,
+            f"{label} provisioning command must acquire the exact manifest packages.")
+    require(offline_run == expected_verify,
             f"{label} offline baseline command must verify the exact manifest offline.")
-    require(job_steps.index(online) < job_steps.index(offline),
+    require(job_steps.index(provision) < job_steps.index(offline),
             f"{label} offline baseline verification must run after online provisioning.")
 
 
@@ -279,21 +341,19 @@ def validate(documents: dict[str, dict]) -> None:
             "Reusable repository baseline tests must run after Build.")
     require(reusable_steps.index(build_step) < reusable_steps.index(di_test_step),
             "Reusable DI tests must run after Build.")
-    for name in ("Verify central package management", "Verify package projects"):
-        require(reusable_steps.index(build_step) < reusable_steps.index(named_step(reusable_steps, name)),
-                f"Reusable {name} must run after Build because it uses --no-build.")
+    assert_repository_checks_profile(reusable_steps, build_step, repository_test_step)
 
     assert_baseline_lane(reusable_job, "Reusable Linux baseline lane", require_scope=True)
 
     required_steps = (
-        "Verify central package management", "Verify package projects",
+        "Verify RepositoryChecks profile",
         "Format verify", "Build", "Repository baseline contract tests",
         "Verify SP220-00 scope", "Core tests with coverage", "Core stress tests",
         "Extensions tests", "Dependency Injection tests", "HealthChecks tests", "Hosting lifecycle regressions", "Hosting tests",
         "JSON Extensions tests", "Core correctness regressions",
         "Core concurrency regressions", "Extensions correctness regressions",
         "PR concurrency regression repeat", "Test and benchmark warning gate",
-        "Pack packages from graph", "Provision and verify 2.1.2 baseline",
+        "Pack packages from graph", "Provision 2.1.2 baseline packages",
         "Verify package graph current", "Verify package metadata current",
         "Verify package ownership current", "Verify release versions current",
         "Run current consumers", "Run Hosting consumers", "Run HealthChecks consumers", "Vulnerable package scan",
@@ -304,9 +364,9 @@ def validate(documents: dict[str, dict]) -> None:
     for name in required_steps:
         named_step(reusable_steps, name)
     gate_order = [
-        "Restore locked", "Build", "Verify central package management", "Verify package projects",
+        "Restore locked", "Build", "Verify RepositoryChecks profile",
         "Test and benchmark warning gate", "Pack packages from graph",
-        "Provision and verify 2.1.2 baseline", "Verify package graph current",
+        "Provision 2.1.2 baseline packages", "Verify package graph current",
         "Verify package metadata current", "Verify package ownership current",
         "Verify release versions current", "Run current consumers", "Run HealthChecks consumers",
         "Vulnerable package scan", "Verify direct production audit policy",
@@ -375,6 +435,10 @@ def validate(documents: dict[str, dict]) -> None:
             and "artifacts/audit" in upload_path
             and "eng/package-graph.json" in upload_path,
             "Reusable validation must upload package graph, packages, consumer reports, and audit reports together.")
+    consumer_paths = [line.strip() for line in upload_path.splitlines()
+                      if line.strip().startswith("artifacts/consumers/")]
+    require(consumer_paths == ["artifacts/consumers/**/result.json"],
+            "Reusable validation must keep consumer artifact upload result-only; logs stay local.")
 
     validation = ci["jobs"].get("validation")
     require(validation == {
@@ -580,6 +644,28 @@ def _remove_reusable_step(documents: dict[str, dict], name: str) -> None:
     job["steps"] = [step for step in job["steps"] if step.get("name") != name]
 
 
+def _wrong_repository_checks_profile(documents: dict[str, dict]) -> None:
+    job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
+    profile = next(step for step in job["steps"]
+                   if step.get("name") == "Verify RepositoryChecks profile")
+    profile["run"] = str(profile["run"]).replace("sp220-05", "repository-checks-fast")
+
+
+def _duplicate_repository_checks_invocation(documents: dict[str, dict]) -> None:
+    job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
+    profile = next(step for step in job["steps"]
+                   if step.get("name") == "Verify RepositoryChecks profile")
+    duplicate = copy.deepcopy(profile)
+    duplicate["name"] = "Duplicate RepositoryChecks profile"
+    job["steps"].append(duplicate)
+
+
+def _add_consumer_logs_to_upload(documents: dict[str, dict]) -> None:
+    job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
+    upload = named_step(job["steps"], "Upload immutable packages and reports")
+    upload["with"]["path"] += "\nartifacts/consumers/**/logs/**"
+
+
 def _remove_hosting_matrix(documents: dict[str, dict]) -> None:
     del documents["ci.yml"]["jobs"]["hosting-integration"]
 
@@ -617,6 +703,49 @@ def assert_mutation_rejected(documents: dict[str, dict], mutate, expected: str) 
 def main() -> int:
     documents = load_workflows()
     validate(documents)
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Verify RepositoryChecks profile"),
+        "exactly one step named 'Verify RepositoryChecks profile'",
+    )
+    assert_mutation_rejected(
+        documents,
+        _wrong_repository_checks_profile,
+        "exact sp220-05 profile command",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: docs["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+        .append(copy.deepcopy(named_step(
+            docs["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
+            "Verify RepositoryChecks profile"))),
+        "exactly one step named 'Verify RepositoryChecks profile'",
+    )
+    assert_mutation_rejected(
+        documents,
+        _duplicate_repository_checks_invocation,
+        "exactly one RepositoryChecks profile",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Pack packages from graph"),
+        "Pack packages from graph",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Run HealthChecks consumers"),
+        "Run HealthChecks consumers",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Verify direct production audit policy"),
+        "Verify direct production audit policy",
+    )
+    assert_mutation_rejected(
+        documents,
+        _add_consumer_logs_to_upload,
+        "upload result-only; logs stay local",
+    )
     assert_mutation_rejected(
         documents,
         lambda docs: docs["publish-nuget.yml"]["jobs"]["publish"].update({"needs": ["version"]}),

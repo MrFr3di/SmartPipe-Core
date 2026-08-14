@@ -6,21 +6,23 @@ namespace SmartPipe.RepositoryChecks.Commands;
 
 internal sealed class BaselinePackageProvisioner(INuGetPackageFetcher fetcher)
 {
-    public async Task ProvisionAsync(VerifyBaselineOptions options, CancellationToken cancellationToken)
+    public async Task<int> ProvisionAsync(ProvisionBaselineOptions options, CancellationToken cancellationToken)
     {
-        if (options.Offline)
-        {
-            throw new InvalidOperationException("Package provisioning is unavailable offline.");
-        }
+        var root = RepositoryPaths.NormalizeRoot(options.RepositoryRoot);
+        var manifestPath = ResolvePath(root, options.ManifestPath);
+        _ = RepositoryPaths.NormalizeContainedFullPath(root, manifestPath, "manifest");
+        RepositoryPaths.RequireExistingRegularFile(root, manifestPath, "manifest");
+        var packagesDirectory = ResolvePath(root, options.PackagesDirectory);
+        _ = RepositoryPaths.NormalizeContainedFullPath(root, packagesDirectory, "packages directory");
 
         var manifest = BaselineManifestSerializer.Deserialize(
-            await File.ReadAllTextAsync(options.ManifestPath, cancellationToken).ConfigureAwait(false));
-        Directory.CreateDirectory(options.PackagesDirectory);
+            await File.ReadAllTextAsync(manifestPath, cancellationToken).ConfigureAwait(false));
+        Directory.CreateDirectory(packagesDirectory);
 
         foreach (var package in manifest.Packages)
         {
-            var canonicalPath = Path.Combine(options.PackagesDirectory, package.FileName);
-            var existingPaths = Directory.EnumerateFiles(options.PackagesDirectory)
+            var canonicalPath = Path.Combine(packagesDirectory, package.FileName);
+            var existingPaths = Directory.EnumerateFiles(packagesDirectory)
                 .Where(path => string.Equals(Path.GetFileName(path), package.FileName, StringComparison.OrdinalIgnoreCase))
                 .Take(2)
                 .ToArray();
@@ -36,10 +38,17 @@ internal sealed class BaselinePackageProvisioner(INuGetPackageFetcher fetcher)
             }
 
             var fetchedPath = await fetcher.FetchAsync(
-                package.Id, package.Version, options.PackagesDirectory, cancellationToken).ConfigureAwait(false);
+                package.Id, package.Version, packagesDirectory, cancellationToken).ConfigureAwait(false);
             NormalizeFileName(fetchedPath, canonicalPath);
         }
+
+        return manifest.Packages.Count;
     }
+
+    private static string ResolvePath(string root, string path) =>
+        Path.IsPathRooted(path)
+            ? Path.GetFullPath(path)
+            : Path.GetFullPath(path.Replace('/', Path.DirectorySeparatorChar), root);
 
     private static void NormalizeFileName(string sourcePath, string canonicalPath)
     {

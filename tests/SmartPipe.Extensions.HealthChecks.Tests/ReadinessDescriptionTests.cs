@@ -82,12 +82,12 @@ public sealed class ReadinessDescriptionTests
     private static SmartPipePipelineObservation Observation(
         string key,
         IReadOnlyList<SmartPipeRunSnapshot> active) => new()
-    {
-        PipelineKey = new PipelineKey(key),
-        CapturedAtUtc = DateTimeOffset.UnixEpoch,
-        ActiveRuns = active,
-        LatestTerminal = null,
-    };
+        {
+            PipelineKey = new PipelineKey(key),
+            CapturedAtUtc = DateTimeOffset.UnixEpoch,
+            ActiveRuns = active,
+            LatestTerminal = null,
+        };
 
     private static SmartPipeRunSnapshot Run(
         string key,
@@ -95,16 +95,16 @@ public sealed class ReadinessDescriptionTests
         Guid runId,
         DateTimeOffset startedAtUtc,
         SmartPipeMetricsSnapshot? metrics = null) => new()
-    {
-        Identity = new SmartPipeRunIdentity { PipelineKey = new PipelineKey(key), RunId = runId },
-        InputType = typeof(int),
-        OutputType = typeof(int),
-        StartedAtUtc = startedAtUtc,
-        State = state,
-        Metrics = metrics ?? SmartPipeMetricsSnapshot.Empty,
-        InputCapacity = 10,
-        OutputCapacity = 10,
-    };
+        {
+            Identity = new SmartPipeRunIdentity { PipelineKey = new PipelineKey(key), RunId = runId },
+            InputType = typeof(int),
+            OutputType = typeof(int),
+            StartedAtUtc = startedAtUtc,
+            State = state,
+            Metrics = metrics ?? SmartPipeMetricsSnapshot.Empty,
+            InputCapacity = 10,
+            OutputCapacity = 10,
+        };
 
     private sealed record SmartPipeReadinessOptionsSnapshotForTest(
         SmartPipeReadinessRunRequirement RunRequirement,

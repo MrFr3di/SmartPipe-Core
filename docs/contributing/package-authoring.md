@@ -74,6 +74,7 @@ dotnet test tests\SmartPipe.RepositoryChecks.Tests\SmartPipe.RepositoryChecks.Te
 dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-lock-files --repository-root .
 dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-central-packages --repository-root . --mode current
 dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-package-projects --repository-root .
+dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify --profile sp220-05 --format github --failures-only
 dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-package-graph --repository-root . --mode current --packages artifacts\packages
 dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-package-metadata --repository-root . --mode current --packages artifacts\packages
 dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-package-ownership --mode current --baseline eng\baselines\2.1.2 --packages artifacts\packages
@@ -86,3 +87,19 @@ Release mode must have no unexpected violations: planned package work,
 registered allowances, and explicitly listed future scenarios are the only
 accepted unfinished items. Do not use `--no-restore` until the locked restore
 has passed for the current sources.
+
+## Task verification
+
+For an in-progress epic, use the active ExecPlan context commands from the
+repository root. `agent-context` requires the canonical epic, task, and JSON
+format; `verify-task` defaults to text and also accepts `jsonl`, `github`, and
+`--failures-only`; `evidence` emits compact JSON. Unknown tasks, malformed
+markers, unsafe allowlists, missing tracked sections, and out-of-scope dirty
+paths fail closed. The profile is offline and reuses existing atomic checks;
+baseline acquisition remains an explicit separate command. These commands are
+local-only and are not invoked by CI; the reusable workflow uses the exact
+`verify --profile sp220-05 --format github --failures-only` gate instead.
+
+Evidence is an exact local snapshot containing sorted changed paths, the
+active-plan hash, a file-content fingerprint, and each check's exit
+code/counters. Do not describe it as CI, PR, merge, or release approval.

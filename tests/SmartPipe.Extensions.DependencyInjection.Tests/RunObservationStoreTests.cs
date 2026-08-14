@@ -297,16 +297,16 @@ public sealed class RunObservationStoreTests
 
         internal TestRegistry(params PipelineKey[] keys) =>
             _registrations = keys.Select((key, index) => new SmartPipeRegistrationDescriptor
-                {
-                    Key = key,
-                    InputType = typeof(int),
-                    OutputType = typeof(int),
-                    DefinitionType = typeof(object),
-                    FactoryType = typeof(object),
-                    DisplayName = key.Value,
-                    RegistrationOrder = index,
-                    IsReusable = true,
-                })
+            {
+                Key = key,
+                InputType = typeof(int),
+                OutputType = typeof(int),
+                DefinitionType = typeof(object),
+                FactoryType = typeof(object),
+                DisplayName = key.Value,
+                RegistrationOrder = index,
+                IsReusable = true,
+            })
                 .ToDictionary(static registration => registration.Key);
 
         public IReadOnlyList<SmartPipeRegistrationDescriptor> GetRegistrations() =>
