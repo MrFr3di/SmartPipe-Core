@@ -272,7 +272,7 @@ public sealed class HealthChecksRiskMatrixTests
     {
         var services = new ServiceCollection();
         var key = new PipelineKey("orders");
-        var source = new GateSource(Observation("orders", terminal: Terminal("orders", SmartPipeRunObservationOutcome.Faulted)));
+        var source = new GateSource(_ => Observation("orders", terminal: Terminal("orders", SmartPipeRunObservationOutcome.Faulted)));
         services.AddSingleton<ISmartPipeRunObservationSource>(source);
         services.AddSingleton(TimeProvider.System);
         services.AddOptions<SmartPipeLivenessOptions>("probe");
@@ -296,6 +296,39 @@ public sealed class HealthChecksRiskMatrixTests
 
         Assert.Equal(HealthStatus.Unhealthy, first.Status);
         Assert.Equal(HealthStatus.Healthy, second.Status);
+    }
+
+    [Fact]
+    public async Task AggregateOptionsRefreshAffectsLaterCheckButNotInFlightSnapshot()
+    {
+        var registrations = new[] { Descriptor("orders"), Descriptor("replay") };
+        var source = new GateSource(key => Observation(
+            key.Value,
+            terminal: Terminal(key.Value, SmartPipeRunObservationOutcome.Faulted)));
+        var options = new SmartPipeAggregateLivenessOptions { MaximumReportedProblemKeys = 1 };
+        var monitor = new MutableOptionsMonitor<SmartPipeAggregateLivenessOptions>(options);
+        var check = new SmartPipeAggregateLivenessHealthCheck(
+            new FakeRegistry(registrations),
+            source,
+            monitor,
+            TimeProvider.System);
+        var context = new HealthCheckContext
+        {
+            Registration = new HealthCheckRegistration("aggregate", new ThrowingHealthCheck(), HealthStatus.Unhealthy, null),
+        };
+
+        var inFlight = Task.Run(() => check.CheckHealthAsync(context, TestContext.Current.CancellationToken));
+        await source.Captured.Task.WaitAsync(TestContext.Current.CancellationToken);
+        options.MaximumReportedProblemKeys = 2;
+        source.Release();
+        var first = await inFlight;
+        var second = await check.CheckHealthAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, first.Data["smartpipe.problem_keys_reported"]);
+        Assert.Equal(true, first.Data["smartpipe.problem_keys_truncated"]);
+        Assert.Equal(2, second.Data["smartpipe.problem_keys_reported"]);
+        Assert.Equal(false, second.Data["smartpipe.problem_keys_truncated"]);
+        Assert.Equal("replay", second.Data["smartpipe.problem_key_1"]);
     }
 
     [Fact]
@@ -698,7 +731,7 @@ public sealed class HealthChecksRiskMatrixTests
         public IReadOnlyList<SmartPipePipelineObservation> CaptureAll() => [observation];
     }
 
-    private sealed class GateSource(SmartPipePipelineObservation observation) : ISmartPipeRunObservationSource
+    private sealed class GateSource(Func<PipelineKey, SmartPipePipelineObservation> capture) : ISmartPipeRunObservationSource
     {
         private readonly ManualResetEventSlim _release = new(false);
         public TaskCompletionSource<bool> Captured { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -706,11 +739,11 @@ public sealed class HealthChecksRiskMatrixTests
         {
             Captured.TrySetResult(true);
             _release.Wait();
-            return observation;
+            return capture(pipelineKey);
         }
 
         public void Release() => _release.Set();
-        public IReadOnlyList<SmartPipePipelineObservation> CaptureAll() => [observation];
+        public IReadOnlyList<SmartPipePipelineObservation> CaptureAll() => [];
     }
 
     private sealed class AlternatingSource : ISmartPipeRunObservationSource

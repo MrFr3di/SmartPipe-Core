@@ -101,10 +101,12 @@ internal static class SmartPipeAggregateHealthEvaluator
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
+            var includeAllSnapshot = includeAll(aggregate);
             var includedSnapshot = included(aggregate).ToArray();
-            var selected = Select(registry, includeAll(aggregate), includedSnapshot);
+            var maximum = maximumProblems(aggregate);
             var policy = createPolicy(aggregate);
             var policyOptions = snapshotOptions(aggregate);
+            var selected = Select(registry, includeAllSnapshot, includedSnapshot);
             var now = timeProvider.GetUtcNow().ToUniversalTime();
             var status = HealthStatus.Healthy;
             var healthy = 0;
@@ -147,7 +149,6 @@ internal static class SmartPipeAggregateHealthEvaluator
                 }
             }
 
-            var maximum = maximumProblems(aggregate);
             var data = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["smartpipe.check_kind"] = $"aggregate-{kind}",
