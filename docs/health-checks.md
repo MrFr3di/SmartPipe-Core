@@ -36,7 +36,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 
 Options are isolated by health registration name. Invalid options fail Generic Host startup through `ValidateOnStart`, or first named materialization without a host. Active runs come from the canonical registry; DI retains at most one immutable latest terminal value per key. Multi-run and aggregate evaluation use explicit worst-status ranking and deterministic registration order.
 
-Result data is bounded to primitive counts, exact strings, `Guid` strings, UTC ISO-8601 timestamps, and queue/capacity totals. Exceptions, payloads, metadata, providers, scopes, and delegates are not retained or emitted. Problem keys use bounded indexed entries because exact keys may contain commas.
+Result data is bounded to primitive counts, exact strings, `Guid` strings, UTC ISO-8601 timestamps, and queue/capacity totals. The number of data entries and reported problem keys/runs is bounded; exact identity values such as `PipelineKey` are preserved without length truncation, hashing, normalization, or case change. Aggregate descriptions remain bounded by reporting counts instead of identities. Exceptions, payloads, metadata, providers, scopes, and delegates are not retained or emitted.
 
 ## Legacy 2.1 behavior
 
