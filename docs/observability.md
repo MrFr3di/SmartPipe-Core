@@ -61,6 +61,14 @@ current execution path.
 
 ## Meter instruments
 
+Stable diagnostic source names are published as constants on
+`SmartPipeDiagnostics`:
+
+- `SmartPipeDiagnostics.MeterName` — meter name for all SmartPipe runtime
+  metrics.
+- `SmartPipeDiagnostics.ActivitySourceName` — activity source name for all
+  SmartPipe runtime activities.
+
 Meter name:
 
 ```text
@@ -72,6 +80,11 @@ ActivitySource name:
 ```text
 SmartPipe.Core
 ```
+
+`SmartPipeMeter.Name` remains as an alias of `SmartPipeDiagnostics.MeterName`.
+External tooling that needs the exact source names (for example an
+OpenTelemetry `AddMeter`/`AddSource` registration) must use these constants
+instead of hard-coded strings.
 
 Current instruments:
 
