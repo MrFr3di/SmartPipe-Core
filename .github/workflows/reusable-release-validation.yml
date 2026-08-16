@@ -164,6 +164,9 @@ jobs:
     - name: Run HealthChecks consumers
       run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --category health-checks --package-directory artifacts/packages --package-version "$PACKAGE_VERSION"
 
+    - name: Run OpenTelemetry consumers
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --category opentelemetry --package-directory artifacts/packages --package-version "$PACKAGE_VERSION"
+
     - name: Vulnerable package scan
       shell: bash
       run: |

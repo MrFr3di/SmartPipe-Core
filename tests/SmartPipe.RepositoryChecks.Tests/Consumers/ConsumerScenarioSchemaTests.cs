@@ -9,12 +9,12 @@ namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 public sealed class ConsumerScenarioSchemaTests
 {
     [Fact]
-    public async Task CurrentManifest_HasExactlyTwentyThreeStrictScenarios()
+    public async Task CurrentManifest_HasExactlyTwentyEightStrictScenarios()
     {
         var root = RepositoryRoot();
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var document = await new ConsumerScenarioLoader().LoadAsync(root, "eng/consumer-scenarios.json", graph, TestContext.Current.CancellationToken);
-        Assert.Equal(23, document.Scenarios.Count);
+        Assert.Equal(28, document.Scenarios.Count);
         Assert.Equal(
             [
                 "core-direct",
@@ -40,6 +40,11 @@ public sealed class ConsumerScenarioSchemaTests
                 "health-checks-aspnet",
                 "health-checks-trim",
                 "health-checks-nativeaot",
+                "opentelemetry-direct",
+                "opentelemetry-otlp",
+                "opentelemetry-facade",
+                "opentelemetry-trim",
+                "opentelemetry-nativeaot",
             ],
             document.Scenarios.Select(x => x.Id));
         Assert.All(
@@ -48,6 +53,9 @@ public sealed class ConsumerScenarioSchemaTests
         Assert.All(
             document.Scenarios.Where(scenario => scenario.Id.StartsWith("health-checks-", StringComparison.Ordinal)),
             scenario => Assert.Equal("health-checks", scenario.Category));
+        Assert.All(
+            document.Scenarios.Where(scenario => scenario.Id.StartsWith("opentelemetry-", StringComparison.Ordinal)),
+            scenario => Assert.Equal("opentelemetry", scenario.Category));
     }
 
     [Theory]

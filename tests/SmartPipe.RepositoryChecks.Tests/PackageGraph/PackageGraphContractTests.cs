@@ -38,6 +38,40 @@ public sealed class PackageGraphContractTests
     }
 
     [Fact]
+    public async Task RepositoryGraph_OpenTelemetryPackageActivationIsComplete()
+    {
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(
+            root,
+            "eng/package-graph.json",
+            TestContext.Current.CancellationToken);
+        var package = Assert.Single(
+            graph.Packages,
+            node => node.Id == "SmartPipe.Extensions.OpenTelemetry");
+        const string testProject = "tests/SmartPipe.Extensions.OpenTelemetry.Tests/SmartPipe.Extensions.OpenTelemetry.Tests.csproj";
+
+        Assert.Equal(PackageLifecycle.Active, package.Lifecycle);
+        Assert.Null(package.ScaffoldKind);
+        Assert.True(File.Exists(Path.Combine(root, package.ProjectPath)), package.ProjectPath);
+        Assert.True(File.Exists(Path.Combine(root, testProject)), testProject);
+
+        var solutionProjects = XDocument.Load(Path.Combine(root, "SmartPipe.Core.slnx"))
+            .Descendants("Project")
+            .Select(element => (string?)element.Attribute("Path"))
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Contains(package.ProjectPath, solutionProjects);
+        Assert.Contains(testProject, solutionProjects);
+
+        foreach (var policy in new[] { package.CurrentDependencies, package.ReleaseDependencies })
+        {
+            Assert.Equal(["SmartPipe.Core"], policy.RequiredSmartPipePackages);
+            Assert.Equal(["OpenTelemetry.Api.ProviderBuilderExtensions"], policy.AllowedExternalPackages);
+            Assert.Equal(["SmartPipe.Extensions"], policy.ForbiddenPackagePatterns);
+        }
+        Assert.Empty(package.TemporaryAllowances);
+    }
+
+    [Fact]
     public async Task Loader_RejectsUnknownProperty()
     {
         using var repository = new RepositoryTestDirectory();

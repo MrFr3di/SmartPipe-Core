@@ -256,9 +256,11 @@ def assert_consumer_contract() -> None:
         "hosting-trim", "hosting-nativeaot",
         "health-checks-direct", "health-checks-aspnet", "health-checks-trim",
         "health-checks-nativeaot",
+        "opentelemetry-direct", "opentelemetry-otlp", "opentelemetry-facade",
+        "opentelemetry-trim", "opentelemetry-nativeaot",
     }
-    require(len(current) == 23 and {scenario["id"] for scenario in current} == expected,
-            "Current consumer set must contain the exact twenty-three scenarios.")
+    require(len(current) == 28 and {scenario["id"] for scenario in current} == expected,
+            "Current consumer set must contain the exact twenty-eight scenarios.")
     hosting = [scenario for scenario in current if scenario.get("category") == "hosting"]
     require({scenario["id"] for scenario in hosting} == {
         "hosting-direct", "hosting-facade-source", "hosting-facade-binary-2.1.2",
@@ -269,6 +271,11 @@ def assert_consumer_contract() -> None:
         "health-checks-direct", "health-checks-aspnet", "health-checks-trim",
         "health-checks-nativeaot",
     }, "HealthChecks consumer category must contain the exact four HealthChecks scenarios.")
+    opentelemetry = [scenario for scenario in current if scenario.get("category") == "opentelemetry"]
+    require({scenario["id"] for scenario in opentelemetry} == {
+        "opentelemetry-direct", "opentelemetry-otlp", "opentelemetry-facade",
+        "opentelemetry-trim", "opentelemetry-nativeaot",
+    }, "OpenTelemetry consumer category must contain the exact five OpenTelemetry scenarios.")
     meta = next(scenario for scenario in current if scenario["id"] == "extensions-meta")
     require(meta["packageIds"] == ["SmartPipe.Extensions"],
             "extensions-meta must directly reference only the facade package.")
@@ -415,6 +422,9 @@ def validate(documents: dict[str, dict]) -> None:
     health_checks_consumers = str(named_step(reusable_steps, "Run HealthChecks consumers").get("run", ""))
     require("run-consumers" in health_checks_consumers and "--category health-checks" in health_checks_consumers,
             "Reusable validation must execute the HealthChecks consumer category.")
+    opentelemetry_consumers = str(named_step(reusable_steps, "Run OpenTelemetry consumers").get("run", ""))
+    require("run-consumers" in opentelemetry_consumers and "--category opentelemetry" in opentelemetry_consumers,
+            "Reusable validation must execute the OpenTelemetry consumer category.")
     concurrency_job = reusable["jobs"].get("health-checks-concurrency")
     require(isinstance(concurrency_job, dict),
             "Reusable validation must define the HealthChecks concurrency OS matrix.")
