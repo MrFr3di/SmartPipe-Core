@@ -8,7 +8,7 @@
 
 **Архитектура:** этап вводит защищённую интеграционную ветку `release/2.2.0`, нормативные ADR/governance-документы и кроссплатформенный repository-check tool. Tool восстанавливает опубликованные пакеты 2.1.2, проверяет подписи и содержимое, формирует канонические снимки API, assemblies и dependency graph и затем используется CI как fail-closed baseline gate.
 
-**Tech Stack:** C# 14, .NET SDK 10.0.303, Microsoft.Testing.Platform/xUnit v3, `System.Text.Json`, `System.IO.Compression`, `System.Reflection.Metadata`, `HttpClient`, PowerShell 7 только для orchestration, GitHub Actions, NuGet V3 Service Index.
+**Tech Stack:** C# 14, .NET SDK 10.0.302, Microsoft.Testing.Platform/xUnit v3, `System.Text.Json`, `System.IO.Compression`, `System.Reflection.Metadata`, `HttpClient`, PowerShell 7 только для orchestration, GitHub Actions, NuGet V3 Service Index.
 
 ## Global Constraints
 
@@ -17,7 +17,7 @@
 - Текущая опубликованная версия: `2.1.2`.
 - Целевой релиз: `2.2.0`; tag в конце релиза: `v2.2.0`.
 - Target framework: `net10.0`.
-- SDK берётся только из `global.json`; ожидаемый baseline — `10.0.303` с `rollForward: disable`.
+- SDK берётся только из `global.json`; ожидаемый baseline — `10.0.302` с `rollForward: disable`.
 - Этап SP220-00 НЕ меняет production runtime, public API, поведение sources/transforms/sinks или dependency graph production packages.
 - Никакие `.nupkg`/`.snupkg` не коммитятся в Git. Коммитятся только manifest, канонические snapshots, schema и human-readable report.
 - Все проверки fail-closed: неизвестный формат, отсутствующий package, несовпадающий hash, подпись, API или dependency graph являются ошибкой.
@@ -501,7 +501,7 @@ git show origin/main:global.json
 Expected:
 
 ```text
-10.0.303
+10.0.302
 ```
 
 and `rollForward` equals `disable`.
@@ -1979,7 +1979,7 @@ Governance and reproducible 2.1.2 baseline only. No production runtime changes.
 
 ## Baseline
 - main SHA: ...
-- SDK: 10.0.303
+- SDK: 10.0.302
 - package baseline: 2.1.2
 - exact-head CI run: ...
 
