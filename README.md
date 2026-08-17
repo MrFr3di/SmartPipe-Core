@@ -89,6 +89,8 @@ dotnet add package SmartPipe.Extensions.Json --version 2.1.2
 
 For canonical 2.2 DI pipelines, `SmartPipe.Extensions.HealthChecks` adds exact-key liveness, readiness, aggregate, ASP.NET tag, trimming, and NativeAOT support. See [Health checks](docs/health-checks.md).
 
+For OpenTelemetry collection, `SmartPipe.Extensions.OpenTelemetry` registers the existing Core meter and activity source with the application's exporter-neutral OpenTelemetry builder. See [OpenTelemetry](docs/opentelemetry.md).
+
 Install `SmartPipe.Extensions` 2.1.2 for HTTP, database, CSV, mapping,
 resilience, hosting, and health-check integrations. JSON-only applications
 should reference `SmartPipe.Extensions.Json` directly.
