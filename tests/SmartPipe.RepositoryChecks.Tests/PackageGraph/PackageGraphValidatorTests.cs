@@ -51,6 +51,126 @@ public sealed class PackageGraphValidatorTests
                 && violation.Dependency == "SmartPipe.Extensions.Hosting");
     }
 
+    [Fact]
+    public async Task OpenTelemetryProject_RejectsHostingExtensionReference()
+    {
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(
+            root,
+            "eng/package-graph.json",
+            TestContext.Current.CancellationToken);
+        var node = Assert.Single(
+            graph.Packages,
+            package => package.Id == "SmartPipe.Extensions.OpenTelemetry");
+        var project = OpenTelemetryProject(
+            root,
+            graph,
+            node,
+            [new("OpenTelemetry.Extensions.Hosting", null, null, null)],
+            []);
+
+        var violations = new PackageGraphValidator().ValidateProject(
+            graph,
+            node,
+            project,
+            PackageGraphMode.Current);
+
+        Assert.Contains(
+            violations,
+            violation => violation.Code == "SPGRAPH046"
+                && violation.Dependency == "OpenTelemetry.Extensions.Hosting");
+    }
+
+    [Fact]
+    public async Task OpenTelemetryProject_RejectsExporterReference()
+    {
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(
+            root,
+            "eng/package-graph.json",
+            TestContext.Current.CancellationToken);
+        var node = Assert.Single(
+            graph.Packages,
+            package => package.Id == "SmartPipe.Extensions.OpenTelemetry");
+        var project = OpenTelemetryProject(
+            root,
+            graph,
+            node,
+            [new("OpenTelemetry.Exporter.InMemory", null, null, null)],
+            []);
+
+        var violations = new PackageGraphValidator().ValidateProject(
+            graph,
+            node,
+            project,
+            PackageGraphMode.Current);
+
+        Assert.Contains(
+            violations,
+            violation => violation.Code == "SPGRAPH046"
+                && violation.Dependency == "OpenTelemetry.Exporter.InMemory");
+    }
+
+    [Fact]
+    public async Task OpenTelemetryProject_RejectsFacadeReference()
+    {
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(
+            root,
+            "eng/package-graph.json",
+            TestContext.Current.CancellationToken);
+        var node = Assert.Single(
+            graph.Packages,
+            package => package.Id == "SmartPipe.Extensions.OpenTelemetry");
+        var project = OpenTelemetryProject(
+            root,
+            graph,
+            node,
+            [],
+            [FullPath(root, "src/SmartPipe.Extensions/SmartPipe.Extensions.csproj")]);
+
+        var violations = new PackageGraphValidator().ValidateProject(
+            graph,
+            node,
+            project,
+            PackageGraphMode.Current);
+
+        Assert.Contains(
+            violations,
+            violation => violation.Code == "SPGRAPH049"
+                && violation.Dependency == "SmartPipe.Extensions");
+    }
+
+    [Fact]
+    public async Task OpenTelemetryProject_RejectsHealthChecksReference()
+    {
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(
+            root,
+            "eng/package-graph.json",
+            TestContext.Current.CancellationToken);
+        var node = Assert.Single(
+            graph.Packages,
+            package => package.Id == "SmartPipe.Extensions.OpenTelemetry");
+        var project = OpenTelemetryProject(
+            root,
+            graph,
+            node,
+            [],
+            [FullPath(root, "src/SmartPipe.Extensions.HealthChecks/SmartPipe.Extensions.HealthChecks.csproj")]);
+
+        var violations = new PackageGraphValidator().ValidateProject(
+            graph,
+            node,
+            project,
+            PackageGraphMode.Current);
+
+        Assert.Contains(
+            violations,
+            violation => violation.Code == "SPGRAPH045"
+                && violation.Dependency == "SmartPipe.Extensions.HealthChecks");
+    }
+
     [Theory]
     [InlineData("facade", "SPGRAPH049")]
     [InlineData("unknown-external", "SPGRAPH046")]
@@ -220,6 +340,27 @@ public sealed class PackageGraphValidatorTests
         Assert.Contains(violations, x => x.Code == "SPGRAPH062" && x.Dependency == "Required");
         Assert.Contains(violations, x => x.Code == "SPGRAPH063" && x.Dependency == "Promoted");
     }
+
+    private static EvaluatedProject OpenTelemetryProject(
+        string root,
+        PackageGraphDocument graph,
+        PackageNode node,
+        IReadOnlyList<EvaluatedPackageReference> packageReferences,
+        IReadOnlyList<string> projectReferences) => new(
+        FullPath(root, node.ProjectPath),
+        node.Id,
+        graph.ReleaseVersion,
+        graph.ReleaseVersion,
+        ["net10.0"],
+        true,
+        true,
+        [new("OpenTelemetry.Api.ProviderBuilderExtensions", null, null, null), .. packageReferences],
+        [FullPath(root, "src/SmartPipe.Core/SmartPipe.Core.csproj"), .. projectReferences],
+        null,
+        true,
+        "README.md",
+        "README.md",
+        "icon.png");
 
     private static PackageGraphDocument Graph()
     {
