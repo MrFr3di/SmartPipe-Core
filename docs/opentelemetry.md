@@ -8,9 +8,18 @@ or activity names.
 
 ## Registration
 
+The sample assumes the application installs its own OpenTelemetry packages:
+
+```text
+dotnet add package OpenTelemetry.Extensions.Hosting --version 1.17.0
+dotnet add package OpenTelemetry.Exporter.OpenTelemetryProtocol --version 1.17.0
+```
+
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 using SmartPipe.Extensions.OpenTelemetry;
 
 var services = new ServiceCollection();
@@ -52,7 +61,9 @@ hook dependency is added.
 
 Repeated successful calls on the same `IServiceCollection` produce one logical
 SmartPipe registration for metrics and one for tracing. Different service
-collections are independent. There is no static global marker.
+collections are independent. There is no static global registration state;
+idempotency is detected from a marker descriptor stored in the current
+`IServiceCollection`.
 
 OpenTelemetry builder configuration is not a transaction SmartPipe can roll
 back. If an OpenTelemetry or third-party configuration callback throws,

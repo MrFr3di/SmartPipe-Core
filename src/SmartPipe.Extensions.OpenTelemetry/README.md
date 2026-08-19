@@ -13,9 +13,18 @@ signals are collected and exported.
 
 ## Usage
 
+The sample assumes the application installs its own OpenTelemetry packages:
+
+```text
+dotnet add package OpenTelemetry.Extensions.Hosting --version 1.17.0
+dotnet add package OpenTelemetry.Exporter.OpenTelemetryProtocol --version 1.17.0
+```
+
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 using SmartPipe.Extensions.OpenTelemetry;
 
 var services = new ServiceCollection();
@@ -25,6 +34,10 @@ services.AddOpenTelemetry()
     .WithTracing(tracing => tracing.AddOtlpExporter())
     .AddSmartPipeInstrumentation();
 ```
+
+These packages remain application-owned: `SmartPipe.Extensions.OpenTelemetry`
+itself depends only on `SmartPipe.Core` and
+`OpenTelemetry.Api.ProviderBuilderExtensions`.
 
 `AddSmartPipeInstrumentation` is the only public API. It:
 

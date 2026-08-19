@@ -9,9 +9,10 @@
   existing Core `Meter("SmartPipe.Core")` and `ActivitySource("SmartPipe.Core")`
   sources with the OpenTelemetry provider builders.
 - Added collection-local idempotency for repeated successful registrations;
-  different service collections remain independent, and no static global marker
-  exists. Same-collection retry after a configuration exception is documented
-  as unsupported.
+  different service collections remain independent, idempotency is detected
+  from a marker descriptor stored in the current service collection — there is
+  no static global registration state. Same-collection retry after a
+  configuration exception is documented as unsupported.
 - Added stable diagnostic name constants `SmartPipeDiagnostics.MeterName` and
   `SmartPipeDiagnostics.ActivitySourceName` to `SmartPipe.Core`; the production
   dependency surface is Core plus `OpenTelemetry.Api.ProviderBuilderExtensions`
