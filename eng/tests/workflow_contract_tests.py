@@ -113,8 +113,9 @@ def assert_repository_checks_profile(
         "Test and benchmark warning gate", "Pack packages from graph",
         "Provision 2.1.2 baseline packages", "Verify package graph current",
         "Verify package metadata current", "Verify package ownership current",
-        "Verify release versions current", "Run current consumers",
+        "Verify release versions current",         "Run current consumers",
         "Run Hosting consumers", "Run HealthChecks consumers",
+        "Run OpenTelemetry consumers",
         "Vulnerable package scan", "Verify direct production audit policy",
         "Deprecated package scan", "Outdated package report",
         "Upload immutable packages and reports",
@@ -388,7 +389,8 @@ def validate(documents: dict[str, dict]) -> None:
         "Pack packages from graph", "Provision 2.1.2 baseline packages",
         "Verify package graph current", "Verify package metadata current",
         "Verify package ownership current", "Verify release versions current",
-        "Run current consumers", "Run Hosting consumers", "Run HealthChecks consumers", "Vulnerable package scan",
+        "Run current consumers", "Run Hosting consumers", "Run HealthChecks consumers",
+        "Run OpenTelemetry consumers", "Vulnerable package scan",
         "Verify direct production audit policy", "Deprecated package scan",
         "Outdated package report", "Docs link check",
         "Upload immutable packages and reports",
@@ -401,7 +403,7 @@ def validate(documents: dict[str, dict]) -> None:
         "Provision 2.1.2 baseline packages", "Verify package graph current",
         "Verify package metadata current", "Verify package ownership current",
         "Verify release versions current", "Run current consumers", "Run HealthChecks consumers",
-        "Vulnerable package scan", "Verify direct production audit policy",
+        "Run OpenTelemetry consumers", "Vulnerable package scan", "Verify direct production audit policy",
         "Deprecated package scan", "Outdated package report",
         "Upload immutable packages and reports",
     ]
@@ -728,6 +730,14 @@ def _move_graph_before_integrity(documents: dict[str, dict]) -> None:
     job_steps.insert(pack_index + 1, graph)
 
 
+def _move_opentelemetry_consumers_before_pack(documents: dict[str, dict]) -> None:
+    job_steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+    consumers = named_step(job_steps, "Run OpenTelemetry consumers")
+    job_steps.remove(consumers)
+    pack_index = job_steps.index(named_step(job_steps, "Pack packages from graph"))
+    job_steps.insert(pack_index, consumers)
+
+
 def _duplicate_upload(documents: dict[str, dict]) -> None:
     job_steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
     job_steps.append(copy.deepcopy(named_step(job_steps, "Upload immutable packages and reports")))
@@ -886,6 +896,16 @@ def main() -> int:
         documents,
         _move_graph_before_integrity,
         "required order",
+    )
+    assert_mutation_rejected(
+        documents,
+        _move_opentelemetry_consumers_before_pack,
+        "required order",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Run OpenTelemetry consumers"),
+        "Run OpenTelemetry consumers",
     )
     assert_mutation_rejected(
         documents,
