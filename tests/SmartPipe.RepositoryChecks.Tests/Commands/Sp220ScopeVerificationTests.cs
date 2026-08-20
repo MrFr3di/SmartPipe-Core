@@ -3,6 +3,7 @@ using SmartPipe.RepositoryChecks.Infrastructure;
 
 namespace SmartPipe.RepositoryChecks.Tests.Commands;
 
+[Collection(ExternalProcessCollection.Name)]
 public sealed class Sp220ScopeVerificationTests
 {
     private const string BaseCommit = "8e79902d22de714f493582946f7c260462b0895e";

@@ -251,7 +251,11 @@ never `NotStarted`.
 
 Runtime-created `PipelineRun<TOutput>` handles expose their exact `PipelineKey`
 and `Guid RunId`. The shipped public constructor creates compatibility handles
-with a default key and empty run identifier. `WithLifetime` propagates identity
+with a default key, empty run identifier, and zero input/output capacities because
+that constructor has no runtime channel configuration. Runtime-created handles
+expose the effective positive `InputCapacity` and `OutputCapacity` used by their
+actual channels, including Core's materialized output default. `WithLifetime`
+propagates identity and capacities
 while replacing, not composing, completion and disposal. Every handle invokes
 its disposal delegate at most once; concurrent calls share one task and cached
 exception, and no user cleanup executes while the cache lock is held.

@@ -1,4 +1,6 @@
+using System.Reflection;
 using SmartPipe.Core;
+using SmartPipe.Extensions.Hosting;
 using SmartPipe.Extensions.Selectors;
 using SmartPipe.Extensions.Sinks;
 using SmartPipe.Extensions.Transforms;
@@ -63,5 +65,29 @@ public sealed class PackageOwnershipTests
 
         Assert.Equal("batchTypeInfo", nullException.ParamName);
         Assert.Equal("batchTypeInfo", defaultException.ParamName);
+    }
+
+    [Fact]
+    public void HostingCompatibilityCluster_RemainsFacadeOwnedAndIsNotForwarded()
+    {
+        var facade = typeof(SmartPipeHostedService<,>).Assembly;
+        var legacyTypes = new[]
+        {
+            typeof(SmartPipeHostedFailureBehavior),
+            typeof(SmartPipeHostedServiceOptions),
+            typeof(SmartPipeHostedService<,>),
+        };
+
+        Assert.All(legacyTypes, type => Assert.Same(facade, type.Assembly));
+        Assert.DoesNotContain(facade.GetForwardedTypes(), legacyTypes.Contains);
+        Assert.All(legacyTypes, type => Assert.Null(type.GetCustomAttribute<ObsoleteAttribute>()));
+
+        var leaf = typeof(SmartPipeHostedPipelineOptions).Assembly;
+        Assert.DoesNotContain(
+            leaf.GetExportedTypes(),
+            type => legacyTypes.Any(legacy => type.FullName == legacy.FullName));
+        Assert.DoesNotContain(
+            leaf.GetReferencedAssemblies(),
+            reference => reference.Name == facade.GetName().Name);
     }
 }

@@ -31,6 +31,11 @@ internal sealed record VerifyBaselineOptions(
     bool Offline,
     BaselineVerificationMode Mode = BaselineVerificationMode.Full) : RepositoryCheckCommand(RepositoryRoot);
 
+internal sealed record ProvisionBaselineOptions(
+    string RepositoryRoot,
+    string ManifestPath,
+    string PackagesDirectory) : RepositoryCheckCommand(RepositoryRoot);
+
 internal sealed record VerifySp220ScopeOptions(
     string RepositoryRoot,
     string BaseCommit) : RepositoryCheckCommand(RepositoryRoot);
@@ -38,6 +43,37 @@ internal sealed record VerifySp220ScopeOptions(
 internal sealed record VerifyCentralPackagesOptions(
     string RepositoryRoot,
     CentralPackageValidationMode Mode) : RepositoryCheckCommand(RepositoryRoot);
+
+internal enum ProfileOutputFormat
+{
+    Text,
+    Jsonl,
+    GitHub,
+}
+
+internal sealed record VerifyProfileOptions(
+    string RepositoryRoot,
+    string Profile,
+    ProfileOutputFormat Format,
+    bool FailuresOnly) : RepositoryCheckCommand(RepositoryRoot);
+
+internal sealed record AgentContextOptions(
+    string RepositoryRoot,
+    string Epic,
+    string Task,
+    ProfileOutputFormat Format) : RepositoryCheckCommand(RepositoryRoot);
+
+internal sealed record VerifyTaskOptions(
+    string RepositoryRoot,
+    string Epic,
+    string Task,
+    ProfileOutputFormat Format,
+    bool FailuresOnly) : RepositoryCheckCommand(RepositoryRoot);
+
+internal sealed record AgentEvidenceOptions(
+    string RepositoryRoot,
+    string Epic,
+    ProfileOutputFormat Format) : RepositoryCheckCommand(RepositoryRoot);
 
 internal sealed record VerifyPackageProjectsOptions(
     string RepositoryRoot) : RepositoryCheckCommand(RepositoryRoot);
@@ -50,19 +86,19 @@ internal sealed record VerifyPackageOwnershipOptions(string RepositoryRoot, stri
 internal sealed record VerifyReleaseVersionOptions(string RepositoryRoot, string Tag, PackageGraphMode Mode, string PackageDirectory) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record ScaffoldPackageOptions(string RepositoryRoot, string PackageId, bool DryRun, string? OutputReport) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record ListPackagesOptions(string RepositoryRoot, PackageLifecycle Lifecycle) : RepositoryCheckCommand(RepositoryRoot);
-internal sealed record RunConsumersCommandOptions(string RepositoryRoot, string Set, string PackageDirectory, string PackageVersion, string ManifestPath) : RepositoryCheckCommand(RepositoryRoot);
+internal sealed record RunConsumersCommandOptions(
+    string RepositoryRoot,
+    string Set,
+    string PackageDirectory,
+    string PackageVersion,
+    string ManifestPath,
+    string? Category) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record PackPackagesOptions(string RepositoryRoot, PackageGraphMode Mode, string Configuration, string PackageVersion, string OutputDirectory, string ManifestPath) : RepositoryCheckCommand(RepositoryRoot);
 
 internal sealed class CommandLineException(string message) : Exception(message);
 
 internal static class CommandLineParser
 {
-    private static readonly string[] PackageIds =
-    [
-        "SmartPipe.Core",
-        "SmartPipe.Extensions",
-        "SmartPipe.Extensions.Json",
-    ];
     private static readonly HashSet<string> CaptureOptions = new(StringComparer.Ordinal)
     {
         "--repo-root", "--repository", "--commit", "--target-release", "--baseline-version",
@@ -71,6 +107,10 @@ internal static class CommandLineParser
     private static readonly HashSet<string> VerifyOptions = new(StringComparer.Ordinal)
     {
         "--repo-root", "--manifest", "--packages-dir", "--offline", "--mode",
+    };
+    private static readonly HashSet<string> ProvisionOptions = new(StringComparer.Ordinal)
+    {
+        "--repo-root", "--manifest", "--packages-dir",
     };
     private static readonly HashSet<string> VerifySp220ScopeOptions = new(StringComparer.Ordinal)
     {
@@ -83,6 +123,10 @@ internal static class CommandLineParser
     private static readonly HashSet<string> VerifyPackageProjectsOptionNames = new(StringComparer.Ordinal)
     {
         "--repository-root", "--repo-root",
+    };
+    private static readonly HashSet<string> VerifyProfileOptionNames = new(StringComparer.Ordinal)
+    {
+        "--repo-root", "--profile", "--format", "--failures-only",
     };
 
     public static RepositoryCheckCommand Parse(string[] args)
@@ -97,6 +141,11 @@ internal static class CommandLineParser
         {
             "capture-baseline" => ParseCapture(args.AsSpan(1)),
             "verify-baseline" => ParseVerify(args.AsSpan(1)),
+            "provision-baseline" => ParseProvision(args.AsSpan(1)),
+            "verify" => ParseVerifyProfile(args.AsSpan(1)),
+            "agent-context" => ParseAgentContext(args.AsSpan(1)),
+            "verify-task" => ParseVerifyTask(args.AsSpan(1)),
+            "evidence" => ParseAgentEvidence(args.AsSpan(1)),
             "verify-sp220-scope" => ParseVerifySp220Scope(args.AsSpan(1)),
             "verify-central-packages" => ParseVerifyCentralPackages(args.AsSpan(1)),
             "verify-package-projects" => ParseVerifyPackageProjects(args.AsSpan(1)),
@@ -143,7 +192,7 @@ internal static class CommandLineParser
 
     private static RunConsumersCommandOptions ParseRunConsumers(ReadOnlySpan<string> args)
     {
-        string? root = null; string? set = null; string? packages = null; string? version = null; string manifest = "eng/consumer-scenarios.json";
+        string? root = null; string? set = null; string? packages = null; string? version = null; string manifest = "eng/consumer-scenarios.json"; string? category = null;
         var seen = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < args.Length; i += 2)
         {
@@ -156,6 +205,7 @@ internal static class CommandLineParser
                 case "--package-directory": packages = args[i + 1]; break;
                 case "--package-version": version = args[i + 1]; break;
                 case "--manifest": manifest = args[i + 1]; break;
+                case "--category": category = args[i + 1]; break;
                 default: throw new CommandLineException($"Unknown run-consumers option '{args[i]}'.");
             }
         }
@@ -164,7 +214,11 @@ internal static class CommandLineParser
         if (set != "current") throw new CommandLineException("Option '--set' must be 'current'.");
         if (string.IsNullOrWhiteSpace(packages) || string.IsNullOrWhiteSpace(version)) throw new CommandLineException("run-consumers requires '--package-directory' and '--package-version'.");
         var resolvedManifest = ResolveWithinRoot(root, manifest, "--manifest");
-        return new(root, set, ResolveWithinRoot(root, packages, "--package-directory"), version, Path.GetRelativePath(root, resolvedManifest).Replace('\\', '/'));
+        if (category is not null
+            && (category.Length == 0
+                || category.Any(character => character is not (>= 'a' and <= 'z' or >= '0' and <= '9' or '-'))))
+            throw new CommandLineException("Option '--category' must contain lowercase letters, digits, or hyphens.");
+        return new(root, set, ResolveWithinRoot(root, packages, "--package-directory"), version, Path.GetRelativePath(root, resolvedManifest).Replace('\\', '/'), category);
     }
 
     private static ScaffoldPackageOptions ParseScaffoldPackage(ReadOnlySpan<string> args)
@@ -411,19 +465,218 @@ internal static class CommandLineParser
         {
             throw new CommandLineException("Option '--mode' must be 'full' or 'integrity'.");
         }
-        if (offline)
+        return new VerifyBaselineOptions(root, manifest, packages, offline, mode);
+    }
+
+    private static ProvisionBaselineOptions ParseProvision(ReadOnlySpan<string> args)
+    {
+        var values = ParseOptions(args, ProvisionOptions);
+        var root = RequireRoot(values);
+        return new ProvisionBaselineOptions(
+            root,
+            ResolveContainedInput(root, Require(values, "--manifest"), "--manifest"),
+            ResolveContainedInput(root, Require(values, "--packages-dir"), "--packages-dir"));
+    }
+
+    private static VerifyProfileOptions ParseVerifyProfile(ReadOnlySpan<string> args)
+    {
+        string? root = null;
+        string? profile = null;
+        var format = ProfileOutputFormat.Text;
+        var failuresOnly = false;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < args.Length; index++)
         {
-            foreach (var packageId in PackageIds)
+            var option = args[index];
+            if (!VerifyProfileOptionNames.Contains(option))
             {
-                var fileName = $"{packageId}.2.1.2.nupkg";
-                if (!File.Exists(Path.Combine(packages, fileName)))
-                {
-                    throw new CommandLineException($"Offline package is missing: {fileName}.");
-                }
+                throw new CommandLineException($"Unknown option '{option}'.");
+            }
+
+            if (!seen.Add(option))
+            {
+                throw new CommandLineException($"Duplicate option '{option}'.");
+            }
+
+            if (option == "--failures-only")
+            {
+                failuresOnly = true;
+                continue;
+            }
+
+            if (++index >= args.Length || args[index].StartsWith("--", StringComparison.Ordinal))
+            {
+                throw new CommandLineException($"Option '{option}' requires a value.");
+            }
+
+            var value = args[index];
+            switch (option)
+            {
+                case "--repo-root":
+                    root = value;
+                    break;
+                case "--profile":
+                    profile = value;
+                    break;
+                case "--format":
+                    format = value switch
+                    {
+                        "text" => ProfileOutputFormat.Text,
+                        "jsonl" => ProfileOutputFormat.Jsonl,
+                        "github" => ProfileOutputFormat.GitHub,
+                        _ => throw new CommandLineException("Option '--format' must be 'text', 'jsonl', or 'github'."),
+                    };
+                    break;
+                default:
+                    throw new CommandLineException($"Unknown option '{option}'.");
             }
         }
 
-        return new VerifyBaselineOptions(root, manifest, packages, offline, mode);
+        root = Path.GetFullPath(root ?? Directory.GetCurrentDirectory());
+        if (!Directory.Exists(root))
+        {
+            throw new CommandLineException($"Repository root does not exist: {root}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(profile))
+        {
+            throw new CommandLineException("Missing required option '--profile'.");
+        }
+
+        return new VerifyProfileOptions(root, profile, format, failuresOnly);
+    }
+
+    private static AgentContextOptions ParseAgentContext(ReadOnlySpan<string> args)
+    {
+        var values = ParseAgentOptions(args, allowTask: true, allowFailuresOnly: false, formatRequired: true, jsonOnly: true);
+        return new AgentContextOptions(
+            RequireOptionalRoot(values.GetValueOrDefault("--repo-root")),
+            RequireAgentEpic(Require(values, "--epic")),
+            RequireAgentTask(Require(values, "--task")),
+            ProfileOutputFormat.Jsonl);
+    }
+
+    private static VerifyTaskOptions ParseVerifyTask(ReadOnlySpan<string> args)
+    {
+        var values = ParseAgentOptions(args, allowTask: true, allowFailuresOnly: true, formatRequired: false, jsonOnly: false);
+        return new VerifyTaskOptions(
+            RequireOptionalRoot(values.GetValueOrDefault("--repo-root")),
+            RequireAgentEpic(Require(values, "--epic")),
+            RequireAgentTask(Require(values, "--task")),
+            ParseProfileFormat(values.GetValueOrDefault("--format") ?? "text"),
+            values.ContainsKey("--failures-only"));
+    }
+
+    private static AgentEvidenceOptions ParseAgentEvidence(ReadOnlySpan<string> args)
+    {
+        var values = ParseAgentOptions(args, allowTask: false, allowFailuresOnly: false, formatRequired: true, jsonOnly: true);
+        return new AgentEvidenceOptions(
+            RequireOptionalRoot(values.GetValueOrDefault("--repo-root")),
+            RequireAgentEpic(Require(values, "--epic")),
+            ProfileOutputFormat.Jsonl);
+    }
+
+    private static Dictionary<string, string?> ParseAgentOptions(
+        ReadOnlySpan<string> args,
+        bool allowTask,
+        bool allowFailuresOnly,
+        bool formatRequired,
+        bool jsonOnly)
+    {
+        var allowed = new HashSet<string>(StringComparer.Ordinal) { "--epic", "--repo-root", "--format" };
+        if (allowTask) allowed.Add("--task");
+        if (allowFailuresOnly) allowed.Add("--failures-only");
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal);
+        for (var index = 0; index < args.Length; index++)
+        {
+            var option = args[index];
+            if (!allowed.Contains(option))
+            {
+                throw new CommandLineException($"Unknown option '{option}'.");
+            }
+
+            if (!values.TryAdd(option, null))
+            {
+                throw new CommandLineException($"Duplicate option '{option}'.");
+            }
+
+            if (option == "--failures-only")
+            {
+                continue;
+            }
+
+            if (++index >= args.Length || args[index].StartsWith("--", StringComparison.Ordinal))
+            {
+                throw new CommandLineException($"Option '{option}' requires a value.");
+            }
+
+            var value = args[index];
+            if (option == "--format")
+            {
+                if (jsonOnly && value != "json")
+                {
+                    throw new CommandLineException("Option '--format' must be 'json'.");
+                }
+
+                if (!jsonOnly && value is not ("text" or "jsonl" or "github"))
+                {
+                    throw new CommandLineException("Option '--format' must be 'text', 'jsonl', or 'github'.");
+                }
+            }
+
+            values[option] = value;
+        }
+
+        if (!values.ContainsKey("--epic"))
+        {
+            throw new CommandLineException("Missing required option '--epic'.");
+        }
+
+        if (allowTask && !values.ContainsKey("--task"))
+        {
+            throw new CommandLineException("Missing required option '--task'.");
+        }
+
+        if (formatRequired && !values.ContainsKey("--format"))
+        {
+            throw new CommandLineException("Missing required option '--format'.");
+        }
+
+        return values;
+    }
+
+    private static ProfileOutputFormat ParseProfileFormat(string value) => value switch
+    {
+        "text" => ProfileOutputFormat.Text,
+        "jsonl" => ProfileOutputFormat.Jsonl,
+        "github" => ProfileOutputFormat.GitHub,
+        _ => throw new CommandLineException("Option '--format' must be 'text', 'jsonl', or 'github'."),
+    };
+
+    private static string RequireOptionalRoot(string? value)
+    {
+        var root = Path.GetFullPath(value ?? Directory.GetCurrentDirectory());
+        if (!Directory.Exists(root))
+        {
+            throw new CommandLineException("Repository root does not exist.");
+        }
+
+        return root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
+    private static string RequireAgentEpic(string value) =>
+        value == "SP220-05"
+            ? value
+            : throw new CommandLineException("Option '--epic' must use the canonical 'SP220-05' identity.");
+
+    private static string RequireAgentTask(string value)
+    {
+        if (value.Length < 2 || value[0] != 'T' || value[1] is not (>= '1' and <= '9') || !value[2..].All(char.IsAsciiDigit))
+        {
+            throw new CommandLineException("Option '--task' must use a canonical Txx identity.");
+        }
+
+        return value;
     }
 
     private static Dictionary<string, string?> ParseOptions(ReadOnlySpan<string> args, IReadOnlySet<string> allowed)

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <SmartPipePackage>true</SmartPipePackage>
+  </PropertyGroup>
+  <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
+  <PropertyGroup>
+    <PackageId>SmartPipe.Extensions.HealthChecks</PackageId>
+    <Description>Key-based liveness and readiness health checks for canonical SmartPipe pipelines.</Description>
+    <PackageTags>SmartPipe;pipeline;health-checks;liveness;readiness</PackageTags>
+    <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)/README.md</SmartPipePackageReadmeSource>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../SmartPipe.Core/SmartPipe.Core.csproj" />
+    <ProjectReference Include="../SmartPipe.Extensions.DependencyInjection/SmartPipe.Extensions.DependencyInjection.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SmartPipe.Extensions.HealthChecks.Tests" />
+  </ItemGroup>
+
+</Project>

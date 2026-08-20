@@ -16,10 +16,10 @@ public sealed class PackPackagesCommandTests
         var manifest = await new PackPackagesCommand(runner).ExecuteAsync(new(
             fixture.Path, PackageGraphMode.Current, "Release", "2.2.0",
             Path.Combine(fixture.Path, "artifacts/packages"), Path.Combine(fixture.Path, "artifacts/packages/manifest.json")), TestContext.Current.CancellationToken);
-        Assert.Equal(["SmartPipe.Core", "SmartPipe.Extensions.Json", "SmartPipe.Extensions"], manifest.Packages.Select(x => x.Id));
-        Assert.Equal([1, 5, 19], manifest.Packages.Select(x => x.PublishOrder));
+        Assert.Equal(["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions", "SmartPipe.Extensions.HealthChecks", "SmartPipe.Extensions.OpenTelemetry"], manifest.Packages.Select(x => x.Id));
+        Assert.Equal([1, 14, 16, 5, 19, 17, 15], manifest.Packages.Select(x => x.PublishOrder));
         Assert.All(manifest.Packages, item => { Assert.Equal(64, item.NupkgSha256.Length); Assert.Equal(64, item.SnupkgSha256.Length); Assert.DoesNotContain('\\', item.NupkgPath); });
-        Assert.Equal(3, runner.Requests.Count);
+        Assert.Equal(7, runner.Requests.Count);
         Assert.All(runner.Requests, request =>
         {
             Assert.Equal("dotnet", request.FileName); Assert.Equal(fixture.Path, request.WorkingDirectory);
@@ -39,6 +39,10 @@ public sealed class PackPackagesCommandTests
         fixture.Write("eng/package-graph.json", File.ReadAllText(Path.Combine(root, "eng/package-graph.json")));
         fixture.Write("src/SmartPipe.Core/SmartPipe.Core.csproj", "<Project />");
         fixture.Write("src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj", "<Project />");
+        fixture.Write("src/SmartPipe.Extensions.DependencyInjection/SmartPipe.Extensions.DependencyInjection.csproj", "<Project />");
+        fixture.Write("src/SmartPipe.Extensions.Hosting/SmartPipe.Extensions.Hosting.csproj", "<Project />");
+        fixture.Write("src/SmartPipe.Extensions.HealthChecks/SmartPipe.Extensions.HealthChecks.csproj", "<Project />");
+        fixture.Write("src/SmartPipe.Extensions.OpenTelemetry/SmartPipe.Extensions.OpenTelemetry.csproj", "<Project />");
         fixture.Write("src/SmartPipe.Extensions/SmartPipe.Extensions.csproj", "<Project />");
         return fixture;
     }

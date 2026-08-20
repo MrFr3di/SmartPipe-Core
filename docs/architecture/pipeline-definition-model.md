@@ -136,6 +136,11 @@ been accepted by buffered dispatch. A fast source may already have reached a
 terminal state when `StartAsync` resumes, but the returned run is never
 `NotStarted` or activation-in-progress.
 
+The runtime-created handle records the effective input and output capacities of
+those exact channels. A configured nullable output capacity is materialized once
+by Core; integration packages consume `PipelineRun.InputCapacity` and
+`PipelineRun.OutputCapacity` and do not duplicate Core's private default.
+
 Before readiness, the deferred run shell already exposes its output reader and
 owns cancel, abort, drain, and disposal requests. Cancel and abort stop activation;
 dispose waits for rollback; drain waits for executor attachment or receives the

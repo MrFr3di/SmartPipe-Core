@@ -2,6 +2,44 @@
 
 ## [2.2.0] — Development
 
+### OpenTelemetry
+
+- Added exporter-neutral `SmartPipe.Extensions.OpenTelemetry` with the single
+  `AddSmartPipeInstrumentation(IOpenTelemetryBuilder)` extension registering the
+  existing Core `Meter("SmartPipe.Core")` and `ActivitySource("SmartPipe.Core")`
+  sources with the OpenTelemetry provider builders.
+- Added collection-local idempotency for repeated successful registrations;
+  different service collections remain independent, idempotency is detected
+  from a marker descriptor stored in the current service collection — there is
+  no static global registration state. Same-collection retry after a
+  configuration exception is documented as unsupported.
+- Added stable diagnostic name constants `SmartPipeDiagnostics.MeterName` and
+  `SmartPipeDiagnostics.ActivitySourceName` to `SmartPipe.Core`; the production
+  dependency surface is Core plus `OpenTelemetry.Api.ProviderBuilderExtensions`
+  only — no exporter, hosting, or instrumentation dependency.
+- Added direct, OTLP, facade composition, trimmed, and NativeAOT package
+  consumers.
+
+### Health checks
+
+- Added `SmartPipe.Extensions.HealthChecks` with exact-`PipelineKey` liveness, readiness, aggregate checks, isolated named options, stable names/tags, and bounded primitive result data.
+- Added one latest immutable terminal observation per key to canonical DI lifecycle tracking, including activation failures without exception/run/scope retention.
+- Preserved the 2.1 generic-pair health API physically in `SmartPipe.Extensions`; canonical checks are an explicit migration and do not type-forward legacy health identities.
+- Added direct, ASP.NET endpoint-tag, trimmed, and NativeAOT package consumers.
+
+### Generic Host integration
+
+- Added `SmartPipe.Extensions.Hosting`, with one deterministic orchestrator for
+  canonical DI pipeline registrations keyed by `PipelineKey`.
+- Hosted pipelines start sequentially, stop in reverse order, roll back partial
+  startup, and abort before disposal when bounded graceful drain cannot finish.
+- Added explicit per-pipeline completion and failure policies, structured
+  lifecycle logging, real Generic Host integration tests, and direct, legacy,
+  trimming, and NativeAOT package consumers.
+- Preserved the 2.1 Hosting API physically in `SmartPipe.Extensions`; migration
+  to `AddPipeline(...).RunAsHostedService(...)` is explicit and does not redirect
+  legacy behavior into the canonical orchestrator.
+
 ### Core definition and lifecycle model
 
 - Added immutable typed definitions with explicit pipeline/stage keys, per-run

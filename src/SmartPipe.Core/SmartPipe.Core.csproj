@@ -23,5 +23,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="SmartPipe.Core.Tests" />
     <InternalsVisibleTo Include="SmartPipe.Benchmarks" />
+    <InternalsVisibleTo Include="SmartPipe.Extensions.DependencyInjection" />
+    <InternalsVisibleTo Include="SmartPipe.Extensions.DependencyInjection.Tests" />
   </ItemGroup>
 </Project>

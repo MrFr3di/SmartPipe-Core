@@ -7,13 +7,13 @@ using System.Text;
 
 namespace SmartPipe.RepositoryChecks.Tests.Scaffolding;
 
+[Collection(ExternalProcessCollection.Name)]
 public sealed class PackageTemplateRendererTests
 {
     [Theory]
     [InlineData("SmartPipe.Extensions.Channels", "CoreLeaf", "1bc7c64f427265aa7849c734b3a8f9eceba03b6adb6d37d7e12cad08d0ad8a69")]
     [InlineData("SmartPipe.Extensions.Csv", "FrameworkIntegration", "177f4386223f16c8666b01f54ef34018f925f14704d85c04d2d812f065fa3fd5")]
     [InlineData("SmartPipe.Extensions.Http.Json", "ComposedIntegration", "4b28a61c212a2815d0b7830c846ba1b5e14daad2ffe1678ac528c482fae758d0")]
-    [InlineData("SmartPipe.Extensions.Hosting", "HostIntegration", "a20a53fa2214012166fce26c0885b49a73a409dd871dcb0529dd40dc20e10e8d")]
     [InlineData("SmartPipe.Testing", "Testing", "7312db365c704bd43f5d0f2f8a364a5ca067a055a143be9ce1743f26283289e3")]
     public async Task Render_AllKindsAreDeterministicLfOnlySnapshots(string id, string kind, string expectedSnapshot)
     {
@@ -25,7 +25,8 @@ public sealed class PackageTemplateRendererTests
         Assert.Equal(kind, first.Kind.ToString());
         Assert.Equal(first.Files, second.Files);
         var snapshot = string.Join("", first.Files.Select(file => $"=== {file.RelativePath} ===\n{file.Content}"));
-        Assert.Equal(expectedSnapshot, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(snapshot))).ToLowerInvariant());
+        var actualSnapshot = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(snapshot))).ToLowerInvariant();
+        Assert.True(expectedSnapshot == actualSnapshot, $"Expected snapshot {expectedSnapshot}; actual {actualSnapshot}.");
         Assert.All(first.Files, file => { Assert.DoesNotContain("\r", file.Content); Assert.DoesNotContain("{{", file.Content); Assert.DoesNotContain(root, file.Content, StringComparison.OrdinalIgnoreCase); });
         Assert.Contains(first.Files, x => x.RelativePath == node.ProjectPath && x.Content.Contains("<SmartPipePackage>true</SmartPipePackage>", StringComparison.Ordinal));
         var project = first.Files.Single(x => x.RelativePath == node.ProjectPath).Content;

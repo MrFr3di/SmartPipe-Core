@@ -29,4 +29,33 @@ public sealed class OwnershipLoaderTests
         var ownership = await new OwnershipLoader().LoadAsync(root, "eng/package-ownership.json", graph, TestContext.Current.CancellationToken);
         Assert.DoesNotContain(ownership.Assignments, x => x.TypePattern is "SmartPipe.Extensions.*" or "SmartPipe.*");
     }
+
+    [Fact]
+    public async Task CanonicalManifestQuarantinesLegacyDiTypesInFacade()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+        var ownership = await new OwnershipLoader().LoadAsync(root, "eng/package-ownership.json", graph, TestContext.Current.CancellationToken);
+        var assignments = ownership.Assignments.ToDictionary(x => x.TypePattern, StringComparer.Ordinal);
+
+        foreach (var (pattern, epic) in new[]
+        {
+            ("SmartPipe.Extensions.ISmartPipeDefinition*", "SP220-03"),
+            ("SmartPipe.Extensions.ISmartPipeFactory*", "SP220-03"),
+            ("SmartPipe.Extensions.SmartPipeDefinition*", "SP220-03"),
+            ("SmartPipe.Extensions.SmartPipeFactory*", "SP220-03"),
+            ("SmartPipe.Extensions.SmartPipeHosted*", "SP220-04"),
+            ("SmartPipe.Extensions.ISmartPipeRunHealthMonitor*", "SP220-05"),
+            ("SmartPipe.Extensions.SmartPipeHealth*", "SP220-05"),
+            ("SmartPipe.Extensions.SmartPipeRunHealthMonitor*", "SP220-05"),
+        })
+        {
+            var assignment = assignments[pattern];
+            Assert.Equal("SmartPipe.Extensions", assignment.CurrentImplementationAssembly);
+            Assert.Equal("SmartPipe.Extensions", assignment.TargetImplementationAssembly);
+            Assert.Equal("SmartPipe.Extensions", assignment.CompatibilityAssembly);
+            Assert.Equal(OwnershipStrategy.ObsoleteWrapper, assignment.Strategy);
+            Assert.Equal(epic, assignment.MigrationEpic);
+        }
+    }
 }

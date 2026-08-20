@@ -1,3 +1,4 @@
+using SmartPipe.RepositoryChecks.Agent;
 using SmartPipe.RepositoryChecks.Baselines;
 using SmartPipe.RepositoryChecks.Commands;
 using SmartPipe.RepositoryChecks.Infrastructure;
@@ -7,12 +8,15 @@ using SmartPipe.RepositoryChecks.PackageGraph;
 using SmartPipe.RepositoryChecks.Ownership;
 using SmartPipe.RepositoryChecks.Scaffolding;
 using SmartPipe.RepositoryChecks.Consumers;
+using SmartPipe.RepositoryChecks.Profiles;
+using SmartPipe.RepositoryChecks.Reporting;
+using System.Text.Json;
 
 namespace SmartPipe.RepositoryChecks;
 
 internal static class Program
 {
-    private static async Task<int> Main(string[] args)
+    internal static async Task<int> Main(string[] args)
     {
         if (args.Length > 0
             && string.Equals(args[0], Infrastructure.RepositoryCheckProcessHost.DispatchArgument, StringComparison.Ordinal))
@@ -33,34 +37,141 @@ internal static class Program
         {
             var command = CommandLineParser.Parse(args);
             var runner = new ProcessRunner();
-            using var httpClient = new HttpClient();
-            var fetcher = new NuGetPackageFetcher(httpClient, new NuGetServiceIndexClient(httpClient));
-            var packageReader = new NuGetPackageReader();
-            var signatureVerifier = new NuGetPackageSignatureVerifier(runner, "dotnet");
-            var repositoryReader = new BaselineRepositorySnapshotReader(runner, "dotnet");
-            var verification = new BaselineVerificationService(
-                runner, "git", signatureVerifier, packageReader, repositoryReader);
 
             switch (command)
             {
                 case CaptureBaselineOptions capture:
-                    await new BaselineCaptureService(
-                        runner, "git", "dotnet", fetcher, signatureVerifier, packageReader,
-                        repositoryReader, verification).CaptureAsync(capture, cancellation.Token).ConfigureAwait(false);
-                    Console.WriteLine("BASELINE CAPTURED");
-                    return ExitCodes.Success;
-
-                case VerifyBaselineOptions verify:
-                    if (!verify.Offline)
                     {
-                        await new BaselinePackageProvisioner(fetcher)
-                            .ProvisionAsync(verify, cancellation.Token).ConfigureAwait(false);
+                        using var httpClient = new HttpClient();
+                        var fetcher = new NuGetPackageFetcher(httpClient, new NuGetServiceIndexClient(httpClient));
+                        var packageReader = new NuGetPackageReader();
+                        var signatureVerifier = new NuGetPackageSignatureVerifier(runner, "dotnet");
+                        var repositoryReader = new BaselineRepositorySnapshotReader(runner, "dotnet");
+                        var verification = new BaselineVerificationService(
+                            runner, "git", signatureVerifier, packageReader, repositoryReader);
+                        await new BaselineCaptureService(
+                            runner, "git", "dotnet", fetcher, signatureVerifier, packageReader,
+                            repositoryReader, verification).CaptureAsync(capture, cancellation.Token).ConfigureAwait(false);
+                        Console.WriteLine("BASELINE CAPTURED");
+                        return ExitCodes.Success;
                     }
 
-                    var result = await verification.VerifyAsync(
-                        verify with { Offline = true }, cancellation.Token).ConfigureAwait(false);
-                    Console.WriteLine(result.Format());
-                    return result.Success ? ExitCodes.Success : ExitCodes.RepositorySnapshotMismatch;
+                case VerifyBaselineOptions verify:
+                    {
+                        var packageReader = new NuGetPackageReader();
+                        var signatureVerifier = new NuGetPackageSignatureVerifier(runner, "dotnet");
+                        var repositoryReader = new BaselineRepositorySnapshotReader(runner, "dotnet");
+                        var verification = new BaselineVerificationService(
+                            runner, "git", signatureVerifier, packageReader, repositoryReader);
+                        var result = await BaselineCommandOrchestrator.VerifyAsync(
+                            verify,
+                            async (provision, ct) =>
+                            {
+                                using var httpClient = new HttpClient();
+                                var fetcher = new NuGetPackageFetcher(httpClient, new NuGetServiceIndexClient(httpClient));
+                                await new BaselinePackageProvisioner(fetcher).ProvisionAsync(provision, ct).ConfigureAwait(false);
+                            },
+                            (offline, ct) => verification.VerifyAsync(offline, ct),
+                            cancellation.Token).ConfigureAwait(false);
+                        Console.WriteLine(result.Format());
+                        return result.Success ? ExitCodes.Success : ExitCodes.RepositorySnapshotMismatch;
+                    }
+
+                case ProvisionBaselineOptions provision:
+                    {
+                        try
+                        {
+                            using var httpClient = new HttpClient();
+                            var fetcher = new NuGetPackageFetcher(httpClient, new NuGetServiceIndexClient(httpClient));
+                            var count = await new BaselinePackageProvisioner(fetcher)
+                                .ProvisionAsync(provision, cancellation.Token).ConfigureAwait(false);
+                            Console.WriteLine($"BASELINE PACKAGES PROVISIONED packages={count}");
+                            return ExitCodes.Success;
+                        }
+                        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+                        {
+                            Console.Error.WriteLine("[SPB001] Baseline acquisition input is invalid.");
+                            return ExitCodes.SchemaOrManifestInvalid;
+                        }
+                    }
+
+                case VerifyProfileOptions profile:
+                    {
+                        VerificationProfile selected;
+                        try
+                        {
+                            var manifest = await VerificationProfileManifestLoader
+                                .LoadAsync(profile.RepositoryRoot, cancellation.Token).ConfigureAwait(false);
+                            selected = manifest.Profiles.FirstOrDefault(item =>
+                                string.Equals(item.Name, profile.Profile, StringComparison.Ordinal))
+                                ?? throw new JsonException($"Profile '{profile.Profile}' is not defined.");
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (JsonException)
+                        {
+                            RenderProfileRun(new CheckRun(
+                                "verify-profile", profile.Profile, false, ExitCodes.SchemaOrManifestInvalid,
+                                [new CheckDiagnostic("SPPROFILE001", "Verification profile manifest is invalid.")]), profile.Format, profile.FailuresOnly);
+                            return ExitCodes.SchemaOrManifestInvalid;
+                        }
+                        catch (IOException)
+                        {
+                            RenderProfileRun(new CheckRun(
+                                "verify-profile", profile.Profile, false, ExitCodes.SchemaOrManifestInvalid,
+                                [new CheckDiagnostic("SPPROFILE001", "Verification profile manifest could not be read.")]), profile.Format, profile.FailuresOnly);
+                            return ExitCodes.SchemaOrManifestInvalid;
+                        }
+
+                        var profileResult = await new VerificationProfileRunner(
+                            VerificationProfileChecks.Create(profile.RepositoryRoot))
+                            .RunAsync(selected, cancellation.Token).ConfigureAwait(false);
+                        foreach (var run in profileResult.CheckRuns)
+                        {
+                            RenderProfileRun(run, profile.Format, profile.FailuresOnly);
+                        }
+
+                        return profileResult.ExitCode;
+                    }
+
+                case AgentContextOptions agentContext:
+                    {
+                        var context = await new AgentContextBuilder(runner)
+                            .BuildAsync(agentContext.RepositoryRoot, agentContext.Epic, agentContext.Task, cancellation.Token)
+                            .ConfigureAwait(false);
+                        Console.Write(AgentJsonSerializer.Serialize(context.Context));
+                        return ExitCodes.Success;
+                    }
+
+                case VerifyTaskOptions verifyTask:
+                    {
+                        var result = await new AgentTaskVerifier(new AgentContextBuilder(runner))
+                            .VerifyAsync(
+                                verifyTask.RepositoryRoot,
+                                verifyTask.Epic,
+                                verifyTask.Task,
+                                verifyTask.Format,
+                                verifyTask.FailuresOnly,
+                                cancellation.Token)
+                            .ConfigureAwait(false);
+                        foreach (var run in result.CheckRuns)
+                        {
+                            RenderProfileRun(run, verifyTask.Format, verifyTask.FailuresOnly);
+                        }
+
+                        return result.ExitCode;
+                    }
+
+                case AgentEvidenceOptions evidence:
+                    {
+                        var result = await new AgentEvidenceService(new AgentContextBuilder(runner))
+                            .CollectAsync(evidence.RepositoryRoot, evidence.Epic, cancellation.Token)
+                            .ConfigureAwait(false);
+                        Console.Write(AgentJsonSerializer.Serialize(result.Evidence));
+                        return result.ExitCode;
+                    }
 
                 case VerifySp220ScopeOptions verifyScope:
                     var scopeResult = await new Sp220ScopeVerificationService(runner, "git")
@@ -172,7 +283,7 @@ internal static class Program
                     return ExitCodes.Success;
 
                 case RunConsumersCommandOptions consumers:
-                    var consumerResults = await new ConsumerScenarioRunner().RunAsync(new(consumers.RepositoryRoot, consumers.Set, consumers.PackageDirectory, consumers.PackageVersion, consumers.ManifestPath), cancellation.Token).ConfigureAwait(false);
+                    var consumerResults = await new ConsumerScenarioRunner().RunAsync(new(consumers.RepositoryRoot, consumers.Set, consumers.PackageDirectory, consumers.PackageVersion, consumers.ManifestPath, consumers.Category), cancellation.Token).ConfigureAwait(false);
                     foreach (var consumer in consumerResults) Console.WriteLine($"SP220_CONSUMER_OK scenario={consumer.Scenario} durationMs={consumer.DurationMs} dependencies={consumer.ObservedSmartPipeDependencies.Count}");
                     Console.WriteLine($"SP220_CONSUMERS_OK scenarios={consumerResults.Count} set={consumers.Set}");
                     return ExitCodes.Success;
@@ -190,6 +301,11 @@ internal static class Program
         {
             Console.Error.WriteLine(exception.Message);
             return ExitCodes.UsageOrConfigurationError;
+        }
+        catch (AgentPlanException exception)
+        {
+            Console.Error.WriteLine(exception.Message);
+            return ExitCodes.SchemaOrManifestInvalid;
         }
         catch (RepositoryCheckException exception)
         {
@@ -230,5 +346,17 @@ internal static class Program
         {
             Console.CancelKeyPress -= cancelHandler;
         }
+    }
+
+    private static void RenderProfileRun(CheckRun run, ProfileOutputFormat format, bool failuresOnly)
+    {
+        var output = format switch
+        {
+            ProfileOutputFormat.Text => CheckRunTextRenderer.Render(run, failuresOnly),
+            ProfileOutputFormat.Jsonl => CheckRunJsonlRenderer.Render(run, failuresOnly),
+            ProfileOutputFormat.GitHub => CheckRunGitHubRenderer.Render(run, failuresOnly),
+            _ => throw new InvalidOperationException($"Unsupported profile output format '{format}'."),
+        };
+        Console.Write(output);
     }
 }

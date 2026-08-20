@@ -52,18 +52,11 @@ jobs:
     - name: Build
       run: dotnet build SmartPipe.Core.slnx --no-restore -c Release -warnaserror
 
-    - name: Verify central package management
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-central-packages --repository-root . --mode current
-
-    - name: Verify package projects
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-package-projects --repository-root .
+    - name: Verify RepositoryChecks profile
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify --profile sp220-05 --format github --failures-only
 
     - name: Repository baseline contract tests
       run: dotnet test --project tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
-
-    - name: Verify SP220-00 scope
-      if: github.event_name == 'pull_request'
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-sp220-scope --repo-root . --base-commit ${{ github.event.pull_request.base.sha }}
 
     - name: Core correctness regressions
       run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-query /[Category=CorrectnessRegression] --minimum-expected-tests 1
@@ -103,6 +96,18 @@ jobs:
     - name: Extensions tests
       run: dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build --verbosity normal -c Release
 
+    - name: Dependency Injection tests
+      run: dotnet test --project tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
+    - name: HealthChecks tests
+      run: dotnet test --project tests/SmartPipe.Extensions.HealthChecks.Tests/SmartPipe.Extensions.HealthChecks.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
+    - name: Hosting lifecycle regressions
+      run: dotnet test --project tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --configuration Release --no-build --filter-query /[Category=HostingLifecycle] --minimum-expected-tests 1
+
+    - name: Hosting tests
+      run: dotnet test --project tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
     - name: JSON Extensions tests
       run: dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build --verbosity normal -c Release
 
@@ -111,6 +116,8 @@ jobs:
         dotnet build tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-restore -c Release -warnaserror
         dotnet build tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-restore -c Release -warnaserror
         dotnet build tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-restore -c Release -warnaserror
+        dotnet build tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --no-restore -c Release -warnaserror
+        dotnet build tests/SmartPipe.Extensions.HealthChecks.Tests/SmartPipe.Extensions.HealthChecks.Tests.csproj --no-restore -c Release -warnaserror
         dotnet build benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj --no-restore -c Release -warnaserror
 
     - name: Set package version
@@ -130,14 +137,11 @@ jobs:
         --mode current --configuration Release --package-version "$PACKAGE_VERSION"
         --output artifacts/packages --manifest artifacts/packages/manifest.json
 
-    - name: Verify baseline integrity
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-baseline --repo-root . --manifest eng/baselines/2.1.2/manifest.json --packages-dir artifacts/baselines/2.1.2 --mode integrity
-
-    - name: Provision and verify 2.1.2 baseline
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-baseline --repo-root . --manifest eng/baselines/2.1.2/manifest.json --packages-dir artifacts/baselines/2.1.2
+    - name: Provision 2.1.2 baseline packages
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- provision-baseline --repo-root . --manifest eng/baselines/2.1.2/manifest.json --packages-dir artifacts/baselines/2.1.2
 
     - name: Verify 2.1.2 baseline offline
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-baseline --repo-root . --manifest eng/baselines/2.1.2/manifest.json --packages-dir artifacts/baselines/2.1.2 --offline
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-baseline --repo-root . --manifest eng/baselines/2.1.2/manifest.json --packages-dir artifacts/baselines/2.1.2 --offline --mode integrity
 
     - name: Verify package graph current
       run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-package-graph --mode current --packages artifacts/packages
@@ -153,6 +157,15 @@ jobs:
 
     - name: Run current consumers
       run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --package-directory artifacts/packages --package-version "$PACKAGE_VERSION"
+
+    - name: Run Hosting consumers
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --category hosting --package-directory artifacts/packages --package-version "$PACKAGE_VERSION"
+
+    - name: Run HealthChecks consumers
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --category health-checks --package-directory artifacts/packages --package-version "$PACKAGE_VERSION"
+
+    - name: Run OpenTelemetry consumers
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --category opentelemetry --package-directory artifacts/packages --package-version "$PACKAGE_VERSION"
 
     - name: Vulnerable package scan
       shell: bash
@@ -185,4 +198,36 @@ jobs:
           artifacts/packages
           artifacts/consumers/**/result.json
           artifacts/audit
+          eng/package-graph.json
         if-no-files-found: error
+
+  health-checks-concurrency:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        persist-credentials: false
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+      with:
+        global-json-file: global.json
+
+    - name: Restore locked
+      run: dotnet restore SmartPipe.Core.slnx --locked-mode
+
+    - name: Build concurrency projects
+      run: |
+        dotnet build tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj --configuration Release --no-restore -warnaserror
+        dotnet build tests/SmartPipe.Extensions.HealthChecks.Tests/SmartPipe.Extensions.HealthChecks.Tests.csproj --configuration Release --no-restore -warnaserror
+
+    - name: Run bounded observation concurrency
+      run: dotnet test --project tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj --configuration Release --no-build --filter-method SmartPipe.Extensions.DependencyInjection.Tests.RunObservationStoreTests.ConcurrentTerminalCommitsAcrossKeysRemainBoundedAndStrictlySequenced --minimum-expected-tests 1
+
+    - name: Run concurrent health evaluation
+      run: dotnet test --project tests/SmartPipe.Extensions.HealthChecks.Tests/SmartPipe.Extensions.HealthChecks.Tests.csproj --configuration Release --no-build --filter-method SmartPipe.Extensions.HealthChecks.Tests.HealthChecksContractTests.ConcurrentHealthChecksRemainDeterministic --minimum-expected-tests 1

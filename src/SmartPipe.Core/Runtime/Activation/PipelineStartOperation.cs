@@ -81,7 +81,9 @@ internal sealed class DeferredPipelineRunController<TInput, TOutput>
             DisposeAsync,
             GetMetrics,
             _plan.Key,
-            _context.RunId);
+            _context.RunId,
+            _options.InputCapacity,
+            TypedPipelineExecutor<TInput, TOutput>.GetEffectiveOutputCapacity(_options));
 
         return new()
         {

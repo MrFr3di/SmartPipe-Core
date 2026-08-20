@@ -1,6 +1,6 @@
 # ADR-0001: SmartPipe 2.2 package boundaries and integration model
 
-- Status: Accepted for implementation
+- Status: Accepted for implementation; compatibility ownership partially superseded by [ADR-0002](0002-smartpipe-2.2-legacy-compatibility-quarantine.md)
 - Date: 2026-07-15
 - Decision owners: SmartPipe maintainers
 - Target release: 2.2.0

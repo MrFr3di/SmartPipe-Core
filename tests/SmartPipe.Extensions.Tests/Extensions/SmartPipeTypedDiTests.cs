@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.Runtime.CompilerServices;
+using System.Reflection;
 using System.Threading.Channels;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +14,24 @@ namespace SmartPipe.Extensions.Tests.Extensions;
 
 public sealed class SmartPipeTypedDiTests
 {
+    [Fact]
+    public void LegacySyncStart_IsObsoleteCompatibilityOnly()
+    {
+        const string message = "Use SmartPipe.Extensions.DependencyInjection.ISmartPipeRunFactory<TInput,TOutput>.StartAsync. This compatibility member will be removed in the next major version.";
+
+        foreach (var method in new[]
+        {
+            typeof(ISmartPipeFactory<int, Guid>).GetMethod(nameof(ISmartPipeFactory<int, Guid>.Start))!,
+            typeof(SmartPipeFactory<int, Guid>).GetMethod(nameof(SmartPipeFactory<int, Guid>.Start))!,
+        })
+        {
+            var obsolete = method.GetCustomAttribute<ObsoleteAttribute>();
+            Assert.NotNull(obsolete);
+            Assert.Equal(message, obsolete.Message);
+            Assert.False(obsolete.IsError);
+        }
+    }
+
     [Fact]
     public async Task DI_Factory_StartAsyncCreatesNewRuntimePerStart()
     {
@@ -37,10 +56,70 @@ public sealed class SmartPipeTypedDiTests
             new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
 
+#pragma warning disable CS0618 // Explicit coverage for the shipped synchronous compatibility member.
         var run = factory.Start();
+#pragma warning restore CS0618
 
         run.Should().NotBeNull();
         await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task LegacyFacade_StartReturnsBeforeReadiness()
+    {
+        var initializationEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseInitialization = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var services = new ServiceCollection();
+        services.AddSingleton<TypedDiRecorder>();
+        services.AddScoped<TypedScopedMarker>();
+        services.AddScoped(_ => new InitializationGatedSource(initializationEntered, releaseInitialization));
+        services.AddScoped<ScopedMarkerStage>();
+        services.AddScoped<ScopedRecordingSink>();
+        services.AddSmartPipe<int, Guid>(
+            "legacy-immediate-return",
+            builder => builder
+                .UseSource<InitializationGatedSource>()
+                .UseStage<ScopedMarkerStage>()
+                .UseSink<ScopedRecordingSink>());
+        await using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
+
+#pragma warning disable CS0618 // This test freezes the shipped synchronous compatibility behavior.
+        var startTask = Task.Factory.StartNew(
+            () => factory.Start(),
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+#pragma warning restore CS0618
+
+        PipelineRun<Guid>? run = null;
+        Exception? returnError = null;
+        try
+        {
+            await initializationEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            try
+            {
+                run = await startTask.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (Exception error)
+            {
+                returnError = error;
+            }
+
+            if (run is not null)
+            {
+                Assert.False(run.Completion.IsCompleted);
+            }
+        }
+        finally
+        {
+            releaseInitialization.TrySetResult();
+        }
+
+        run ??= await startTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Null(returnError);
     }
 
     [Fact]
@@ -276,7 +355,9 @@ public sealed class SmartPipeTypedDiTests
         var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
         var recorder = provider.GetRequiredService<TypedDiRecorder>();
 
+#pragma warning disable CS0618 // Explicit coverage for synchronous compatibility cleanup.
         var act = () => factory.Start();
+#pragma warning restore CS0618
 
         var thrown = act.Should().Throw<InvalidOperationException>()
             .WithMessage("sync init boom");
@@ -378,6 +459,19 @@ public sealed class SmartPipeTypedDiTests
         options.FailureBehavior.Should().Be(SmartPipeHostedFailureBehavior.StopApplication);
         options.DrainTimeout.Should().Be(TimeSpan.FromSeconds(30));
         options.Invoking(x => x.Validate()).Should().NotThrow();
+    }
+
+    [Fact]
+    public void HostedServiceOptions_InfiniteDrainTimeout_RemainsRejected()
+    {
+        var options = new SmartPipeHostedServiceOptions
+        {
+            DrainTimeout = Timeout.InfiniteTimeSpan,
+        };
+
+        options.Invoking(x => x.Validate())
+            .Should().Throw<ArgumentOutOfRangeException>()
+            .Which.ParamName.Should().Be(nameof(SmartPipeHostedServiceOptions.DrainTimeout));
     }
 
     [Fact]
@@ -498,6 +592,33 @@ public sealed class SmartPipeTypedDiTests
         {
             await Task.Yield();
             yield return ProcessingEnvelope<int>.Create(1, "typed-di", "run", 1);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class InitializationGatedSource : IPipelineSource<int>
+    {
+        private readonly TaskCompletionSource _entered;
+        private readonly TaskCompletionSource _release;
+
+        public InitializationGatedSource(TaskCompletionSource entered, TaskCompletionSource release)
+        {
+            _entered = entered;
+            _release = release;
+        }
+
+        public async ValueTask InitializeAsync(CancellationToken ct = default)
+        {
+            _entered.SetResult();
+            await _release.Task.WaitAsync(ct);
+        }
+
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            yield break;
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

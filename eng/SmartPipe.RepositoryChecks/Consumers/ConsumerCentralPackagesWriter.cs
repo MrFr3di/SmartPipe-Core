@@ -5,11 +5,23 @@ namespace SmartPipe.RepositoryChecks.Consumers;
 
 internal sealed class ConsumerCentralPackagesWriter
 {
-    public async Task<string> WriteAsync(string workspace, IReadOnlyList<string> packageIds, string version, CancellationToken ct)
+    public async Task<string> WriteAsync(
+        string workspace,
+        IReadOnlyList<string> packageIds,
+        string version,
+        IReadOnlyDictionary<string, string> externalPackageVersions,
+        CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(externalPackageVersions);
         if (packageIds.Count == 0 || string.IsNullOrWhiteSpace(version)) throw new ConsumerScenarioException("SPCONS019", "Consumer CPM requires packages and version.");
-        var entries = string.Join('\n', packageIds.Distinct(StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal)
-            .Select(id => $"    <PackageVersion Include=\"{SecurityElement.Escape(id)}\" Version=\"{SecurityElement.Escape(version)}\" />"));
+        var versions = new Dictionary<string, string>(externalPackageVersions, StringComparer.OrdinalIgnoreCase);
+        foreach (var packageId in packageIds)
+        {
+            versions[packageId] = version;
+        }
+
+        var entries = string.Join('\n', versions.OrderBy(static pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => $"    <PackageVersion Include=\"{SecurityElement.Escape(pair.Key)}\" Version=\"{SecurityElement.Escape(pair.Value)}\" />"));
         var text = $$"""
             <Project>
               <PropertyGroup>

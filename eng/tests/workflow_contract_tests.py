@@ -25,11 +25,17 @@ FILES = {
     for name in (
         "ci.yml",
         "codeql.yml",
+        "dependency-review.yml",
         "reusable-release-validation.yml",
         "publish-nuget.yml",
     )
 }
 SHA_REF = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
+REPOSITORY_CHECKS_PROFILE_COMMAND = (
+    "dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+    "--configuration Release --no-build -- verify --profile sp220-05 "
+    "--format github --failures-only"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -73,7 +79,59 @@ def command_index(commands: list[str], token: str) -> int:
     return matches[0]
 
 
-def assert_baseline_lane(job: dict, label: str, *, require_scope: bool) -> None:
+def assert_repository_checks_profile(
+    reusable_steps: list[dict],
+    build_step: dict,
+    repository_test_step: dict,
+) -> None:
+    profile_steps = [step for step in reusable_steps
+                     if step.get("name") == "Verify RepositoryChecks profile"]
+    require(len(profile_steps) == 1,
+            "Reusable validation must define exactly one step named "
+            "'Verify RepositoryChecks profile'.")
+    profile_step = profile_steps[0]
+    profile_run = " ".join(str(profile_step.get("run", "")).split())
+    profile_invocations = [
+        " ".join(str(step.get("run", "")).split())
+        for step in reusable_steps
+        if "-- verify --profile " in str(step.get("run", ""))
+    ]
+    require(len(profile_invocations) == 1,
+            "Reusable validation must invoke exactly one RepositoryChecks profile.")
+    require(profile_run == REPOSITORY_CHECKS_PROFILE_COMMAND,
+            "Reusable validation must use the exact sp220-05 profile command.")
+    require(profile_invocations[0] == REPOSITORY_CHECKS_PROFILE_COMMAND,
+            "Reusable validation must invoke only the exact sp220-05 profile command.")
+
+    profile_index = reusable_steps.index(profile_step)
+    require(reusable_steps.index(build_step) < profile_index,
+            "RepositoryChecks profile must run after Build because it uses --no-build.")
+    require(profile_index < reusable_steps.index(repository_test_step),
+            "RepositoryChecks profile must run before Repository baseline contract tests.")
+
+    release_gate_names = (
+        "Test and benchmark warning gate", "Pack packages from graph",
+        "Provision 2.1.2 baseline packages", "Verify package graph current",
+        "Verify package metadata current", "Verify package ownership current",
+        "Verify release versions current",         "Run current consumers",
+        "Run Hosting consumers", "Run HealthChecks consumers",
+        "Run OpenTelemetry consumers",
+        "Vulnerable package scan", "Verify direct production audit policy",
+        "Deprecated package scan", "Outdated package report",
+        "Upload immutable packages and reports",
+    )
+    for name in release_gate_names:
+        require(profile_index < reusable_steps.index(named_step(reusable_steps, name)),
+                f"RepositoryChecks profile must run before {name}.")
+
+    reusable_runs = runs(reusable_steps)
+    require(not any("verify-central-packages" in command or
+                    "verify-package-projects" in command
+                    for command in reusable_runs),
+            "RepositoryChecks profile must replace the duplicate central/package project steps.")
+
+
+def assert_baseline_lane(job: dict, label: str) -> None:
     job_steps = steps(job, label)
     repository_tests = named_step(job_steps, "Repository baseline contract tests")
     test_run = " ".join(str(repository_tests.get("run", "")).split())
@@ -83,38 +141,40 @@ def assert_baseline_lane(job: dict, label: str, *, require_scope: bool) -> None:
     require(test_run == expected_test,
             f"{label} repository tests must set --minimum-expected-tests 1.")
 
-    if require_scope:
-        checkouts = [step for step in job_steps
-                     if str(step.get("uses", "")).startswith("actions/checkout")]
-        require(len(checkouts) == 1
-                and checkouts[0].get("with", {}).get("fetch-depth") == 0,
-                f"{label} scope verification checkout must fetch full Git history.")
-        scope = named_step(job_steps, "Verify SP220-00 scope")
-        require(scope.get("if") == "github.event_name == 'pull_request'",
-                f"{label} scope verification must be PR-only.")
-        scope_run = " ".join(str(scope.get("run", "")).split())
-        expected_scope = ("dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
-                          "--configuration Release --no-build -- verify-sp220-scope --repo-root . "
-                          "--base-commit ${{ github.event.pull_request.base.sha }}")
-        require(scope_run == expected_scope,
-                f"{label} scope verification must use the pull request base SHA.")
+    checkouts = [step for step in job_steps
+                 if str(step.get("uses", "")).startswith("actions/checkout")]
+    require(len(checkouts) == 1
+            and checkouts[0].get("with", {}).get("fetch-depth") == 0,
+            f"{label} baseline verification checkout must fetch full Git history.")
+    require(not any(step.get("name") == "Verify SP220-00 scope" for step in job_steps),
+            f"{label} must not run the completed SP220-00 production freeze.")
 
-    online = named_step(job_steps, "Provision and verify 2.1.2 baseline")
+    provision = named_step(job_steps, "Provision 2.1.2 baseline packages")
     offline = named_step(job_steps, "Verify 2.1.2 baseline offline")
-    online_run = " ".join(str(online.get("run", "")).split())
+    provision_steps = [step for step in job_steps
+                       if "provision-baseline" in str(step.get("run", ""))]
+    verify_steps = [step for step in job_steps
+                    if "verify-baseline" in str(step.get("run", ""))]
+    require(len(provision_steps) == 1 and len(verify_steps) == 1,
+            f"{label} must run exactly one baseline provisioning and one offline verification.")
+    provision_run = " ".join(str(provision.get("run", "")).split())
     offline_run = " ".join(str(offline.get("run", "")).split())
-    expected_online = ("dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+    expected_provision = ("dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+                          "--configuration Release --no-build -- provision-baseline --repo-root . "
+                          "--manifest eng/baselines/2.1.2/manifest.json "
+                          "--packages-dir artifacts/baselines/2.1.2")
+    expected_verify = ("dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
                        "--configuration Release --no-build -- verify-baseline --repo-root . "
                        "--manifest eng/baselines/2.1.2/manifest.json "
-                       "--packages-dir artifacts/baselines/2.1.2")
+                       "--packages-dir artifacts/baselines/2.1.2 --offline --mode integrity")
     forbidden = ("curl", "wget", "Invoke-WebRequest", "http://", "https://")
     require(not any(token.lower() in offline_run.lower() for token in forbidden),
             f"{label} offline baseline step must not be network-capable.")
-    require(online_run == expected_online,
-            f"{label} online baseline command must provision and verify the exact manifest.")
-    require(offline_run == expected_online + " --offline",
+    require(provision_run == expected_provision,
+            f"{label} provisioning command must acquire the exact manifest packages.")
+    require(offline_run == expected_verify,
             f"{label} offline baseline command must verify the exact manifest offline.")
-    require(job_steps.index(online) < job_steps.index(offline),
+    require(job_steps.index(provision) < job_steps.index(offline),
             f"{label} offline baseline verification must run after online provisioning.")
 
 
@@ -189,9 +249,34 @@ def assert_consumer_contract() -> None:
     expected = {
         "core-direct", "json-direct", "extensions-meta", "legacy-binary-2.1.2",
         "core-trim", "core-nativeaot", "json-nativeaot",
+        "dependency-injection-direct", "dependency-injection-keyed",
+        "dependency-injection-from-keyed-services", "dependency-injection-facade-source",
+        "dependency-injection-facade-binary-2.1.2", "dependency-injection-trim",
+        "dependency-injection-nativeaot",
+        "hosting-direct", "hosting-facade-source", "hosting-facade-binary-2.1.2",
+        "hosting-trim", "hosting-nativeaot",
+        "health-checks-direct", "health-checks-aspnet", "health-checks-trim",
+        "health-checks-nativeaot",
+        "opentelemetry-direct", "opentelemetry-otlp", "opentelemetry-facade",
+        "opentelemetry-trim", "opentelemetry-nativeaot",
     }
-    require(len(current) == 7 and {scenario["id"] for scenario in current} == expected,
-            "Current consumer set must contain the exact seven scenarios.")
+    require(len(current) == 28 and {scenario["id"] for scenario in current} == expected,
+            "Current consumer set must contain the exact twenty-eight scenarios.")
+    hosting = [scenario for scenario in current if scenario.get("category") == "hosting"]
+    require({scenario["id"] for scenario in hosting} == {
+        "hosting-direct", "hosting-facade-source", "hosting-facade-binary-2.1.2",
+        "hosting-trim", "hosting-nativeaot",
+    }, "Hosting consumer category must contain the exact five Hosting scenarios.")
+    health_checks = [scenario for scenario in current if scenario.get("category") == "health-checks"]
+    require({scenario["id"] for scenario in health_checks} == {
+        "health-checks-direct", "health-checks-aspnet", "health-checks-trim",
+        "health-checks-nativeaot",
+    }, "HealthChecks consumer category must contain the exact four HealthChecks scenarios.")
+    opentelemetry = [scenario for scenario in current if scenario.get("category") == "opentelemetry"]
+    require({scenario["id"] for scenario in opentelemetry} == {
+        "opentelemetry-direct", "opentelemetry-otlp", "opentelemetry-facade",
+        "opentelemetry-trim", "opentelemetry-nativeaot",
+    }, "OpenTelemetry consumer category must contain the exact five OpenTelemetry scenarios.")
     meta = next(scenario for scenario in current if scenario["id"] == "extensions-meta")
     require(meta["packageIds"] == ["SmartPipe.Extensions"],
             "extensions-meta must directly reference only the facade package.")
@@ -207,12 +292,44 @@ def assert_consumer_contract() -> None:
 def validate(documents: dict[str, dict]) -> None:
     reusable = documents["reusable-release-validation.yml"]
     ci = documents["ci.yml"]
+    codeql = documents["codeql.yml"]
+    dependency_review = documents["dependency-review.yml"]
     publish = documents["publish-nuget.yml"]
+
+    for workflow_name, workflow in (
+        ("ci.yml", ci),
+        ("codeql.yml", codeql),
+        ("dependency-review.yml", dependency_review),
+    ):
+        branches = workflow.get("on", {}).get("pull_request", {}).get("branches", [])
+        require("sp220/checkpoint-c" in branches,
+                f"{workflow_name} pull_request must include sp220/checkpoint-c.")
 
     for event in ("push", "pull_request"):
         branches = ci.get("on", {}).get(event, {}).get("branches", [])
         require("release/2.2.0" in branches,
                 f"CI {event} must include release/2.2.0.")
+
+    expected_triggers = {
+        "ci.yml": {
+            "workflow_dispatch": None,
+            "push": {"branches": ["main", "upd", "release/2.2.0"]},
+            "pull_request": {
+                "branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-c"]
+            },
+        },
+        "codeql.yml": {
+            "push": {"branches": ["main", "upd", "release/2.2.0"]},
+            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c"]},
+            "schedule": [{"cron": "27 3 * * 1"}],
+        },
+        "dependency-review.yml": {
+            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c"]},
+        },
+    }
+    for workflow_name, expected in expected_triggers.items():
+        require(documents[workflow_name].get("on") == expected,
+                f"{workflow_name} trigger contract changed.")
 
     workflow_call = reusable.get("on", {}).get("workflow_call")
     require(isinstance(workflow_call, dict), "Reusable validation must declare on.workflow_call.")
@@ -230,37 +347,63 @@ def validate(documents: dict[str, dict]) -> None:
             "Reusable validation must perform exactly one locked-mode solution restore.")
     build_step = named_step(reusable_steps, "Build")
     repository_test_step = named_step(reusable_steps, "Repository baseline contract tests")
+    di_test_step = named_step(reusable_steps, "Dependency Injection tests")
+    di_test_run = " ".join(str(di_test_step.get("run", "")).split())
+    expected_di_test = ("dotnet test --project "
+                       "tests/SmartPipe.Extensions.DependencyInjection.Tests/"
+                       "SmartPipe.Extensions.DependencyInjection.Tests.csproj "
+                       "--configuration Release --no-build --minimum-expected-tests 1")
+    require(di_test_run == expected_di_test,
+            "Reusable validation must run the exact DI test project command.")
+    hosting_test = " ".join(str(named_step(reusable_steps, "Hosting tests").get("run", "")).split())
+    require(hosting_test == (
+        "dotnet test --project tests/SmartPipe.Extensions.Hosting.Tests/"
+        "SmartPipe.Extensions.Hosting.Tests.csproj --configuration Release --no-build "
+        "--minimum-expected-tests 1"),
+        "Reusable validation must run the complete Hosting test project.")
+    health_checks_test = " ".join(str(named_step(reusable_steps, "HealthChecks tests").get("run", "")).split())
+    require(health_checks_test == (
+        "dotnet test --project tests/SmartPipe.Extensions.HealthChecks.Tests/"
+        "SmartPipe.Extensions.HealthChecks.Tests.csproj --configuration Release --no-build "
+        "--minimum-expected-tests 1"),
+        "Reusable validation must run the complete HealthChecks test project with the MTP non-empty gate.")
+    hosting_regressions = str(named_step(reusable_steps, "Hosting lifecycle regressions").get("run", ""))
+    require("--filter-query /[Category=HostingLifecycle]" in hosting_regressions,
+            "Reusable validation must run the Hosting lifecycle regression category.")
     require(reusable_steps.index(build_step) < reusable_steps.index(repository_test_step),
             "Reusable repository baseline tests must run after Build.")
-    for name in ("Verify central package management", "Verify package projects"):
-        require(reusable_steps.index(build_step) < reusable_steps.index(named_step(reusable_steps, name)),
-                f"Reusable {name} must run after Build because it uses --no-build.")
+    require(reusable_steps.index(build_step) < reusable_steps.index(di_test_step),
+            "Reusable DI tests must run after Build.")
+    assert_repository_checks_profile(reusable_steps, build_step, repository_test_step)
 
-    assert_baseline_lane(reusable_job, "Reusable Linux baseline lane", require_scope=True)
+    assert_baseline_lane(reusable_job, "Reusable Linux baseline lane")
 
     required_steps = (
-        "Verify central package management", "Verify package projects",
+        "Verify RepositoryChecks profile",
         "Format verify", "Build", "Repository baseline contract tests",
-        "Verify SP220-00 scope", "Core tests with coverage", "Core stress tests",
-        "Extensions tests", "JSON Extensions tests", "Core correctness regressions",
+        "Core tests with coverage", "Core stress tests",
+        "Extensions tests", "Dependency Injection tests", "HealthChecks tests", "Hosting lifecycle regressions", "Hosting tests",
+        "JSON Extensions tests", "Core correctness regressions",
         "Core concurrency regressions", "Extensions correctness regressions",
         "PR concurrency regression repeat", "Test and benchmark warning gate",
-        "Pack packages from graph", "Verify baseline integrity",
+        "Pack packages from graph", "Provision 2.1.2 baseline packages",
         "Verify package graph current", "Verify package metadata current",
         "Verify package ownership current", "Verify release versions current",
-        "Run current consumers", "Vulnerable package scan", "Verify direct production audit policy", "Deprecated package scan",
+        "Run current consumers", "Run Hosting consumers", "Run HealthChecks consumers",
+        "Run OpenTelemetry consumers", "Vulnerable package scan",
+        "Verify direct production audit policy", "Deprecated package scan",
         "Outdated package report", "Docs link check",
         "Upload immutable packages and reports",
     )
     for name in required_steps:
         named_step(reusable_steps, name)
     gate_order = [
-        "Restore locked", "Build", "Verify central package management", "Verify package projects",
+        "Restore locked", "Build", "Verify RepositoryChecks profile",
         "Test and benchmark warning gate", "Pack packages from graph",
-        "Verify baseline integrity", "Verify package graph current",
+        "Provision 2.1.2 baseline packages", "Verify package graph current",
         "Verify package metadata current", "Verify package ownership current",
-        "Verify release versions current", "Run current consumers",
-        "Vulnerable package scan", "Verify direct production audit policy",
+        "Verify release versions current", "Run current consumers", "Run HealthChecks consumers",
+        "Run OpenTelemetry consumers", "Vulnerable package scan", "Verify direct production audit policy",
         "Deprecated package scan", "Outdated package report",
         "Upload immutable packages and reports",
     ]
@@ -275,6 +418,26 @@ def validate(documents: dict[str, dict]) -> None:
         require(token in pack_run, f"Graph-driven pack step must contain '{token}'.")
     require(reusable_text.count("pack-packages") == 1,
             "Reusable validation must invoke pack-packages exactly once.")
+    hosting_consumers = str(named_step(reusable_steps, "Run Hosting consumers").get("run", ""))
+    require("run-consumers" in hosting_consumers and "--category hosting" in hosting_consumers,
+            "Reusable validation must execute the Hosting consumer category.")
+    health_checks_consumers = str(named_step(reusable_steps, "Run HealthChecks consumers").get("run", ""))
+    require("run-consumers" in health_checks_consumers and "--category health-checks" in health_checks_consumers,
+            "Reusable validation must execute the HealthChecks consumer category.")
+    opentelemetry_consumers = str(named_step(reusable_steps, "Run OpenTelemetry consumers").get("run", ""))
+    require("run-consumers" in opentelemetry_consumers and "--category opentelemetry" in opentelemetry_consumers,
+            "Reusable validation must execute the OpenTelemetry consumer category.")
+    concurrency_job = reusable["jobs"].get("health-checks-concurrency")
+    require(isinstance(concurrency_job, dict),
+            "Reusable validation must define the HealthChecks concurrency OS matrix.")
+    require(concurrency_job.get("strategy", {}).get("matrix", {}).get("os") ==
+            ["ubuntu-latest", "windows-latest"],
+            "HealthChecks concurrency matrix must run on Linux and Windows.")
+    concurrency_steps = steps(concurrency_job, "reusable health-checks-concurrency")
+    for step_name in ("Run bounded observation concurrency", "Run concurrent health evaluation"):
+        command = str(named_step(concurrency_steps, step_name).get("run", ""))
+        require("--minimum-expected-tests 1" in command,
+                f"{step_name} must fail when its MTP filter selects zero tests.")
     require(re.search(r"\\bdotnet\\s+pack\\b", reusable_text) is None,
             "Reusable validation must not hard-code dotnet pack commands.")
     require("validate-json-package-split.ps1" not in reusable_text,
@@ -285,9 +448,6 @@ def validate(documents: dict[str, dict]) -> None:
     ownership_run = str(named_step(reusable_steps, "Verify package ownership current").get("run", ""))
     require("--baseline eng/baselines/2.1.2" in ownership_run,
             "Ownership verification must use snapshot metadata from eng/baselines/2.1.2.")
-    baseline_integrity_run = str(named_step(reusable_steps, "Verify baseline integrity").get("run", ""))
-    require("--mode integrity" in baseline_integrity_run,
-            "Baseline integrity gate must use integrity mode.")
     audit_reports = {
         "Vulnerable package scan": "artifacts/audit/vulnerable.json",
         "Deprecated package scan": "artifacts/audit/deprecated.json",
@@ -309,14 +469,37 @@ def validate(documents: dict[str, dict]) -> None:
     upload_path = str(upload.get("with", {}).get("path", ""))
     require("artifacts/packages" in upload_path
             and "artifacts/consumers/**/result.json" in upload_path
-            and "artifacts/audit" in upload_path,
-            "Reusable validation must upload package artifacts, consumer reports, and audit reports together.")
+            and "artifacts/audit" in upload_path
+            and "eng/package-graph.json" in upload_path,
+            "Reusable validation must upload package graph, packages, consumer reports, and audit reports together.")
+    consumer_paths = [line.strip() for line in upload_path.splitlines()
+                      if line.strip().startswith("artifacts/consumers/")]
+    require(consumer_paths == ["artifacts/consumers/**/result.json"],
+            "Reusable validation must keep consumer artifact upload result-only; logs stay local.")
 
     validation = ci["jobs"].get("validation")
     require(validation == {
         "uses": "./.github/workflows/reusable-release-validation.yml",
         "permissions": {"contents": "read"},
     }, "CI validation must be the exact reusable workflow caller with read-only contents permission.")
+    pull_request = ci.get("on", {}).get("pull_request", {})
+    require("paths-ignore" not in pull_request,
+            "CI pull requests must not exclude Hosting package, tests, or docs paths.")
+    hosting_integration = ci["jobs"].get("hosting-integration")
+    require(isinstance(hosting_integration, dict)
+            and hosting_integration.get("name") == "Hosting integration (${{ matrix.os }})"
+            and hosting_integration.get("runs-on") == "${{ matrix.os }}",
+            "CI must define the Hosting integration OS matrix.")
+    hosting_matrix = hosting_integration.get("strategy", {}).get("matrix", {}).get("os")
+    require(hosting_matrix == ["ubuntu-latest", "windows-latest"],
+            "Hosting integration must run on Linux and Windows.")
+    hosting_steps = steps(hosting_integration, "hosting-integration")
+    hosting_runs = runs(hosting_steps)
+    integration_run = str(named_step(
+        hosting_steps, "Generic Host ordering and cancellation tests").get("run", ""))
+    require("--filter-class SmartPipe.Extensions.Hosting.Tests.Integration.GenericHostIntegrationTests"
+            in integration_run,
+            "Hosting OS matrix must run the real Generic Host integration tests.")
     windows = ci["jobs"].get("json-file-windows")
     require(isinstance(windows, dict) and windows.get("runs-on") == "windows-latest",
             "CI must define the Windows JSON lane on windows-latest.")
@@ -346,12 +529,12 @@ def validate(documents: dict[str, dict]) -> None:
             and checkout.get("with", {}).get("persist-credentials") is False,
             "Windows baseline contract checkout must pin SHA and disable credentials.")
     baseline_runs = runs(baseline_windows_steps)
-    require("dotnet restore SmartPipe.Core.slnx --locked-mode" in baseline_runs,
-            "Windows baseline contract lane must perform locked restore.")
+    require("dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true" in baseline_runs,
+            "Windows baseline contract lane must disable the SDK library-packs source during locked restore.")
     build = named_step(baseline_windows_steps, "Build repository checks")
     require("-warnaserror" in str(build.get("run", "")),
             "Windows baseline contract build must treat warnings as errors.")
-    assert_baseline_lane(baseline_windows, "Windows baseline contract lane", require_scope=True)
+    assert_baseline_lane(baseline_windows, "Windows baseline contract lane")
 
     explicit_names = []
     for file_name, document in documents.items():
@@ -370,7 +553,7 @@ def validate(documents: dict[str, dict]) -> None:
             "Windows lifecycle filter must not use the obsolete "
             "SmartPipe.Extensions.Tests.Sinks namespace.")
 
-    all_runs = windows_runs + reusable_runs
+    all_runs = windows_runs + hosting_runs + reusable_runs
     filtered = [command for command in all_runs
                 if "--filter-class" in command or "--filter-query" in command]
     require(bool(filtered),
@@ -465,6 +648,21 @@ def _remove_release_branch(documents: dict[str, dict]) -> None:
     branches.remove("release/2.2.0")
 
 
+def _remove_ci_checkpoint_branch(documents: dict[str, dict]) -> None:
+    branches = documents["ci.yml"]["on"]["pull_request"]["branches"]
+    branches.remove("sp220/checkpoint-c")
+
+
+def _remove_codeql_checkpoint_branch(documents: dict[str, dict]) -> None:
+    branches = documents["codeql.yml"]["on"]["pull_request"]["branches"]
+    branches.remove("sp220/checkpoint-c")
+
+
+def _remove_dependency_review_checkpoint_branch(documents: dict[str, dict]) -> None:
+    branches = documents["dependency-review.yml"]["on"]["pull_request"]["branches"]
+    branches.remove("sp220/checkpoint-c")
+
+
 def _remove_linux_offline_verification(documents: dict[str, dict]) -> None:
     job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
     job["steps"] = [step for step in job["steps"]
@@ -498,12 +696,46 @@ def _remove_reusable_step(documents: dict[str, dict], name: str) -> None:
     job["steps"] = [step for step in job["steps"] if step.get("name") != name]
 
 
+def _wrong_repository_checks_profile(documents: dict[str, dict]) -> None:
+    job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
+    profile = next(step for step in job["steps"]
+                   if step.get("name") == "Verify RepositoryChecks profile")
+    profile["run"] = str(profile["run"]).replace("sp220-05", "repository-checks-fast")
+
+
+def _duplicate_repository_checks_invocation(documents: dict[str, dict]) -> None:
+    job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
+    profile = next(step for step in job["steps"]
+                   if step.get("name") == "Verify RepositoryChecks profile")
+    duplicate = copy.deepcopy(profile)
+    duplicate["name"] = "Duplicate RepositoryChecks profile"
+    job["steps"].append(duplicate)
+
+
+def _add_consumer_logs_to_upload(documents: dict[str, dict]) -> None:
+    job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
+    upload = named_step(job["steps"], "Upload immutable packages and reports")
+    upload["with"]["path"] += "\nartifacts/consumers/**/logs/**"
+
+
+def _remove_hosting_matrix(documents: dict[str, dict]) -> None:
+    del documents["ci.yml"]["jobs"]["hosting-integration"]
+
+
 def _move_graph_before_integrity(documents: dict[str, dict]) -> None:
     job_steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
     graph = named_step(job_steps, "Verify package graph current")
     job_steps.remove(graph)
     pack_index = job_steps.index(named_step(job_steps, "Pack packages from graph"))
     job_steps.insert(pack_index + 1, graph)
+
+
+def _move_opentelemetry_consumers_before_pack(documents: dict[str, dict]) -> None:
+    job_steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+    consumers = named_step(job_steps, "Run OpenTelemetry consumers")
+    job_steps.remove(consumers)
+    pack_index = job_steps.index(named_step(job_steps, "Pack packages from graph"))
+    job_steps.insert(pack_index, consumers)
 
 
 def _duplicate_upload(documents: dict[str, dict]) -> None:
@@ -531,6 +763,49 @@ def assert_mutation_rejected(documents: dict[str, dict], mutate, expected: str) 
 def main() -> int:
     documents = load_workflows()
     validate(documents)
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Verify RepositoryChecks profile"),
+        "exactly one step named 'Verify RepositoryChecks profile'",
+    )
+    assert_mutation_rejected(
+        documents,
+        _wrong_repository_checks_profile,
+        "exact sp220-05 profile command",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: docs["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+        .append(copy.deepcopy(named_step(
+            docs["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
+            "Verify RepositoryChecks profile"))),
+        "exactly one step named 'Verify RepositoryChecks profile'",
+    )
+    assert_mutation_rejected(
+        documents,
+        _duplicate_repository_checks_invocation,
+        "exactly one RepositoryChecks profile",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Pack packages from graph"),
+        "Pack packages from graph",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Run HealthChecks consumers"),
+        "Run HealthChecks consumers",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Verify direct production audit policy"),
+        "Verify direct production audit policy",
+    )
+    assert_mutation_rejected(
+        documents,
+        _add_consumer_logs_to_upload,
+        "upload result-only; logs stay local",
+    )
     assert_mutation_rejected(
         documents,
         lambda docs: docs["publish-nuget.yml"]["jobs"]["publish"].update({"needs": ["version"]}),
@@ -568,6 +843,21 @@ def main() -> int:
         "global.json as the SDK source",
     )
     assert_mutation_rejected(documents, _remove_release_branch, "release/2.2.0")
+    assert_mutation_rejected(
+        documents,
+        _remove_ci_checkpoint_branch,
+        "ci.yml pull_request must include sp220/checkpoint-c",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_codeql_checkpoint_branch,
+        "codeql.yml pull_request must include sp220/checkpoint-c",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_dependency_review_checkpoint_branch,
+        "dependency-review.yml pull_request must include sp220/checkpoint-c",
+    )
     assert_mutation_rejected(documents, _remove_linux_offline_verification, "Verify 2.1.2 baseline offline")
     assert_mutation_rejected(documents, _make_windows_offline_network_capable, "must not be network-capable")
     assert_mutation_rejected(documents, _remove_repository_test_minimum, "--minimum-expected-tests 1")
@@ -575,7 +865,7 @@ def main() -> int:
     assert_mutation_rejected(
         documents,
         _make_linux_baseline_checkout_shallow,
-        "Reusable Linux baseline lane scope verification checkout must fetch full Git history.",
+        "Reusable Linux baseline lane baseline verification checkout must fetch full Git history.",
     )
     assert_mutation_rejected(
         documents,
@@ -589,8 +879,33 @@ def main() -> int:
     )
     assert_mutation_rejected(
         documents,
+        lambda docs: _remove_reusable_step(docs, "Hosting tests"),
+        "Hosting tests",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Run Hosting consumers"),
+        "Run Hosting consumers",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_hosting_matrix,
+        "Hosting integration OS matrix",
+    )
+    assert_mutation_rejected(
+        documents,
         _move_graph_before_integrity,
         "required order",
+    )
+    assert_mutation_rejected(
+        documents,
+        _move_opentelemetry_consumers_before_pack,
+        "required order",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Run OpenTelemetry consumers"),
+        "Run OpenTelemetry consumers",
     )
     assert_mutation_rejected(
         documents,

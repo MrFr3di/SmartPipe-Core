@@ -75,7 +75,9 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
         dispose,
         metricsProvider,
         default,
-        Guid.Empty)
+        Guid.Empty,
+        inputCapacity: 0,
+        outputCapacity: 0)
     {
     }
 
@@ -90,7 +92,9 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
         Func<ValueTask>? dispose,
         Func<SmartPipeMetricsSnapshot>? metricsProvider,
         PipelineKey pipelineKey,
-        Guid runId
+        Guid runId,
+        int inputCapacity,
+        int outputCapacity
     )
     {
         Outputs = outputs ?? throw new ArgumentNullException(nameof(outputs));
@@ -116,6 +120,8 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
 
         PipelineKey = pipelineKey;
         RunId = runId;
+        InputCapacity = inputCapacity;
+        OutputCapacity = outputCapacity;
     }
 
     /// <summary>
@@ -146,7 +152,9 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
             dispose,
             _metricsProvider,
             PipelineKey,
-            RunId);
+            RunId,
+            InputCapacity,
+            OutputCapacity);
     }
 
     private readonly Func<PipelineRunState> _stateProvider;
@@ -164,6 +172,14 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
     /// <summary>Gets the canonical run identifier for a runtime-created run.</summary>
     /// <remarks>Manually constructed compatibility handles return <see cref="Guid.Empty"/>.</remarks>
     public Guid RunId { get; }
+
+    /// <summary>Gets the effective input channel capacity for a runtime-created run.</summary>
+    /// <remarks>Manually constructed compatibility handles return zero.</remarks>
+    public int InputCapacity { get; }
+
+    /// <summary>Gets the effective output channel capacity for a runtime-created run.</summary>
+    /// <remarks>Manually constructed compatibility handles return zero.</remarks>
+    public int OutputCapacity { get; }
 
     /// <summary>Gets the current run state.</summary>
     public PipelineRunState State => _stateProvider();

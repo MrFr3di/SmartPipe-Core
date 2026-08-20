@@ -16,6 +16,8 @@ public sealed class PipelineRunIdentityTests
 
         run.PipelineKey.IsEmpty.Should().BeTrue();
         run.RunId.Should().Be(Guid.Empty);
+        run.InputCapacity.Should().Be(0);
+        run.OutputCapacity.Should().Be(0);
     }
 
     [Fact]
@@ -26,6 +28,11 @@ public sealed class PipelineRunIdentityTests
         var definition = PipelineDefinitionBuilder.From(
                 key,
                 PipelineComponent.Borrowed<IPipelineSource<int>>(source, initialize: true))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                InputCapacity = 17,
+                OutputCapacity = 23,
+            })
             .Build();
         var context = new PipelineActivationContext(
             key,
@@ -37,6 +44,26 @@ public sealed class PipelineRunIdentityTests
         run.PipelineKey.Should().Be(key);
         run.RunId.Should().Be(context.RunId);
         run.RunId.Should().NotBe(Guid.Empty);
+        run.InputCapacity.Should().Be(17);
+        run.OutputCapacity.Should().Be(23);
+        await run.Completion;
+    }
+
+    [Fact]
+    public async Task RuntimeCreatedRun_ExposesMaterializedDefaultOutputCapacity()
+    {
+        var key = new PipelineKey("default-capacity");
+        var definition = PipelineDefinitionBuilder.From(
+                key,
+                PipelineComponent.Borrowed<IPipelineSource<int>>(
+                    new IdentityEmptySource(),
+                    initialize: true))
+            .Build();
+        var run = await definition.StartAsync(
+            new PipelineActivationContext(key, Guid.NewGuid(), new IdentityEmptyServices()),
+            CancellationToken.None);
+
+        run.OutputCapacity.Should().Be(1024);
         await run.Completion;
     }
 
@@ -61,6 +88,8 @@ public sealed class PipelineRunIdentityTests
         derived.PipelineKey.Should().Be(run.PipelineKey);
         derived.RunId.Should().Be(run.RunId);
         derived.Outputs.Should().BeSameAs(run.Outputs);
+        derived.InputCapacity.Should().Be(run.InputCapacity);
+        derived.OutputCapacity.Should().Be(run.OutputCapacity);
     }
 }
 

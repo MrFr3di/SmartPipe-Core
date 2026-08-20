@@ -9,13 +9,53 @@ namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 public sealed class ConsumerScenarioSchemaTests
 {
     [Fact]
-    public async Task CurrentManifest_HasExactlySevenStrictScenarios()
+    public async Task CurrentManifest_HasExactlyTwentyEightStrictScenarios()
     {
         var root = RepositoryRoot();
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var document = await new ConsumerScenarioLoader().LoadAsync(root, "eng/consumer-scenarios.json", graph, TestContext.Current.CancellationToken);
-        Assert.Equal(7, document.Scenarios.Count);
-        Assert.Equal(["core-direct", "json-direct", "extensions-meta", "legacy-binary-2.1.2", "core-trim", "core-nativeaot", "json-nativeaot"], document.Scenarios.Select(x => x.Id));
+        Assert.Equal(28, document.Scenarios.Count);
+        Assert.Equal(
+            [
+                "core-direct",
+                "json-direct",
+                "extensions-meta",
+                "legacy-binary-2.1.2",
+                "core-trim",
+                "core-nativeaot",
+                "json-nativeaot",
+                "dependency-injection-direct",
+                "dependency-injection-keyed",
+                "dependency-injection-from-keyed-services",
+                "dependency-injection-facade-source",
+                "dependency-injection-facade-binary-2.1.2",
+                "dependency-injection-trim",
+                "dependency-injection-nativeaot",
+                "hosting-direct",
+                "hosting-facade-source",
+                "hosting-facade-binary-2.1.2",
+                "hosting-trim",
+                "hosting-nativeaot",
+                "health-checks-direct",
+                "health-checks-aspnet",
+                "health-checks-trim",
+                "health-checks-nativeaot",
+                "opentelemetry-direct",
+                "opentelemetry-otlp",
+                "opentelemetry-facade",
+                "opentelemetry-trim",
+                "opentelemetry-nativeaot",
+            ],
+            document.Scenarios.Select(x => x.Id));
+        Assert.All(
+            document.Scenarios.Where(scenario => scenario.Id.StartsWith("hosting-", StringComparison.Ordinal)),
+            scenario => Assert.Equal("hosting", scenario.Category));
+        Assert.All(
+            document.Scenarios.Where(scenario => scenario.Id.StartsWith("health-checks-", StringComparison.Ordinal)),
+            scenario => Assert.Equal("health-checks", scenario.Category));
+        Assert.All(
+            document.Scenarios.Where(scenario => scenario.Id.StartsWith("opentelemetry-", StringComparison.Ordinal)),
+            scenario => Assert.Equal("opentelemetry", scenario.Category));
     }
 
     [Theory]

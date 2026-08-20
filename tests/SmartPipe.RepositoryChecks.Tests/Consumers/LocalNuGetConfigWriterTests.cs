@@ -11,13 +11,20 @@ public sealed class LocalNuGetConfigWriterTests
     {
         using var fixture = new RepositoryTestDirectory();
         var path = await new ConsumerCentralPackagesWriter().WriteAsync(fixture.Path,
-            ["SmartPipe.Extensions.Json", "SmartPipe.Core"], "2.2.0", TestContext.Current.CancellationToken);
+            ["SmartPipe.Extensions.Json", "SmartPipe.Core"],
+            "2.2.0",
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Microsoft.Extensions.DependencyInjection"] = "10.0.8",
+            },
+            TestContext.Current.CancellationToken);
         var bytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
         Assert.DoesNotContain((byte)'\r', bytes);
         var text = System.Text.Encoding.UTF8.GetString(bytes);
         Assert.Contains("<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>", text);
         Assert.Contains("<CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>", text);
-        Assert.Equal(2, text.Split("<PackageVersion Include=", StringSplitOptions.None).Length - 1);
+        Assert.Equal(3, text.Split("<PackageVersion Include=", StringSplitOptions.None).Length - 1);
+        Assert.Contains("<PackageVersion Include=\"Microsoft.Extensions.DependencyInjection\" Version=\"10.0.8\" />", text);
         Assert.True(text.IndexOf("SmartPipe.Core", StringComparison.Ordinal) < text.IndexOf("SmartPipe.Extensions.Json", StringComparison.Ordinal));
     }
 
@@ -26,7 +33,7 @@ public sealed class LocalNuGetConfigWriterTests
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         var projects = Directory.EnumerateFiles(Path.Combine(root, "tests", "Consumers", "Scenarios"), "*.csproj", SearchOption.AllDirectories).ToArray();
-        Assert.Equal(7, projects.Length);
+        Assert.Equal(21, projects.Length);
         Assert.All(projects, project => Assert.DoesNotContain(" Version=", File.ReadAllText(project), StringComparison.Ordinal));
     }
 

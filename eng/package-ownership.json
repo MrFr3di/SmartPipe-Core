@@ -38,34 +38,34 @@
       "typePattern": "SmartPipe.Extensions.ISmartPipeDefinition*",
       "baselineAssembly": "SmartPipe.Extensions",
       "currentImplementationAssembly": "SmartPipe.Extensions",
-      "targetImplementationAssembly": "SmartPipe.Extensions.DependencyInjection",
+      "targetImplementationAssembly": "SmartPipe.Extensions",
       "compatibilityAssembly": "SmartPipe.Extensions",
-      "strategy": "type-forward",
+      "strategy": "obsolete-wrapper",
       "migrationEpic": "SP220-03",
       "namespacePreserved": true,
-      "evidence": "SP220 DI extraction"
+      "evidence": "legacy DI compatibility contract remains facade-owned"
     },
     {
       "typePattern": "SmartPipe.Extensions.ISmartPipeFactory*",
       "baselineAssembly": "SmartPipe.Extensions",
       "currentImplementationAssembly": "SmartPipe.Extensions",
-      "targetImplementationAssembly": "SmartPipe.Extensions.DependencyInjection",
+      "targetImplementationAssembly": "SmartPipe.Extensions",
       "compatibilityAssembly": "SmartPipe.Extensions",
-      "strategy": "type-forward",
+      "strategy": "obsolete-wrapper",
       "migrationEpic": "SP220-03",
       "namespacePreserved": true,
-      "evidence": "SP220 DI extraction"
+      "evidence": "legacy synchronous factory remains facade-owned"
     },
     {
       "typePattern": "SmartPipe.Extensions.ISmartPipeRunHealthMonitor*",
       "baselineAssembly": "SmartPipe.Extensions",
       "currentImplementationAssembly": "SmartPipe.Extensions",
-      "targetImplementationAssembly": "SmartPipe.Extensions.HealthChecks",
+      "targetImplementationAssembly": "SmartPipe.Extensions",
       "compatibilityAssembly": "SmartPipe.Extensions",
-      "strategy": "type-forward",
+      "strategy": "obsolete-wrapper",
       "migrationEpic": "SP220-05",
       "namespacePreserved": true,
-      "evidence": "SP220 health extraction"
+      "evidence": "legacy health contract remains facade-owned"
     },
     {
       "typePattern": "SmartPipe.Extensions.InvalidJson*",
@@ -225,56 +225,56 @@
       "typePattern": "SmartPipe.Extensions.SmartPipeDefinition*",
       "baselineAssembly": "SmartPipe.Extensions",
       "currentImplementationAssembly": "SmartPipe.Extensions",
-      "targetImplementationAssembly": "SmartPipe.Extensions.DependencyInjection",
+      "targetImplementationAssembly": "SmartPipe.Extensions",
       "compatibilityAssembly": "SmartPipe.Extensions",
-      "strategy": "type-forward",
+      "strategy": "obsolete-wrapper",
       "migrationEpic": "SP220-03",
       "namespacePreserved": true,
-      "evidence": "SP220 DI extraction"
+      "evidence": "legacy DI definition wrappers remain facade-owned"
     },
     {
       "typePattern": "SmartPipe.Extensions.SmartPipeFactory*",
       "baselineAssembly": "SmartPipe.Extensions",
       "currentImplementationAssembly": "SmartPipe.Extensions",
-      "targetImplementationAssembly": "SmartPipe.Extensions.DependencyInjection",
+      "targetImplementationAssembly": "SmartPipe.Extensions",
       "compatibilityAssembly": "SmartPipe.Extensions",
-      "strategy": "type-forward",
+      "strategy": "obsolete-wrapper",
       "migrationEpic": "SP220-03",
       "namespacePreserved": true,
-      "evidence": "SP220 DI extraction"
+      "evidence": "legacy DI factory wrapper remains facade-owned"
     },
     {
       "typePattern": "SmartPipe.Extensions.SmartPipeHealth*",
       "baselineAssembly": "SmartPipe.Extensions",
       "currentImplementationAssembly": "SmartPipe.Extensions",
-      "targetImplementationAssembly": "SmartPipe.Extensions.HealthChecks",
+      "targetImplementationAssembly": "SmartPipe.Extensions",
       "compatibilityAssembly": "SmartPipe.Extensions",
-      "strategy": "type-forward",
+      "strategy": "obsolete-wrapper",
       "migrationEpic": "SP220-05",
       "namespacePreserved": true,
-      "evidence": "SP220 health extraction"
+      "evidence": "legacy health compatibility types remain facade-owned"
     },
     {
       "typePattern": "SmartPipe.Extensions.SmartPipeHosted*",
       "baselineAssembly": "SmartPipe.Extensions",
       "currentImplementationAssembly": "SmartPipe.Extensions",
-      "targetImplementationAssembly": "SmartPipe.Extensions.Hosting",
+      "targetImplementationAssembly": "SmartPipe.Extensions",
       "compatibilityAssembly": "SmartPipe.Extensions",
-      "strategy": "type-forward",
+      "strategy": "obsolete-wrapper",
       "migrationEpic": "SP220-04",
       "namespacePreserved": true,
-      "evidence": "SP220 hosting extraction"
+      "evidence": "legacy hosting compatibility types remain physically facade-owned"
     },
     {
       "typePattern": "SmartPipe.Extensions.SmartPipeRunHealthMonitor*",
       "baselineAssembly": "SmartPipe.Extensions",
       "currentImplementationAssembly": "SmartPipe.Extensions",
-      "targetImplementationAssembly": "SmartPipe.Extensions.HealthChecks",
+      "targetImplementationAssembly": "SmartPipe.Extensions",
       "compatibilityAssembly": "SmartPipe.Extensions",
-      "strategy": "type-forward",
+      "strategy": "obsolete-wrapper",
       "migrationEpic": "SP220-05",
       "namespacePreserved": true,
-      "evidence": "SP220 health extraction"
+      "evidence": "legacy health monitor remains facade-owned"
     },
     {
       "typePattern": "SmartPipe.Extensions.SmartPipeServiceCollectionExtensions*",

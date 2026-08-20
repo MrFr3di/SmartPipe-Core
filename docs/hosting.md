@@ -1,64 +1,140 @@
 # Hosting
 
-`SmartPipeHostedService<TInput,TOutput>` hosts a typed pipeline run through
-`ISmartPipeFactory<TInput,TOutput>`.
+Install `SmartPipe.Extensions.Hosting` to run canonical DI registrations under the
+.NET Generic Host. Every call to `RunAsHostedService` contributes immutable
+metadata to one shared `SmartPipeHostedOrchestrator`; the number of pipelines
+does not change the number of SmartPipe `IHostedService` registrations.
+
+```csharp
+using Microsoft.Extensions.Hosting;
+using SmartPipe.Core;
+using SmartPipe.Extensions.DependencyInjection;
+using SmartPipe.Extensions.Hosting;
+
+var builder = Host.CreateApplicationBuilder(args);
+var smartPipe = builder.Services.AddSmartPipe();
+
+smartPipe.AddPipeline(ordersDefinition)
+    .RunAsHostedService(options =>
+    {
+        options.Order = 0;
+        options.DrainTimeout = TimeSpan.FromSeconds(30);
+        options.FailureBehavior =
+            SmartPipeHostedPipelineFailureBehavior.StopApplication;
+    });
+
+smartPipe.AddPipeline(replayDefinition)
+    .RunAsHostedService(options => options.Order = 10);
+
+await builder.Build().RunAsync();
+```
+
+`PipelineKey` is the hosted identity. A key can have one hosted registration and
+one active hosted run, regardless of its input/output types. Duplicate keys fail
+during service registration. Registration performs no I/O, starts no pipeline,
+and never builds an intermediate service provider.
+
+## Lifecycle guarantees
+
+The orchestrator materializes registrations in `(Order, canonical DI
+RegistrationOrder, PipelineKey.Value ordinal)` order. The tie-breaker comes from
+the registration sequence accepted by `AddSmartPipe().AddPipeline(...)`, not from
+the order of later `RunAsHostedService` calls. Missing or type-incompatible DI
+metadata fails host construction. The orchestrator starts registrations
+sequentially and waits for each DI factory to return a ready run before starting
+the next. It stops exactly that materialized list in reverse order.
+`HostOptions.ServicesStartConcurrently` and `ServicesStopConcurrently` can affect
+peer hosted services, but never parallelize pipelines inside the SmartPipe
+orchestrator.
+
+If startup of pipeline N fails or is cancelled, every previously started run is
+aborted and disposed in reverse order. Cleanup uses
+`CancellationToken.None`, so cancellation of the host startup token cannot skip
+safety cleanup. The primary startup exception remains first; rollback failures
+follow in actual reverse cleanup order.
+
+If shutdown begins while a pipeline factory is still starting, the orchestrator
+cancels a linked internal startup token and waits for startup to finish its own
+reverse rollback before continuing shutdown. A cooperative factory therefore
+unblocks promptly. A factory that ignores cancellation can delay shutdown until
+it returns; Hosting does not abandon startup or run cleanup concurrently. Caller
+startup cancellation remains a fault visible from both startup and shutdown;
+only a cancellation owned solely by `StopAsync` is suppressed by shutdown after
+successful rollback. Cancellation callback and rollback failures are never
+suppressed.
+
+Normal shutdown first attempts graceful drain. A timeout, caller cancellation,
+or drain fault always causes `AbortAsync(CancellationToken.None)` before
+`DisposeAsync`. An already completed run is disposed without a redundant drain or
+abort. Cleanup continues after individual failures and reports errors in reverse
+run order, then operation order. Host shutdown cancellation skips graceful drain
+but does not skip abort or disposal.
+
+Start, stop, and disposal are idempotent under races. Natural completion is not
+an automatic restart signal: a hosted registration has at most one run for the
+lifetime of that orchestrator.
+
+An `OperationCanceledException` raised while the effective startup token is
+cancelled is logged once at `Information` without attaching the exception.
+Cancellation raised while that token is not cancelled is unexpected and remains
+an `Error` with the exception attached.
+
+## Completion and failure behavior
+
+`SmartPipeHostedCompletionBehavior` controls successful finite completion:
+
+- `KeepHostAlive` (default) leaves the application running.
+- `StopApplication` requests application shutdown once.
+
+`SmartPipeHostedPipelineFailureBehavior` controls an unexpected run fault:
+
+- `StopApplication` (default) requests application shutdown once.
+- `Rethrow` faults the orchestrator's `BackgroundService` task. The host then
+  applies `HostOptions.BackgroundServiceExceptionBehavior`: `StopHost` stops the
+  application, while `Ignore` leaves it running.
+- `MarkUnhealthyAndKeepHostAlive` logs the fault and leaves the host alive for an
+  external health integration to observe the canonical run state.
+- `Ignore` logs the fault and leaves the host alive intentionally.
+
+The Hosting leaf does not depend on HealthChecks. Its package closure is
+`SmartPipe.Core`, `SmartPipe.Extensions.DependencyInjection`, and the Microsoft
+Hosting, DI, and Logging abstractions. The DI factory remains the sole owner of
+each run's async service scope; Hosting neither creates scopes nor resolves
+pipeline components directly.
+
+## Migrating from the 2.1 façade
+
+See [Migrating Hosting to 2.2](migration/2.2.0-hosting.md) for a complete
+package and API checklist.
+
+The 2.1 API remains physically implemented in `SmartPipe.Extensions` for binary
+and source compatibility:
 
 ```csharp
 services.AddSmartPipeHostedService<Order, OrderDto>(
     "orders",
-    builder => builder
+    pipeline => pipeline
         .UseSource<OrderSource>()
         .UseStage<OrderStage>()
         .UseSink<OrderSink>());
-
-services
-    .AddHealthChecks()
-    .AddSmartPipeHealthCheck<Order, OrderDto>("orders");
 ```
 
-The hosted service:
-
-- creates a fresh typed runtime through the factory;
-- starts the run when the service executes;
-- observes run completion and faults;
-- drains the run during stop;
-- disposes runtime-owned components.
-
-Hosted services receive the same factory-created run contract as direct factory
-callers. Health checks and hosted shutdown observe the underlying run state and
-metrics while the factory wrapper owns DI scope disposal.
-
-Hosted pipeline faults are not log-only by default. Configure
-`SmartPipeHostedServiceOptions`:
+New code should register a canonical definition through the DI package and opt it
+into the shared orchestrator:
 
 ```csharp
-services.Configure<SmartPipeHostedServiceOptions>(options =>
-{
-    options.FailureBehavior = SmartPipeHostedFailureBehavior.StopApplication;
-    options.DrainTimeout = TimeSpan.FromSeconds(30);
-});
+var smartPipe = services.AddSmartPipe();
+smartPipe.AddPipeline(ordersDefinition)
+    .RunAsHostedService(options =>
+    {
+        options.Order = 0;
+        options.FailureBehavior =
+            SmartPipeHostedPipelineFailureBehavior.StopApplication;
+    });
 ```
 
-`StopApplication` is the default and requests host shutdown through
-`IHostApplicationLifetime`. `Rethrow` faults the hosted execution task.
-`MarkUnhealthyAndKeepHostAlive` keeps the host alive so health checks can report
-the tracked faulted run. `Ignore` is an explicit log-and-continue choice.
-
-Hosted services should use cooperative sources and sinks so `DrainAsync` and
-host shutdown can complete promptly.
-
-During `StopAsync`, the hosted service attempts graceful drain, base hosted
-service stop, and pipeline disposal independently. If the host shutdown token is
-already cancelled when `StopAsync` begins, graceful drain is skipped, but base
-stop and disposal are still attempted. If the host token is active, the drain
-request links that token with `DrainTimeout`. When multiple shutdown steps
-fail, the reported `AggregateException` preserves drain, base stop, then
-disposal ordering.
-
-Health checks use the typed run monitor registered by `AddSmartPipe` or
-`AddSmartPipeHostedService`. They inspect `PipelineRunState` and immutable
-metrics snapshots, including started time, last activity time, last processed
-time, queue depths, failed items, and dead-lettered items. Running hosted
-pipelines with no initial activity remain healthy by default; set
-`SmartPipeHealthCheckOptions.RequireInitialActivity` when a hosted pipeline must
-produce activity within `InitialActivityGracePeriod`.
+This is an explicit migration, not a compatibility redirect. Legacy
+`SmartPipeHostedService<TInput,TOutput>`, `SmartPipeHostedServiceOptions`,
+`SmartPipeHostedFailureBehavior`, and `AddSmartPipeHostedService` keep their 2.1
+behavior in the broad façade for the 2.x line. They are not forwarded into the
+canonical Hosting package.

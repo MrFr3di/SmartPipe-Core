@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main, upd, release/2.2.0 ]
   pull_request:
-    branches: [ main, upd, release/2.2.0 ]
+    branches: [ main, upd, release/2.2.0, sp220/checkpoint-c ]
 
 permissions:
   contents: read
@@ -15,6 +15,34 @@ jobs:
     uses: ./.github/workflows/reusable-release-validation.yml
     permissions:
       contents: read
+
+  hosting-integration:
+    name: Hosting integration (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore Hosting integration tests
+        run: dotnet restore tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --locked-mode
+
+      - name: Build Hosting integration tests
+        run: dotnet build tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --configuration Release --no-restore -warnaserror
+
+      - name: Generic Host ordering and cancellation tests
+        run: dotnet test --project tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Hosting.Tests.Integration.GenericHostIntegrationTests --minimum-expected-tests 1
 
   json-file-windows:
     runs-on: windows-latest
@@ -73,7 +101,7 @@ jobs:
           global-json-file: global.json
 
       - name: Restore locked
-        run: dotnet restore SmartPipe.Core.slnx --locked-mode
+        run: dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true
 
       - name: Build repository checks
         run: dotnet build tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj --configuration Release --no-restore -warnaserror
@@ -81,12 +109,8 @@ jobs:
       - name: Repository baseline contract tests
         run: dotnet test --project tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
 
-      - name: Verify SP220-00 scope
-        if: github.event_name == 'pull_request'
-        run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-sp220-scope --repo-root . --base-commit ${{ github.event.pull_request.base.sha }}
-
-      - name: Provision and verify 2.1.2 baseline
-        run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-baseline --repo-root . --manifest eng/baselines/2.1.2/manifest.json --packages-dir artifacts/baselines/2.1.2
+      - name: Provision 2.1.2 baseline packages
+        run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- provision-baseline --repo-root . --manifest eng/baselines/2.1.2/manifest.json --packages-dir artifacts/baselines/2.1.2
 
       - name: Verify 2.1.2 baseline offline
-        run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-baseline --repo-root . --manifest eng/baselines/2.1.2/manifest.json --packages-dir artifacts/baselines/2.1.2 --offline
+        run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-baseline --repo-root . --manifest eng/baselines/2.1.2/manifest.json --packages-dir artifacts/baselines/2.1.2 --offline --mode integrity

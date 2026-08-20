@@ -38,7 +38,28 @@
         "legacy-binary-2.1.2",
         "core-trim",
         "core-nativeaot",
-        "json-nativeaot"
+        "json-nativeaot",
+        "dependency-injection-direct",
+        "dependency-injection-keyed",
+        "dependency-injection-from-keyed-services",
+        "dependency-injection-facade-source",
+        "dependency-injection-facade-binary-2.1.2",
+        "dependency-injection-trim",
+        "dependency-injection-nativeaot",
+        "hosting-direct",
+        "hosting-facade-source",
+        "hosting-facade-binary-2.1.2",
+        "hosting-trim",
+        "hosting-nativeaot",
+        "health-checks-direct",
+        "health-checks-aspnet",
+        "health-checks-trim",
+        "health-checks-nativeaot",
+        "opentelemetry-direct",
+        "opentelemetry-otlp",
+        "opentelemetry-facade",
+        "opentelemetry-trim",
+        "opentelemetry-nativeaot"
       ]
     },
     {
@@ -184,7 +205,9 @@
       "consumerScenarios": [
         "json-direct",
         "legacy-binary-2.1.2",
-        "json-nativeaot"
+        "json-nativeaot",
+        "dependency-injection-facade-binary-2.1.2",
+        "hosting-facade-binary-2.1.2"
       ]
     },
     {
@@ -492,9 +515,9 @@
     {
       "id": "SmartPipe.Extensions.DependencyInjection",
       "projectPath": "src/SmartPipe.Extensions.DependencyInjection/SmartPipe.Extensions.DependencyInjection.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-03",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 14,
       "baselineVersion": null,
       "aotContract": "full",
@@ -524,15 +547,29 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "dependency-injection-direct"
+        "dependency-injection-direct",
+        "dependency-injection-keyed",
+        "dependency-injection-from-keyed-services",
+        "dependency-injection-facade-source",
+        "dependency-injection-facade-binary-2.1.2",
+        "dependency-injection-trim",
+        "dependency-injection-nativeaot",
+        "hosting-direct",
+        "hosting-facade-binary-2.1.2",
+        "hosting-trim",
+        "hosting-nativeaot",
+        "health-checks-direct",
+        "health-checks-aspnet",
+        "health-checks-trim",
+        "health-checks-nativeaot"
       ]
     },
     {
       "id": "SmartPipe.Extensions.OpenTelemetry",
       "projectPath": "src/SmartPipe.Extensions.OpenTelemetry/SmartPipe.Extensions.OpenTelemetry.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-06",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 15,
       "baselineVersion": null,
       "aotContract": "verified",
@@ -542,7 +579,7 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "OpenTelemetry.Api"
+          "OpenTelemetry.Api.ProviderBuilderExtensions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -554,7 +591,7 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "OpenTelemetry.Api"
+          "OpenTelemetry.Api.ProviderBuilderExtensions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -562,15 +599,19 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "opentelemetry-direct"
+        "opentelemetry-direct",
+        "opentelemetry-otlp",
+        "opentelemetry-facade",
+        "opentelemetry-trim",
+        "opentelemetry-nativeaot"
       ]
     },
     {
       "id": "SmartPipe.Extensions.Hosting",
       "projectPath": "src/SmartPipe.Extensions.Hosting/SmartPipe.Extensions.Hosting.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-04",
-      "scaffoldKind": "host-integration",
+      "scaffoldKind": null,
       "publishOrder": 16,
       "baselineVersion": null,
       "aotContract": "full",
@@ -581,7 +622,9 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Hosting.Abstractions"
+          "Microsoft.Extensions.DependencyInjection.Abstractions",
+          "Microsoft.Extensions.Hosting.Abstractions",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -594,7 +637,9 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Hosting.Abstractions"
+          "Microsoft.Extensions.DependencyInjection.Abstractions",
+          "Microsoft.Extensions.Hosting.Abstractions",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -602,15 +647,19 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "hosting-direct"
+        "hosting-direct",
+        "hosting-facade-source",
+        "hosting-facade-binary-2.1.2",
+        "hosting-trim",
+        "hosting-nativeaot"
       ]
     },
     {
       "id": "SmartPipe.Extensions.HealthChecks",
       "projectPath": "src/SmartPipe.Extensions.HealthChecks/SmartPipe.Extensions.HealthChecks.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-05",
-      "scaffoldKind": "host-integration",
+      "scaffoldKind": null,
       "publishOrder": 17,
       "baselineVersion": null,
       "aotContract": "full",
@@ -621,7 +670,9 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Diagnostics.HealthChecks"
+          "Microsoft.Extensions.DependencyInjection.Abstractions",
+          "Microsoft.Extensions.Diagnostics.HealthChecks",
+          "Microsoft.Extensions.Options"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions",
@@ -635,7 +686,9 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Diagnostics.HealthChecks"
+          "Microsoft.Extensions.DependencyInjection.Abstractions",
+          "Microsoft.Extensions.Diagnostics.HealthChecks",
+          "Microsoft.Extensions.Options"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions",
@@ -644,7 +697,10 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "health-checks-direct"
+        "health-checks-direct",
+        "health-checks-aspnet",
+        "health-checks-trim",
+        "health-checks-nativeaot"
       ]
     },
     {
@@ -695,6 +751,8 @@
       "currentDependencies": {
         "requiredSmartPipePackages": [
           "SmartPipe.Core",
+          "SmartPipe.Extensions.DependencyInjection",
+          "SmartPipe.Extensions.Hosting",
           "SmartPipe.Extensions.Json"
         ],
         "allowedSmartPipePackages": [],
@@ -725,7 +783,10 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
+          "Microsoft.Extensions.Diagnostics.HealthChecks",
+          "Microsoft.Extensions.Hosting.Abstractions",
           "Microsoft.Extensions.Http",
+          "Microsoft.Extensions.Options",
           "Microsoft.Extensions.Resilience",
           "Microsoft.Extensions.Logging.Abstractions"
         ],
@@ -783,22 +844,34 @@
         },
         {
           "dependency": "Microsoft.Extensions.Hosting.Abstractions",
-          "reason": "Hosted types remain embedded until extraction",
+          "reason": "Legacy SmartPipeHosted public identities remain facade-owned",
           "ownerEpic": "SP220-04",
-          "expiresBeforeRelease": true,
-          "evidence": "hosted public types"
+          "expiresBeforeRelease": false,
+          "evidence": "SmartPipe.Extensions shipped SmartPipeHosted public API"
         },
         {
           "dependency": "Microsoft.Extensions.Diagnostics.HealthChecks",
-          "reason": "Health types remain embedded until extraction",
+          "reason": "Legacy health monitor, options, and check identities remain facade-owned",
           "ownerEpic": "SP220-05",
-          "expiresBeforeRelease": true,
-          "evidence": "health public types"
+          "expiresBeforeRelease": false,
+          "evidence": "SmartPipe.Extensions shipped health-check public API"
+        },
+        {
+          "dependency": "Microsoft.Extensions.Options",
+          "reason": "Legacy Hosting and Health public signatures expose IOptions",
+          "ownerEpic": "SP220-04/SP220-05",
+          "expiresBeforeRelease": false,
+          "evidence": "SmartPipe.Extensions shipped Hosting and Health IOptions signatures"
         }
       ],
       "consumerScenarios": [
         "extensions-meta",
-        "legacy-binary-2.1.2"
+        "legacy-binary-2.1.2",
+        "dependency-injection-facade-source",
+        "dependency-injection-facade-binary-2.1.2",
+        "hosting-facade-source",
+        "hosting-facade-binary-2.1.2",
+        "opentelemetry-facade"
       ]
     }
   ]

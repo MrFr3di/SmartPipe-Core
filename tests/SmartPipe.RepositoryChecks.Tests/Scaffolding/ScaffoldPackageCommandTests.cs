@@ -8,7 +8,7 @@ namespace SmartPipe.RepositoryChecks.Tests.Scaffolding;
 public sealed class ScaffoldPackageCommandTests
 {
     [Fact]
-    public async Task DryRun_AllSixteenPlannedIds_WritesNothing()
+    public async Task DryRun_AllTwelvePlannedIds_WritesNothing()
     {
         var root = RepositoryRoot(); var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var command = new ScaffoldPackageCommand();
@@ -17,7 +17,7 @@ public sealed class ScaffoldPackageCommandTests
             var report = await command.ExecuteAsync(new(root, node.Id, true, null), TestContext.Current.CancellationToken);
             Assert.True(report.Success); Assert.Equal(node.Id, report.PackageId); Assert.All(report.Files, path => Assert.False(File.Exists(Path.Combine(root, path))));
         }
-        Assert.Equal(16, graph.Packages.Count(x => x.Lifecycle == PackageLifecycle.Planned));
+        Assert.Equal(12, graph.Packages.Count(x => x.Lifecycle == PackageLifecycle.Planned));
     }
 
     [Fact]
