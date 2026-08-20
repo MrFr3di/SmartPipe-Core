@@ -54,7 +54,12 @@
         "health-checks-direct",
         "health-checks-aspnet",
         "health-checks-trim",
-        "health-checks-nativeaot"
+        "health-checks-nativeaot",
+        "opentelemetry-direct",
+        "opentelemetry-otlp",
+        "opentelemetry-facade",
+        "opentelemetry-trim",
+        "opentelemetry-nativeaot"
       ]
     },
     {
@@ -562,9 +567,9 @@
     {
       "id": "SmartPipe.Extensions.OpenTelemetry",
       "projectPath": "src/SmartPipe.Extensions.OpenTelemetry/SmartPipe.Extensions.OpenTelemetry.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-06",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 15,
       "baselineVersion": null,
       "aotContract": "verified",
@@ -574,7 +579,7 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "OpenTelemetry.Api"
+          "OpenTelemetry.Api.ProviderBuilderExtensions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -586,7 +591,7 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "OpenTelemetry.Api"
+          "OpenTelemetry.Api.ProviderBuilderExtensions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -594,7 +599,11 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "opentelemetry-direct"
+        "opentelemetry-direct",
+        "opentelemetry-otlp",
+        "opentelemetry-facade",
+        "opentelemetry-trim",
+        "opentelemetry-nativeaot"
       ]
     },
     {
@@ -861,7 +870,8 @@
         "dependency-injection-facade-source",
         "dependency-injection-facade-binary-2.1.2",
         "hosting-facade-source",
-        "hosting-facade-binary-2.1.2"
+        "hosting-facade-binary-2.1.2",
+        "opentelemetry-facade"
       ]
     }
   ]

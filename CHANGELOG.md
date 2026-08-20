@@ -2,6 +2,24 @@
 
 ## [2.2.0] — Development
 
+### OpenTelemetry
+
+- Added exporter-neutral `SmartPipe.Extensions.OpenTelemetry` with the single
+  `AddSmartPipeInstrumentation(IOpenTelemetryBuilder)` extension registering the
+  existing Core `Meter("SmartPipe.Core")` and `ActivitySource("SmartPipe.Core")`
+  sources with the OpenTelemetry provider builders.
+- Added collection-local idempotency for repeated successful registrations;
+  different service collections remain independent, idempotency is detected
+  from a marker descriptor stored in the current service collection — there is
+  no static global registration state. Same-collection retry after a
+  configuration exception is documented as unsupported.
+- Added stable diagnostic name constants `SmartPipeDiagnostics.MeterName` and
+  `SmartPipeDiagnostics.ActivitySourceName` to `SmartPipe.Core`; the production
+  dependency surface is Core plus `OpenTelemetry.Api.ProviderBuilderExtensions`
+  only — no exporter, hosting, or instrumentation dependency.
+- Added direct, OTLP, facade composition, trimmed, and NativeAOT package
+  consumers.
+
 ### Health checks
 
 - Added `SmartPipe.Extensions.HealthChecks` with exact-`PipelineKey` liveness, readiness, aggregate checks, isolated named options, stable names/tags, and bounded primitive result data.

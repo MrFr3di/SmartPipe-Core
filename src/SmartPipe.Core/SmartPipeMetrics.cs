@@ -11,7 +11,7 @@ namespace SmartPipe.Core;
 public static class SmartPipeMeter
 {
     /// <summary>Canonical meter name for SmartPipe.Core.</summary>
-    public const string Name = "SmartPipe.Core";
+    public const string Name = SmartPipeDiagnostics.MeterName;
 
     internal static readonly Meter Meter = new(
         Name,

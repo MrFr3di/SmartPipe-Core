@@ -129,9 +129,17 @@ Important selector and streaming contracts:
 
 ## Observability
 
+- `SmartPipeDiagnostics.MeterName`
+- `SmartPipeDiagnostics.ActivitySourceName`
 - `SmartPipeMetrics.Export()`
 - `SmartPipeMetrics.ExportJson()`
 - `SmartPipeMetrics.ToDiagnosticText()`
+
+`SmartPipeDiagnostics` exposes the stable diagnostic source names of the
+SmartPipe runtime. Both constants are `"SmartPipe.Core"`; `SmartPipeMeter.Name`
+aliases `SmartPipeDiagnostics.MeterName`. Registration helpers that subscribe
+to SmartPipe telemetry (for example OpenTelemetry `AddMeter`/`AddSource`) must
+use these constants rather than hard-coded strings.
 
 `ToDiagnosticText()` is diagnostic text, not a Prometheus exporter. Use
 OpenTelemetry metrics exporters for Prometheus integration.

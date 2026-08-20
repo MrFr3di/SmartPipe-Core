@@ -139,3 +139,6 @@ SmartPipe.Core.PipelineRun<TOutput>.PipelineKey.get -> SmartPipe.Core.PipelineKe
 SmartPipe.Core.PipelineRun<TOutput>.RunId.get -> System.Guid
 SmartPipe.Core.PipelineRun<TOutput>.InputCapacity.get -> int
 SmartPipe.Core.PipelineRun<TOutput>.OutputCapacity.get -> int
+SmartPipe.Core.SmartPipeDiagnostics
+const SmartPipe.Core.SmartPipeDiagnostics.ActivitySourceName = "SmartPipe.Core" -> string!
+const SmartPipe.Core.SmartPipeDiagnostics.MeterName = "SmartPipe.Core" -> string!
