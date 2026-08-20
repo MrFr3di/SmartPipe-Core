@@ -29,6 +29,9 @@ case-sensitive `PipelineKey.Value`. It does not register unkeyed typed aliases.
 Keys are globally unique across generic type pairs. Registration is atomic: a
 collection failure removes only descriptors inserted by that attempt and rolls
 back the matching key reservation.
+The reservation belongs to the synchronous `AddPipeline` call and is completed
+by commit or rollback before that call returns or throws; ownership is never
+transferred asynchronously.
 
 `ISmartPipeRegistry` exposes defensive registration snapshots in successful
 zero-based registration order. `ISmartPipeFactoryProvider` resolves only the

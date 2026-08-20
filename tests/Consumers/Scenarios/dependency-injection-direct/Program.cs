@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using DependencyInjectionDirect;
 using Microsoft.Extensions.DependencyInjection;
 using SmartPipe.Core;
 using SmartPipe.Extensions.DependencyInjection;
@@ -33,13 +34,16 @@ static async Task<int> ReadSingleAsync(PipelineRun<int> run)
     throw new InvalidOperationException("The DI pipeline produced no successful output.");
 }
 
-internal sealed class OneSource : IPipelineSource<int>
+namespace DependencyInjectionDirect
 {
-    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
-    public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync([EnumeratorCancellation] CancellationToken ct = default)
+    internal sealed class OneSource : IPipelineSource<int>
     {
-        await Task.Yield();
-        yield return ProcessingEnvelope<int>.Create(1);
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync([EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            yield return ProcessingEnvelope<int>.Create(1);
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

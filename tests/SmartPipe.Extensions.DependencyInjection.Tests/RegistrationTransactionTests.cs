@@ -129,6 +129,43 @@ public sealed class RegistrationTransactionTests
     }
 
     [Fact]
+    public async Task AddPipeline_CommitAndRollbackReleaseReservationsForAnotherThread()
+    {
+        var services = new ServiceCollection();
+        var builder = services.AddSmartPipe();
+        builder.AddPipeline(CreateDefinition<int>("committed"));
+
+        var committingThread = Environment.CurrentManagedThreadId;
+        var committed = await Task.Factory.StartNew(
+            () => (ThreadId: Environment.CurrentManagedThreadId,
+                Registration: builder.AddPipeline(CreateDefinition<int>("after-commit"))),
+            TestContext.Current.CancellationToken,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.NotEqual(committingThread, committed.ThreadId);
+        Assert.Equal("after-commit", committed.Registration.Key.Value);
+
+        var rollbackServices = new ThrowOnceOnSecondKeyedDescriptorCollection();
+        var rollbackBuilder = rollbackServices.AddSmartPipe();
+        Assert.Throws<InjectedServiceCollectionException>(() =>
+        {
+            rollbackBuilder.AddPipeline(CreateDefinition<int>("rolled-back"));
+        });
+
+        var rollingBackThread = Environment.CurrentManagedThreadId;
+        var rolledBack = await Task.Factory.StartNew(
+            () => (ThreadId: Environment.CurrentManagedThreadId,
+                Registration: rollbackBuilder.AddPipeline(CreateDefinition<int>("after-rollback"))),
+            TestContext.Current.CancellationToken,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.NotEqual(rollingBackThread, rolledBack.ThreadId);
+        Assert.Equal("after-rollback", rolledBack.Registration.Key.Value);
+    }
+
+    [Fact]
     public void AddSmartPipe_WhenCollectionThrowsAfterInfrastructureInsertion_RollsBackAndRetrySucceeds()
     {
         var services = new ThrowOnceAfterSecondInsertionCollection();

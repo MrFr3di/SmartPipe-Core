@@ -1,3 +1,4 @@
+using DependencyInjectionFromKeyedServices;
 using Microsoft.Extensions.DependencyInjection;
 using SmartPipe.Core;
 using SmartPipe.Extensions.DependencyInjection;
@@ -25,14 +26,17 @@ static async IAsyncEnumerable<int> Values()
     await Task.CompletedTask;
 }
 
-internal sealed class KeyedStarter([FromKeyedServices("from-keyed")] ISmartPipeRunFactory<int, int> factory)
+namespace DependencyInjectionFromKeyedServices
 {
-    public async Task<int> RunAsync()
+    internal sealed class KeyedStarter([FromKeyedServices("from-keyed")] ISmartPipeRunFactory<int, int> factory)
     {
-        await using var run = await factory.StartAsync();
-        await foreach (var output in run.Outputs.ReadAllAsync())
-            if (output.Result.IsSuccess)
-                return output.Result.Value;
-        throw new InvalidOperationException("The attributed keyed factory produced no successful output.");
+        public async Task<int> RunAsync()
+        {
+            await using var run = await factory.StartAsync();
+            await foreach (var output in run.Outputs.ReadAllAsync())
+                if (output.Result.IsSuccess)
+                    return output.Result.Value;
+            throw new InvalidOperationException("The attributed keyed factory produced no successful output.");
+        }
     }
 }

@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using DependencyInjectionFacadeSource;
 using Microsoft.Extensions.DependencyInjection;
 using SmartPipe.Core;
 using SmartPipe.Extensions;
@@ -19,28 +20,31 @@ await run.DisposeAsync();
 
 Console.WriteLine("CONSUMER_OK dependency-injection-facade-source");
 
-internal sealed class FacadeSource : IPipelineSource<int>
+namespace DependencyInjectionFacadeSource
 {
-    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
-    public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync([EnumeratorCancellation] CancellationToken ct = default)
+    internal sealed class FacadeSource : IPipelineSource<int>
     {
-        await Task.Yield();
-        yield return ProcessingEnvelope<int>.Create(1);
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync([EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            yield return ProcessingEnvelope<int>.Create(1);
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-}
 
-internal sealed class FacadeStage : IPipelineTransformer<int, int>
-{
-    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
-    public ValueTask<StageResult<int>> TransformAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default) =>
-        ValueTask.FromResult(StageResult<int>.Success(envelope.Payload));
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-}
+    internal sealed class FacadeStage : IPipelineTransformer<int, int>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask<StageResult<int>> TransformAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default) =>
+            ValueTask.FromResult(StageResult<int>.Success(envelope.Payload));
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
 
-internal sealed class FacadeSink : IPipelineSink<int>
-{
-    public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
-    public ValueTask WriteAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default) => ValueTask.CompletedTask;
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    internal sealed class FacadeSink : IPipelineSink<int>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask WriteAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
 }

@@ -10,7 +10,9 @@ internal sealed class SmartPipeRegistrationStore
     internal RegistrationReservation Reserve(PipelineKey key)
     {
         ThrowIfInvalid(key);
+#pragma warning disable S2222 // Reservation ownership is completed synchronously by AddPipeline on this thread.
         Monitor.Enter(_gate);
+#pragma warning restore S2222
         try
         {
             if (_registrations.ContainsKey(key))
