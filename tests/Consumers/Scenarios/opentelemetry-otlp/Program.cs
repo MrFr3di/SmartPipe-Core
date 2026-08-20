@@ -17,7 +17,7 @@ using var meterProvider = provider.GetRequiredService<MeterProvider>();
 using var tracerProvider = provider.GetRequiredService<TracerProvider>();
 
 var key = new PipelineKey("consumer-opentelemetry-otlp");
-if (!await ConsumerPipelineSmoke.RunAsync(key))
+if (!await SmartPipe.ConsumerScenarios.ConsumerPipelineSmoke.RunAsync(key))
     return 1;
 
 meterProvider.ForceFlush();

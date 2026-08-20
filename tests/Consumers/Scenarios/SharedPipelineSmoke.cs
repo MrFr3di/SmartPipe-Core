@@ -1,5 +1,7 @@
 using SmartPipe.Core;
 
+namespace SmartPipe.ConsumerScenarios;
+
 internal static class ConsumerPipelineSmoke
 {
     internal static async Task<bool> RunAsync(PipelineKey key)

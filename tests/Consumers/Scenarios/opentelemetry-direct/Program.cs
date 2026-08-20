@@ -17,7 +17,7 @@ if (provider.GetService<MeterProvider>() is not null || provider.GetService<Trac
     return 1;
 
 var key = new PipelineKey("consumer-opentelemetry-direct");
-if (!await ConsumerPipelineSmoke.RunAsync(key))
+if (!await SmartPipe.ConsumerScenarios.ConsumerPipelineSmoke.RunAsync(key))
     return 1;
 
 Console.WriteLine("CONSUMER_OK opentelemetry-direct");
