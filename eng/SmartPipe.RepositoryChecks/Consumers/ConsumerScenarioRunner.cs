@@ -326,9 +326,20 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         var evidence = Path.GetRelativePath(root, stderrLog).Replace('\\', '/');
         if (evidence.Length > 768 || evidence.IndexOfAny(['\r', '\n']) >= 0)
             throw new ConsumerScenarioException("SPCONS009", "Consumer stderr evidence path is invalid.");
+        var prefix = $"Consumer command failed ({result.ExitCode}); stderr evidence: {evidence}";
+        var diagnostic = DotNetProcessRunner.Redact(
+                string.IsNullOrWhiteSpace(result.StandardError) ? result.StandardOutput : result.StandardError)
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Trim();
+        const string separator = "; diagnostic: ";
+        var available = 1024 - prefix.Length - separator.Length;
+        var suffix = available > 0 && diagnostic.Length > 0
+            ? separator + diagnostic[^Math.Min(available, diagnostic.Length)..]
+            : string.Empty;
         return new ConsumerScenarioException(
             "SPCONS014",
-            $"Consumer command failed ({result.ExitCode}); stderr evidence: {evidence}");
+            prefix + suffix);
     }
 
     private static async Task<IReadOnlyList<string>> InspectDependenciesAsync(string assetsPath, ConsumerScenario scenario, CancellationToken ct)
