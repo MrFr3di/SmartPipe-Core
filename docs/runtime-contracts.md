@@ -156,6 +156,9 @@ token for work that was already accepted. A drain timeout throws
 `TryDrainAsync` is the structured non-throwing drain API. It returns
 `PipelineDrainResult` with `Completed`, `TimedOutStillRunning`,
 `CancelledByCaller`, `Faulted`, or `AlreadyCompleted`.
+After `Completion` finishes, a drain request remains idempotent even when a
+factory-owned scope has already disposed the completed runtime: `TryDrainAsync`
+returns `AlreadyCompleted`, and `DrainAsync` completes without throwing.
 
 `CancelAsync` cancels source and in-flight processing. It records cancellation
 intent and requests cooperative cancellation. The terminal state is not final

@@ -107,6 +107,11 @@ token remains available.
 dotnet add package SmartPipe.Extensions --version 2.1.2
 ```
 
+For narrow SP220-07 integrations, install `SmartPipe.Extensions.Channels`,
+`SmartPipe.Extensions.Transforms`, `SmartPipe.Extensions.Logging`, or
+`SmartPipe.Extensions.DataAnnotations` directly. The broad package forwards the
+existing public types and pulls these leaves only as a compatibility facade.
+
 For JSON-only integrations, prefer:
 
 ```bash

@@ -13,13 +13,22 @@ on:
         required: false
         type: string
         default: packages
+      runner-labels:
+        description: Runner labels as a JSON array
+        required: false
+        type: string
+        default: '["ubuntu-latest"]'
 
 permissions:
   contents: read
 
+env:
+  NUGET_PACKAGES: ${{ github.event_name == 'pull_request' && format('{0}/.nuget/packages', github.workspace) || '' }}
+
 jobs:
   build-test-pack:
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ fromJSON(inputs.runner-labels) }}
 
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -36,8 +45,17 @@ jobs:
       run: dotnet restore SmartPipe.Core.slnx --locked-mode
 
     - name: Test release version validation
-      shell: bash
-      run: bash eng/tests/validate-release-version.Tests.sh
+      shell: pwsh
+      run: |
+        if ($IsWindows) {
+          $bash = 'C:\Program Files\Git\bin\bash.exe'
+          if (!(Test-Path -LiteralPath $bash -PathType Leaf)) { throw "Git Bash is required at $bash." }
+          & $bash -lc 'eng/tests/validate-release-version.Tests.sh'
+        }
+        else {
+          bash eng/tests/validate-release-version.Tests.sh
+        }
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Install workflow contract parser
       run: python -m pip install --disable-pip-version-check ruamel.yaml==0.18.16
@@ -65,25 +83,38 @@ jobs:
       run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-query /[Category=ConcurrencyRegression] --minimum-expected-tests 1
 
     - name: Extensions correctness regressions
+      shell: pwsh
       run: |
         dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.HealthCheckTests --minimum-expected-tests 1
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.ChannelMergeTests --minimum-expected-tests 1
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.DeadLetterSinkTests --minimum-expected-tests 1
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.DbSinkTests --minimum-expected-tests 1
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Selectors.DapperSelectorTests --minimum-expected-tests 1
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests --minimum-expected-tests 1
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sources.HttpSelectorTests --minimum-expected-tests 1
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: PR concurrency regression repeat
       if: github.event_name == 'pull_request'
-      shell: bash
+      shell: pwsh
       run: |
-        for pass in {1..10}; do
-          echo "Concurrency regression pass $pass"
+        foreach ($pass in 1..10) {
+          Write-Output "Concurrency regression pass $pass"
           dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-query /[Category=ConcurrencyRegression] --minimum-expected-tests 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.ChannelMergeTests --minimum-expected-tests 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test --project tests/SmartPipe.Extensions.Channels.Tests/SmartPipe.Extensions.Channels.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Channels.Tests.ChannelMergeContractTests --minimum-expected-tests 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests --minimum-expected-tests 1
-        done
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
 
     - name: Core tests with coverage
       timeout-minutes: 15
@@ -95,6 +126,20 @@ jobs:
 
     - name: Extensions tests
       run: dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build --verbosity normal -c Release
+
+    - name: SP220-07 leaf tests
+      shell: pwsh
+      run: |
+        $projects = @(
+          'tests/SmartPipe.Extensions.Channels.Tests/SmartPipe.Extensions.Channels.Tests.csproj'
+          'tests/SmartPipe.Extensions.Transforms.Tests/SmartPipe.Extensions.Transforms.Tests.csproj'
+          'tests/SmartPipe.Extensions.Logging.Tests/SmartPipe.Extensions.Logging.Tests.csproj'
+          'tests/SmartPipe.Extensions.DataAnnotations.Tests/SmartPipe.Extensions.DataAnnotations.Tests.csproj'
+        )
+        foreach ($project in $projects) {
+          dotnet test --project $project --no-build --configuration Release --minimum-expected-tests 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
 
     - name: Dependency Injection tests
       run: dotnet test --project tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
@@ -112,29 +157,39 @@ jobs:
       run: dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build --verbosity normal -c Release
 
     - name: Test and benchmark warning gate
+      shell: pwsh
       run: |
         dotnet build tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-restore -c Release -warnaserror
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet build tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-restore -c Release -warnaserror
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet build tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-restore -c Release -warnaserror
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet build tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --no-restore -c Release -warnaserror
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet build tests/SmartPipe.Extensions.HealthChecks.Tests/SmartPipe.Extensions.HealthChecks.Tests.csproj --no-restore -c Release -warnaserror
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet build benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj --no-restore -c Release -warnaserror
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Set package version
+      shell: pwsh
       env:
         REQUESTED_PACKAGE_VERSION: ${{ inputs.package-version }}
       run: |
-        PACKAGE_VERSION="$REQUESTED_PACKAGE_VERSION"
-        if [ -z "$PACKAGE_VERSION" ]; then
-          PACKAGE_VERSION=$(dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo)
-        fi
-        echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> "$GITHUB_ENV"
+        $packageVersion = $env:REQUESTED_PACKAGE_VERSION
+        if ([string]::IsNullOrWhiteSpace($packageVersion)) {
+          $packageVersion = dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
+        "PACKAGE_VERSION=$packageVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Pack packages from graph
+      shell: pwsh
       run: >
         dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj
         --configuration Release --no-build -- pack-packages
-        --mode current --configuration Release --package-version "$PACKAGE_VERSION"
+        --mode current --configuration Release --package-version "$env:PACKAGE_VERSION"
         --output artifacts/packages --manifest artifacts/packages/manifest.json
 
     - name: Provision 2.1.2 baseline packages
@@ -153,42 +208,68 @@ jobs:
       run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-package-ownership --baseline eng/baselines/2.1.2 --packages artifacts/packages --mode current
 
     - name: Verify release versions current
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-release-version --tag "v$PACKAGE_VERSION" --package-directory artifacts/packages --mode current
+      shell: pwsh
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-release-version --tag "v$env:PACKAGE_VERSION" --package-directory artifacts/packages --mode current
 
     - name: Run current consumers
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --package-directory artifacts/packages --package-version "$PACKAGE_VERSION"
+      shell: pwsh
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --package-directory artifacts/packages --package-version "$env:PACKAGE_VERSION"
 
     - name: Run Hosting consumers
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --category hosting --package-directory artifacts/packages --package-version "$PACKAGE_VERSION"
+      shell: pwsh
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --category hosting --package-directory artifacts/packages --package-version "$env:PACKAGE_VERSION"
 
     - name: Run HealthChecks consumers
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --category health-checks --package-directory artifacts/packages --package-version "$PACKAGE_VERSION"
+      shell: pwsh
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --category health-checks --package-directory artifacts/packages --package-version "$env:PACKAGE_VERSION"
 
     - name: Run OpenTelemetry consumers
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --category opentelemetry --package-directory artifacts/packages --package-version "$PACKAGE_VERSION"
+      shell: pwsh
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --category opentelemetry --package-directory artifacts/packages --package-version "$env:PACKAGE_VERSION"
 
     - name: Vulnerable package scan
-      shell: bash
+      shell: pwsh
       run: |
-        mkdir -p artifacts/audit
+        New-Item -ItemType Directory -Path artifacts/audit -Force | Out-Null
         dotnet package list --project SmartPipe.Core.slnx --vulnerable --include-transitive --format json --output-version 1 --no-restore > artifacts/audit/vulnerable.json
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Verify direct production audit policy
       run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-nuget-audit --repo-root . --report artifacts/audit/vulnerable.json
 
     - name: Deprecated package scan
-      shell: bash
+      shell: pwsh
       run: dotnet package list --project SmartPipe.Core.slnx --deprecated --include-transitive --format json --output-version 1 --no-restore > artifacts/audit/deprecated.json
 
     - name: Outdated package report
-      shell: bash
+      shell: pwsh
       continue-on-error: true
       run: dotnet package list --project SmartPipe.Core.slnx --outdated --format json --output-version 1 --no-restore > artifacts/audit/outdated.json
 
     - name: Docs link check
+      if: runner.os != 'Windows'
       uses: lycheeverse/lychee-action@a8c4c7cb88f0c7386610c35eb25108e448569cb0 # v2.7.0
       with:
         args: --no-progress README.md 'docs/**/*.md'
+
+    - name: Docs link check (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $lychee = Join-Path $env:RUNNER_TEMP 'lychee-v0.21.0.exe'
+        $exitCode = 0
+        try {
+          Invoke-WebRequest -Uri 'https://github.com/lycheeverse/lychee/releases/download/lychee-v0.21.0/lychee-x86_64-windows.exe' -OutFile $lychee
+          $actualHash = (Get-FileHash -LiteralPath $lychee -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedHash = 'a1784c32c63ba46dccef0698ddf6be82a83a7d0455b0fd772423d601e3c70ab4'
+          if ($actualHash -ne $expectedHash) { throw "Lychee SHA256 mismatch: $actualHash" }
+          & $lychee --no-progress README.md 'docs/**/*.md'
+          $exitCode = $LASTEXITCODE
+        }
+        finally {
+          Remove-Item -LiteralPath $lychee -Force -ErrorAction SilentlyContinue
+        }
+        if ($exitCode -ne 0) { exit $exitCode }
 
     - name: Upload immutable packages and reports
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -202,11 +283,8 @@ jobs:
         if-no-files-found: error
 
   health-checks-concurrency:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ fromJSON(inputs.runner-labels) }}
 
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -222,9 +300,12 @@ jobs:
       run: dotnet restore SmartPipe.Core.slnx --locked-mode
 
     - name: Build concurrency projects
+      shell: pwsh
       run: |
         dotnet build tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj --configuration Release --no-restore -warnaserror
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet build tests/SmartPipe.Extensions.HealthChecks.Tests/SmartPipe.Extensions.HealthChecks.Tests.csproj --configuration Release --no-restore -warnaserror
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Run bounded observation concurrency
       run: dotnet test --project tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj --configuration Release --no-build --filter-method SmartPipe.Extensions.DependencyInjection.Tests.RunObservationStoreTests.ConcurrentTerminalCommitsAcrossKeysRemainBoundedAndStrictlySequenced --minimum-expected-tests 1

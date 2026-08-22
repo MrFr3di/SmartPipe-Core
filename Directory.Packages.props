@@ -36,6 +36,10 @@
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
     <PackageVersion Include="SmartPipe.Core" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.DependencyInjection" Version="2.2.0" />
+    <PackageVersion Include="SmartPipe.Extensions.Channels" Version="2.2.0" />
+    <PackageVersion Include="SmartPipe.Extensions.DataAnnotations" Version="2.2.0" />
+    <PackageVersion Include="SmartPipe.Extensions.Logging" Version="2.2.0" />
+    <PackageVersion Include="SmartPipe.Extensions.Transforms" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.HealthChecks" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.Hosting" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions" Version="2.2.0" />

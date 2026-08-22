@@ -24,7 +24,7 @@ public sealed class PackageOwnershipTests
     }
 
     [Fact]
-    public void Extensions_ForwardsEveryJsonTypeThatExistedIn211_AndNoNewOptions()
+    public void Extensions_ForwardsEveryExtractedCompatibilityType_AndNoNewJsonOptions()
     {
         var expectedForwardedTypes = new HashSet<Type>
         {
@@ -35,6 +35,15 @@ public sealed class PackageOwnershipTests
             typeof(DeadLetterWriteFailureMode),
             typeof(DeadLetterWriteException),
             typeof(JsonTransform<,>),
+            typeof(ChannelMerge),
+            typeof(CompositeTransform<>),
+            typeof(CompressionAlgorithm),
+            typeof(CompressionTransform),
+            typeof(ConditionalTransform<>),
+            typeof(FilterTransform<>),
+            typeof(FilterValidationExtensions),
+            typeof(ValidationTransform<>),
+            typeof(LoggerSink<>),
         };
 
         var extensionsAssembly = typeof(DapperSelector<>).Assembly;

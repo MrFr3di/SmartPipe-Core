@@ -488,9 +488,26 @@
           "Microsoft.Extensions.Options": "[10.0.8, )",
           "Microsoft.Extensions.Resilience": "[10.6.0, )",
           "SmartPipe.Core": "[2.2.0, )",
+          "SmartPipe.Extensions.Channels": "[2.2.0, )",
+          "SmartPipe.Extensions.DataAnnotations": "[2.2.0, )",
           "SmartPipe.Extensions.DependencyInjection": "[2.2.0, )",
           "SmartPipe.Extensions.Hosting": "[2.2.0, )",
-          "SmartPipe.Extensions.Json": "[2.2.0, )"
+          "SmartPipe.Extensions.Json": "[2.2.0, )",
+          "SmartPipe.Extensions.Logging": "[2.2.0, )",
+          "SmartPipe.Extensions.Transforms": "[2.2.0, )"
+        }
+      },
+      "smartpipe.extensions.channels": {
+        "type": "Project",
+        "dependencies": {
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
+      "smartpipe.extensions.dataannotations": {
+        "type": "Project",
+        "dependencies": {
+          "SmartPipe.Core": "[2.2.0, )",
+          "SmartPipe.Extensions.Transforms": "[2.2.0, )"
         }
       },
       "smartpipe.extensions.dependencyinjection": {
@@ -514,6 +531,19 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.8, )",
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
+      "smartpipe.extensions.logging": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.8, )",
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
+      "smartpipe.extensions.transforms": {
+        "type": "Project",
+        "dependencies": {
           "SmartPipe.Core": "[2.2.0, )"
         }
       },

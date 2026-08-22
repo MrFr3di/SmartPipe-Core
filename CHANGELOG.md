@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.0
+
+- Extracted Channels, Transforms, Logging, and DataAnnotations implementations
+  into narrow packages while preserving broad-facade type identities through
+  forwarding.
+- Added NativeAOT-safe channel, rule-transform, and safe logging paths; annotated
+  the reflection-based DataAnnotations invocation boundary for trimming.
+
 ## [2.2.0] — Development
 
 ### OpenTelemetry

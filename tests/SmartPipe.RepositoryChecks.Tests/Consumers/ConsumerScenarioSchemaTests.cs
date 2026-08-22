@@ -9,12 +9,12 @@ namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 public sealed class ConsumerScenarioSchemaTests
 {
     [Fact]
-    public async Task CurrentManifest_HasExactlyTwentyEightStrictScenarios()
+    public async Task CurrentManifest_HasExactlyThirtyThreeStrictScenarios()
     {
         var root = RepositoryRoot();
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var document = await new ConsumerScenarioLoader().LoadAsync(root, "eng/consumer-scenarios.json", graph, TestContext.Current.CancellationToken);
-        Assert.Equal(28, document.Scenarios.Count);
+        Assert.Equal(33, document.Scenarios.Count);
         Assert.Equal(
             [
                 "core-direct",
@@ -45,6 +45,11 @@ public sealed class ConsumerScenarioSchemaTests
                 "opentelemetry-facade",
                 "opentelemetry-trim",
                 "opentelemetry-nativeaot",
+                "channels-direct",
+                "transforms-direct",
+                "logging-direct",
+                "data-annotations-direct",
+                "data-annotations-runtime",
             ],
             document.Scenarios.Select(x => x.Id));
         Assert.All(
@@ -56,6 +61,13 @@ public sealed class ConsumerScenarioSchemaTests
         Assert.All(
             document.Scenarios.Where(scenario => scenario.Id.StartsWith("opentelemetry-", StringComparison.Ordinal)),
             scenario => Assert.Equal("opentelemetry", scenario.Category));
+        Assert.All(
+            document.Scenarios.Where(scenario => scenario.Id is "channels-direct" or "transforms-direct" or "logging-direct" or "data-annotations-direct" or "data-annotations-runtime"),
+            scenario => Assert.Equal("sp220-07", scenario.Category));
+        var dataAnnotations = Assert.Single(document.Scenarios, scenario => scenario.Id == "data-annotations-direct");
+        Assert.Equal(
+            ["EnableTrimAnalyzer=true", "InvokeReflectionValidation=true"],
+            Assert.IsType<ExpectedPublishDiagnostic>(dataAnnotations.ExpectedPublishDiagnostic).MsBuildProperties);
     }
 
     [Theory]
@@ -107,6 +119,90 @@ public sealed class ConsumerScenarioSchemaTests
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var result = await new ConsumerScenarioLoader().LoadAsync(fixture.Path, "eng/consumer-scenarios.json", FixtureGraph(graph), TestContext.Current.CancellationToken);
         Assert.Equal(TimeSpan.FromMinutes(30), result.Scenarios[0].Timeout);
+    }
+
+    [Fact]
+    public async Task Loader_AcceptsManifestDrivenExpectedPublishDiagnostic()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        fixture.Write("tests/Consumers/Scenarios/fixture/Program.cs", "return 0;");
+        var json = ValidJson()
+            .Replace("\"mode\": \"build-and-run\"", "\"mode\": \"publish-trimmed\"", StringComparison.Ordinal)
+            .Replace("\"baselineVersion\": null,", """
+                "baselineVersion": null,
+                      "expectedPublishDiagnostic": {
+                        "code": "IL2026",
+                        "sourcePath": "Program.cs",
+                        "line": 1,
+                        "msBuildProperties": ["InvokeReflectionValidation=true"]
+                      },
+                """, StringComparison.Ordinal);
+        fixture.Write("eng/consumer-scenarios.json", json);
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+
+        var result = await new ConsumerScenarioLoader().LoadAsync(
+            fixture.Path,
+            "eng/consumer-scenarios.json",
+            FixtureGraph(graph),
+            TestContext.Current.CancellationToken);
+
+        var expectation = result.Scenarios[0].ExpectedPublishDiagnostic;
+        Assert.NotNull(expectation);
+        Assert.Equal("IL2026", expectation.Code);
+        Assert.Equal("Program.cs", expectation.SourcePath);
+        Assert.Equal(1, expectation.Line);
+        Assert.Equal(["InvokeReflectionValidation=true"], expectation.MsBuildProperties);
+    }
+
+    [Theory]
+    [InlineData("mode")]
+    [InlineData("code")]
+    [InlineData("source")]
+    [InlineData("line")]
+    [InlineData("property")]
+    [InlineData("duplicate-property")]
+    public async Task Loader_RejectsInvalidExpectedPublishDiagnostic(string mutation)
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        fixture.Write("tests/Consumers/Scenarios/fixture/Program.cs", "return 0;");
+        var json = ValidJson()
+            .Replace("\"mode\": \"build-and-run\"", "\"mode\": \"publish-trimmed\"", StringComparison.Ordinal)
+            .Replace("\"baselineVersion\": null,", """
+                "baselineVersion": null,
+                      "expectedPublishDiagnostic": {
+                        "code": "IL2026",
+                        "sourcePath": "Program.cs",
+                        "line": 1,
+                        "msBuildProperties": ["InvokeReflectionValidation=true"]
+                      },
+                """, StringComparison.Ordinal);
+        json = mutation switch
+        {
+            "mode" => json.Replace("publish-trimmed", "build-and-run", StringComparison.Ordinal),
+            "code" => json.Replace("IL2026", "CS2026", StringComparison.Ordinal),
+            "source" => json.Replace("Program.cs", "../Program.cs", StringComparison.Ordinal),
+            "line" => json.Replace("\"line\": 1", "\"line\": 0", StringComparison.Ordinal),
+            "property" => json.Replace("InvokeReflectionValidation=true", "Bad Property=true", StringComparison.Ordinal),
+            "duplicate-property" => json.Replace(
+                "[\"InvokeReflectionValidation=true\"]",
+                "[\"InvokeReflectionValidation=true\", \"InvokeReflectionValidation=true\"]",
+                StringComparison.Ordinal),
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
+        };
+        fixture.Write("eng/consumer-scenarios.json", json);
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() => new ConsumerScenarioLoader().LoadAsync(
+            fixture.Path,
+            "eng/consumer-scenarios.json",
+            FixtureGraph(graph),
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal("SPCONS023", error.Code);
     }
 
     [Fact]

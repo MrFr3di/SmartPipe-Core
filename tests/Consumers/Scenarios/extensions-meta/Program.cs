@@ -1,9 +1,29 @@
+using Microsoft.Extensions.Logging.Abstractions;
+using SmartPipe.Extensions;
+using SmartPipe.Extensions.Selectors;
+using SmartPipe.Extensions.Sinks;
 using Mapster;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Transforms;
 
 _ = typeof(PipelineBuilder);
 _ = typeof(JsonTransform<string, string>);
+
+var composite = new CompositeTransform<int>(new FilterTransform<int>(static value => value > 0));
+await composite.InitializeAsync();
+_ = new FilterTransform<int>(static value => value > 0)
+    & !new FilterTransform<int>(static value => value < 100);
+_ = new ValidationTransform<int>().Require(static value => value > 0, "positive required");
+_ = new LoggerSink<int>(NullLogger<LoggerSink<int>>.Instance);
+
+var forwarded = typeof(DapperSelector<>).Assembly.GetForwardedTypes();
+Type[] expectedForwarded =
+[
+    typeof(ChannelMerge), typeof(CompositeTransform<>), typeof(FilterTransform<>),
+    typeof(LoggerSink<>), typeof(ValidationTransform<>),
+];
+if (expectedForwarded.Except(forwarded).Any())
+    throw new InvalidOperationException("SP220-07 facade reflection identity failed.");
 
 var defaultTransform = new MapsterTransform<DefaultSource, DefaultDestination>();
 var defaultResult = await defaultTransform.TransformAsync(
