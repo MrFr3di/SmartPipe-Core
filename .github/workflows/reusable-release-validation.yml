@@ -22,6 +22,9 @@ on:
 permissions:
   contents: read
 
+env:
+  NUGET_PACKAGES: ${{ github.event_name == 'pull_request' && format('{0}/.nuget/packages', github.workspace) || '' }}
+
 jobs:
   build-test-pack:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

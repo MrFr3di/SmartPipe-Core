@@ -71,6 +71,10 @@ CODEQL_PR_THREADS = (
     "github.event.pull_request.head.repo.full_name == github.repository && "
     "'2' || '' }}"
 )
+NUGET_PACKAGES_PR = (
+    "${{ github.event_name == 'pull_request' && "
+    "format('{0}/.nuget/packages', github.workspace) || '' }}"
+)
 HOSTING_NAME = "${{ matrix.os == 'self-hosted' && 'Windows' || matrix.os }}"
 HOSTING_RUNNER = (
     "${{ matrix.os == 'self-hosted' && "
@@ -123,6 +127,13 @@ def assert_codeql_resource_contract(job: dict) -> None:
             "CodeQL analyze resource cap must be limited to same-repository Windows pull requests.")
 
 
+def assert_nuget_isolation_contract(workflow: dict, workflow_name: str) -> None:
+    environment = workflow.get("env")
+    require(isinstance(environment, dict)
+            and environment.get("NUGET_PACKAGES") == NUGET_PACKAGES_PR,
+            f"{workflow_name} must isolate pull-request NuGet packages inside GITHUB_WORKSPACE.")
+
+
 def require_same_repository_pr_guard(job: dict, label: str, allow_non_pr: bool = True) -> None:
     expected = SAME_REPOSITORY_PR_GUARD if allow_non_pr else PULL_REQUEST_SAME_REPOSITORY_GUARD
     require(job.get("if") == expected,
@@ -134,6 +145,7 @@ def assert_cleanup_job(
     workflow_name: str,
     expected_needs: list[str],
     expected_guard: str,
+    cleanup_nuget: bool = False,
 ) -> None:
     job = workflow["jobs"].get("cleanup-self-hosted")
     require(isinstance(job, dict),
@@ -162,6 +174,9 @@ def assert_cleanup_job(
     ):
         require(token in script,
                 f"{workflow_name} cleanup must enforce safe workspace-bound deletion ({token}).")
+    if cleanup_nuget:
+        require("Join-Path $workspace '.nuget'" in script,
+                f"{workflow_name} cleanup must remove its workspace-local NuGet packages.")
     require("git clean" not in script.lower(),
             f"{workflow_name} cleanup must not use git clean.")
     require(re.search(r"Remove-Item\s+-LiteralPath\s+\$workspace(?:\s|$)", script) is None,
@@ -601,6 +616,7 @@ def validate(documents: dict[str, dict]) -> None:
     require(isinstance(reusable_job, dict), "Reusable validation must define build-test-pack.")
     require_parameterized_runner(reusable_job, "Reusable build-test-pack")
     require_same_repository_pr_guard(reusable_job, "Reusable build-test-pack")
+    assert_nuget_isolation_contract(reusable, "reusable-release-validation.yml")
     reusable_steps = steps(reusable_job, "reusable build-test-pack")
     reusable_runs = runs(reusable_steps)
     require(named_step(reusable_steps, "Test workflow contracts").get("run") ==
@@ -837,14 +853,23 @@ def validate(documents: dict[str, dict]) -> None:
         "ci.yml",
         ["validation", "hosting-integration", "json-file-windows", "baseline-contract-windows"],
         CLEANUP_PULL_REQUEST_GUARD,
+        cleanup_nuget=True,
     )
-    assert_cleanup_job(codeql, "codeql.yml", ["analyze"], CLEANUP_PULL_REQUEST_GUARD)
+    assert_cleanup_job(
+        codeql,
+        "codeql.yml",
+        ["analyze"],
+        CLEANUP_PULL_REQUEST_GUARD,
+        cleanup_nuget=True,
+    )
     assert_cleanup_job(
         dependency_review,
         "dependency-review.yml",
         ["dependency-review"],
         CLEANUP_PULL_REQUEST_GUARD,
     )
+    assert_nuget_isolation_contract(ci, "ci.yml")
+    assert_nuget_isolation_contract(codeql, "codeql.yml")
 
     codeql_job = codeql["jobs"].get("analyze")
     require(isinstance(codeql_job, dict), "CodeQL must define the analyze job.")
@@ -1108,6 +1133,10 @@ def _make_codeql_resource_cap_linux_wide(documents: dict[str, dict]) -> None:
     analysis["with"]["threads"] = str(analysis["with"]["threads"]).replace("|| ''", "|| '2'")
 
 
+def _remove_nuget_isolation(documents: dict[str, dict], workflow_name: str) -> None:
+    documents[workflow_name]["env"].pop("NUGET_PACKAGES", None)
+
+
 def _make_cleanup_non_pr_capable(documents: dict[str, dict], workflow_name: str) -> None:
     documents[workflow_name]["jobs"]["cleanup-self-hosted"]["if"] = CLEANUP_SAME_REPOSITORY_GUARD
 
@@ -1220,6 +1249,17 @@ def _remove_cleanup_direct_target_guard(documents: dict[str, dict], workflow_nam
     cleanup["run"] = "\n".join(
         line for line in str(cleanup.get("run", "")).splitlines()
         if direct_reparse_guard not in line
+    )
+
+
+def _remove_cleanup_nuget_target(documents: dict[str, dict], workflow_name: str) -> None:
+    cleanup = named_step(
+        documents[workflow_name]["jobs"]["cleanup-self-hosted"]["steps"],
+        "Cleanup generated outputs",
+    )
+    cleanup["run"] = "\n".join(
+        line for line in str(cleanup.get("run", "")).splitlines()
+        if "Join-Path $workspace '.nuget'" not in line
     )
 
 
@@ -1461,6 +1501,12 @@ def main() -> int:
         _make_codeql_resource_cap_linux_wide,
         "CodeQL analyze resource cap",
     )
+    for workflow_name in ("ci.yml", "codeql.yml", "reusable-release-validation.yml"):
+        assert_mutation_rejected(
+            documents,
+            lambda docs, name=workflow_name: _remove_nuget_isolation(docs, name),
+            f"{workflow_name} must isolate pull-request NuGet packages",
+        )
     assert_mutation_rejected(
         documents,
         _remove_ci_runner_override,
@@ -1541,6 +1587,12 @@ def main() -> int:
             documents,
             lambda docs, name=workflow_name: _remove_cleanup_direct_target_guard(docs, name),
             f"{workflow_name} cleanup must reject direct target reparse points",
+        )
+    for workflow_name in ("ci.yml", "codeql.yml"):
+        assert_mutation_rejected(
+            documents,
+            lambda docs, name=workflow_name: _remove_cleanup_nuget_target(docs, name),
+            f"{workflow_name} cleanup must remove its workspace-local NuGet packages",
         )
     assert_mutation_rejected(
         documents,

@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  NUGET_PACKAGES: ${{ github.event_name == 'pull_request' && format('{0}/.nuget/packages', github.workspace) || '' }}
+
 jobs:
   validation:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -151,6 +154,7 @@ jobs:
           $targets = [Collections.Generic.List[string]]::new()
           $targets.Add((Join-Path $workspace 'artifacts'))
           $targets.Add((Join-Path $workspace 'BenchmarkDotNet.Artifacts'))
+          $targets.Add((Join-Path $workspace '.nuget'))
           $pending = [Collections.Generic.Stack[string]]::new()
           $pending.Push($workspace)
           while ($pending.Count) {
