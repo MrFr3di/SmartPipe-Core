@@ -79,3 +79,73 @@ unbounded-memory symptom in progress notes.
 
 README examples are intentionally minimal. CI consumer smoke is the executable
 check for the public quick-start scenarios.
+
+## Dedicated Windows runner operations
+
+The same-repository Windows jobs use the exact labels
+`self-hosted`, `Windows`, `X64`, and `smartpipe-cleanup-v1`. The installation
+root is deliberately fixed at `C:\SmartPipe-Runner`; do not point the hook at a
+developer checkout, `_tool`, the runner binaries, or a shared temporary root.
+
+Install or remove the repository-owned hook only while the runner is idle:
+
+```powershell
+gh auth status
+pwsh -NoProfile -File eng\runner\install-runner.ps1
+pwsh -NoProfile -File eng\runner\uninstall-runner.ps1
+```
+
+The scripts resolve the exact runner name from `.runner` (`agentName`); an
+optional `-RunnerName` is accepted only when it exactly matches that value.
+They fail closed for missing or ambiguous configuration. The installer checks
+the repository, queued/in-progress Actions runs, and remote runner state before
+mutation. It writes only the hook's `.env` entry, copies the hook plus its
+safety helper into the runner's `hooks` directory, registers exactly
+`smartpipe-cleanup-v1` through the GitHub runner-label API while preserving
+other labels, stops listeners tied to the exact root, launches one hidden
+`run.cmd`, and waits for exactly one online, idle listener. Uninstall removes
+only that custom label and the owned entry/copies, preserves unrelated labels
+and `.env` lines, then performs the same bounded one-listener restart. A failed
+operation reports recovery guidance; never convert the runner to a service as
+part of this operation.
+
+The post-job hook accepts only `MrFr3di/SmartPipe-Core`, verifies the checkout
+remote, and canonicalizes every target beneath the dedicated runner root. It
+removes the exact checkout and the known `SmartPipe.Core`, `SmartPipe-Core`,
+`CodeQL`, and `codeql` directories below `RUNNER_TEMP`. Missing targets are
+successful. Any outside path, broad root, reparse point, unsafe repository, or
+deletion error fails closed before removal; the existing workflow cleanup jobs
+remain as defense in depth.
+
+For a compact, transition-only pull-request view:
+
+```powershell
+pwsh -NoProfile -File eng\runner\monitor-pr.ps1 -PullRequest 123 -MaxPolls 120
+```
+
+The monitor uses `gh pr view`, prints only a changed head/state/merge/check
+summary, and stops at `MERGED`, `CLOSED`, or the poll bound. For each newly
+failed head it retrieves one failed-run log, prints a bounded first-causal
+slice, and removes its task-specific temporary log directory on exit. `-Once`
+is useful for a single snapshot. It does not upload logs or alter GitHub state.
+
+The optional diagnostic dispatch runs one exact commit and one internal
+consumer scenario without changing normal push or pull-request behavior:
+
+```powershell
+gh workflow run ci.yml --repo MrFr3di/SmartPipe.Core --ref sp220/checkpoint-d `
+  -f diagnostic-sha=0123456789abcdef0123456789abcdef01234567 `
+  -f diagnostic-scenario=dependency-injection-nativeaot `
+  -f diagnostic-repeat=1
+```
+
+The SHA must be 40 lowercase hexadecimal characters, the scenario must use
+lowercase letters, digits, and hyphens, and repeat must be `1` through `5`.
+The job restores, builds, and packs once, then reports bounded run snippets in
+the step summary without artifacts. Normal jobs run when all three inputs are
+empty.
+
+If rollout must be reverted, stop the idle listener, run the uninstaller,
+restart the listener, and revert the workflow change with a normal commit.
+Do not delete the runner root or use `git clean`; safe cleanup is intentionally
+recoverable and scoped to the exact approved boundaries.

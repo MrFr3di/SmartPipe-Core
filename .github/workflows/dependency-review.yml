@@ -11,7 +11,7 @@ permissions:
 jobs:
   dependency-review:
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: [self-hosted, Windows, X64, smartpipe-cleanup-v1]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -24,7 +24,7 @@ jobs:
     name: Cleanup self-hosted workspace
     if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     needs: [dependency-review]
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: [self-hosted, Windows, X64, smartpipe-cleanup-v1]
     steps:
       - name: Cleanup generated outputs
         shell: pwsh

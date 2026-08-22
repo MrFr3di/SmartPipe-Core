@@ -319,6 +319,82 @@ public sealed class CommandLineParserTests
         ]));
 
         Assert.Equal("hosting", command.Category);
+        Assert.Null(command.Scenario);
+    }
+
+    [Fact]
+    public void Parse_RunConsumersAcceptsExactScenario()
+    {
+        using var repository = new CommandRepository();
+
+        var command = Assert.IsType<RunConsumersCommandOptions>(CommandLineParser.Parse(
+        [
+            "run-consumers", "--repo-root", repository.Path,
+            "--set", "current",
+            "--package-directory", "packages",
+            "--package-version", "2.2.0",
+            "--scenario", "dependency-injection-nativeaot",
+        ]));
+
+        Assert.Equal("dependency-injection-nativeaot", command.Scenario);
+        Assert.Null(command.Category);
+    }
+
+    [Fact]
+    public void Parse_RunConsumersRejectsCategoryAndScenarioTogether()
+    {
+        using var repository = new CommandRepository();
+
+        var error = Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+        [
+            "run-consumers", "--repo-root", repository.Path,
+            "--set", "current",
+            "--package-directory", "packages",
+            "--package-version", "2.2.0",
+            "--category", "hosting",
+            "--scenario", "hosting-direct",
+        ]));
+
+        Assert.Equal("Options '--category' and '--scenario' are mutually exclusive.", error.Message);
+    }
+
+    [Theory]
+    [InlineData("Dependency-Injection")]
+    [InlineData("dependency_injection")]
+    [InlineData("dependency.injection")]
+    [InlineData("")]
+    public void Parse_RunConsumersRejectsMalformedScenario(string scenario)
+    {
+        using var repository = new CommandRepository();
+
+        var error = Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+        [
+            "run-consumers", "--repo-root", repository.Path,
+            "--set", "current",
+            "--package-directory", "packages",
+            "--package-version", "2.2.0",
+            "--scenario", scenario,
+        ]));
+
+        Assert.Equal("Option '--scenario' must contain lowercase letters, digits, or hyphens.", error.Message);
+    }
+
+    [Fact]
+    public void Parse_RunConsumersRejectsDuplicateScenarioOption()
+    {
+        using var repository = new CommandRepository();
+
+        var error = Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+        [
+            "run-consumers", "--repo-root", repository.Path,
+            "--set", "current",
+            "--package-directory", "packages",
+            "--package-version", "2.2.0",
+            "--scenario", "core-direct",
+            "--scenario", "json-direct",
+        ]));
+
+        Assert.Equal("Duplicate option '--scenario'.", error.Message);
     }
 
     private static string[] CaptureArgs(string repositoryRoot)

@@ -18,7 +18,7 @@ env:
 jobs:
   analyze:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Windows","X64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Windows","X64","smartpipe-cleanup-v1"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -47,7 +47,7 @@ jobs:
     name: Cleanup self-hosted workspace
     if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     needs: [analyze]
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: [self-hosted, Windows, X64, smartpipe-cleanup-v1]
     steps:
       - name: Cleanup generated outputs
         shell: pwsh

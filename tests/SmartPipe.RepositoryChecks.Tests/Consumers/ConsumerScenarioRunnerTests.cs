@@ -13,6 +13,60 @@ namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 public sealed class ConsumerScenarioRunnerTests
 {
     [Fact]
+    public void NativeAotLibraryPreflight_IsNoOpOutsideWindows()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var path = WriteLibraryAtEffectiveLength(fixture.Path, 260);
+
+        ConsumerScenarioRunner.ValidateNativeAotLibraryPaths(fixture.Path, isWindows: false);
+
+        Assert.True(File.Exists(path));
+    }
+
+    [Fact]
+    public void NativeAotLibraryPreflight_AllowsEffectiveLengthBelowWindowsLimit()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        WriteLibraryAtEffectiveLength(fixture.Path, 258);
+
+        ConsumerScenarioRunner.ValidateNativeAotLibraryPaths(fixture.Path, isWindows: true);
+    }
+
+    [Fact]
+    public void NativeAotLibraryPreflight_RejectsEffectiveLengthAtWindowsLimitWithoutAbsolutePath()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var path = WriteLibraryAtEffectiveLength(fixture.Path, 260);
+
+        var error = Assert.Throws<ConsumerScenarioException>(() =>
+            ConsumerScenarioRunner.ValidateNativeAotLibraryPaths(fixture.Path, isWindows: true));
+
+        Assert.Equal("SPCONS025", error.Code);
+        Assert.Contains("260", error.Message, StringComparison.Ordinal);
+        Assert.Contains(Path.GetRelativePath(fixture.Path, path).Replace('\\', '/'), error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(fixture.Path, error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RunConsumers_UnknownScenarioUsesExistingSelectionDiagnostic()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var options = new RunConsumersOptions(
+            root,
+            "current",
+            Path.Combine(root, "artifacts", "packages"),
+            "2.2.0",
+            "eng/consumer-scenarios.json",
+            Scenario: "does-not-exist");
+
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() =>
+            new ConsumerScenarioRunner().RunAsync(options, TestContext.Current.CancellationToken));
+
+        Assert.Equal("SPCONS010", error.Code);
+        Assert.Contains("does-not-exist", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ProcessFailure_IsBoundedSingleLineAndPointsToRelativeRetainedEvidence()
     {
         using var fixture = new RepositoryTestDirectory();
@@ -492,6 +546,18 @@ public sealed class ConsumerScenarioRunnerTests
         var root = output.Parent!.Parent!.Parent!.Parent!.Parent!.FullName;
         return Path.Combine(root, "tests", "SmartPipe.RepositoryChecks.ProcessFixture", "bin", configuration, "net10.0",
             "SmartPipe.RepositoryChecks.ProcessFixture" + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
+    }
+
+    private static string WriteLibraryAtEffectiveLength(string root, int effectiveLength)
+    {
+        var relativeLength = effectiveLength - Path.GetFullPath(root).Length - 2;
+        var directoryLength = relativeLength - "native.lib".Length - 1;
+        Assert.InRange(directoryLength, 1, 240);
+        var path = Path.Combine(root, new string('d', directoryLength), "native.lib");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, []);
+        Assert.Equal(effectiveLength, Path.GetFullPath(path).Length + 1);
+        return path;
     }
 
     private static ExpectedPublishDiagnostic DiagnosticExpectation() => new()
