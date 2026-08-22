@@ -62,7 +62,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         CancellationToken ct)
     {
         var started = Stopwatch.StartNew();
-        var runId = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfff", System.Globalization.CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N")[..8];
+        var runId = Guid.NewGuid().ToString("N")[..8];
         var relativeWorkspace = $"artifacts/consumers/{scenario.Id}/{runId}";
         var workspace = Path.GetFullPath(relativeWorkspace, options.RepositoryRoot);
         EnsureContained(Path.GetFullPath(options.RepositoryRoot), workspace);
