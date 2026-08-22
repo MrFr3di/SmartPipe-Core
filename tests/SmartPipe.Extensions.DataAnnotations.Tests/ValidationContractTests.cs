@@ -50,6 +50,19 @@ public sealed class ValidationContractTests
     }
 
     [Fact]
+    public async Task ValidationSupportsValueTypesWithCustomRules()
+    {
+        var validation = new ValidationTransform<int>()
+            .Require(static value => value > 0, "positive");
+
+        var result = await validation.TransformAsync(
+            ProcessingEnvelope<int>.Create(0), TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("positive", result.Error!.Value.Message);
+    }
+
+    [Fact]
     public async Task ValidationRulesFreezeAfterInitialization()
     {
         var validation = new ValidationTransform<Outer>();

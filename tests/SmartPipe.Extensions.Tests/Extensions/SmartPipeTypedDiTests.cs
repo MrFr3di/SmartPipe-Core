@@ -147,6 +147,23 @@ public sealed class SmartPipeTypedDiTests
     }
 
     [Fact]
+    public async Task DI_Factory_Run_DrainAfterScopedCompletion_ReturnsAlreadyCompleted()
+    {
+        var services = CreateTypedPipelineServices();
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
+
+        var run = await factory.StartAsync();
+        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var result = await run.TryDrainAsync(TimeSpan.FromSeconds(1));
+        result.Status.Should().Be(PipelineDrainStatus.AlreadyCompleted);
+        var drain = async () => await run.DrainAsync(TimeSpan.FromSeconds(1));
+        await drain.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task DI_Factory_Run_PreservesMetricsSnapshot()
     {
         var services = CreateTypedPipelineServices();

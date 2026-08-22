@@ -61,6 +61,16 @@ CODEQL_RUNNER = (
     "fromJSON('[\"self-hosted\",\"Windows\",\"X64\"]') || "
     "'ubuntu-latest' }}"
 )
+CODEQL_PR_RAM = (
+    "${{ github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.repo.full_name == github.repository && "
+    "'16384' || '' }}"
+)
+CODEQL_PR_THREADS = (
+    "${{ github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.repo.full_name == github.repository && "
+    "'2' || '' }}"
+)
 HOSTING_NAME = "${{ matrix.os == 'self-hosted' && 'Windows' || matrix.os }}"
 HOSTING_RUNNER = (
     "${{ matrix.os == 'self-hosted' && "
@@ -102,6 +112,15 @@ def require_parameterized_runner(job: dict, label: str) -> None:
 def require_runner_expression(job: dict, expected: str, label: str) -> None:
     require(job.get("runs-on") == expected,
             f"{label} must use the event-aware runner expression.")
+
+
+def assert_codeql_resource_contract(job: dict) -> None:
+    analysis = named_step(steps(job, "CodeQL analyze"), "Perform CodeQL Analysis")
+    inputs = analysis.get("with")
+    require(isinstance(inputs, dict)
+            and inputs.get("ram") == CODEQL_PR_RAM
+            and inputs.get("threads") == CODEQL_PR_THREADS,
+            "CodeQL analyze resource cap must be limited to same-repository Windows pull requests.")
 
 
 def require_same_repository_pr_guard(job: dict, label: str, allow_non_pr: bool = True) -> None:
@@ -831,6 +850,7 @@ def validate(documents: dict[str, dict]) -> None:
     require(isinstance(codeql_job, dict), "CodeQL must define the analyze job.")
     require_runner_expression(codeql_job, CODEQL_RUNNER, "CodeQL analyze")
     require_same_repository_pr_guard(codeql_job, "CodeQL analyze")
+    assert_codeql_resource_contract(codeql_job)
     dependency_review_job = dependency_review["jobs"].get("dependency-review")
     require(isinstance(dependency_review_job, dict),
             "Dependency Review must define the dependency-review job.")
@@ -1060,6 +1080,32 @@ def _make_ci_baseline_always_self_hosted(documents: dict[str, dict]) -> None:
 
 def _make_codeql_always_self_hosted(documents: dict[str, dict]) -> None:
     documents["codeql.yml"]["jobs"]["analyze"]["runs-on"] = SELF_HOSTED_WINDOWS
+
+
+def _remove_codeql_resource_cap(documents: dict[str, dict]) -> None:
+    analysis = named_step(
+        documents["codeql.yml"]["jobs"]["analyze"]["steps"],
+        "Perform CodeQL Analysis",
+    )
+    analysis["with"].pop("ram", None)
+
+
+def _make_codeql_resource_cap_unconditional(documents: dict[str, dict]) -> None:
+    analysis = named_step(
+        documents["codeql.yml"]["jobs"]["analyze"]["steps"],
+        "Perform CodeQL Analysis",
+    )
+    analysis["with"]["ram"] = "16384"
+    analysis["with"]["threads"] = "2"
+
+
+def _make_codeql_resource_cap_linux_wide(documents: dict[str, dict]) -> None:
+    analysis = named_step(
+        documents["codeql.yml"]["jobs"]["analyze"]["steps"],
+        "Perform CodeQL Analysis",
+    )
+    analysis["with"]["ram"] = str(analysis["with"]["ram"]).replace("|| ''", "|| '16384'")
+    analysis["with"]["threads"] = str(analysis["with"]["threads"]).replace("|| ''", "|| '2'")
 
 
 def _make_cleanup_non_pr_capable(documents: dict[str, dict], workflow_name: str) -> None:
@@ -1399,6 +1445,21 @@ def main() -> int:
         documents,
         _make_codeql_always_self_hosted,
         "event-aware runner expression",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_codeql_resource_cap,
+        "CodeQL analyze resource cap",
+    )
+    assert_mutation_rejected(
+        documents,
+        _make_codeql_resource_cap_unconditional,
+        "CodeQL analyze resource cap",
+    )
+    assert_mutation_rejected(
+        documents,
+        _make_codeql_resource_cap_linux_wide,
+        "CodeQL analyze resource cap",
     )
     assert_mutation_rejected(
         documents,

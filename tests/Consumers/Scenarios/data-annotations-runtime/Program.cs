@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Transforms;
+using InvalidModel = SmartPipe.ConsumerScenarios.DataAnnotationsRuntime.InvalidModel;
 
 await using var transform = new ValidationTransform<InvalidModel>();
 await transform.InitializeAsync();
@@ -18,8 +19,11 @@ if (result.IsSuccess
 Console.WriteLine("CONSUMER_OK data-annotations-runtime");
 return 0;
 
-internal sealed class InvalidModel
+namespace SmartPipe.ConsumerScenarios.DataAnnotationsRuntime
 {
-    [Required(ErrorMessage = "name required")]
-    public string? Name { get; init; }
+    internal sealed class InvalidModel
+    {
+        [Required(ErrorMessage = "name required")]
+        public string? Name { get; init; }
+    }
 }

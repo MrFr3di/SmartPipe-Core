@@ -36,6 +36,24 @@ public sealed class ChannelMergeContractTests
     }
 
     [Fact]
+    public void MergeMany_NullReaderElementIsValidatedBeforeInvalidOptions()
+    {
+        ChannelReader<int>[] readers = [null!];
+        var invalidOptions = new BoundedChannelOptions(1);
+        // The public setter rejects invalid modes, so seed the invalid state only to test validation order.
+        var modeField = typeof(BoundedChannelOptions).GetField(
+            "_mode",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        Assert.NotNull(modeField);
+        modeField.SetValue(invalidOptions, (BoundedChannelFullMode)int.MaxValue);
+
+        var exception = Assert.Throws<ArgumentNullException>(
+            () => _ = ChannelMerge.MergeMany(readers, invalidOptions, CancellationToken.None));
+
+        Assert.Equal("readers", exception.ParamName);
+    }
+
+    [Fact]
     public async Task Merge_ZeroReaders_CompletesAsEmpty()
     {
         var merged = ChannelMerge.Merge<int>(Array.Empty<ChannelReader<int>>());

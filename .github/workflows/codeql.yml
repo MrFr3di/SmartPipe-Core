@@ -36,6 +36,9 @@ jobs:
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          ram: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && '16384' || '' }}
+          threads: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && '2' || '' }}
 
   cleanup-self-hosted:
     name: Cleanup self-hosted workspace

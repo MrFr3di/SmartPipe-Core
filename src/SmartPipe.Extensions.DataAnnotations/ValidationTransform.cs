@@ -53,10 +53,11 @@ public class ValidationTransform<T> : IPipelineTransformer<T, T>
         Func<T, string?>[] rules = Freeze();
         var errors = new List<string>();
         T payload = envelope.Payload!;
+        object payloadInstance = payload!;
 
         var validationResults = new List<ValidationResult>();
-        var validationContext = new ValidationContext(payload!);
-        if (!Validator.TryValidateObject(payload!, validationContext, validationResults, true))
+        var validationContext = new ValidationContext(payloadInstance);
+        if (!Validator.TryValidateObject(payloadInstance, validationContext, validationResults, true))
             errors.AddRange(validationResults.Select(r => r.ErrorMessage ?? "Validation failed"));
 
         ct.ThrowIfCancellationRequested();

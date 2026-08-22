@@ -82,6 +82,13 @@ public static class ChannelMerge
     {
         ArgumentNullException.ThrowIfNull(readers);
 
+        if (readers.Count == 0)
+        {
+            var emptyOutput = CreateOutput<T>(options);
+            emptyOutput.Writer.TryComplete();
+            return emptyOutput.Reader;
+        }
+
         var readerSnapshot = new ChannelReader<T>[readers.Count];
         for (var index = 0; index < readers.Count; index++)
         {
@@ -90,12 +97,6 @@ public static class ChannelMerge
         }
 
         var output = CreateOutput<T>(options);
-        if (readerSnapshot.Length == 0)
-        {
-            output.Writer.TryComplete();
-            return output.Reader;
-        }
-
         _ = CompleteMergeAsync(
             readerSnapshot,
             output.Writer,

@@ -3,7 +3,9 @@
 Install `SmartPipe.Extensions.DataAnnotations` for the compatibility
 `ValidationTransform<T>` and `ToFilter` APIs. Validation follows BCL
 `Validator.TryValidateObject` behavior and does not recursively walk nested object
-graphs. Custom rules freeze on initialization or first execution.
+graphs. Custom rules freeze on initialization or first execution. Value-type
+payloads are validated using one boxed instance, so DataAnnotations and custom
+`Require` rules work consistently for both reference and value types.
 
 The reflection path is marked `RequiresUnreferencedCode`; direct invocation emits
 the trimming warning and is not a NativeAOT-safe contract. A package-reference-only

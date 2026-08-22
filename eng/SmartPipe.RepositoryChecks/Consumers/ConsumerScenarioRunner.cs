@@ -23,6 +23,7 @@ internal sealed record RunConsumersOptions(
 
 internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner = null)
 {
+    private static readonly TimeSpan ExpectedDiagnosticRegexTimeout = TimeSpan.FromSeconds(1);
     private readonly DotNetProcessRunner _processRunner = processRunner ?? new();
 
     public async Task<IReadOnlyList<ConsumerScenarioResult>> RunAsync(RunConsumersOptions options, CancellationToken ct)
@@ -127,6 +128,19 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         if (scenario.Mode == ConsumerMode.BinaryCompatibility)
         {
             replacementPackageIds = CurrentSmartPipeClosure(graph, scenario.PackageIds);
+            await RefreshBinaryCompatibilityDeploymentMetadataAsync(
+                workspace,
+                project,
+                outputDirectory,
+                replacementPackageIds,
+                options.PackageDirectory,
+                options.PackageVersion,
+                externalPackageVersions,
+                externalPackageIds,
+                options.RepositoryRoot,
+                scenario.Timeout,
+                events,
+                ct).ConfigureAwait(false);
             foreach (var replacement in await ReplaceRuntimeAssembliesWithoutBuildAsync(outputDirectory, options.PackageDirectory, options.PackageVersion, replacementPackageIds, ct).ConfigureAwait(false)) events.Add(replacement);
         }
         await InspectRuntimeArtifactsAsync(outputDirectory, scenario.Mode, ct).ConfigureAwait(false);
@@ -260,11 +274,13 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         var diagnostics = Regex.Matches(
             output,
             @"^(?<path>[^\r\n]+?\.cs)\((?<line>[1-9][0-9]*),(?<column>[1-9][0-9]*)\):[^\r\n]*?\b(?<code>[A-Z]{2}[0-9]{4}):",
-            RegexOptions.Multiline | RegexOptions.CultureInvariant);
+            RegexOptions.Multiline | RegexOptions.CultureInvariant,
+            ExpectedDiagnosticRegexTimeout);
         var errors = Regex.Matches(
             output,
             @"\berror\s+(?<code>[A-Z][A-Z0-9]*[0-9]{4}):",
-            RegexOptions.CultureInvariant);
+            RegexOptions.CultureInvariant,
+            ExpectedDiagnosticRegexTimeout);
         var expectedFullPath = Path.GetFullPath(expectedSource);
         var expectedRedactedPath = DiagnosticRedactor.Redact(expectedFullPath).Replace('\\', '/');
         var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -402,6 +418,71 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         else await RunRequiredAsync("dotnet", [Path.Combine(output, name + ".dll")], output, logs, repositoryRoot, scenario.Timeout, events, ct).ConfigureAwait(false);
     }
 
+    internal async Task RefreshBinaryCompatibilityDeploymentMetadataAsync(
+        string workspace,
+        string project,
+        string outputDirectory,
+        IReadOnlyList<string> currentPackageIds,
+        string currentPackageDirectory,
+        string currentPackageVersion,
+        IReadOnlyDictionary<string, string> externalPackageVersions,
+        IReadOnlyList<string> externalPackageIds,
+        string repositoryRoot,
+        TimeSpan timeout,
+        List<ConsumerCommandEvent> events,
+        CancellationToken ct)
+    {
+        var consumerAssembly = Path.Combine(outputDirectory, Path.GetFileNameWithoutExtension(project) + ".dll");
+        if (!File.Exists(consumerAssembly))
+            throw new ConsumerScenarioException("SPCONS011", "Binary compatibility consumer assembly is missing.");
+        var beforeHash = await Hashing.Sha256FileAsync(consumerAssembly, ct).ConfigureAwait(false);
+
+        _ = await new ConsumerCentralPackagesWriter().WriteAsync(
+            workspace,
+            currentPackageIds,
+            currentPackageVersion,
+            externalPackageVersions,
+            ct).ConfigureAwait(false);
+        var config = await new LocalNuGetConfigWriter().WriteAsync(
+            workspace,
+            currentPackageDirectory,
+            ct,
+            workspace,
+            externalPackageIds).ConfigureAwait(false);
+        var source = Path.GetDirectoryName(project)!;
+        var logs = Path.Combine(workspace, "logs");
+        await RunRequiredAsync(
+            "dotnet",
+            ["restore", project, "--configfile", config, "--packages", Path.Combine(workspace, "packages"), "--use-lock-file", "--force-evaluate"],
+            source,
+            logs,
+            repositoryRoot,
+            timeout,
+            events,
+            ct).ConfigureAwait(false);
+        await RunRequiredAsync(
+            "dotnet",
+            ["msbuild", project, "-t:GenerateBuildDependencyFile", "-p:Configuration=Release"],
+            source,
+            logs,
+            repositoryRoot,
+            timeout,
+            events,
+            ct).ConfigureAwait(false);
+
+        var afterHash = await Hashing.Sha256FileAsync(consumerAssembly, ct).ConfigureAwait(false);
+        if (!string.Equals(beforeHash, afterHash, StringComparison.OrdinalIgnoreCase))
+            throw new ConsumerScenarioException("SPCONS020", "Binary compatibility deployment metadata changed the consumer assembly.");
+        events.Add(new(
+            "binary-deployment-metadata",
+            $"refresh-deps consumer-before-sha256={beforeHash} consumer-after-sha256={afterHash}",
+            0,
+            DateTimeOffset.UtcNow,
+            0,
+            "",
+            ""));
+    }
+
     private static async Task<IReadOnlyList<ConsumerCommandEvent>> ReplaceRuntimeAssembliesWithoutBuildAsync(string output, string feed, string version, IReadOnlyList<string> packageIds, CancellationToken ct)
     {
         var events = new List<ConsumerCommandEvent>();
@@ -497,8 +578,39 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         var builds = events.Select((item, index) => (item, index)).Where(x => x.item.Phase == "process" && x.item.Command.Contains(" build ", StringComparison.Ordinal)).ToArray();
         if (builds.Length != 1) throw new ConsumerScenarioException("SPCONS020", "Binary compatibility must contain exactly one build phase.");
         var buildIndex = builds[0].index;
+        var metadata = events.Select((item, index) => (item, index)).Where(x => x.item.Phase == "binary-deployment-metadata").ToArray();
+        if (metadata.Length != 1)
+            throw new ConsumerScenarioException("SPCONS020", "Binary compatibility deployment metadata evidence is incomplete.");
+        var metadataIndex = metadata[0].index;
+        var metadataFields = metadata[0].item.Command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var beforeHashes = metadataFields.Where(field => field.StartsWith("consumer-before-sha256=", StringComparison.Ordinal)).ToArray();
+        var afterHashes = metadataFields.Where(field => field.StartsWith("consumer-after-sha256=", StringComparison.Ordinal)).ToArray();
+        var beforeHash = beforeHashes.Length == 1 ? beforeHashes[0]["consumer-before-sha256=".Length..] : "";
+        var afterHash = afterHashes.Length == 1 ? afterHashes[0]["consumer-after-sha256=".Length..] : "";
+        if (beforeHash.Length != 64
+            || afterHash.Length != 64
+            || !beforeHash.All(Uri.IsHexDigit)
+            || !afterHash.All(Uri.IsHexDigit)
+            || !string.Equals(beforeHash, afterHash, StringComparison.OrdinalIgnoreCase))
+            throw new ConsumerScenarioException("SPCONS020", "Binary compatibility consumer hash evidence is invalid.");
+        var currentRestores = events.Select((item, index) => (item, index)).Where(x =>
+            x.index > buildIndex
+            && x.index < metadataIndex
+            && x.item.Phase == "process"
+            && x.item.Command.Contains(" restore ", StringComparison.Ordinal)).ToArray();
+        var dependencyFiles = events.Select((item, index) => (item, index)).Where(x =>
+            x.index > buildIndex
+            && x.index < metadataIndex
+            && x.item.Phase == "process"
+            && x.item.Command.Contains(" msbuild ", StringComparison.Ordinal)
+            && x.item.Command.Contains("-t:GenerateBuildDependencyFile", StringComparison.Ordinal)
+            && !x.item.Command.Contains("Compile", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (currentRestores.Length != 1
+            || dependencyFiles.Length != 1
+            || currentRestores[0].index >= dependencyFiles[0].index)
+            throw new ConsumerScenarioException("SPCONS020", "Binary compatibility deployment metadata commands are incomplete or unordered.");
         var replacements = events.Select((item, index) => (item, index)).Where(x => x.item.Phase == "binary-runtime-replacement").ToArray();
-        if (replacements.Length != expectedReplacements || replacements.Any(x => x.index <= buildIndex || !x.item.Command.Contains("sha256=", StringComparison.Ordinal)))
+        if (replacements.Length != expectedReplacements || replacements.Any(x => x.index <= metadataIndex || !x.item.Command.Contains("sha256=", StringComparison.Ordinal)))
             throw new ConsumerScenarioException("SPCONS020", "Binary compatibility runtime replacement evidence is incomplete or unordered.");
         var firstReplacement = replacements[0].index;
         if (events.Skip(firstReplacement).Any(x => x.Phase == "process" && (x.Command.Contains(" build ", StringComparison.Ordinal) || x.Command.Contains(" restore ", StringComparison.Ordinal))))

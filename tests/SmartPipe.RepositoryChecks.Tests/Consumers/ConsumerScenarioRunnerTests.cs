@@ -348,19 +348,75 @@ public sealed class ConsumerScenarioRunnerTests
     }
 
     [Fact]
-    public void BinaryPhaseEvidence_ProvesSingleBuildThenHashReplacementAndRunWithoutRebuild()
+    public void BinaryPhaseEvidence_ProvesSingleBuildThenDeploymentMetadataAndHashReplacement()
     {
         var now = DateTimeOffset.UtcNow;
+        var hash = new string('a', 64);
         var events = new ConsumerCommandEvent[]
         {
             new("process", "dotnet restore Consumer.csproj", 0, now, 1, "logs/a", "logs/b"),
             new("process", "dotnet build Consumer.csproj --no-restore", 0, now.AddSeconds(1), 1, "logs/c", "logs/d"),
-            new("binary-runtime-replacement", "replace-runtime package=SmartPipe.Core sha256=" + new string('a', 64), 0, now.AddSeconds(2), 0, "", ""),
-            new("process", "dotnet Consumer.dll", 0, now.AddSeconds(3), 1, "logs/e", "logs/f"),
+            new("process", "dotnet restore Consumer.csproj --use-lock-file --force-evaluate", 0, now.AddSeconds(2), 1, "logs/e", "logs/f"),
+            new("process", "dotnet msbuild Consumer.csproj -t:GenerateBuildDependencyFile -p:Configuration=Release", 0, now.AddSeconds(3), 1, "logs/g", "logs/h"),
+            new("binary-deployment-metadata", $"refresh-deps consumer-before-sha256={hash} consumer-after-sha256={hash}", 0, now.AddSeconds(4), 0, "", ""),
+            new("binary-runtime-replacement", "replace-runtime package=SmartPipe.Core sha256=" + hash, 0, now.AddSeconds(5), 0, "", ""),
+            new("process", "dotnet Consumer.dll", 0, now.AddSeconds(6), 1, "logs/i", "logs/j"),
         };
         ConsumerScenarioRunner.ValidateBinaryCompatibilityPhases(events, 1);
-        var invalid = events.Append(new("process", "dotnet build Consumer.csproj", 0, now.AddSeconds(4), 1, "logs/g", "logs/h")).ToArray();
+        var missingMetadata = events.Where(item => item.Phase != "binary-deployment-metadata").ToArray();
+        Assert.Equal("SPCONS020", Assert.Throws<ConsumerScenarioException>(() => ConsumerScenarioRunner.ValidateBinaryCompatibilityPhases(missingMetadata, 1)).Code);
+        var changedBinary = events.Select(item => item.Phase == "binary-deployment-metadata"
+            ? item with { Command = item.Command.Replace("consumer-after-sha256=" + hash, "consumer-after-sha256=" + new string('b', 64), StringComparison.Ordinal) }
+            : item).ToArray();
+        Assert.Equal("SPCONS020", Assert.Throws<ConsumerScenarioException>(() => ConsumerScenarioRunner.ValidateBinaryCompatibilityPhases(changedBinary, 1)).Code);
+        var invalid = events.Append(new("process", "dotnet build Consumer.csproj", 0, now.AddSeconds(7), 1, "logs/k", "logs/l")).ToArray();
         Assert.Equal("SPCONS020", Assert.Throws<ConsumerScenarioException>(() => ConsumerScenarioRunner.ValidateBinaryCompatibilityPhases(invalid, 1)).Code);
+    }
+
+    [Fact]
+    public async Task BinaryDeploymentMetadata_UsesCurrentRestoreAndDepsTargetWithoutChangingConsumerBinary()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var project = fixture.Write("source/Consumer.csproj", "<Project />");
+        var output = Path.Combine(fixture.Path, "source", "bin", "Release", "net10.0");
+        Directory.CreateDirectory(output);
+        var consumerAssembly = Path.Combine(output, "Consumer.dll");
+        var binary = new byte[] { 1, 3, 3, 7 };
+        await File.WriteAllBytesAsync(consumerAssembly, binary, TestContext.Current.CancellationToken);
+        var stdoutLog = fixture.Write("logs/stdout.log", string.Empty);
+        var stderrLog = fixture.Write("logs/stderr.log", string.Empty);
+        var process = new FakeProcessRunner(
+            new ProcessResult(0, string.Empty, string.Empty, stdoutLog, stderrLog),
+            new ProcessResult(0, string.Empty, string.Empty, stdoutLog, stderrLog));
+        var runner = new ConsumerScenarioRunner(new DotNetProcessRunner(process));
+        var events = new List<ConsumerCommandEvent>();
+
+        await runner.RefreshBinaryCompatibilityDeploymentMetadataAsync(
+            fixture.Path,
+            project,
+            output,
+            ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels"],
+            Path.Combine(fixture.Path, "current-feed"),
+            "2.2.0",
+            new Dictionary<string, string> { ["Microsoft.Extensions.Logging.Abstractions"] = "10.0.8" },
+            ["Microsoft.Extensions.*"],
+            fixture.Path,
+            TimeSpan.FromMinutes(1),
+            events,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            ["restore", project, "--configfile", Path.Combine(fixture.Path, "NuGet.Config"), "--packages", Path.Combine(fixture.Path, "packages"), "--use-lock-file", "--force-evaluate"],
+            process.Requests[0].Arguments);
+        Assert.Equal(
+            ["msbuild", project, "-t:GenerateBuildDependencyFile", "-p:Configuration=Release"],
+            process.Requests[1].Arguments);
+        Assert.Equal(binary, await File.ReadAllBytesAsync(consumerAssembly, TestContext.Current.CancellationToken));
+        Assert.Equal("binary-deployment-metadata", events[^1].Phase);
+        var expectedHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(binary));
+        Assert.Contains($"consumer-before-sha256={expectedHash}", events[^1].Command, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains($"consumer-after-sha256={expectedHash}", events[^1].Command, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SmartPipe.Extensions.Channels\" Version=\"2.2.0", await File.ReadAllTextAsync(Path.Combine(fixture.Path, "Directory.Packages.props"), TestContext.Current.CancellationToken), StringComparison.Ordinal);
     }
 
     [Fact]
