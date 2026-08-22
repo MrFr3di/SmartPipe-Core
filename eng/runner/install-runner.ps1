@@ -72,7 +72,8 @@ try {
     Copy-Item -LiteralPath $safetySource -Destination $safetyDestination -Force
 
     $environmentPath = Join-Path $runner '.env'
-    Write-SmartPipeEnvironment -EnvironmentPath $environmentPath -HookPath $hookDestination
+    $dotnetInstallDirectory = Join-Path $runner '_work\_tool\dotnet'
+    Write-SmartPipeEnvironment -EnvironmentPath $environmentPath -HookPath $hookDestination -DotNetInstallDirectory $dotnetInstallDirectory
     Add-SmartPipeRunnerLabel -Repository $Repository -Runner $remoteRunner -GhPath $GhPath
 
     if (-not $SkipListenerReady) {

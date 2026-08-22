@@ -34,12 +34,29 @@ function Assert-RunnerTrue {
 function Invoke-RunnerScript {
     param(
         [Parameter(Mandatory = $true)] [string] $ScriptPath,
-        [Parameter(Mandatory = $true)] [string[]] $Arguments
+        [Parameter(Mandatory = $true)] [string[]] $Arguments,
+        [string] $WorkingDirectory = ''
     )
 
-    $output = & pwsh -NoProfile -File $ScriptPath @Arguments 2>&1
+    if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+        $output = & pwsh -NoProfile -File $ScriptPath @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    else {
+        $captureId = [Guid]::NewGuid().ToString('N')
+        $stdoutPath = Join-Path ([IO.Path]::GetTempPath()) "smartpipe-runner-$captureId.out"
+        $stderrPath = Join-Path ([IO.Path]::GetTempPath()) "smartpipe-runner-$captureId.err"
+        try {
+            $process = Start-Process -FilePath pwsh -ArgumentList (@('-NoProfile', '-File', $ScriptPath) + $Arguments) -WorkingDirectory $WorkingDirectory -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -Wait -PassThru
+            $output = @((Get-Content -LiteralPath $stdoutPath -ErrorAction SilentlyContinue), (Get-Content -LiteralPath $stderrPath -ErrorAction SilentlyContinue))
+            $exitCode = $process.ExitCode
+        }
+        finally {
+            Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
+        }
+    }
     [pscustomobject]@{
-        ExitCode = $LASTEXITCODE
+        ExitCode = $exitCode
         Output = ($output | Out-String).Trim()
     }
 }
@@ -68,7 +85,7 @@ try {
     'known codeql temp' | Set-Content -LiteralPath (Join-Path $tempRoot 'CodeQL\cache.txt')
     'unrelated temp' | Set-Content -LiteralPath (Join-Path $tempRoot 'unrelated.tmp')
 
-    $cleanup = Invoke-RunnerScript -ScriptPath $cleanupScript -Arguments @(
+    $cleanup = Invoke-RunnerScript -ScriptPath $cleanupScript -WorkingDirectory $workspace -Arguments @(
         '-RunnerRoot', $runnerRoot,
         '-WorkspaceRoot', $workspace,
         '-TempRoot', $tempRoot,
@@ -252,6 +269,7 @@ UNRELATED_ENV=preserve
     Assert-RunnerEqual -Actual $installAgain.ExitCode -Expected 0 -Message 'Installer must be idempotent.'
     $environmentLines = @(Get-Content -LiteralPath $environment)
     Assert-RunnerEqual -Actual @($environmentLines | Where-Object { $_ -match '^ACTIONS_RUNNER_HOOK_JOB_COMPLETED=' }).Count -Expected 1 -Message 'Hook environment entry must be unique.'
+    Assert-RunnerEqual -Actual @($environmentLines | Where-Object { $_ -match '^DOTNET_INSTALL_DIR=' }).Count -Expected 1 -Message '.NET install directory entry must be unique.'
     Assert-RunnerEqual -Actual @($environmentLines | Where-Object { $_ -match '^SMARTPIPE_CLEANUP_LABEL=' }).Count -Expected 0 -Message 'Runner labels must not be represented by an environment marker.'
     Assert-RunnerTrue -Condition (@($environmentLines | Where-Object { $_ -eq 'UNRELATED_ENV=preserve' }).Count -eq 1) -Message 'Installer must preserve unrelated environment entries.'
     Assert-RunnerTrue -Condition (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-post-job-cleanup.ps1')) -Message 'Installer must copy the hook.'
@@ -266,7 +284,7 @@ UNRELATED_ENV=preserve
     Assert-RunnerEqual -Actual $uninstall.ExitCode -Expected 0 -Message "Uninstaller must succeed and restore one listener. $($uninstall.Output)"
     Assert-RunnerEqual -Actual ((Get-Content -LiteralPath $listenerFixture -Raw).Trim()) -Expected '1' -Message 'Uninstall must leave exactly one listener fixture.'
     $uninstalledLines = @(Get-Content -LiteralPath $environment)
-    Assert-RunnerTrue -Condition (@($uninstalledLines | Where-Object { $_ -match '^ACTIONS_RUNNER_HOOK_JOB_COMPLETED=' }).Count -eq 0) -Message 'Uninstaller must remove only owned environment entries.'
+    Assert-RunnerTrue -Condition (@($uninstalledLines | Where-Object { $_ -match '^(ACTIONS_RUNNER_HOOK_JOB_COMPLETED|DOTNET_INSTALL_DIR)=' }).Count -eq 0) -Message 'Uninstaller must remove only owned environment entries.'
     Assert-RunnerTrue -Condition (@($uninstalledLines | Where-Object { $_ -eq 'UNRELATED_ENV=preserve' }).Count -eq 1) -Message 'Uninstaller must preserve unrelated environment entries.'
     Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-post-job-cleanup.ps1'))) -Message 'Uninstaller must remove the owned hook copy.'
     $labelsAfterUninstall = @((Get-Content -LiteralPath $labelState -Raw | ConvertFrom-Json))

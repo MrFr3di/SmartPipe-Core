@@ -683,12 +683,16 @@ function Write-SmartPipeEnvironment {
         [string] $EnvironmentPath,
 
         [Parameter(Mandatory = $true)]
-        [string] $HookPath
+        [string] $HookPath,
+
+        [Parameter(Mandatory = $true)]
+        [string] $DotNetInstallDirectory
     )
 
     $lines = Get-SmartPipeOwnedEnvironment -EnvironmentPath $EnvironmentPath
     $owned = @{
         'ACTIONS_RUNNER_HOOK_JOB_COMPLETED' = $HookPath
+        'DOTNET_INSTALL_DIR' = $DotNetInstallDirectory
     }
 
     foreach ($key in $owned.Keys) {
@@ -717,7 +721,7 @@ function Remove-SmartPipeEnvironment {
     }
 
     $lines = Get-SmartPipeOwnedEnvironment -EnvironmentPath $EnvironmentPath
-    $ownedKeys = @('ACTIONS_RUNNER_HOOK_JOB_COMPLETED')
+    $ownedKeys = @('ACTIONS_RUNNER_HOOK_JOB_COMPLETED', 'DOTNET_INSTALL_DIR')
     for ($index = $lines.Count - 1; $index -ge 0; $index--) {
         foreach ($key in $ownedKeys) {
             if ($lines[$index] -match "^\s*${key}=") {

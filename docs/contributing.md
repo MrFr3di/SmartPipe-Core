@@ -107,7 +107,10 @@ other labels, stops listeners tied to the exact root, launches one hidden
 only that custom label and the owned entry/copies, preserves unrelated labels
 and `.env` lines, then performs the same bounded one-listener restart. A failed
 operation reports recovery guidance; never convert the runner to a service as
-part of this operation.
+part of this operation. The second owned `.env` entry points
+`DOTNET_INSTALL_DIR` at `_work\_tool\dotnet`, giving `actions/setup-dotnet` a
+writable persistent directory without granting access to
+`C:\Program Files\dotnet`.
 
 The post-job hook accepts only `MrFr3di/SmartPipe-Core`, verifies the checkout
 remote, and canonicalizes every target beneath the dedicated runner root. It

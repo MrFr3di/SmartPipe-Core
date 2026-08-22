@@ -21,6 +21,8 @@ try {
     }
 
     Assert-SmartPipeNoReparsePath -Path $runner -Boundary $runner
+    Set-Location -LiteralPath $runner
+    [Environment]::CurrentDirectory = $runner
 
     if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
         throw 'GITHUB_WORKSPACE is required.'
