@@ -55,6 +55,7 @@ internal sealed class ConsumerScenarioLoader
             if (scenario.PackageIds.Count == 0 || scenario.PackageIds.Any(id => !graphIds.Contains(id))) throw new ConsumerScenarioException("SPCONS006", $"Scenario '{scenario.Id}' references an unknown package ID.");
             if (scenario.Timeout <= TimeSpan.Zero || scenario.Timeout > MaximumTimeout) throw new ConsumerScenarioException("SPCONS007", $"Scenario '{scenario.Id}' timeout is outside policy.");
             if ((scenario.Mode == ConsumerMode.BinaryCompatibility) != (scenario.BaselineVersion is not null)) throw new ConsumerScenarioException("SPCONS008", $"Scenario '{scenario.Id}' baseline version contract is invalid.");
+            ValidateExpectedPublishDiagnostic(scenario, template);
             if (scenario.ExpectedSmartPipeDependencies.Any(id => !graphIds.Contains(id))) throw new ConsumerScenarioException("SPCONS006", $"Scenario '{scenario.Id}' expects an unknown package ID.");
         }
         if (requiredAtRelease.Any(id => ids.Contains(id)))
@@ -94,6 +95,47 @@ internal sealed class ConsumerScenarioLoader
 
         if (!requiredAtReleaseSet.SetEquals(graphRequiredAtRelease))
             throw new ConsumerScenarioException("SPCONS009", "requiredAtRelease must match the planned package consumer scenarios.");
+    }
+
+    private static void ValidateExpectedPublishDiagnostic(ConsumerScenario scenario, string template)
+    {
+        var expectation = scenario.ExpectedPublishDiagnostic;
+        if (expectation is null) return;
+        if (scenario.Mode is not (ConsumerMode.PublishTrimmed or ConsumerMode.PublishNativeAot)
+            || expectation.Code.Length != 6
+            || !expectation.Code.StartsWith("IL", StringComparison.Ordinal)
+            || expectation.Code.AsSpan(2).IndexOfAnyExceptInRange('0', '9') >= 0
+            || expectation.Line <= 0
+            || expectation.MsBuildProperties.Count == 0
+            || expectation.MsBuildProperties.Distinct(StringComparer.Ordinal).Count() != expectation.MsBuildProperties.Count
+            || expectation.MsBuildProperties.Any(static property => !IsNormalizedBooleanProperty(property)))
+            throw new ConsumerScenarioException("SPCONS023", $"Scenario '{scenario.Id}' has an invalid expected publish diagnostic contract.");
+
+        string source;
+        try
+        {
+            source = ResolveContained(Path.GetDirectoryName(template)!, expectation.SourcePath, "expectedPublishDiagnostic.sourcePath");
+        }
+        catch (ConsumerScenarioException exception) when (exception.Code == "SPCONS005")
+        {
+            throw new ConsumerScenarioException("SPCONS023", $"Scenario '{scenario.Id}' has an invalid expected publish diagnostic source.", exception);
+        }
+        if (!source.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+            || !File.Exists(source)
+            || (File.GetAttributes(source) & FileAttributes.ReparsePoint) != 0
+            || File.ReadLines(source).Take(expectation.Line).Count() != expectation.Line)
+            throw new ConsumerScenarioException("SPCONS023", $"Scenario '{scenario.Id}' has an invalid expected publish diagnostic source.");
+    }
+
+    private static bool IsNormalizedBooleanProperty(string property)
+    {
+        var separator = property.IndexOf('=');
+        if (separator <= 0 || separator != property.LastIndexOf('=')) return false;
+        var name = property.AsSpan(0, separator);
+        var value = property.AsSpan(separator + 1);
+        return char.IsAsciiLetter(name[0])
+            && name[1..].IndexOfAnyExcept("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.") < 0
+            && (value.SequenceEqual("true") || value.SequenceEqual("false"));
     }
 
     internal static string ResolveContained(string root, string value, string name)

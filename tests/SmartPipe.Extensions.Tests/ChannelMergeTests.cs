@@ -232,11 +232,12 @@ public class ChannelMergeTests
     }
 
     [Fact]
-    public async Task CancellationCallbackFailure_ShouldNotReplaceInputFailure()
+    public async Task CancellationCallbackFailure_IsReportedAfterPrimaryInputFailure()
     {
         var first = Channel.CreateUnbounded<int>();
+        var callbackFailure = new InvalidOperationException("cancellation callback failed");
         var second = new CancellationCallbackFailureReader<int>(
-            new InvalidOperationException("cancellation callback failed"));
+            callbackFailure);
         var expected = new InvalidOperationException("primary input failed");
         var merged = ChannelMerge.Merge(first.Reader, second);
 
@@ -244,10 +245,12 @@ public class ChannelMergeTests
         first.Writer.TryComplete(expected);
 
         var readTask = ReadAllAsync(merged);
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+        var exception = await Assert.ThrowsAsync<AggregateException>(
             () => readTask.WaitAsync(Timeout));
 
-        exception.Should().BeSameAs(expected);
+        exception.InnerExceptions[0].Should().BeSameAs(expected);
+        var callbackAggregate = exception.InnerExceptions[1].Should().BeOfType<AggregateException>().Subject;
+        callbackAggregate.InnerExceptions[0].Should().BeSameAs(callbackFailure);
     }
 
     private static async Task<List<T>> ReadAllAsync<T>(ChannelReader<T> reader)

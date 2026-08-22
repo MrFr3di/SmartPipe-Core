@@ -98,6 +98,172 @@ public sealed class ConsumerScenarioRunnerTests
     }
 
     [Fact]
+    public void ExpectedPublishDiagnostic_AppendsDeclaredPropertiesAndWarningsAsErrors()
+    {
+        var expectation = new ExpectedPublishDiagnostic
+        {
+            Code = "IL2026",
+            SourcePath = "Program.cs",
+            Line = 9,
+            MsBuildProperties = ["EnableTrimAnalyzer=true", "InvokeReflectionValidation=true"],
+        };
+
+        var arguments = ConsumerScenarioRunner.BuildExpectedDiagnosticPublishArguments(
+            ["publish", "Consumer.csproj", "--no-restore"],
+            expectation);
+
+        Assert.Equal(
+            ["publish", "Consumer.csproj", "--no-restore", "-warnaserror", "-p:EnableTrimAnalyzer=true", "-p:InvokeReflectionValidation=true"],
+            arguments);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ExpectedPublishDiagnostic_AcceptsExactConsumerCallSiteFromEitherLog(bool useStandardOutput)
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var source = fixture.Write("source/Program.cs", new string('\n', 8) + "CallRuc();\n");
+        var diagnostic = $"{source}(9,1): Trim analysis error IL2026: Using member requires unreferenced code.\n";
+        var stdout = useStandardOutput ? diagnostic : string.Empty;
+        var stderr = useStandardOutput ? string.Empty : diagnostic;
+        var result = DiagnosticResult(fixture, 1, stdout, stderr);
+
+        await ConsumerScenarioRunner.ValidateExpectedPublishDiagnosticAsync(
+            result,
+            DiagnosticExpectation(),
+            source,
+            fixture.Path,
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task ExpectedPublishDiagnostic_AcceptsExactConsumerCallSiteWithRedactedHomePath()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        Assert.False(string.IsNullOrWhiteSpace(home));
+        var source = Path.Combine(home, "SmartPipe.RepositoryChecks.Tests", Guid.NewGuid().ToString("N"), "Program.cs");
+        var reportedSource = DiagnosticRedactor.Redact(source);
+        Assert.StartsWith("<home>", reportedSource, StringComparison.Ordinal);
+        var diagnostic = $"{reportedSource}(9,1): Trim analysis error IL2026: Using member requires unreferenced code.\n";
+
+        await ConsumerScenarioRunner.ValidateExpectedPublishDiagnosticAsync(
+            DiagnosticResult(fixture, 1, diagnostic, string.Empty),
+            DiagnosticExpectation(),
+            source,
+            fixture.Path,
+            TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [InlineData("wrong-source")]
+    [InlineData("missing-boundary")]
+    [InlineData("embedded-token")]
+    public async Task ExpectedPublishDiagnostic_RejectsNonExactRedactedHomePath(string mutation)
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        Assert.False(string.IsNullOrWhiteSpace(home));
+        var source = Path.Combine(home, "SmartPipe.RepositoryChecks.Tests", Guid.NewGuid().ToString("N"), "Program.cs");
+        var reportedSource = DiagnosticRedactor.Redact(source);
+        Assert.StartsWith("<home>", reportedSource, StringComparison.Ordinal);
+        var mutatedSource = mutation switch
+        {
+            "wrong-source" => reportedSource.Replace("Program.cs", "Other.cs", StringComparison.Ordinal),
+            "missing-boundary" => reportedSource.Replace("<home>", "<home>suffix", StringComparison.Ordinal),
+            "embedded-token" => "prefix" + reportedSource,
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
+        };
+        var diagnostic = $"{mutatedSource}(9,1): Trim analysis error IL2026: Using member requires unreferenced code.\n";
+
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() =>
+            ConsumerScenarioRunner.ValidateExpectedPublishDiagnosticAsync(
+                DiagnosticResult(fixture, 1, diagnostic, string.Empty),
+                DiagnosticExpectation(),
+                source,
+                fixture.Path,
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal("SPCONS024", error.Code);
+    }
+
+    [Fact]
+    public async Task ExpectedPublishDiagnosticPhase_RunsDeclaredFailureAndRecordsItsEvent()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var source = fixture.Write("source/Program.cs", new string('\n', 8) + "CallRuc();\n");
+        var diagnostic = $"{source}(9,1): Trim analysis error IL2026: Using member requires unreferenced code.\n";
+        var stdoutLog = fixture.Write("logs/stdout.log", diagnostic);
+        var stderrLog = fixture.Write("logs/stderr.log", string.Empty);
+        var process = new FakeProcessRunner(
+            new ProcessResult(0, string.Empty, string.Empty, stdoutLog, stderrLog),
+            new ProcessResult(1, diagnostic, string.Empty, stdoutLog, stderrLog));
+        var runner = new ConsumerScenarioRunner(new DotNetProcessRunner(process));
+        var events = new List<ConsumerCommandEvent>();
+
+        await runner.RunExpectedPublishDiagnosticAsync(
+            ["restore", "Consumer.csproj", "--locked-mode"],
+            ["publish", "Consumer.csproj", "--no-restore"],
+            DiagnosticExpectation(),
+            fixture.Path,
+            Path.Combine(fixture.Path, "logs"),
+            fixture.Path,
+            source,
+            TimeSpan.FromMinutes(1),
+            events,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            ["restore", "Consumer.csproj", "--locked-mode", "-p:EnableTrimAnalyzer=true", "-p:InvokeReflectionValidation=true"],
+            process.Requests[0].Arguments);
+        Assert.Equal(
+            ["publish", "Consumer.csproj", "--no-restore", "-warnaserror", "-p:EnableTrimAnalyzer=true", "-p:InvokeReflectionValidation=true"],
+            process.Requests[1].Arguments);
+        Assert.Equal("process", events[0].Phase);
+        var command = events[1];
+        Assert.Equal("expected-publish-diagnostic", command.Phase);
+        Assert.Equal(1, command.ExitCode);
+    }
+
+    [Theory]
+    [InlineData("success", "SPCONS024")]
+    [InlineData("wrong-code", "SPCONS014")]
+    [InlineData("wrong-line", "SPCONS014")]
+    [InlineData("wrong-source", "SPCONS024")]
+    [InlineData("duplicate", "SPCONS024")]
+    [InlineData("infrastructure", "SPCONS014")]
+    [InlineData("expected-plus-infrastructure", "SPCONS014")]
+    public async Task ExpectedPublishDiagnostic_RejectsSuccessAndNonExactFailures(string mutation, string code)
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var source = fixture.Write("source/Program.cs", new string('\n', 8) + "CallRuc();\n");
+        var otherSource = fixture.Write("source/Other.cs", new string('\n', 8) + "CallRuc();\n");
+        var exact = $"{source}(9,1): Trim analysis error IL2026: Using member requires unreferenced code.\n";
+        var (exitCode, output) = mutation switch
+        {
+            "success" => (0, exact),
+            "wrong-code" => (1, exact.Replace("IL2026", "IL2055", StringComparison.Ordinal)),
+            "wrong-line" => (1, exact.Replace("(9,1)", "(8,1)", StringComparison.Ordinal)),
+            "wrong-source" => (1, exact.Replace(source, otherSource, StringComparison.Ordinal)),
+            "duplicate" => (1, exact + exact),
+            "infrastructure" => (1, "error NETSDK1047: Assets file has no target.\n"),
+            "expected-plus-infrastructure" => (1, exact + "error NETSDK1047: Assets file has no target.\n"),
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
+        };
+
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() =>
+            ConsumerScenarioRunner.ValidateExpectedPublishDiagnosticAsync(
+                DiagnosticResult(fixture, exitCode, output, string.Empty),
+                DiagnosticExpectation(),
+                source,
+                fixture.Path,
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(code, error.Code);
+    }
+
+    [Fact]
     public void SuccessfulConsumerResult_SerializesWithSchemaVersionOneShape()
     {
         var result = new ConsumerScenarioResult(
@@ -198,6 +364,24 @@ public sealed class ConsumerScenarioRunnerTests
     }
 
     [Fact]
+    public async Task BinaryReplacementClosure_IncludesCurrentFacadeForwardingDependencies()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var graph = await new SmartPipe.RepositoryChecks.PackageGraph.PackageGraphLoader().LoadAsync(
+            root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+
+        var closure = ConsumerScenarioRunner.CurrentSmartPipeClosure(
+            graph, ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Json"]);
+
+        Assert.Equal(
+            ["SmartPipe.Core", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms",
+             "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection",
+             "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json",
+             "SmartPipe.Extensions.Logging", "SmartPipe.Extensions"],
+            closure);
+    }
+
+    [Fact]
     public void Redact_RemovesUserInfoQueryAndCredentials()
     {
         var redacted = DotNetProcessRunner.Redact("https://user:pass@example.test/v3/index.json?token=secret password=hunter2");
@@ -252,5 +436,20 @@ public sealed class ConsumerScenarioRunnerTests
         var root = output.Parent!.Parent!.Parent!.Parent!.Parent!.FullName;
         return Path.Combine(root, "tests", "SmartPipe.RepositoryChecks.ProcessFixture", "bin", configuration, "net10.0",
             "SmartPipe.RepositoryChecks.ProcessFixture" + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
+    }
+
+    private static ExpectedPublishDiagnostic DiagnosticExpectation() => new()
+    {
+        Code = "IL2026",
+        SourcePath = "Program.cs",
+        Line = 9,
+        MsBuildProperties = ["EnableTrimAnalyzer=true", "InvokeReflectionValidation=true"],
+    };
+
+    private static DotNetProcessResult DiagnosticResult(RepositoryTestDirectory fixture, int exitCode, string stdout, string stderr)
+    {
+        var stdoutLog = fixture.Write("logs/stdout.log", stdout);
+        var stderrLog = fixture.Write("logs/stderr.log", stderr);
+        return new(exitCode, stdout, stderr, stdoutLog, stderrLog, "dotnet publish", DateTimeOffset.UnixEpoch, 1);
     }
 }

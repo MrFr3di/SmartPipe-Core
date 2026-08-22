@@ -16,10 +16,10 @@ public sealed class PackPackagesCommandTests
         var manifest = await new PackPackagesCommand(runner).ExecuteAsync(new(
             fixture.Path, PackageGraphMode.Current, "Release", "2.2.0",
             Path.Combine(fixture.Path, "artifacts/packages"), Path.Combine(fixture.Path, "artifacts/packages/manifest.json")), TestContext.Current.CancellationToken);
-        Assert.Equal(["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions", "SmartPipe.Extensions.HealthChecks", "SmartPipe.Extensions.OpenTelemetry"], manifest.Packages.Select(x => x.Id));
-        Assert.Equal([1, 14, 16, 5, 19, 17, 15], manifest.Packages.Select(x => x.PublishOrder));
+        Assert.Equal(["SmartPipe.Core", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions", "SmartPipe.Extensions.HealthChecks", "SmartPipe.Extensions.OpenTelemetry"], manifest.Packages.Select(x => x.Id));
+        Assert.Equal([1, 2, 3, 18, 14, 16, 5, 4, 19, 17, 15], manifest.Packages.Select(x => x.PublishOrder));
         Assert.All(manifest.Packages, item => { Assert.Equal(64, item.NupkgSha256.Length); Assert.Equal(64, item.SnupkgSha256.Length); Assert.DoesNotContain('\\', item.NupkgPath); });
-        Assert.Equal(7, runner.Requests.Count);
+        Assert.Equal(11, runner.Requests.Count);
         Assert.All(runner.Requests, request =>
         {
             Assert.Equal("dotnet", request.FileName); Assert.Equal(fixture.Path, request.WorkingDirectory);
@@ -38,6 +38,10 @@ public sealed class PackPackagesCommandTests
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         fixture.Write("eng/package-graph.json", File.ReadAllText(Path.Combine(root, "eng/package-graph.json")));
         fixture.Write("src/SmartPipe.Core/SmartPipe.Core.csproj", "<Project />");
+        fixture.Write("src/SmartPipe.Extensions.Channels/SmartPipe.Extensions.Channels.csproj", "<Project />");
+        fixture.Write("src/SmartPipe.Extensions.Transforms/SmartPipe.Extensions.Transforms.csproj", "<Project />");
+        fixture.Write("src/SmartPipe.Extensions.Logging/SmartPipe.Extensions.Logging.csproj", "<Project />");
+        fixture.Write("src/SmartPipe.Extensions.DataAnnotations/SmartPipe.Extensions.DataAnnotations.csproj", "<Project />");
         fixture.Write("src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj", "<Project />");
         fixture.Write("src/SmartPipe.Extensions.DependencyInjection/SmartPipe.Extensions.DependencyInjection.csproj", "<Project />");
         fixture.Write("src/SmartPipe.Extensions.Hosting/SmartPipe.Extensions.Hosting.csproj", "<Project />");

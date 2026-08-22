@@ -1,9 +1,6 @@
 {
   "schemaVersion": 1,
   "requiredAtRelease": [
-    "channels-direct",
-    "transforms-direct",
-    "logging-direct",
     "csv-direct",
     "dapper-direct",
     "entity-framework-core-direct",
@@ -11,8 +8,7 @@
     "polly-direct",
     "http-direct",
     "testing-direct",
-    "http-json-direct",
-    "data-annotations-direct"
+    "http-json-direct"
   ],
   "scenarios": [
     {
@@ -45,7 +41,7 @@
       "mode": "build-and-run",
       "templatePath": "tests/Consumers/Scenarios/extensions-meta/Consumer.csproj",
       "packageIds": ["SmartPipe.Extensions"],
-      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json"],
       "forbiddenDependencies": [],
       "baselineVersion": null,
       "timeout": "00:05:00",
@@ -141,7 +137,7 @@
       "mode": "build-and-run",
       "templatePath": "tests/Consumers/Scenarios/dependency-injection-facade-source/Consumer.csproj",
       "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions"],
-      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json"],
       "forbiddenDependencies": [],
       "baselineVersion": null,
       "timeout": "00:05:00",
@@ -203,7 +199,7 @@
       "mode": "build-and-run",
       "templatePath": "tests/Consumers/Scenarios/hosting-facade-source/Consumer.csproj",
       "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions"],
-      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json"],
       "forbiddenDependencies": [],
       "baselineVersion": null,
       "timeout": "00:05:00",
@@ -333,7 +329,7 @@
       "mode": "build-and-run",
       "templatePath": "tests/Consumers/Scenarios/opentelemetry-facade/Consumer.csproj",
       "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.OpenTelemetry"],
-      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.OpenTelemetry"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.OpenTelemetry"],
       "forbiddenDependencies": ["SmartPipe.Extensions.HealthChecks"],
       "baselineVersion": null,
       "timeout": "00:05:00",
@@ -363,6 +359,77 @@
       "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.HealthChecks"],
       "baselineVersion": null,
       "timeout": "00:15:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "channels-direct",
+      "set": "current",
+      "category": "sp220-07",
+      "mode": "publish-native-aot",
+      "templatePath": "tests/Consumers/Scenarios/channels-direct/Consumer.csproj",
+      "packageIds": ["SmartPipe.Extensions.Channels"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.Channels"],
+      "forbiddenDependencies": ["SmartPipe.Extensions"],
+      "baselineVersion": null,
+      "timeout": "00:15:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "transforms-direct",
+      "set": "current",
+      "category": "sp220-07",
+      "mode": "publish-native-aot",
+      "templatePath": "tests/Consumers/Scenarios/transforms-direct/Consumer.csproj",
+      "packageIds": ["SmartPipe.Extensions.Transforms"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.Transforms"],
+      "forbiddenDependencies": ["SmartPipe.Extensions"],
+      "baselineVersion": null,
+      "timeout": "00:15:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "logging-direct",
+      "set": "current",
+      "category": "sp220-07",
+      "mode": "publish-native-aot",
+      "templatePath": "tests/Consumers/Scenarios/logging-direct/Consumer.csproj",
+      "packageIds": ["SmartPipe.Extensions.Logging"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.Logging"],
+      "forbiddenDependencies": ["SmartPipe.Extensions"],
+      "baselineVersion": null,
+      "timeout": "00:15:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "data-annotations-direct",
+      "set": "current",
+      "category": "sp220-07",
+      "mode": "publish-trimmed",
+      "templatePath": "tests/Consumers/Scenarios/data-annotations-direct/Consumer.csproj",
+      "packageIds": ["SmartPipe.Extensions.DataAnnotations"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.DataAnnotations"],
+      "forbiddenDependencies": ["SmartPipe.Extensions"],
+      "baselineVersion": null,
+      "expectedPublishDiagnostic": {
+        "code": "IL2026",
+        "sourcePath": "Program.cs",
+        "line": 9,
+        "msBuildProperties": ["EnableTrimAnalyzer=true", "InvokeReflectionValidation=true"]
+      },
+      "timeout": "00:10:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "data-annotations-runtime",
+      "set": "current",
+      "category": "sp220-07",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/data-annotations-runtime/Consumer.csproj",
+      "packageIds": ["SmartPipe.Extensions.DataAnnotations"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.DataAnnotations"],
+      "forbiddenDependencies": ["SmartPipe.Extensions"],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
       "runSecondLockedRestore": true
     }
   ]

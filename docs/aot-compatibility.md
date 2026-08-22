@@ -72,3 +72,8 @@ Database helpers have source-safe paths:
 
 The runtime does not add hidden persistence, dynamic plugin loading, or source
 materialization for replay.
+
+Channels, reflection-free Transforms rules, and the safe Logging options path are
+trim and NativeAOT consumer-tested. `ValidationTransform<T>.TransformAsync` and
+`ToFilter` are explicitly `RequiresUnreferencedCode`; use
+`RuleValidationTransform<T>` instead when publishing trimmed or NativeAOT code.

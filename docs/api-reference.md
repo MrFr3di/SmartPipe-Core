@@ -69,10 +69,12 @@ and `ToFactory` throw on instance pipelines; use `.Transform(instance)` and
 `JsonFileSink<T>`, `DeadLetterSink<T>`, `DeadLetterWriteFailureMode`,
 `DeadLetterWriteException`, and `JsonTransform<TInput,TOutput>`.
 
-`SmartPipe.Extensions` provides the remaining typed selectors, transforms,
-sinks, DI registration, hosted service integration, and health-check support.
-Version 2.1.2 forwards the JSON types to the dedicated package for 2.x
-compatibility; namespaces and public signatures are unchanged.
+`SmartPipe.Extensions.Channels`, `.Transforms`, `.Logging`, and
+`.DataAnnotations` own the SP220-07 implementations. `SmartPipe.Extensions`
+references those leaves and forwards the shipped type identities; namespaces and
+public signatures remain unchanged. Install a leaf directly for narrow dependency
+closure. See [Channels](channels.md), [Transforms](transforms.md),
+[Logging](logging.md), and [DataAnnotations](data-annotations.md).
 
 - Factory-created `PipelineRun<TOutput>` instances preserve runtime controls, structured drain, and metrics while adding DI scope lifetime management.
 

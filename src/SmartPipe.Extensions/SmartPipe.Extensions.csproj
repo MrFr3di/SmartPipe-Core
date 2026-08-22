@@ -19,6 +19,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SmartPipe.Core\SmartPipe.Core.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.Channels\SmartPipe.Extensions.Channels.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.Transforms\SmartPipe.Extensions.Transforms.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.Logging\SmartPipe.Extensions.Logging.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.DataAnnotations\SmartPipe.Extensions.DataAnnotations.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.DependencyInjection\SmartPipe.Extensions.DependencyInjection.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Hosting\SmartPipe.Extensions.Hosting.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Json\SmartPipe.Extensions.Json.csproj" />

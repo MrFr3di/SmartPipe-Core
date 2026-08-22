@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using SmartPipe.RepositoryChecks.Baselines;
 using SmartPipe.RepositoryChecks.Infrastructure;
@@ -47,13 +48,14 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         var externalPackageIds = await ReadExternalPackageIdsAsync(options.RepositoryRoot, ct).ConfigureAwait(false);
         var results = new List<ConsumerScenarioResult>();
-        foreach (var scenario in scenarios) results.Add(await RunScenarioAsync(options, scenario, externalPackageVersions, externalPackageIds, ct).ConfigureAwait(false));
+        foreach (var scenario in scenarios) results.Add(await RunScenarioAsync(options, scenario, graph, externalPackageVersions, externalPackageIds, ct).ConfigureAwait(false));
         return results;
     }
 
     private async Task<ConsumerScenarioResult> RunScenarioAsync(
         RunConsumersOptions options,
         ConsumerScenario scenario,
+        PackageGraphDocument graph,
         IReadOnlyDictionary<string, string> externalPackageVersions,
         IReadOnlyList<string> externalPackageIds,
         CancellationToken ct)
@@ -93,6 +95,8 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         var restore = new List<string> { "restore", project, "--configfile", config, "--packages", packages, "--use-lock-file" };
         if (scenario.Mode is ConsumerMode.PublishTrimmed or ConsumerMode.PublishNativeAot) { restore.Add("-r"); restore.Add(rid); }
         if (scenario.Mode == ConsumerMode.PublishNativeAot) restore.Add("-p:PublishAot=true");
+        if (scenario.ExpectedPublishDiagnostic is { } restoreExpectation)
+            restore.AddRange(restoreExpectation.MsBuildProperties.Select(static property => "-p:" + property));
         await RunRequiredAsync("dotnet", restore, source, logs, options.RepositoryRoot, scenario.Timeout, events, ct).ConfigureAwait(false);
         if (scenario.RunSecondLockedRestore)
         {
@@ -101,11 +105,13 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         }
 
         string outputDirectory;
+        IReadOnlyList<string>? publishArguments = null;
         if (scenario.Mode is ConsumerMode.PublishTrimmed or ConsumerMode.PublishNativeAot)
         {
             outputDirectory = Path.Combine(workspace, "publish");
             var publish = new List<string> { "publish", project, "-c", "Release", "-r", rid, "--self-contained", "true", "--no-restore", "-o", outputDirectory, "-p:PublishTrimmed=true", "-p:TrimMode=link" };
             if (scenario.Mode == ConsumerMode.PublishNativeAot) publish.Add("-p:PublishAot=true");
+            publishArguments = publish;
             await RunRequiredAsync("dotnet", publish, source, logs, options.RepositoryRoot, scenario.Timeout, events, ct).ConfigureAwait(false);
         }
         else
@@ -117,11 +123,34 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         var assets = Path.Combine(source, "obj", "project.assets.json");
         if (!File.Exists(assets)) throw new ConsumerScenarioException("SPCONS011", $"Scenario '{scenario.Id}' did not produce project.assets.json.");
         var observed = await InspectDependenciesAsync(assets, scenario, ct).ConfigureAwait(false);
+        IReadOnlyList<string> replacementPackageIds = scenario.PackageIds;
         if (scenario.Mode == ConsumerMode.BinaryCompatibility)
-            foreach (var replacement in await ReplaceRuntimeAssembliesWithoutBuildAsync(outputDirectory, options.PackageDirectory, options.PackageVersion, scenario.PackageIds, ct).ConfigureAwait(false)) events.Add(replacement);
+        {
+            replacementPackageIds = CurrentSmartPipeClosure(graph, scenario.PackageIds);
+            foreach (var replacement in await ReplaceRuntimeAssembliesWithoutBuildAsync(outputDirectory, options.PackageDirectory, options.PackageVersion, replacementPackageIds, ct).ConfigureAwait(false)) events.Add(replacement);
+        }
         await InspectRuntimeArtifactsAsync(outputDirectory, scenario.Mode, ct).ConfigureAwait(false);
         await ExecuteAsync(outputDirectory, project, scenario, logs, options.RepositoryRoot, events, ct).ConfigureAwait(false);
-        if (scenario.Mode == ConsumerMode.BinaryCompatibility) ValidateBinaryCompatibilityPhases(events, scenario.PackageIds.Count);
+        if (scenario.ExpectedPublishDiagnostic is { } expectation)
+        {
+            var diagnosticRestore = restore.ToList();
+            diagnosticRestore.Remove("--use-lock-file");
+            diagnosticRestore.Add("--locked-mode");
+            var diagnosticPublish = publishArguments!.ToList();
+            diagnosticPublish[diagnosticPublish.IndexOf("-o") + 1] = Path.Combine(workspace, "expected-diagnostic-publish");
+            await RunExpectedPublishDiagnosticAsync(
+                diagnosticRestore,
+                diagnosticPublish,
+                expectation,
+                source,
+                logs,
+                options.RepositoryRoot,
+                Path.GetFullPath(expectation.SourcePath, Path.GetDirectoryName(project)!),
+                scenario.Timeout,
+                events,
+                ct).ConfigureAwait(false);
+        }
+        if (scenario.Mode == ConsumerMode.BinaryCompatibility) ValidateBinaryCompatibilityPhases(events, replacementPackageIds.Count);
 
         var result = new ConsumerScenarioResult(1, scenario.Id, "passed", options.PackageVersion, scenario.RunSecondLockedRestore,
             started.ElapsedMilliseconds, observed, events);
@@ -164,6 +193,112 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         events.Add(new("process", result.Command, result.ExitCode, result.StartedUtc, result.DurationMs, Normalize(result.StandardOutputLog, cwd), Normalize(result.StandardErrorLog, cwd)));
         if (result.ExitCode != 0) throw BuildProcessFailure(result, repositoryRoot);
         return result;
+    }
+
+    internal static IReadOnlyList<string> BuildExpectedDiagnosticPublishArguments(
+        IReadOnlyList<string> publishArguments,
+        ExpectedPublishDiagnostic expectation)
+    {
+        var arguments = publishArguments.ToList();
+        arguments.Add("-warnaserror");
+        arguments.AddRange(expectation.MsBuildProperties.Select(static property => "-p:" + property));
+        return arguments;
+    }
+
+    internal async Task RunExpectedPublishDiagnosticAsync(
+        IReadOnlyList<string> restoreArguments,
+        IReadOnlyList<string> publishArguments,
+        ExpectedPublishDiagnostic expectation,
+        string cwd,
+        string logs,
+        string repositoryRoot,
+        string expectedSource,
+        TimeSpan timeout,
+        List<ConsumerCommandEvent> events,
+        CancellationToken ct)
+    {
+        var restore = restoreArguments.ToList();
+        foreach (var property in expectation.MsBuildProperties.Select(static property => "-p:" + property))
+            if (!restore.Contains(property, StringComparer.Ordinal)) restore.Add(property);
+        await RunRequiredAsync("dotnet", restore, cwd, logs, repositoryRoot, timeout, events, ct).ConfigureAwait(false);
+        var arguments = BuildExpectedDiagnosticPublishArguments(publishArguments, expectation);
+        var result = await _processRunner.RunAsync(new("dotnet", arguments, cwd, logs, timeout), ct).ConfigureAwait(false);
+        events.Add(new(
+            "expected-publish-diagnostic",
+            result.Command,
+            result.ExitCode,
+            result.StartedUtc,
+            result.DurationMs,
+            Normalize(result.StandardOutputLog, cwd),
+            Normalize(result.StandardErrorLog, cwd)));
+        await ValidateExpectedPublishDiagnosticAsync(result, expectation, expectedSource, repositoryRoot, ct).ConfigureAwait(false);
+    }
+
+    internal static async Task ValidateExpectedPublishDiagnosticAsync(
+        DotNetProcessResult result,
+        ExpectedPublishDiagnostic expectation,
+        string expectedSource,
+        string repositoryRoot,
+        CancellationToken ct)
+    {
+        if (result.ExitCode == 0)
+            throw new ConsumerScenarioException("SPCONS024", $"Expected publish diagnostic {expectation.Code} was not emitted.");
+
+        var root = Path.GetFullPath(repositoryRoot);
+        var stdoutLog = Path.GetFullPath(result.StandardOutputLog);
+        var stderrLog = Path.GetFullPath(result.StandardErrorLog);
+        EnsureContained(root, stdoutLog);
+        EnsureContained(root, stderrLog);
+        if (!File.Exists(stdoutLog) || !File.Exists(stderrLog)
+            || (File.GetAttributes(stdoutLog) & FileAttributes.ReparsePoint) != 0
+            || (File.GetAttributes(stderrLog) & FileAttributes.ReparsePoint) != 0)
+            throw new ConsumerScenarioException("SPCONS009", "Expected diagnostic evidence logs are invalid.");
+
+        var output = await File.ReadAllTextAsync(stdoutLog, ct).ConfigureAwait(false)
+            + "\n"
+            + await File.ReadAllTextAsync(stderrLog, ct).ConfigureAwait(false);
+        var diagnostics = Regex.Matches(
+            output,
+            @"^(?<path>[^\r\n]+?\.cs)\((?<line>[1-9][0-9]*),(?<column>[1-9][0-9]*)\):[^\r\n]*?\b(?<code>[A-Z]{2}[0-9]{4}):",
+            RegexOptions.Multiline | RegexOptions.CultureInvariant);
+        var errors = Regex.Matches(
+            output,
+            @"\berror\s+(?<code>[A-Z][A-Z0-9]*[0-9]{4}):",
+            RegexOptions.CultureInvariant);
+        var expectedFullPath = Path.GetFullPath(expectedSource);
+        var expectedRedactedPath = DiagnosticRedactor.Redact(expectedFullPath).Replace('\\', '/');
+        var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var matchingCodeAndLine = diagnostics.Cast<Match>().Count(match =>
+            match.Groups["code"].Value == expectation.Code
+            && int.Parse(match.Groups["line"].Value, System.Globalization.CultureInfo.InvariantCulture) == expectation.Line);
+        var matching = diagnostics.Cast<Match>().Count(match =>
+        {
+            var reported = match.Groups["path"].Value.Trim();
+            var sourceMatches = reported.StartsWith("<home>/", StringComparison.Ordinal)
+                || reported.StartsWith("<home>\\", StringComparison.Ordinal)
+                    ? string.Equals(reported.Replace('\\', '/'), expectedRedactedPath, pathComparison)
+                    : string.Equals(
+                        Path.IsPathFullyQualified(reported)
+                            ? Path.GetFullPath(reported)
+                            : Path.GetFullPath(reported, Path.GetDirectoryName(expectedFullPath)!),
+                        expectedFullPath,
+                        pathComparison);
+            return sourceMatches
+                && match.Groups["code"].Value == expectation.Code
+                && int.Parse(match.Groups["line"].Value, System.Globalization.CultureInfo.InvariantCulture) == expectation.Line;
+        });
+        if (matching == 1
+            && diagnostics.Count == 1
+            && errors.Count == 1
+            && errors[0].Groups["code"].Value == expectation.Code) return;
+        if (matching > 1)
+            throw new ConsumerScenarioException("SPCONS024", $"Expected publish diagnostic {expectation.Code} was emitted more than once.");
+        if (matchingCodeAndLine == 1
+            && diagnostics.Count == 1
+            && errors.Count == 1
+            && errors[0].Groups["code"].Value == expectation.Code)
+            throw new ConsumerScenarioException("SPCONS024", $"Expected publish diagnostic {expectation.Code} was emitted from an unexpected source.");
+        throw BuildProcessFailure(result, repositoryRoot);
     }
 
     internal static ConsumerScenarioException BuildProcessFailure(DotNetProcessResult result, string repositoryRoot)
@@ -279,6 +414,34 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             events.Add(new("binary-runtime-replacement", $"replace-runtime package={id} sha256={hash}", 0, DateTimeOffset.UtcNow, 0, "", ""));
         }
         return events;
+    }
+
+    internal static IReadOnlyList<string> CurrentSmartPipeClosure(
+        PackageGraphDocument graph,
+        IReadOnlyList<string> packageIds)
+    {
+        var nodes = graph.Packages.ToDictionary(package => package.Id, StringComparer.OrdinalIgnoreCase);
+        var closure = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void Visit(string packageId)
+        {
+            if (!closure.Add(packageId))
+                return;
+
+            if (nodes.TryGetValue(packageId, out var package))
+                foreach (var dependency in package.CurrentDependencies.RequiredSmartPipePackages)
+                    Visit(dependency);
+        }
+
+        foreach (var packageId in packageIds)
+            Visit(packageId);
+
+        return TopologicalPackageSorter.Sort(closure.ToDictionary(
+            packageId => packageId,
+            packageId => (IReadOnlyList<string>)(nodes.TryGetValue(packageId, out var package)
+                ? package.CurrentDependencies.RequiredSmartPipePackages.Where(closure.Contains).ToArray()
+                : []),
+            StringComparer.OrdinalIgnoreCase));
     }
 
     internal static async Task ExtractValidatedEntryAsync(

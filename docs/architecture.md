@@ -33,14 +33,20 @@ Factory-based DI registration creates a new scope and new runtime per run.
 SmartPipe.Core
     ↑
     ├── SmartPipe.Extensions.Json
+    ├── SmartPipe.Extensions.Channels
+    ├── SmartPipe.Extensions.Transforms ← SmartPipe.Extensions.DataAnnotations
+    ├── SmartPipe.Extensions.Logging
     └── SmartPipe.Extensions
-            └── SmartPipe.Extensions.Json (2.x compatibility bridge)
+            └── leaf packages (2.x compatibility forwarding)
 ```
 
 `SmartPipe.Extensions.Json` owns JSON file, transform, and JSON dead-letter
 implementations. It must never reference `SmartPipe.Extensions`.
 `SmartPipe.Extensions` 2.1.2 references the JSON package only to preserve the
 2.x type-forwarding contract.
+
+SP220-07 applies the same single-implementation boundary to Channels, Transforms,
+Logging, and DataAnnotations. Leaves never reference the facade.
 
 Core permanently owns `DeadLetterEnvelope<T>`, `IDeadLetterSerializer<T>`, and
 the standard `JsonLinesDeadLetterSerializer<T>` codec reused by the JSON source
