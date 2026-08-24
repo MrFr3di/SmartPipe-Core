@@ -111,14 +111,18 @@ part of this operation. The second owned `.env` entry points
 `DOTNET_INSTALL_DIR` at `_work\_tool\dotnet`, giving `actions/setup-dotnet` a
 writable persistent directory without granting access to
 `C:\Program Files\dotnet`.
+The hook entry is `ACTIONS_RUNNER_HOOK_JOB_STARTED`; upgrades remove the legacy
+`ACTIONS_RUNNER_HOOK_JOB_COMPLETED` entry and hook copy before writing the new
+owned state.
 
-The post-job hook accepts only `MrFr3di/SmartPipe-Core`, verifies the checkout
+The job-start hook accepts only `MrFr3di/SmartPipe-Core`, verifies the checkout
 remote, and canonicalizes every target beneath the dedicated runner root. It
-removes the exact checkout and the known `SmartPipe.Core`, `SmartPipe-Core`,
-`CodeQL`, and `codeql` directories below `RUNNER_TEMP`. Missing targets are
-successful. Any outside path, broad root, reparse point, unsafe repository, or
-deletion error fails closed before removal; the existing workflow cleanup jobs
-remain as defense in depth.
+runs before the next job starts, after the runner has completed the previous
+job's process cleanup, and removes the exact prior checkout plus the known
+`SmartPipe.Core`, `SmartPipe-Core`, `CodeQL`, and `codeql` directories below
+`RUNNER_TEMP`. Missing targets are successful. Any outside path, broad root,
+reparse point, unsafe repository, or deletion error fails closed before
+removal; the existing workflow cleanup jobs remain as defense in depth.
 
 For a compact, transition-only pull-request view:
 

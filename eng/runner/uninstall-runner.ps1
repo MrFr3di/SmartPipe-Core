@@ -33,7 +33,7 @@ try {
     Remove-SmartPipeEnvironment -EnvironmentPath $environmentPath
 
     $hookDirectory = Join-Path $runner 'hooks'
-    foreach ($name in @('smartpipe-post-job-cleanup.ps1', 'runner-safety.ps1')) {
+    foreach ($name in @('smartpipe-job-start-cleanup.ps1', 'smartpipe-post-job-cleanup.ps1', 'runner-safety.ps1')) {
         $path = Join-Path $hookDirectory $name
         if (Test-Path -LiteralPath $path) {
             Assert-SmartPipeNoReparsePath -Path $path -Boundary $runner

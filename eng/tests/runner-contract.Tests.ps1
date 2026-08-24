@@ -3,7 +3,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $runnerScriptRoot = Join-Path $PSScriptRoot '..\runner'
-$cleanupScript = [IO.Path]::GetFullPath((Join-Path $runnerScriptRoot 'post-job-cleanup.ps1'))
+$jobStartScript = [IO.Path]::GetFullPath((Join-Path $runnerScriptRoot 'job-start-cleanup.ps1'))
 $installScript = [IO.Path]::GetFullPath((Join-Path $runnerScriptRoot 'install-runner.ps1'))
 $uninstallScript = [IO.Path]::GetFullPath((Join-Path $runnerScriptRoot 'uninstall-runner.ps1'))
 $monitorScript = [IO.Path]::GetFullPath((Join-Path $runnerScriptRoot 'monitor-pr.ps1'))
@@ -85,14 +85,14 @@ try {
     'known codeql temp' | Set-Content -LiteralPath (Join-Path $tempRoot 'CodeQL\cache.txt')
     'unrelated temp' | Set-Content -LiteralPath (Join-Path $tempRoot 'unrelated.tmp')
 
-    $cleanup = Invoke-RunnerScript -ScriptPath $cleanupScript -WorkingDirectory $workspace -Arguments @(
+    $cleanup = Invoke-RunnerScript -ScriptPath $jobStartScript -WorkingDirectory $workspace -Arguments @(
         '-RunnerRoot', $runnerRoot,
         '-WorkspaceRoot', $workspace,
         '-TempRoot', $tempRoot,
         '-Repository', 'MrFr3di/SmartPipe-Core',
         '-AllowTestRoot'
     )
-    Assert-RunnerEqual -Actual $cleanup.ExitCode -Expected 0 -Message "Post-job cleanup must succeed for a valid checkout. $($cleanup.Output)"
+    Assert-RunnerEqual -Actual $cleanup.ExitCode -Expected 0 -Message "Job-start cleanup must succeed for a valid checkout. $($cleanup.Output)"
     Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath $workspace)) -Message 'The exact checkout must be removed.'
     Assert-RunnerTrue -Condition (Test-Path -LiteralPath (Join-Path $toolRoot 'preserve.txt')) -Message '_tool must be preserved.'
     Assert-RunnerTrue -Condition (Test-Path -LiteralPath (Join-Path $sibling 'preserve.txt')) -Message 'Sibling repositories must be preserved.'
@@ -101,7 +101,7 @@ try {
     Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $tempRoot 'CodeQL'))) -Message 'Known CodeQL temp must be removed.'
 
     $absentWorkspace = Join-Path $runnerRoot '_work\SmartPipe.Core\absent'
-    $absent = Invoke-RunnerScript -ScriptPath $cleanupScript -Arguments @(
+    $absent = Invoke-RunnerScript -ScriptPath $jobStartScript -Arguments @(
         '-RunnerRoot', $runnerRoot,
         '-WorkspaceRoot', $absentWorkspace,
         '-TempRoot', $tempRoot,
@@ -118,7 +118,7 @@ try {
 [remote "upstream"]
     url = https://github.com/MrFr3di/SmartPipe-Core.git
 '@ | Set-Content -LiteralPath (Join-Path $workspace '.git\config')
-    $wrongRepo = Invoke-RunnerScript -ScriptPath $cleanupScript -Arguments @(
+    $wrongRepo = Invoke-RunnerScript -ScriptPath $jobStartScript -Arguments @(
         '-RunnerRoot', $runnerRoot,
         '-WorkspaceRoot', $workspace,
         '-TempRoot', $tempRoot,
@@ -130,7 +130,7 @@ try {
 
     $outside = Join-Path $fixture 'outside'
     New-Item -ItemType Directory -Path $outside -Force | Out-Null
-    $outsideResult = Invoke-RunnerScript -ScriptPath $cleanupScript -Arguments @(
+    $outsideResult = Invoke-RunnerScript -ScriptPath $jobStartScript -Arguments @(
         '-RunnerRoot', $runnerRoot,
         '-WorkspaceRoot', $outside,
         '-TempRoot', $tempRoot,
@@ -155,7 +155,7 @@ try {
         Write-Output 'Runner contract: symbolic-link fixture unavailable; reparse refusal remains covered by workflow cleanup contracts.'
     }
     if ($reparseCreated) {
-        $reparse = Invoke-RunnerScript -ScriptPath $cleanupScript -Arguments @(
+        $reparse = Invoke-RunnerScript -ScriptPath $jobStartScript -Arguments @(
             '-RunnerRoot', $runnerRoot,
             '-WorkspaceRoot', $workspace,
             '-TempRoot', $tempRoot,
@@ -217,7 +217,10 @@ elseif ($null -eq $response) {
     $environment = Join-Path $runnerRoot '.env'
 @'
 UNRELATED_ENV=preserve
+ACTIONS_RUNNER_HOOK_JOB_COMPLETED=C:\legacy\smartpipe-post-job-cleanup.ps1
 '@ | Set-Content -LiteralPath $environment
+    New-Item -ItemType Directory -Path (Join-Path $runnerRoot 'hooks') -Force | Out-Null
+    'legacy hook' | Set-Content -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-post-job-cleanup.ps1')
 
     New-Item -ItemType File -Path $queuedFlag -Force | Out-Null
     $queuedInstall = Invoke-RunnerScript -ScriptPath $installScript -Arguments @(
@@ -229,7 +232,7 @@ UNRELATED_ENV=preserve
         '-AllowTestRoot'
     )
     Assert-RunnerTrue -Condition ($queuedInstall.ExitCode -ne 0) -Message "Installer must refuse queued Actions runs before mutation. $($queuedInstall.Output)"
-    Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-post-job-cleanup.ps1'))) -Message 'Queued-run refusal must not copy the hook.'
+    Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-job-start-cleanup.ps1'))) -Message 'Queued-run refusal must not copy the hook.'
     Remove-Item -LiteralPath $queuedFlag -Force
 
     New-Item -ItemType File -Path $inProgressFlag -Force | Out-Null
@@ -242,7 +245,7 @@ UNRELATED_ENV=preserve
         '-AllowTestRoot'
     )
     Assert-RunnerTrue -Condition ($inProgressInstall.ExitCode -ne 0) -Message "Installer must refuse in-progress Actions runs before mutation. $($inProgressInstall.Output)"
-    Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-post-job-cleanup.ps1'))) -Message 'In-progress refusal must not copy the hook.'
+    Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-job-start-cleanup.ps1'))) -Message 'In-progress refusal must not copy the hook.'
     Remove-Item -LiteralPath $inProgressFlag -Force
 
     New-Item -ItemType File -Path $offlineFlag -Force | Out-Null
@@ -268,11 +271,13 @@ UNRELATED_ENV=preserve
     )
     Assert-RunnerEqual -Actual $installAgain.ExitCode -Expected 0 -Message 'Installer must be idempotent.'
     $environmentLines = @(Get-Content -LiteralPath $environment)
-    Assert-RunnerEqual -Actual @($environmentLines | Where-Object { $_ -match '^ACTIONS_RUNNER_HOOK_JOB_COMPLETED=' }).Count -Expected 1 -Message 'Hook environment entry must be unique.'
+    Assert-RunnerEqual -Actual @($environmentLines | Where-Object { $_ -match '^ACTIONS_RUNNER_HOOK_JOB_STARTED=' }).Count -Expected 1 -Message 'Job-start hook environment entry must be unique.'
+    Assert-RunnerEqual -Actual @($environmentLines | Where-Object { $_ -match '^ACTIONS_RUNNER_HOOK_JOB_COMPLETED=' }).Count -Expected 0 -Message 'Legacy job-completed hook environment entry must be removed.'
     Assert-RunnerEqual -Actual @($environmentLines | Where-Object { $_ -match '^DOTNET_INSTALL_DIR=' }).Count -Expected 1 -Message '.NET install directory entry must be unique.'
     Assert-RunnerEqual -Actual @($environmentLines | Where-Object { $_ -match '^SMARTPIPE_CLEANUP_LABEL=' }).Count -Expected 0 -Message 'Runner labels must not be represented by an environment marker.'
     Assert-RunnerTrue -Condition (@($environmentLines | Where-Object { $_ -eq 'UNRELATED_ENV=preserve' }).Count -eq 1) -Message 'Installer must preserve unrelated environment entries.'
-    Assert-RunnerTrue -Condition (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-post-job-cleanup.ps1')) -Message 'Installer must copy the hook.'
+    Assert-RunnerTrue -Condition (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-job-start-cleanup.ps1')) -Message 'Installer must copy the job-start hook.'
+    Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-post-job-cleanup.ps1'))) -Message 'Installer must remove the legacy hook copy.'
 
     $uninstall = Invoke-RunnerScript -ScriptPath $uninstallScript -Arguments @(
         '-RunnerRoot', $runnerRoot,
@@ -284,9 +289,10 @@ UNRELATED_ENV=preserve
     Assert-RunnerEqual -Actual $uninstall.ExitCode -Expected 0 -Message "Uninstaller must succeed and restore one listener. $($uninstall.Output)"
     Assert-RunnerEqual -Actual ((Get-Content -LiteralPath $listenerFixture -Raw).Trim()) -Expected '1' -Message 'Uninstall must leave exactly one listener fixture.'
     $uninstalledLines = @(Get-Content -LiteralPath $environment)
-    Assert-RunnerTrue -Condition (@($uninstalledLines | Where-Object { $_ -match '^(ACTIONS_RUNNER_HOOK_JOB_COMPLETED|DOTNET_INSTALL_DIR)=' }).Count -eq 0) -Message 'Uninstaller must remove only owned environment entries.'
+    Assert-RunnerTrue -Condition (@($uninstalledLines | Where-Object { $_ -match '^(ACTIONS_RUNNER_HOOK_JOB_STARTED|ACTIONS_RUNNER_HOOK_JOB_COMPLETED|DOTNET_INSTALL_DIR)=' }).Count -eq 0) -Message 'Uninstaller must remove only owned environment entries.'
     Assert-RunnerTrue -Condition (@($uninstalledLines | Where-Object { $_ -eq 'UNRELATED_ENV=preserve' }).Count -eq 1) -Message 'Uninstaller must preserve unrelated environment entries.'
-    Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-post-job-cleanup.ps1'))) -Message 'Uninstaller must remove the owned hook copy.'
+    Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-job-start-cleanup.ps1'))) -Message 'Uninstaller must remove the owned hook copy.'
+    Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-post-job-cleanup.ps1'))) -Message 'Uninstaller must remove the legacy hook copy.'
     $labelsAfterUninstall = @((Get-Content -LiteralPath $labelState -Raw | ConvertFrom-Json))
     Assert-RunnerTrue -Condition ('smartpipe-cleanup-v1' -notin $labelsAfterUninstall) -Message 'Uninstaller must remove only the owned cleanup label.'
     Assert-RunnerTrue -Condition ('existing-label' -in $labelsAfterUninstall) -Message 'Uninstaller must preserve unrelated runner labels.'

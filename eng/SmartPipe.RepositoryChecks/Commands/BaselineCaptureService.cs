@@ -325,7 +325,12 @@ internal sealed class BaselineCaptureService
             }
 
             var workflows = new List<WorkflowBaseline>(3);
-            foreach (var requiredName in new[] { "CI", "CodeQL", "Dependency Review" })
+            foreach (var requiredName in new[]
+                     {
+                         "CI",
+                         "Hosted .NET static analysis",
+                         "Repository security audit",
+                     })
             {
                 var successful = runs.Where(run =>
                     string.Equals(run.WorkflowName, requiredName, StringComparison.Ordinal)

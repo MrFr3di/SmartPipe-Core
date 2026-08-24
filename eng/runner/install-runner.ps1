@@ -38,7 +38,7 @@ try {
         $environmentPath = Join-Path $runner '.env'
         Remove-SmartPipeEnvironment -EnvironmentPath $environmentPath
         $hookDirectory = Join-Path $runner 'hooks'
-        foreach ($name in @('smartpipe-post-job-cleanup.ps1', 'runner-safety.ps1')) {
+        foreach ($name in @('smartpipe-job-start-cleanup.ps1', 'smartpipe-post-job-cleanup.ps1', 'runner-safety.ps1')) {
             $path = Join-Path $hookDirectory $name
             if (Test-Path -LiteralPath $path) {
                 Assert-SmartPipeNoReparsePath -Path $path -Boundary $runner
@@ -53,7 +53,7 @@ try {
         exit 0
     }
 
-    $hookSource = Get-SmartPipeFullPath -Path (Join-Path $PSScriptRoot 'post-job-cleanup.ps1')
+    $hookSource = Get-SmartPipeFullPath -Path (Join-Path $PSScriptRoot 'job-start-cleanup.ps1')
     $safetySource = Get-SmartPipeFullPath -Path (Join-Path $PSScriptRoot 'runner-safety.ps1')
     if (-not (Test-Path -LiteralPath $hookSource -PathType Leaf) -or
         -not (Test-Path -LiteralPath $safetySource -PathType Leaf)) {
@@ -66,7 +66,13 @@ try {
     }
     Assert-SmartPipeNoReparsePath -Path $hookDirectory -Boundary $runner
 
-    $hookDestination = Join-Path $hookDirectory 'smartpipe-post-job-cleanup.ps1'
+    $legacyHookDestination = Join-Path $hookDirectory 'smartpipe-post-job-cleanup.ps1'
+    if (Test-Path -LiteralPath $legacyHookDestination) {
+        Assert-SmartPipeNoReparsePath -Path $legacyHookDestination -Boundary $runner
+        Remove-Item -LiteralPath $legacyHookDestination -Force -ErrorAction Stop
+    }
+
+    $hookDestination = Join-Path $hookDirectory 'smartpipe-job-start-cleanup.ps1'
     $safetyDestination = Join-Path $hookDirectory 'runner-safety.ps1'
     Copy-Item -LiteralPath $hookSource -Destination $hookDestination -Force
     Copy-Item -LiteralPath $safetySource -Destination $safetyDestination -Force

@@ -1,4 +1,4 @@
-name: CodeQL
+name: Hosted .NET static analysis
 
 on:
   push:
@@ -10,15 +10,11 @@ on:
 
 permissions:
   contents: read
-  security-events: write
-
-env:
-  NUGET_PACKAGES: ${{ github.event_name == 'pull_request' && format('{0}/.nuget/packages', github.workspace) || '' }}
 
 jobs:
   analyze:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Windows","X64","smartpipe-cleanup-v1"]') || 'ubuntu-latest' }}
+    name: Hosted .NET static analysis
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -29,53 +25,14 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
-        with:
-          languages: csharp
-
-      - name: Build
-        run: dotnet build SmartPipe.Core.slnx -c Release
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
-        with:
-          ram: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && '16384' || '' }}
-          threads: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && '2' || '' }}
-
-  cleanup-self-hosted:
-    name: Cleanup self-hosted workspace
-    if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    needs: [analyze]
-    runs-on: [self-hosted, Windows, X64, smartpipe-cleanup-v1]
-    steps:
-      - name: Cleanup generated outputs
+      - name: Restore locked
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          if ([string]::IsNullOrWhiteSpace($env:GITHUB_WORKSPACE)) { throw 'GITHUB_WORKSPACE is required.' }
-          $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-          if ((Get-Item -LiteralPath $workspace -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Workspace is a reparse point.' }
-          $prefix = "$workspace$([IO.Path]::DirectorySeparatorChar)"
-          $targets = [Collections.Generic.List[string]]::new()
-          $targets.Add((Join-Path $workspace 'artifacts'))
-          $targets.Add((Join-Path $workspace 'BenchmarkDotNet.Artifacts'))
-          $targets.Add((Join-Path $workspace '.nuget'))
-          $pending = [Collections.Generic.Stack[string]]::new()
-          $pending.Push($workspace)
-          while ($pending.Count) {
-            foreach ($directory in Get-ChildItem -LiteralPath $pending.Pop() -Force -Directory) {
-              if ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
-              if ($directory.Name -in 'bin', 'obj') { $targets.Add($directory.FullName) }
-              else { $pending.Push($directory.FullName) }
-            }
-          }
-          foreach ($target in $targets | Sort-Object Length -Descending -Unique) {
-            $fullPath = [IO.Path]::GetFullPath($target)
-            if (!$fullPath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { throw "Outside workspace: $fullPath" }
-            if (Test-Path -LiteralPath $fullPath -PathType Container) {
-              if ((Get-Item -LiteralPath $fullPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Reparse point: $fullPath" }
-              if (Get-ChildItem -LiteralPath $fullPath -Force -Recurse | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }) { throw "Reparse point: $fullPath" }
-              Remove-Item -LiteralPath $fullPath -Recurse -Force
-            }
-          }
+          dotnet restore SmartPipe.Core.slnx --locked-mode
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build static analysis
+        shell: pwsh
+        run: |
+          dotnet build SmartPipe.Core.slnx --configuration Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -67,21 +67,6 @@ CI_WINDOWS_RUNNER = (
     "fromJSON('[\"self-hosted\",\"Windows\",\"X64\",\"smartpipe-cleanup-v1\"]') || "
     "'windows-latest' }}"
 )
-CODEQL_RUNNER = (
-    "${{ github.event_name == 'pull_request' && "
-    "fromJSON('[\"self-hosted\",\"Windows\",\"X64\",\"smartpipe-cleanup-v1\"]') || "
-    "'ubuntu-latest' }}"
-)
-CODEQL_PR_RAM = (
-    "${{ github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.repo.full_name == github.repository && "
-    "'16384' || '' }}"
-)
-CODEQL_PR_THREADS = (
-    "${{ github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.repo.full_name == github.repository && "
-    "'2' || '' }}"
-)
 NUGET_PACKAGES_PR = (
     "${{ github.event_name == 'pull_request' && "
     "format('{0}/.nuget/packages', github.workspace) || '' }}"
@@ -129,13 +114,46 @@ def require_runner_expression(job: dict, expected: str, label: str) -> None:
             f"{label} must use the event-aware runner expression.")
 
 
-def assert_codeql_resource_contract(job: dict) -> None:
-    analysis = named_step(steps(job, "CodeQL analyze"), "Perform CodeQL Analysis")
-    inputs = analysis.get("with")
-    require(isinstance(inputs, dict)
-            and inputs.get("ram") == CODEQL_PR_RAM
-            and inputs.get("threads") == CODEQL_PR_THREADS,
-            "CodeQL analyze resource cap must be limited to same-repository Windows pull requests.")
+def assert_static_analysis_contract(workflow: dict) -> None:
+    require(workflow.get("name") == "Hosted .NET static analysis",
+            "Static-analysis workflow must identify the hosted .NET analyzer check honestly.")
+    require(workflow.get("permissions") == {"contents": "read"},
+            "Static analysis must request only read access to repository contents.")
+    serialized = json.dumps(workflow).lower()
+    for forbidden in ("security-events", "codeql", "self-hosted", "cleanup-self-hosted"):
+        require(forbidden not in serialized,
+                f"Hosted static analysis must not retain {forbidden} configuration.")
+
+    jobs = workflow.get("jobs", {})
+    require(set(jobs) == {"analyze"},
+            "Hosted static analysis must define only the analyzer job.")
+    job = jobs["analyze"]
+    require(job.get("name") == "Hosted .NET static analysis",
+            "Static analysis job must preserve its distinct check name.")
+    require(job.get("runs-on") == "ubuntu-latest",
+            "Static analysis must use hosted Linux.")
+    static_steps = steps(job, "Hosted .NET static analysis")
+    checkout = next(
+        step for step in static_steps
+        if str(step.get("uses", "")).startswith("actions/checkout")
+    )
+    require(checkout.get("with", {}).get("persist-credentials") is False,
+            "Static analysis checkout must disable persisted credentials.")
+    setup = named_step(static_steps, "Setup .NET")
+    require(setup.get("with", {}).get("global-json-file") == "global.json",
+            "Static analysis must use the pinned SDK from global.json.")
+    restore = named_step(static_steps, "Restore locked")
+    restore_run = str(restore.get("run", ""))
+    require(restore.get("shell") == "pwsh"
+            and "dotnet restore SmartPipe.Core.slnx --locked-mode" in restore_run
+            and NATIVE_FAIL_FAST_GUARD in restore_run,
+            "Static analysis must perform a fail-closed locked restore.")
+    build = named_step(static_steps, "Build static analysis")
+    build_run = str(build.get("run", ""))
+    require(build.get("shell") == "pwsh"
+            and "dotnet build SmartPipe.Core.slnx --configuration Release --no-restore -warnaserror" in build_run
+            and NATIVE_FAIL_FAST_GUARD in build_run,
+            "Static analysis must use the existing analyzers with a fail-closed warnings-as-errors build.")
 
 
 def assert_nuget_isolation_contract(workflow: dict, workflow_name: str) -> None:
@@ -728,13 +746,13 @@ def assert_consumer_contract() -> None:
 def validate(documents: dict[str, dict]) -> None:
     reusable = documents["reusable-release-validation.yml"]
     ci = documents["ci.yml"]
-    codeql = documents["codeql.yml"]
+    static_analysis = documents["codeql.yml"]
     dependency_review = documents["dependency-review.yml"]
     publish = documents["publish-nuget.yml"]
 
     for workflow_name, workflow in (
         ("ci.yml", ci),
-        ("codeql.yml", codeql),
+        ("codeql.yml", static_analysis),
         ("dependency-review.yml", dependency_review),
     ):
         branches = workflow.get("on", {}).get("pull_request", {}).get("branches", [])
@@ -1051,22 +1069,9 @@ def validate(documents: dict[str, dict]) -> None:
         CLEANUP_PULL_REQUEST_GUARD,
         cleanup_nuget=True,
     )
-    assert_cleanup_job(
-        codeql,
-        "codeql.yml",
-        ["analyze"],
-        CLEANUP_PULL_REQUEST_GUARD,
-        cleanup_nuget=True,
-    )
     assert_repository_security_audit_contract(dependency_review)
     assert_nuget_isolation_contract(ci, "ci.yml")
-    assert_nuget_isolation_contract(codeql, "codeql.yml")
-
-    codeql_job = codeql["jobs"].get("analyze")
-    require(isinstance(codeql_job, dict), "CodeQL must define the analyze job.")
-    require_runner_expression(codeql_job, CODEQL_RUNNER, "CodeQL analyze")
-    require_same_repository_pr_guard(codeql_job, "CodeQL analyze")
-    assert_codeql_resource_contract(codeql_job)
+    assert_static_analysis_contract(static_analysis)
     all_runs = windows_runs + hosting_runs + reusable_runs
     filtered = [command for command in all_runs
                 if "--filter-class" in command or "--filter-query" in command]
@@ -1259,7 +1264,6 @@ def _use_hosted_runner_for_required_lanes(documents: dict[str, dict]) -> None:
         ("ci.yml", "baseline-contract-windows"),
         ("reusable-release-validation.yml", "build-test-pack"),
         ("reusable-release-validation.yml", "health-checks-concurrency"),
-        ("codeql.yml", "analyze"),
     )
     for workflow_name, job_name in lanes:
         documents[workflow_name]["jobs"][job_name]["runs-on"] = "windows-latest"
@@ -1292,34 +1296,8 @@ def _make_ci_baseline_always_self_hosted(documents: dict[str, dict]) -> None:
     documents["ci.yml"]["jobs"]["baseline-contract-windows"]["runs-on"] = SELF_HOSTED_WINDOWS
 
 
-def _make_codeql_always_self_hosted(documents: dict[str, dict]) -> None:
+def _make_static_analysis_always_self_hosted(documents: dict[str, dict]) -> None:
     documents["codeql.yml"]["jobs"]["analyze"]["runs-on"] = SELF_HOSTED_WINDOWS
-
-
-def _remove_codeql_resource_cap(documents: dict[str, dict]) -> None:
-    analysis = named_step(
-        documents["codeql.yml"]["jobs"]["analyze"]["steps"],
-        "Perform CodeQL Analysis",
-    )
-    analysis["with"].pop("ram", None)
-
-
-def _make_codeql_resource_cap_unconditional(documents: dict[str, dict]) -> None:
-    analysis = named_step(
-        documents["codeql.yml"]["jobs"]["analyze"]["steps"],
-        "Perform CodeQL Analysis",
-    )
-    analysis["with"]["ram"] = "16384"
-    analysis["with"]["threads"] = "2"
-
-
-def _make_codeql_resource_cap_linux_wide(documents: dict[str, dict]) -> None:
-    analysis = named_step(
-        documents["codeql.yml"]["jobs"]["analyze"]["steps"],
-        "Perform CodeQL Analysis",
-    )
-    analysis["with"]["ram"] = str(analysis["with"]["ram"]).replace("|| ''", "|| '16384'")
-    analysis["with"]["threads"] = str(analysis["with"]["threads"]).replace("|| ''", "|| '2'")
 
 
 def _remove_nuget_isolation(documents: dict[str, dict], workflow_name: str) -> None:
@@ -1757,25 +1735,10 @@ def main() -> int:
     )
     assert_mutation_rejected(
         documents,
-        _make_codeql_always_self_hosted,
-        "event-aware runner expression",
+        _make_static_analysis_always_self_hosted,
+        "must not retain self-hosted",
     )
-    assert_mutation_rejected(
-        documents,
-        _remove_codeql_resource_cap,
-        "CodeQL analyze resource cap",
-    )
-    assert_mutation_rejected(
-        documents,
-        _make_codeql_resource_cap_unconditional,
-        "CodeQL analyze resource cap",
-    )
-    assert_mutation_rejected(
-        documents,
-        _make_codeql_resource_cap_linux_wide,
-        "CodeQL analyze resource cap",
-    )
-    for workflow_name in ("ci.yml", "codeql.yml", "reusable-release-validation.yml"):
+    for workflow_name in ("ci.yml", "reusable-release-validation.yml"):
         assert_mutation_rejected(
             documents,
             lambda docs, name=workflow_name: _remove_nuget_isolation(docs, name),
@@ -1845,7 +1808,7 @@ def main() -> int:
         _remove_ci_cleanup_job,
         "must define cleanup-self-hosted",
     )
-    for workflow_name in ("ci.yml", "codeql.yml"):
+    for workflow_name in ("ci.yml",):
         assert_mutation_rejected(
             documents,
             lambda docs, name=workflow_name: _make_cleanup_non_pr_capable(docs, name),
@@ -1856,13 +1819,13 @@ def main() -> int:
         _make_ci_cleanup_delete_workspace_root,
         "must not delete the workspace root",
     )
-    for workflow_name in ("ci.yml", "codeql.yml"):
+    for workflow_name in ("ci.yml",):
         assert_mutation_rejected(
             documents,
             lambda docs, name=workflow_name: _remove_cleanup_direct_target_guard(docs, name),
             f"{workflow_name} cleanup must reject direct target reparse points",
         )
-    for workflow_name in ("ci.yml", "codeql.yml"):
+    for workflow_name in ("ci.yml",):
         assert_mutation_rejected(
             documents,
             lambda docs, name=workflow_name: _remove_cleanup_nuget_target(docs, name),

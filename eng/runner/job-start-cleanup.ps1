@@ -56,7 +56,7 @@ try {
         }
     }
 
-    Write-Output 'SmartPipe post-job cleanup completed.'
+    Write-Output 'SmartPipe job-start cleanup completed.'
 }
 catch {
     $errorText = [string]$_.Exception.Message

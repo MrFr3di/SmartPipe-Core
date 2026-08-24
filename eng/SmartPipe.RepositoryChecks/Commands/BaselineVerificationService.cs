@@ -45,11 +45,25 @@ internal sealed class BaselineVerificationService
     private const string TargetRelease = "2.2.0";
     private const string SolutionPath = "SmartPipe.Core.slnx";
     private static readonly TimeSpan ProcessTimeout = TimeSpan.FromMinutes(2);
-    private static readonly (string Name, string Path, string[] Events)[] RequiredWorkflowFiles =
+    private static readonly string[] HistoricalManifestWorkflowNames =
+    [
+        "CI",
+        "CodeQL",
+        "Dependency Review",
+    ];
+
+    private static readonly string[] CurrentManifestWorkflowNames =
+    [
+        "CI",
+        "Hosted .NET static analysis",
+        "Repository security audit",
+    ];
+
+    private static readonly (string Name, string Path, string[] Events)[] CurrentWorkflowPolicy =
     [
         ("CI", ".github/workflows/ci.yml", ["push", "pull_request"]),
-        ("CodeQL", ".github/workflows/codeql.yml", ["push", "pull_request"]),
-        ("Dependency Review", ".github/workflows/dependency-review.yml", ["pull_request"]),
+        ("Hosted .NET static analysis", ".github/workflows/codeql.yml", ["push", "pull_request"]),
+        ("Repository security audit", ".github/workflows/dependency-review.yml", ["pull_request"]),
     ];
 
     private readonly IProcessRunner _processRunner;
@@ -118,9 +132,11 @@ internal sealed class BaselineVerificationService
             var workflowNames = manifest.Repository.RequiredWorkflows
                 .Select(static workflow => workflow.Name)
                 .ToHashSet(StringComparer.Ordinal);
-            if (RequiredWorkflowFiles.Any(workflow => !workflowNames.Contains(workflow.Name)))
+            if (!workflowNames.SetEquals(HistoricalManifestWorkflowNames)
+                && !workflowNames.SetEquals(CurrentManifestWorkflowNames))
             {
-                throw new JsonException("Manifest workflow evidence must include CI, CodeQL, and Dependency Review.");
+                throw new JsonException(
+                    "Manifest workflow evidence must contain exactly either CI, CodeQL, and Dependency Review or CI, Hosted .NET static analysis, and Repository security audit.");
             }
 
             // Resolve and de-alias every referenced path before any package, process, or repository work.
@@ -313,7 +329,7 @@ internal sealed class BaselineVerificationService
         }
 
         var releaseBranch = $"release/{manifest.TargetRelease}";
-        foreach (var workflow in RequiredWorkflowFiles)
+        foreach (var workflow in CurrentWorkflowPolicy)
         {
             var path = RepositoryPaths.ResolveWithinRoot(options.RepositoryRoot, workflow.Path, "workflow");
             if (!WorkflowPolicyContainsBranch(path, workflow.Events, releaseBranch))
