@@ -19,7 +19,8 @@ internal sealed record RunConsumersOptions(
     string PackageDirectory,
     string PackageVersion,
     string ManifestPath,
-    string? Category = null);
+    string? Category = null,
+    string? Scenario = null);
 
 internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner = null)
 {
@@ -32,9 +33,16 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         var document = await new ConsumerScenarioLoader().LoadAsync(options.RepositoryRoot, options.ManifestPath, graph, ct).ConfigureAwait(false);
         var scenarios = document.Scenarios
             .Where(scenario => scenario.Set == options.Set
-                && (options.Category is null || scenario.Category == options.Category))
+                && (options.Category is null || scenario.Category == options.Category)
+                && (options.Scenario is null || scenario.Id == options.Scenario))
             .ToArray();
-        if (scenarios.Length == 0) throw new ConsumerScenarioException("SPCONS010", $"Consumer set '{options.Set}' is empty.");
+        if (scenarios.Length == 0)
+        {
+            var selection = options.Scenario is null
+                ? $"Consumer set '{options.Set}' is empty."
+                : $"Consumer scenario '{options.Scenario}' is unknown.";
+            throw new ConsumerScenarioException("SPCONS010", selection);
+        }
         var centralPackages = await new CentralPackageVersionReader().VerifyAsync(
             options.RepositoryRoot,
             CentralPackageValidationMode.Current,
@@ -104,6 +112,8 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             var locked = restore.ToList(); locked.Remove("--use-lock-file"); locked.Add("--locked-mode");
             await RunRequiredAsync("dotnet", locked, source, logs, options.RepositoryRoot, scenario.Timeout, events, ct).ConfigureAwait(false);
         }
+        if (scenario.Mode == ConsumerMode.PublishNativeAot)
+            ValidateNativeAotLibraryPaths(packages);
 
         string outputDirectory;
         IReadOnlyList<string>? publishArguments = null;
@@ -584,6 +594,30 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
     }
 
     private static string RuntimeIdentifier() => OperatingSystem.IsWindows() ? "win-x64" : OperatingSystem.IsLinux() ? "linux-x64" : OperatingSystem.IsMacOS() ? "osx-x64" : throw new ConsumerScenarioException("SPCONS018", "NativeAOT/trim scenario is unsupported on this OS.");
+
+    internal static void ValidateNativeAotLibraryPaths(string packageDirectory, bool? isWindows = null)
+    {
+        if (!(isWindows ?? OperatingSystem.IsWindows())) return;
+
+        var root = Path.GetFullPath(packageDirectory);
+        if (!Directory.Exists(root)) return;
+        foreach (var path in Directory.EnumerateFiles(root, "*.lib", SearchOption.AllDirectories))
+        {
+            var fullPath = Path.GetFullPath(path);
+            var relative = Path.GetRelativePath(root, fullPath);
+            if (Path.IsPathRooted(relative)
+                || relative == ".."
+                || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                throw new ConsumerScenarioException("SPCONS025", "NativeAOT library path escapes the scenario package cache.");
+
+            var effectiveLength = fullPath.Length + 1;
+            if (effectiveLength >= 260)
+                throw new ConsumerScenarioException(
+                    "SPCONS025",
+                    $"NativeAOT library path is too long ({effectiveLength} characters including the terminating NUL): {relative.Replace('\\', '/')}");
+        }
+    }
+
     internal static void ValidateBinaryCompatibilityPhases(IReadOnlyList<ConsumerCommandEvent> events, int expectedReplacements)
     {
         var builds = events.Select((item, index) => (item, index)).Where(x => x.item.Phase == "process" && x.item.Command.Contains(" build ", StringComparison.Ordinal)).ToArray();

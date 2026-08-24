@@ -8,7 +8,7 @@ stage handling, observer events, metrics snapshots, and dead-letter records
 with replay context. It is not a distributed workflow engine, message broker,
 durable queue, or exactly-once delivery system.
 
-[![CI](https://github.com/MrFr3di/SmartPipe-Core/actions/workflows/ci.yml/badge.svg)](https://github.com/MrFr3di/SmartPipe-Core/actions)
+[CI workflow](.github/workflows/ci.yml)
 [![NuGet Core](https://img.shields.io/nuget/v/SmartPipe.Core.svg)](https://www.nuget.org/packages/SmartPipe.Core)
 [![NuGet Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.svg)](https://www.nuget.org/packages/SmartPipe.Extensions)
 [![NuGet JSON Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.Json.svg)](https://www.nuget.org/packages/SmartPipe.Extensions.Json)

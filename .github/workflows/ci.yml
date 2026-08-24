@@ -2,6 +2,22 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      diagnostic-sha:
+        description: Exact 40-character commit SHA for a single-consumer diagnostic
+        required: false
+        type: string
+        default: ''
+      diagnostic-scenario:
+        description: Exact consumer scenario ID for a single-consumer diagnostic
+        required: false
+        type: string
+        default: ''
+      diagnostic-repeat:
+        description: Number of diagnostic runs (1-5)
+        required: false
+        type: string
+        default: ''
   push:
     branches: [ main, upd, release/2.2.0 ]
   pull_request:
@@ -15,17 +31,17 @@ env:
 
 jobs:
   validation:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_dispatch' || (inputs.diagnostic-sha == '' && inputs.diagnostic-scenario == '' && inputs.diagnostic-repeat == ''))
     uses: ./.github/workflows/reusable-release-validation.yml
     permissions:
       contents: read
     with:
-      runner-labels: ${{ github.event_name == 'pull_request' && '["self-hosted","Windows","X64"]' || '["ubuntu-latest"]' }}
+      runner-labels: ${{ github.event_name == 'pull_request' && '["self-hosted","Windows","X64","smartpipe-cleanup-v1"]' || '["ubuntu-latest"]' }}
 
   hosting-integration:
     name: Hosting integration (${{ matrix.os == 'self-hosted' && 'Windows' || matrix.os }})
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ matrix.os == 'self-hosted' && fromJSON('["self-hosted","Windows","X64"]') || matrix.os }}
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_dispatch' || (inputs.diagnostic-sha == '' && inputs.diagnostic-scenario == '' && inputs.diagnostic-repeat == ''))
+    runs-on: ${{ matrix.os == 'self-hosted' && fromJSON('["self-hosted","Windows","X64","smartpipe-cleanup-v1"]') || matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -51,8 +67,8 @@ jobs:
         run: dotnet test --project tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Hosting.Tests.Integration.GenericHostIntegrationTests --minimum-expected-tests 1
 
   json-file-windows:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Windows","X64"]') || 'windows-latest' }}
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_dispatch' || (inputs.diagnostic-sha == '' && inputs.diagnostic-scenario == '' && inputs.diagnostic-repeat == ''))
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Windows","X64","smartpipe-cleanup-v1"]') || 'windows-latest' }}
     timeout-minutes: 20
 
     steps:
@@ -107,8 +123,8 @@ jobs:
 
   baseline-contract-windows:
     name: Baseline contract (Windows)
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Windows","X64"]') || 'windows-latest' }}
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_dispatch' || (inputs.diagnostic-sha == '' && inputs.diagnostic-scenario == '' && inputs.diagnostic-repeat == ''))
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Windows","X64","smartpipe-cleanup-v1"]') || 'windows-latest' }}
     timeout-minutes: 20
 
     steps:
@@ -137,11 +153,94 @@ jobs:
       - name: Verify 2.1.2 baseline offline
         run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-baseline --repo-root . --manifest eng/baselines/2.1.2/manifest.json --packages-dir artifacts/baselines/2.1.2 --offline --mode integrity
 
+  diagnostic-consumer:
+    name: Diagnostic consumer (${{ inputs.diagnostic-scenario }})
+    if: github.event_name == 'workflow_dispatch' && (inputs.diagnostic-sha != '' || inputs.diagnostic-scenario != '' || inputs.diagnostic-repeat != '')
+    runs-on: [self-hosted, Windows, X64, smartpipe-cleanup-v1]
+    timeout-minutes: 45
+    steps:
+      - name: Validate diagnostic inputs
+        shell: pwsh
+        env:
+          DIAGNOSTIC_SHA: ${{ inputs.diagnostic-sha }}
+          DIAGNOSTIC_SCENARIO: ${{ inputs.diagnostic-scenario }}
+          DIAGNOSTIC_REPEAT: ${{ inputs.diagnostic-repeat }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:DIAGNOSTIC_SHA -notmatch '^[0-9a-f]{40}$') { throw 'diagnostic-sha must be exactly 40 lowercase hexadecimal characters.' }
+          if ($env:DIAGNOSTIC_SCENARIO -notmatch '^[a-z0-9-]+$') { throw 'diagnostic-scenario must contain lowercase letters, digits, or hyphens.' }
+          if ($env:DIAGNOSTIC_REPEAT -notmatch '^[1-5]$') { throw 'diagnostic-repeat must be an integer from 1 through 5.' }
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.diagnostic-sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact diagnostic checkout
+        shell: pwsh
+        env:
+          DIAGNOSTIC_SHA: ${{ inputs.diagnostic-sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -cne $env:DIAGNOSTIC_SHA) { throw "Checked out SHA '$actual' does not match the requested diagnostic SHA." }
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore locked
+        run: dotnet restore SmartPipe.Core.slnx --locked-mode
+
+      - name: Build
+        run: dotnet build SmartPipe.Core.slnx --configuration Release --no-restore -warnaserror
+
+      - name: Set package version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $packageVersion = (dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo).Trim()
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($packageVersion)) { throw 'Unable to determine the package version.' }
+          "PACKAGE_VERSION=$packageVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Pack packages from graph
+        shell: pwsh
+        run: >
+          dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj
+          --configuration Release --no-build -- pack-packages
+          --mode current --configuration Release --package-version "$env:PACKAGE_VERSION"
+          --output artifacts/packages --manifest artifacts/packages/manifest.json
+
+      - name: Run diagnostic consumer
+        shell: pwsh
+        env:
+          DIAGNOSTIC_SCENARIO: ${{ inputs.diagnostic-scenario }}
+          DIAGNOSTIC_REPEAT: ${{ inputs.diagnostic-repeat }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rows = [Collections.Generic.List[string]]::new()
+          $failed = $false
+          for ($pass = 1; $pass -le [int]$env:DIAGNOSTIC_REPEAT; $pass++) {
+            $output = (& dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --scenario $env:DIAGNOSTIC_SCENARIO --package-directory artifacts/packages --package-version "$env:PACKAGE_VERSION" 2>&1 | Out-String).Trim()
+            $exitCode = $LASTEXITCODE
+            $snippet = ($output -replace '\r?\n', ' ').Trim()
+            if ($snippet.Length -gt 512) { $snippet = $snippet.Substring($snippet.Length - 512) }
+            $rows.Add("- pass ${pass}: exit=$exitCode; $snippet")
+            if ($exitCode -ne 0) { $failed = $true; break }
+          }
+          $summary = @('## Single-consumer diagnostic', '', "- scenario: $env:DIAGNOSTIC_SCENARIO", "- repeat requested: $env:DIAGNOSTIC_REPEAT") + $rows
+          $summaryText = ($summary -join [Environment]::NewLine)
+          if ($summaryText.Length -gt 8192) { $summaryText = $summaryText.Substring(0, 8192) + [Environment]::NewLine + '... summary truncated ...' }
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value $summaryText
+          if ($failed) { exit 1 }
+
   cleanup-self-hosted:
     name: Cleanup self-hosted workspace
     if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     needs: [validation, hosting-integration, json-file-windows, baseline-contract-windows]
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: [self-hosted, Windows, X64, smartpipe-cleanup-v1]
     steps:
       - name: Cleanup generated outputs
         shell: pwsh

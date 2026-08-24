@@ -31,8 +31,8 @@ FILES = {
     )
 }
 SHA_REF = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
-SELF_HOSTED_WINDOWS = ["self-hosted", "Windows", "X64"]
-SELF_HOSTED_WINDOWS_JSON = '["self-hosted","Windows","X64"]'
+SELF_HOSTED_WINDOWS = ["self-hosted", "Windows", "X64", "smartpipe-cleanup-v1"]
+SELF_HOSTED_WINDOWS_JSON = '["self-hosted","Windows","X64","smartpipe-cleanup-v1"]'
 SAME_REPOSITORY_PR_GUARD = (
     "github.event_name != 'pull_request' || "
     "github.event.pull_request.head.repo.full_name == github.repository"
@@ -46,30 +46,26 @@ CLEANUP_PULL_REQUEST_GUARD = (
     "always() && github.event_name == 'pull_request' && "
     "github.event.pull_request.head.repo.full_name == github.repository"
 )
+DIAGNOSTIC_INPUTS_EMPTY_GUARD = (
+    "(github.event_name != 'workflow_dispatch' || "
+    "(inputs.diagnostic-sha == '' && inputs.diagnostic-scenario == '' && "
+    "inputs.diagnostic-repeat == ''))"
+)
+CI_NORMAL_GUARD = f"({SAME_REPOSITORY_PR_GUARD}) && {DIAGNOSTIC_INPUTS_EMPTY_GUARD}"
+DIAGNOSTIC_GUARD = (
+    "github.event_name == 'workflow_dispatch' && "
+    "(inputs.diagnostic-sha != '' || inputs.diagnostic-scenario != '' || "
+    "inputs.diagnostic-repeat != '')"
+)
 CI_VALIDATION_RUNNER_INPUT = (
     "${{ github.event_name == 'pull_request' && "
-    "'[\"self-hosted\",\"Windows\",\"X64\"]' || "
+    "'[\"self-hosted\",\"Windows\",\"X64\",\"smartpipe-cleanup-v1\"]' || "
     "'[\"ubuntu-latest\"]' }}"
 )
 CI_WINDOWS_RUNNER = (
     "${{ github.event_name == 'pull_request' && "
-    "fromJSON('[\"self-hosted\",\"Windows\",\"X64\"]') || "
+    "fromJSON('[\"self-hosted\",\"Windows\",\"X64\",\"smartpipe-cleanup-v1\"]') || "
     "'windows-latest' }}"
-)
-CODEQL_RUNNER = (
-    "${{ github.event_name == 'pull_request' && "
-    "fromJSON('[\"self-hosted\",\"Windows\",\"X64\"]') || "
-    "'ubuntu-latest' }}"
-)
-CODEQL_PR_RAM = (
-    "${{ github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.repo.full_name == github.repository && "
-    "'16384' || '' }}"
-)
-CODEQL_PR_THREADS = (
-    "${{ github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.repo.full_name == github.repository && "
-    "'2' || '' }}"
 )
 NUGET_PACKAGES_PR = (
     "${{ github.event_name == 'pull_request' && "
@@ -78,7 +74,7 @@ NUGET_PACKAGES_PR = (
 HOSTING_NAME = "${{ matrix.os == 'self-hosted' && 'Windows' || matrix.os }}"
 HOSTING_RUNNER = (
     "${{ matrix.os == 'self-hosted' && "
-    "fromJSON('[\"self-hosted\",\"Windows\",\"X64\"]') || matrix.os }}"
+    "fromJSON('[\"self-hosted\",\"Windows\",\"X64\",\"smartpipe-cleanup-v1\"]') || matrix.os }}"
 )
 HOSTING_MATRIX = (
     "${{ fromJSON(github.event_name == 'pull_request' && "
@@ -118,13 +114,46 @@ def require_runner_expression(job: dict, expected: str, label: str) -> None:
             f"{label} must use the event-aware runner expression.")
 
 
-def assert_codeql_resource_contract(job: dict) -> None:
-    analysis = named_step(steps(job, "CodeQL analyze"), "Perform CodeQL Analysis")
-    inputs = analysis.get("with")
-    require(isinstance(inputs, dict)
-            and inputs.get("ram") == CODEQL_PR_RAM
-            and inputs.get("threads") == CODEQL_PR_THREADS,
-            "CodeQL analyze resource cap must be limited to same-repository Windows pull requests.")
+def assert_static_analysis_contract(workflow: dict) -> None:
+    require(workflow.get("name") == "Hosted .NET static analysis",
+            "Static-analysis workflow must identify the hosted .NET analyzer check honestly.")
+    require(workflow.get("permissions") == {"contents": "read"},
+            "Static analysis must request only read access to repository contents.")
+    serialized = json.dumps(workflow).lower()
+    for forbidden in ("security-events", "codeql", "self-hosted", "cleanup-self-hosted"):
+        require(forbidden not in serialized,
+                f"Hosted static analysis must not retain {forbidden} configuration.")
+
+    jobs = workflow.get("jobs", {})
+    require(set(jobs) == {"analyze"},
+            "Hosted static analysis must define only the analyzer job.")
+    job = jobs["analyze"]
+    require(job.get("name") == "Hosted .NET static analysis",
+            "Static analysis job must preserve its distinct check name.")
+    require(job.get("runs-on") == "ubuntu-latest",
+            "Static analysis must use hosted Linux.")
+    static_steps = steps(job, "Hosted .NET static analysis")
+    checkout = next(
+        step for step in static_steps
+        if str(step.get("uses", "")).startswith("actions/checkout")
+    )
+    require(checkout.get("with", {}).get("persist-credentials") is False,
+            "Static analysis checkout must disable persisted credentials.")
+    setup = named_step(static_steps, "Setup .NET")
+    require(setup.get("with", {}).get("global-json-file") == "global.json",
+            "Static analysis must use the pinned SDK from global.json.")
+    restore = named_step(static_steps, "Restore locked")
+    restore_run = str(restore.get("run", ""))
+    require(restore.get("shell") == "pwsh"
+            and "dotnet restore SmartPipe.Core.slnx --locked-mode" in restore_run
+            and NATIVE_FAIL_FAST_GUARD in restore_run,
+            "Static analysis must perform a fail-closed locked restore.")
+    build = named_step(static_steps, "Build static analysis")
+    build_run = str(build.get("run", ""))
+    require(build.get("shell") == "pwsh"
+            and "dotnet build SmartPipe.Core.slnx --configuration Release --no-restore -warnaserror" in build_run
+            and NATIVE_FAIL_FAST_GUARD in build_run,
+            "Static analysis must use the existing analyzers with a fail-closed warnings-as-errors build.")
 
 
 def assert_nuget_isolation_contract(workflow: dict, workflow_name: str) -> None:
@@ -134,10 +163,85 @@ def assert_nuget_isolation_contract(workflow: dict, workflow_name: str) -> None:
             f"{workflow_name} must isolate pull-request NuGet packages inside GITHUB_WORKSPACE.")
 
 
+def assert_diagnostic_contract(ci: dict) -> None:
+    dispatch = ci.get("on", {}).get("workflow_dispatch", {})
+    inputs = dispatch.get("inputs", {}) if isinstance(dispatch, dict) else {}
+    require(set(inputs) == {"diagnostic-sha", "diagnostic-scenario", "diagnostic-repeat"},
+            "CI diagnostic dispatch must expose exactly SHA, scenario, and repeat inputs.")
+    for name in inputs:
+        definition = inputs[name]
+        require(definition.get("required") is False
+                and definition.get("type") == "string"
+                and definition.get("default") == "",
+                f"CI diagnostic input {name} must be an optional empty string.")
+
+    job = ci["jobs"].get("diagnostic-consumer")
+    require(isinstance(job, dict), "CI must define the optional diagnostic-consumer job.")
+    require(job.get("if") == DIAGNOSTIC_GUARD,
+            "Diagnostic consumer must run only for a workflow dispatch with diagnostic input.")
+    require_self_hosted_windows(job, "Diagnostic consumer")
+    diagnostic_steps = steps(job, "diagnostic-consumer")
+    validation = named_step(diagnostic_steps, "Validate diagnostic inputs")
+    validation_script = str(validation.get("run", ""))
+    for token in ("^[0-9a-f]{40}$", "^[a-z0-9-]+$", "^[1-5]$"):
+        require(token in validation_script,
+                f"Diagnostic input validation must enforce {token}.")
+    checkout = next(
+        step for step in diagnostic_steps
+        if str(step.get("uses", "")).startswith("actions/checkout")
+    )
+    require(checkout.get("with", {}).get("ref") == "${{ inputs.diagnostic-sha }}"
+            and checkout.get("with", {}).get("persist-credentials") is False,
+            "Diagnostic consumer must checkout the exact requested SHA without credentials.")
+    verify = named_step(diagnostic_steps, "Verify exact diagnostic checkout")
+    require("git rev-parse HEAD" in str(verify.get("run", ""))
+            and "DIAGNOSTIC_SHA" in str(verify.get("run", "")),
+            "Diagnostic consumer must verify the checked out commit SHA.")
+    restore = named_step(diagnostic_steps, "Restore locked")
+    require(str(restore.get("run", "")).strip() == "dotnet restore SmartPipe.Core.slnx --locked-mode",
+            "Diagnostic consumer must perform one locked solution restore.")
+    build = named_step(diagnostic_steps, "Build")
+    require("--no-restore" in str(build.get("run", ""))
+            and "dotnet build SmartPipe.Core.slnx" in str(build.get("run", "")),
+            "Diagnostic consumer must build once after restore.")
+    pack = named_step(diagnostic_steps, "Pack packages from graph")
+    pack_run = str(pack.get("run", ""))
+    require("pack-packages" in pack_run
+            and "--output artifacts/packages" in pack_run
+            and "--manifest artifacts/packages/manifest.json" in pack_run,
+            "Diagnostic consumer must pack once from the package graph.")
+    run = named_step(diagnostic_steps, "Run diagnostic consumer")
+    run_script = str(run.get("run", ""))
+    require("--scenario $env:DIAGNOSTIC_SCENARIO" in run_script
+            and "DIAGNOSTIC_REPEAT" in run_script
+            and "for ($pass = 1;" in run_script
+            and "$pass -le [int]$env:DIAGNOSTIC_REPEAT" in run_script,
+            "Diagnostic consumer must invoke exactly the selected scenario one to five times.")
+    require("GITHUB_STEP_SUMMARY" in run_script
+            and "8192" in run_script
+            and "upload-artifact" not in "\n".join(
+                str(step) for step in diagnostic_steps
+            ),
+            "Diagnostic consumer must write only a bounded summary and no artifact upload.")
+    commands = [command for command in runs(diagnostic_steps)
+                if "dotnet restore SmartPipe.Core.slnx" in command
+                or "dotnet build SmartPipe.Core.slnx" in command
+                or "pack-packages" in command]
+    require(sum("dotnet restore SmartPipe.Core.slnx" in command for command in commands) == 1
+            and sum("dotnet build SmartPipe.Core.slnx" in command for command in commands) == 1
+            and sum("pack-packages" in command for command in commands) == 1,
+            "Diagnostic consumer must restore, build, and pack exactly once.")
+
+
 def require_same_repository_pr_guard(job: dict, label: str, allow_non_pr: bool = True) -> None:
     expected = SAME_REPOSITORY_PR_GUARD if allow_non_pr else PULL_REQUEST_SAME_REPOSITORY_GUARD
     require(job.get("if") == expected,
             f"{label} must use the same-repository pull_request guard.")
+
+
+def require_ci_normal_job_guard(job: dict, label: str) -> None:
+    require(job.get("if") == CI_NORMAL_GUARD,
+            f"{label} must retain the same-repository guard and skip only diagnostic dispatches.")
 
 
 def assert_cleanup_job(
@@ -190,6 +294,76 @@ def assert_cleanup_job(
     require(script.index(direct_reparse_guard) < script.index(
         "Get-ChildItem -LiteralPath $fullPath -Force -Recurse"),
             f"{workflow_name} cleanup must check direct target reparse points before recursion.")
+
+
+def assert_repository_security_audit_contract(workflow: dict) -> None:
+    require(workflow.get("name") == "Repository security audit",
+            "Dependency Review workflow must identify the repository-controlled security audit.")
+    require(workflow.get("permissions") == {"contents": "read"},
+            "Repository security audit must request only read access to repository contents.")
+    jobs = workflow.get("jobs", {})
+    require("cleanup-self-hosted" not in jobs,
+            "Hosted repository security audit must not depend on self-hosted cleanup.")
+    job = jobs.get("repository-security-audit")
+    require(isinstance(job, dict),
+            "Dependency Review workflow must define repository-security-audit.")
+    require(job.get("name") == "Repository security audit",
+            "Repository security audit must preserve its distinct check name.")
+    require(job.get("if") == PULL_REQUEST_SAME_REPOSITORY_GUARD,
+            "Repository security audit must run only for same-repository pull requests.")
+    require(job.get("runs-on") == "ubuntu-latest",
+            "Repository security audit must use hosted Linux.")
+    require("self-hosted" not in str(job.get("runs-on", "")),
+            "Repository security audit must not use a self-hosted runner.")
+
+    job_steps = steps(job, "Repository security audit")
+    checkouts = [step for step in job_steps
+                 if str(step.get("uses", "")).startswith("actions/checkout")]
+    require(len(checkouts) == 1
+            and checkouts[0].get("with", {}).get("persist-credentials") is False,
+            "Repository security audit checkout must be pinned and credential-free.")
+    setup = [step for step in job_steps
+             if str(step.get("uses", "")).startswith("actions/setup-dotnet")]
+    require(len(setup) == 1
+            and setup[0].get("with", {}).get("global-json-file") == "global.json",
+            "Repository security audit setup-dotnet must use global.json as the SDK source.")
+    require(not any("actions/dependency-review-action" in str(step.get("uses", ""))
+                    for step in job_steps),
+            "Repository security audit must not claim hosted Dependency Review execution.")
+    require(not any(step.get("continue-on-error") for step in job_steps),
+            "Repository security audit must fail closed without continue-on-error.")
+
+    restore = named_step(job_steps, "Restore locked")
+    require("dotnet restore SmartPipe.Core.slnx --locked-mode" in str(restore.get("run", "")),
+            "Repository security audit must perform locked restore.")
+    build = named_step(job_steps, "Build repository checks")
+    require(build.get("shell") == "pwsh"
+            and "dotnet build eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+            "--configuration Release --no-restore -warnaserror" in str(build.get("run", "")),
+            "Repository security audit must build RepositoryChecks with warnings as errors.")
+    profile = named_step(job_steps, "Verify repository package contracts")
+    require(profile.get("shell") == "pwsh"
+            and "dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+            "--configuration Release --no-build --no-restore -- verify --profile sp220-05 "
+            "--format github --failures-only" in str(profile.get("run", "")),
+            "Repository security audit must run the strict repository package profile.")
+    vulnerable = named_step(job_steps, "Vulnerable package scan")
+    require(vulnerable.get("shell") == "pwsh"
+            and "dotnet package list --project SmartPipe.Core.slnx --vulnerable "
+            "--include-transitive --format json --output-version 1 --no-restore" in str(vulnerable.get("run", ""))
+            and "artifacts/audit/vulnerable.json" in str(vulnerable.get("run", "")),
+            "Repository security audit must produce a strict vulnerable package report.")
+    audit = named_step(job_steps, "Verify direct production audit policy")
+    require(audit.get("shell") == "pwsh"
+            and "verify-nuget-audit" in str(audit.get("run", ""))
+            and "--report artifacts/audit/vulnerable.json" in str(audit.get("run", "")),
+            "Repository security audit must enforce the repository NuGet audit policy.")
+    deprecated = named_step(job_steps, "Deprecated package scan")
+    require(deprecated.get("shell") == "pwsh"
+            and "dotnet package list --project SmartPipe.Core.slnx --deprecated "
+            "--include-transitive --format json --output-version 1 --no-restore" in str(deprecated.get("run", ""))
+            and "artifacts/audit/deprecated.json" in str(deprecated.get("run", "")),
+            "Repository security audit must report deprecated packages without suppressing failures.")
 
 
 def assert_reusable_windows_shell_contract(reusable_steps: list[dict]) -> None:
@@ -382,8 +556,6 @@ def assert_repository_checks_profile(
         "Provision 2.1.2 baseline packages", "Verify package graph current",
         "Verify package metadata current", "Verify package ownership current",
         "Verify release versions current",         "Run current consumers",
-        "Run Hosting consumers", "Run HealthChecks consumers",
-        "Run OpenTelemetry consumers",
         "Vulnerable package scan", "Verify direct production audit policy",
         "Deprecated package scan", "Outdated package report",
         "Upload immutable packages and reports",
@@ -510,6 +682,18 @@ def assert_link_check_exclusion_scoped() -> None:
             "lychee.toml must not contain a broad nuget.org exclusion.")
 
 
+def assert_private_repository_docs_links_are_local() -> None:
+    private_repository_prefix = "https://github.com/MrFr3di/SmartPipe-Core/"
+    sources = (
+        ROOT / "README.md",
+        ROOT / "docs" / "plans" / "2.2.0-extension-architecture.md",
+        ROOT / "docs" / "plans" / "2.2.0" / "SP220-00-governance-and-baseline.md",
+    )
+    for source in sources:
+        require(private_repository_prefix not in source.read_text(encoding="utf-8"),
+                f"{source.relative_to(ROOT)} must use local links for private repository references.")
+
+
 def assert_consumer_contract() -> None:
     manifest_path = ROOT / "eng" / "consumer-scenarios.json"
     document = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -562,13 +746,13 @@ def assert_consumer_contract() -> None:
 def validate(documents: dict[str, dict]) -> None:
     reusable = documents["reusable-release-validation.yml"]
     ci = documents["ci.yml"]
-    codeql = documents["codeql.yml"]
+    static_analysis = documents["codeql.yml"]
     dependency_review = documents["dependency-review.yml"]
     publish = documents["publish-nuget.yml"]
 
     for workflow_name, workflow in (
         ("ci.yml", ci),
-        ("codeql.yml", codeql),
+        ("codeql.yml", static_analysis),
         ("dependency-review.yml", dependency_review),
     ):
         branches = workflow.get("on", {}).get("pull_request", {}).get("branches", [])
@@ -581,10 +765,32 @@ def validate(documents: dict[str, dict]) -> None:
         branches = ci.get("on", {}).get(event, {}).get("branches", [])
         require("release/2.2.0" in branches,
                 f"CI {event} must include release/2.2.0.")
+    assert_diagnostic_contract(ci)
 
     expected_triggers = {
         "ci.yml": {
-            "workflow_dispatch": None,
+            "workflow_dispatch": {
+                "inputs": {
+                    "diagnostic-sha": {
+                        "description": "Exact 40-character commit SHA for a single-consumer diagnostic",
+                        "required": False,
+                        "type": "string",
+                        "default": "",
+                    },
+                    "diagnostic-scenario": {
+                        "description": "Exact consumer scenario ID for a single-consumer diagnostic",
+                        "required": False,
+                        "type": "string",
+                        "default": "",
+                    },
+                    "diagnostic-repeat": {
+                        "description": "Number of diagnostic runs (1-5)",
+                        "required": False,
+                        "type": "string",
+                        "default": "",
+                    },
+                },
+            },
             "push": {"branches": ["main", "upd", "release/2.2.0"]},
             "pull_request": {
                 "branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d"]
@@ -675,8 +881,7 @@ def validate(documents: dict[str, dict]) -> None:
         "Pack packages from graph", "Provision 2.1.2 baseline packages",
         "Verify package graph current", "Verify package metadata current",
         "Verify package ownership current", "Verify release versions current",
-        "Run current consumers", "Run Hosting consumers", "Run HealthChecks consumers",
-        "Run OpenTelemetry consumers", "Vulnerable package scan",
+        "Run current consumers", "Vulnerable package scan",
         "Verify direct production audit policy", "Deprecated package scan",
         "Outdated package report", "Docs link check", "Docs link check (Windows)",
         "Upload immutable packages and reports",
@@ -685,17 +890,25 @@ def validate(documents: dict[str, dict]) -> None:
         named_step(reusable_steps, name)
     gate_order = [
         "Restore locked", "Build", "Verify RepositoryChecks profile",
-        "Test and benchmark warning gate", "Pack packages from graph",
+        "Pack packages from graph",
         "Provision 2.1.2 baseline packages", "Verify package graph current",
         "Verify package metadata current", "Verify package ownership current",
-        "Verify release versions current", "Run current consumers", "Run HealthChecks consumers",
-        "Run OpenTelemetry consumers", "Vulnerable package scan", "Verify direct production audit policy",
+        "Verify release versions current", "Run current consumers",
+        "Test and benchmark warning gate", "Vulnerable package scan", "Verify direct production audit policy",
         "Deprecated package scan", "Outdated package report",
         "Upload immutable packages and reports",
     ]
     gate_indexes = [reusable_steps.index(named_step(reusable_steps, name)) for name in gate_order]
     require(gate_indexes == sorted(gate_indexes),
             "Reusable package gates must follow the required order.")
+    wide_tests_index = reusable_steps.index(named_step(reusable_steps, "Core correctness regressions"))
+    for name in (
+        "Pack packages from graph", "Verify package graph current",
+        "Verify package metadata current", "Verify package ownership current",
+        "Verify release versions current", "Run current consumers",
+    ):
+        require(reusable_steps.index(named_step(reusable_steps, name)) < wide_tests_index,
+                f"{name} must run before wide tests.")
     reusable_text = "\n".join(reusable_runs)
     pack_run = str(named_step(reusable_steps, "Pack packages from graph").get("run", ""))
     for token in ("pack-packages", "--mode current", "--configuration Release",
@@ -704,15 +917,16 @@ def validate(documents: dict[str, dict]) -> None:
         require(token in pack_run, f"Graph-driven pack step must contain '{token}'.")
     require(reusable_text.count("pack-packages") == 1,
             "Reusable validation must invoke pack-packages exactly once.")
-    hosting_consumers = str(named_step(reusable_steps, "Run Hosting consumers").get("run", ""))
-    require("run-consumers" in hosting_consumers and "--category hosting" in hosting_consumers,
-            "Reusable validation must execute the Hosting consumer category.")
-    health_checks_consumers = str(named_step(reusable_steps, "Run HealthChecks consumers").get("run", ""))
-    require("run-consumers" in health_checks_consumers and "--category health-checks" in health_checks_consumers,
-            "Reusable validation must execute the HealthChecks consumer category.")
-    opentelemetry_consumers = str(named_step(reusable_steps, "Run OpenTelemetry consumers").get("run", ""))
-    require("run-consumers" in opentelemetry_consumers and "--category opentelemetry" in opentelemetry_consumers,
-            "Reusable validation must execute the OpenTelemetry consumer category.")
+    current_consumers = [
+        str(step.get("run", ""))
+        for step in reusable_steps
+        if "run-consumers" in str(step.get("run", ""))
+        and "--set current" in str(step.get("run", ""))
+    ]
+    require(len(current_consumers) == 1
+            and "--category" not in current_consumers[0]
+            and "--scenario" not in current_consumers[0],
+            "Reusable validation must execute exactly one full current consumer run.")
     concurrency_job = reusable["jobs"].get("health-checks-concurrency")
     require(isinstance(concurrency_job, dict),
             "Reusable validation must define the HealthChecks concurrency OS matrix.")
@@ -751,6 +965,8 @@ def validate(documents: dict[str, dict]) -> None:
             and "--report artifacts/audit/vulnerable.json" in audit_policy_run,
             "Reusable validation must enforce the direct production audit policy from the vulnerable JSON report.")
     upload = named_step(reusable_steps, "Upload immutable packages and reports")
+    require(upload.get("if") == "github.event_name != 'pull_request'",
+            "Reusable validation artifact upload must skip only pull_request events and remain required for non-PR events.")
     require(upload.get("with", {}).get("name") == "${{ inputs.artifact-name }}",
             "Reusable validation must upload the caller-selected artifact name.")
     upload_path = str(upload.get("with", {}).get("path", ""))
@@ -768,7 +984,7 @@ def validate(documents: dict[str, dict]) -> None:
     require(validation == {
         "uses": "./.github/workflows/reusable-release-validation.yml",
         "permissions": {"contents": "read"},
-        "if": SAME_REPOSITORY_PR_GUARD,
+        "if": CI_NORMAL_GUARD,
         "with": {"runner-labels": CI_VALIDATION_RUNNER_INPUT},
     }, "CI validation must be the exact reusable workflow caller with read-only contents permission.")
     pull_request = ci.get("on", {}).get("pull_request", {})
@@ -778,7 +994,7 @@ def validate(documents: dict[str, dict]) -> None:
     require(isinstance(hosting_integration, dict)
             and hosting_integration.get("name") == f"Hosting integration ({HOSTING_NAME})",
             "CI must preserve the Hosting integration check name across event routes.")
-    require_same_repository_pr_guard(hosting_integration, "Hosting integration")
+    require_ci_normal_job_guard(hosting_integration, "Hosting integration")
     require_runner_expression(hosting_integration, HOSTING_RUNNER, "Hosting integration")
     hosting_strategy = hosting_integration.get("strategy")
     require(isinstance(hosting_strategy, dict)
@@ -795,7 +1011,7 @@ def validate(documents: dict[str, dict]) -> None:
     windows = ci["jobs"].get("json-file-windows")
     require(isinstance(windows, dict), "CI must define the Windows JSON lane.")
     require_runner_expression(windows, CI_WINDOWS_RUNNER, "Windows JSON lane")
-    require_same_repository_pr_guard(windows, "Windows JSON lane")
+    require_ci_normal_job_guard(windows, "Windows JSON lane")
     windows_steps = steps(windows, "json-file-windows")
     windows_runs = runs(windows_steps)
     windows_restores = [command for command in windows_runs if "dotnet restore SmartPipe.Core.slnx" in command]
@@ -816,7 +1032,7 @@ def validate(documents: dict[str, dict]) -> None:
             and baseline_windows.get("name") == "Baseline contract (Windows)",
             "CI must define the uniquely named Windows baseline contract job.")
     require_runner_expression(baseline_windows, CI_WINDOWS_RUNNER, "Windows baseline contract lane")
-    require_same_repository_pr_guard(baseline_windows, "Windows baseline contract lane")
+    require_ci_normal_job_guard(baseline_windows, "Windows baseline contract lane")
     baseline_windows_steps = steps(baseline_windows, "Windows baseline contract lane")
     checkout = baseline_windows_steps[0]
     require(str(checkout.get("uses", "")).startswith("actions/checkout")
@@ -855,33 +1071,9 @@ def validate(documents: dict[str, dict]) -> None:
         CLEANUP_PULL_REQUEST_GUARD,
         cleanup_nuget=True,
     )
-    assert_cleanup_job(
-        codeql,
-        "codeql.yml",
-        ["analyze"],
-        CLEANUP_PULL_REQUEST_GUARD,
-        cleanup_nuget=True,
-    )
-    assert_cleanup_job(
-        dependency_review,
-        "dependency-review.yml",
-        ["dependency-review"],
-        CLEANUP_PULL_REQUEST_GUARD,
-    )
+    assert_repository_security_audit_contract(dependency_review)
     assert_nuget_isolation_contract(ci, "ci.yml")
-    assert_nuget_isolation_contract(codeql, "codeql.yml")
-
-    codeql_job = codeql["jobs"].get("analyze")
-    require(isinstance(codeql_job, dict), "CodeQL must define the analyze job.")
-    require_runner_expression(codeql_job, CODEQL_RUNNER, "CodeQL analyze")
-    require_same_repository_pr_guard(codeql_job, "CodeQL analyze")
-    assert_codeql_resource_contract(codeql_job)
-    dependency_review_job = dependency_review["jobs"].get("dependency-review")
-    require(isinstance(dependency_review_job, dict),
-            "Dependency Review must define the dependency-review job.")
-    require_self_hosted_windows(dependency_review_job, "Dependency Review")
-    require_same_repository_pr_guard(dependency_review_job, "Dependency Review", allow_non_pr=False)
-
+    assert_static_analysis_contract(static_analysis)
     all_runs = windows_runs + hosting_runs + reusable_runs
     filtered = [command for command in all_runs
                 if "--filter-class" in command or "--filter-query" in command]
@@ -894,6 +1086,7 @@ def validate(documents: dict[str, dict]) -> None:
     assert_persist_credentials_disabled(documents)
     assert_setup_dotnet_uses_global_json(documents)
     assert_link_check_exclusion_scoped()
+    assert_private_repository_docs_links_are_local()
     assert_consumer_contract()
 
     version = publish["jobs"].get("version")
@@ -1073,11 +1266,13 @@ def _use_hosted_runner_for_required_lanes(documents: dict[str, dict]) -> None:
         ("ci.yml", "baseline-contract-windows"),
         ("reusable-release-validation.yml", "build-test-pack"),
         ("reusable-release-validation.yml", "health-checks-concurrency"),
-        ("codeql.yml", "analyze"),
-        ("dependency-review.yml", "dependency-review"),
     )
     for workflow_name, job_name in lanes:
         documents[workflow_name]["jobs"][job_name]["runs-on"] = "windows-latest"
+
+
+def _make_repository_security_audit_self_hosted(documents: dict[str, dict]) -> None:
+    documents["dependency-review.yml"]["jobs"]["repository-security-audit"]["runs-on"] = SELF_HOSTED_WINDOWS
 
 
 def _make_ci_validation_always_self_hosted(documents: dict[str, dict]) -> None:
@@ -1103,34 +1298,8 @@ def _make_ci_baseline_always_self_hosted(documents: dict[str, dict]) -> None:
     documents["ci.yml"]["jobs"]["baseline-contract-windows"]["runs-on"] = SELF_HOSTED_WINDOWS
 
 
-def _make_codeql_always_self_hosted(documents: dict[str, dict]) -> None:
+def _make_static_analysis_always_self_hosted(documents: dict[str, dict]) -> None:
     documents["codeql.yml"]["jobs"]["analyze"]["runs-on"] = SELF_HOSTED_WINDOWS
-
-
-def _remove_codeql_resource_cap(documents: dict[str, dict]) -> None:
-    analysis = named_step(
-        documents["codeql.yml"]["jobs"]["analyze"]["steps"],
-        "Perform CodeQL Analysis",
-    )
-    analysis["with"].pop("ram", None)
-
-
-def _make_codeql_resource_cap_unconditional(documents: dict[str, dict]) -> None:
-    analysis = named_step(
-        documents["codeql.yml"]["jobs"]["analyze"]["steps"],
-        "Perform CodeQL Analysis",
-    )
-    analysis["with"]["ram"] = "16384"
-    analysis["with"]["threads"] = "2"
-
-
-def _make_codeql_resource_cap_linux_wide(documents: dict[str, dict]) -> None:
-    analysis = named_step(
-        documents["codeql.yml"]["jobs"]["analyze"]["steps"],
-        "Perform CodeQL Analysis",
-    )
-    analysis["with"]["ram"] = str(analysis["with"]["ram"]).replace("|| ''", "|| '16384'")
-    analysis["with"]["threads"] = str(analysis["with"]["threads"]).replace("|| ''", "|| '2'")
 
 
 def _remove_nuget_isolation(documents: dict[str, dict], workflow_name: str) -> None:
@@ -1143,6 +1312,56 @@ def _make_cleanup_non_pr_capable(documents: dict[str, dict], workflow_name: str)
 
 def _remove_ci_runner_override(documents: dict[str, dict]) -> None:
     del documents["ci.yml"]["jobs"]["validation"]["with"]["runner-labels"]
+
+
+def _remove_diagnostic_input(documents: dict[str, dict]) -> None:
+    del documents["ci.yml"]["on"]["workflow_dispatch"]["inputs"]["diagnostic-sha"]
+
+
+def _make_diagnostic_hosted(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["jobs"]["diagnostic-consumer"]["runs-on"] = "windows-latest"
+
+
+def _make_ci_normal_job_diagnostic_capable(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["jobs"]["json-file-windows"]["if"] = SAME_REPOSITORY_PR_GUARD
+
+
+def _remove_diagnostic_sha_validation(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["diagnostic-consumer"]["steps"],
+        "Validate diagnostic inputs",
+    )
+    step["run"] = str(step["run"]).replace("^[0-9a-f]{40}", "^[0-9a-f]+")
+
+
+def _remove_diagnostic_exact_checkout(documents: dict[str, dict]) -> None:
+    checkout = next(
+        step for step in documents["ci.yml"]["jobs"]["diagnostic-consumer"]["steps"]
+        if str(step.get("uses", "")).startswith("actions/checkout")
+    )
+    checkout["with"]["ref"] = "main"
+
+
+def _remove_diagnostic_repeat_bound(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["diagnostic-consumer"]["steps"],
+        "Validate diagnostic inputs",
+    )
+    step["run"] = str(step["run"]).replace("^[1-5]$", "^[0-9]+$")
+
+
+def _duplicate_current_consumer_run(documents: dict[str, dict]) -> None:
+    job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
+    current = named_step(job["steps"], "Run current consumers")
+    job["steps"].append(copy.deepcopy(current))
+
+
+def _move_current_consumer_after_wide_tests(documents: dict[str, dict]) -> None:
+    job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
+    current = named_step(job["steps"], "Run current consumers")
+    job["steps"].remove(current)
+    wide = job["steps"].index(named_step(job["steps"], "Core correctness regressions"))
+    job["steps"].insert(wide + 1, current)
 
 
 def _change_runner_default(documents: dict[str, dict]) -> None:
@@ -1292,6 +1511,22 @@ def _duplicate_upload(documents: dict[str, dict]) -> None:
     job_steps.append(copy.deepcopy(named_step(job_steps, "Upload immutable packages and reports")))
 
 
+def _remove_upload_event_guard(documents: dict[str, dict]) -> None:
+    upload = named_step(
+        documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
+        "Upload immutable packages and reports",
+    )
+    upload.pop("if", None)
+
+
+def _restrict_upload_to_push(documents: dict[str, dict]) -> None:
+    upload = named_step(
+        documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
+        "Upload immutable packages and reports",
+    )
+    upload["if"] = "github.event_name == 'push'"
+
+
 def _hardcode_publish_package(documents: dict[str, dict]) -> None:
     publish_steps = documents["publish-nuget.yml"]["jobs"]["publish"]["steps"]
     push = named_step(publish_steps, "Publish packages in dependency order")
@@ -1312,6 +1547,46 @@ def assert_mutation_rejected(documents: dict[str, dict], mutate, expected: str) 
 def main() -> int:
     documents = load_workflows()
     validate(documents)
+    assert_mutation_rejected(
+        documents,
+        _remove_diagnostic_input,
+        "exactly SHA, scenario, and repeat inputs",
+    )
+    assert_mutation_rejected(
+        documents,
+        _make_diagnostic_hosted,
+        "must target the self-hosted Windows X64 runner labels",
+    )
+    assert_mutation_rejected(
+        documents,
+        _make_ci_normal_job_diagnostic_capable,
+        "skip only diagnostic dispatches",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_diagnostic_sha_validation,
+        "^[0-9a-f]{40}$",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_diagnostic_exact_checkout,
+        "exact requested SHA",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_diagnostic_repeat_bound,
+        "^[1-5]$",
+    )
+    assert_mutation_rejected(
+        documents,
+        _duplicate_current_consumer_run,
+        "Expected exactly one step named 'Run current consumers'",
+    )
+    assert_mutation_rejected(
+        documents,
+        _move_current_consumer_after_wide_tests,
+        "must run before wide tests",
+    )
     assert_mutation_rejected(
         documents,
         lambda docs: _remove_reusable_step(docs, "Verify RepositoryChecks profile"),
@@ -1339,11 +1614,6 @@ def main() -> int:
         documents,
         lambda docs: _remove_reusable_step(docs, "Pack packages from graph"),
         "Pack packages from graph",
-    )
-    assert_mutation_rejected(
-        documents,
-        lambda docs: _remove_reusable_step(docs, "Run HealthChecks consumers"),
-        "Run HealthChecks consumers",
     )
     assert_mutation_rejected(
         documents,
@@ -1448,13 +1718,13 @@ def main() -> int:
     )
     assert_mutation_rejected(
         documents,
-        lambda docs: _remove_reusable_step(docs, "Run Hosting consumers"),
-        "Run Hosting consumers",
+        _use_hosted_runner_for_required_lanes,
+        "runner-labels workflow input",
     )
     assert_mutation_rejected(
         documents,
-        _use_hosted_runner_for_required_lanes,
-        "runner-labels workflow input",
+        _make_repository_security_audit_self_hosted,
+        "must use hosted Linux",
     )
     assert_mutation_rejected(
         documents,
@@ -1483,25 +1753,10 @@ def main() -> int:
     )
     assert_mutation_rejected(
         documents,
-        _make_codeql_always_self_hosted,
-        "event-aware runner expression",
+        _make_static_analysis_always_self_hosted,
+        "must not retain self-hosted",
     )
-    assert_mutation_rejected(
-        documents,
-        _remove_codeql_resource_cap,
-        "CodeQL analyze resource cap",
-    )
-    assert_mutation_rejected(
-        documents,
-        _make_codeql_resource_cap_unconditional,
-        "CodeQL analyze resource cap",
-    )
-    assert_mutation_rejected(
-        documents,
-        _make_codeql_resource_cap_linux_wide,
-        "CodeQL analyze resource cap",
-    )
-    for workflow_name in ("ci.yml", "codeql.yml", "reusable-release-validation.yml"):
+    for workflow_name in ("ci.yml", "reusable-release-validation.yml"):
         assert_mutation_rejected(
             documents,
             lambda docs, name=workflow_name: _remove_nuget_isolation(docs, name),
@@ -1571,7 +1826,7 @@ def main() -> int:
         _remove_ci_cleanup_job,
         "must define cleanup-self-hosted",
     )
-    for workflow_name in ("ci.yml", "codeql.yml", "dependency-review.yml"):
+    for workflow_name in ("ci.yml",):
         assert_mutation_rejected(
             documents,
             lambda docs, name=workflow_name: _make_cleanup_non_pr_capable(docs, name),
@@ -1582,13 +1837,13 @@ def main() -> int:
         _make_ci_cleanup_delete_workspace_root,
         "must not delete the workspace root",
     )
-    for workflow_name in ("ci.yml", "codeql.yml", "dependency-review.yml"):
+    for workflow_name in ("ci.yml",):
         assert_mutation_rejected(
             documents,
             lambda docs, name=workflow_name: _remove_cleanup_direct_target_guard(docs, name),
             f"{workflow_name} cleanup must reject direct target reparse points",
         )
-    for workflow_name in ("ci.yml", "codeql.yml"):
+    for workflow_name in ("ci.yml",):
         assert_mutation_rejected(
             documents,
             lambda docs, name=workflow_name: _remove_cleanup_nuget_target(docs, name),
@@ -1616,18 +1871,18 @@ def main() -> int:
     )
     assert_mutation_rejected(
         documents,
-        _move_opentelemetry_consumers_before_pack,
-        "required order",
-    )
-    assert_mutation_rejected(
-        documents,
-        lambda docs: _remove_reusable_step(docs, "Run OpenTelemetry consumers"),
-        "Run OpenTelemetry consumers",
-    )
-    assert_mutation_rejected(
-        documents,
         _duplicate_upload,
         "exactly one step named 'Upload immutable packages and reports'",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_upload_event_guard,
+        "skip only pull_request events and remain required for non-PR events",
+    )
+    assert_mutation_rejected(
+        documents,
+        _restrict_upload_to_push,
+        "skip only pull_request events and remain required for non-PR events",
     )
     assert_mutation_rejected(
         documents,
