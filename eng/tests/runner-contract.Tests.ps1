@@ -103,6 +103,16 @@ try {
     Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $tempRoot 'SmartPipe.Core'))) -Message 'Known SmartPipe temp must be removed.'
     Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $tempRoot 'CodeQL'))) -Message 'Known CodeQL temp must be removed.'
 
+    $emptyCleanup = Invoke-RunnerScript -ScriptPath $jobStartScript -WorkingDirectory $workspace -Arguments @(
+        '-RunnerRoot', $runnerRoot,
+        '-WorkspaceRoot', $workspace,
+        '-TempRoot', $tempRoot,
+        '-Repository', 'MrFr3di/SmartPipe-Core',
+        '-AllowTestRoot'
+    )
+    Assert-RunnerEqual -Actual $emptyCleanup.ExitCode -Expected 0 -Message "An existing empty workspace must be idempotently clean. $($emptyCleanup.Output)"
+    Assert-RunnerEqual -Actual @(Get-ChildItem -LiteralPath $workspace -Force).Count -Expected 0 -Message 'An idempotent empty workspace must remain empty.'
+
     $absentWorkspace = Join-Path $runnerRoot '_work\SmartPipe.Core\absent'
     $absent = Invoke-RunnerScript -ScriptPath $jobStartScript -Arguments @(
         '-RunnerRoot', $runnerRoot,

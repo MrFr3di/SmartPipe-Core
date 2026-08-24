@@ -34,8 +34,11 @@ try {
     }
 
     if (Test-Path -LiteralPath $workspace -PathType Container) {
-        Assert-SmartPipeWorkspaceRepository -Workspace $workspace
-        [void](Remove-SmartPipeCleanupTarget -Path $workspace -Boundary $runner -AllowBoundary)
+        Assert-SmartPipeNoReparsePath -Path $workspace -Boundary $runner
+        if (@(Get-ChildItem -LiteralPath $workspace -Force -ErrorAction Stop).Count -gt 0) {
+            Assert-SmartPipeWorkspaceRepository -Workspace $workspace
+            [void](Remove-SmartPipeCleanupTarget -Path $workspace -Boundary $runner -AllowBoundary)
+        }
     }
     elseif (Test-Path -LiteralPath $workspace) {
         throw "Workspace path is not a directory: $workspace"
@@ -44,7 +47,9 @@ try {
         Assert-SmartPipeNoReparsePath -Path $workspace -Boundary $runner
     }
 
-    New-Item -ItemType Directory -Path $workspace -ErrorAction Stop | Out-Null
+    if (-not (Test-Path -LiteralPath $workspace -PathType Container)) {
+        New-Item -ItemType Directory -Path $workspace -ErrorAction Stop | Out-Null
+    }
     Assert-SmartPipeNoReparsePath -Path $workspace -Boundary $runner
     if (-not (Test-Path -LiteralPath $workspace -PathType Container)) {
         throw "Workspace directory was not created: $workspace"

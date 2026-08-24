@@ -126,7 +126,9 @@ empty workspace directory before the next checkout. It also removes the known
 `SmartPipe.Core`, `SmartPipe-Core`, `CodeQL`, and `codeql` directories below
 `RUNNER_TEMP`. Missing temp targets are successful. Any outside path, broad
 root, reparse point, unsafe repository, non-empty recreation, or deletion error
-fails closed before removal; the existing workflow cleanup jobs remain as
+fails closed before removal. An existing empty workspace is accepted
+idempotently; any non-empty workspace must pass the exact repository/origin
+authorization before removal. The existing workflow cleanup jobs remain as
 defense in depth.
 
 For a compact, transition-only pull-request view:
