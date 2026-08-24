@@ -121,11 +121,13 @@ with their PIDs; ambiguous listeners are never stopped automatically.
 The job-start hook accepts only `MrFr3di/SmartPipe-Core`, verifies the checkout
 remote, and canonicalizes every target beneath the dedicated runner root. It
 runs before the next job starts, after the runner has completed the previous
-job's process cleanup, and removes the exact prior checkout plus the known
+job's process cleanup, removes the exact prior checkout, and recreates its
+empty workspace directory before the next checkout. It also removes the known
 `SmartPipe.Core`, `SmartPipe-Core`, `CodeQL`, and `codeql` directories below
-`RUNNER_TEMP`. Missing targets are successful. Any outside path, broad root,
-reparse point, unsafe repository, or deletion error fails closed before
-removal; the existing workflow cleanup jobs remain as defense in depth.
+`RUNNER_TEMP`. Missing temp targets are successful. Any outside path, broad
+root, reparse point, unsafe repository, non-empty recreation, or deletion error
+fails closed before removal; the existing workflow cleanup jobs remain as
+defense in depth.
 
 For a compact, transition-only pull-request view:
 

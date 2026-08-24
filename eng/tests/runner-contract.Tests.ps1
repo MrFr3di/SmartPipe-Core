@@ -93,7 +93,10 @@ try {
         '-AllowTestRoot'
     )
     Assert-RunnerEqual -Actual $cleanup.ExitCode -Expected 0 -Message "Job-start cleanup must succeed for a valid checkout. $($cleanup.Output)"
-    Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath $workspace)) -Message 'The exact checkout must be removed.'
+    Assert-RunnerTrue -Condition (Test-Path -LiteralPath $workspace -PathType Container) -Message 'The exact workspace directory must be recreated.'
+    Assert-RunnerEqual -Actual @(Get-ChildItem -LiteralPath $workspace -Force).Count -Expected 0 -Message 'The recreated workspace must be empty.'
+    Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $workspace '.git'))) -Message 'The recreated workspace must not retain .git.'
+    Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $workspace 'output.txt'))) -Message 'The recreated workspace must not retain stale files.'
     Assert-RunnerTrue -Condition (Test-Path -LiteralPath (Join-Path $toolRoot 'preserve.txt')) -Message '_tool must be preserved.'
     Assert-RunnerTrue -Condition (Test-Path -LiteralPath (Join-Path $sibling 'preserve.txt')) -Message 'Sibling repositories must be preserved.'
     Assert-RunnerTrue -Condition (Test-Path -LiteralPath (Join-Path $tempRoot 'unrelated.tmp')) -Message 'Unrelated temp files must be preserved.'
@@ -109,6 +112,8 @@ try {
         '-AllowTestRoot'
     )
     Assert-RunnerEqual -Actual $absent.ExitCode -Expected 0 -Message 'Absent cleanup targets must be successful.'
+    Assert-RunnerTrue -Condition (Test-Path -LiteralPath $absentWorkspace -PathType Container) -Message 'An absent workspace must be recreated.'
+    Assert-RunnerEqual -Actual @(Get-ChildItem -LiteralPath $absentWorkspace -Force).Count -Expected 0 -Message 'A recreated absent workspace must be empty.'
 
     New-Item -ItemType Directory -Path $workspace, (Join-Path $workspace '.git') -Force | Out-Null
     @'
