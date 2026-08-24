@@ -2248,7 +2248,7 @@ SP220-01 may extend `SmartPipe.RepositoryChecks` with package graph allowlists a
 5. GitHub Docs — protected branches: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches
 6. GitHub Docs — repository rulesets: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets
 7. GitHub Docs — security hardening for Actions: https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions
-8. SmartPipe repository baseline commit: https://github.com/MrFr3di/SmartPipe-Core/commit/8e79902d22de714f493582946f7c260462b0895e
+8. SmartPipe repository baseline commit: `8e79902d22de714f493582946f7c260462b0895e`; tracked baseline manifest: [eng/baselines/2.1.2/manifest.json](../../../eng/baselines/2.1.2/manifest.json)
 
 ---
 

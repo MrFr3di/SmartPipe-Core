@@ -278,6 +278,76 @@ def assert_cleanup_job(
             f"{workflow_name} cleanup must check direct target reparse points before recursion.")
 
 
+def assert_repository_security_audit_contract(workflow: dict) -> None:
+    require(workflow.get("name") == "Repository security audit",
+            "Dependency Review workflow must identify the repository-controlled security audit.")
+    require(workflow.get("permissions") == {"contents": "read"},
+            "Repository security audit must request only read access to repository contents.")
+    jobs = workflow.get("jobs", {})
+    require("cleanup-self-hosted" not in jobs,
+            "Hosted repository security audit must not depend on self-hosted cleanup.")
+    job = jobs.get("repository-security-audit")
+    require(isinstance(job, dict),
+            "Dependency Review workflow must define repository-security-audit.")
+    require(job.get("name") == "Repository security audit",
+            "Repository security audit must preserve its distinct check name.")
+    require(job.get("if") == PULL_REQUEST_SAME_REPOSITORY_GUARD,
+            "Repository security audit must run only for same-repository pull requests.")
+    require(job.get("runs-on") == "ubuntu-latest",
+            "Repository security audit must use hosted Linux.")
+    require("self-hosted" not in str(job.get("runs-on", "")),
+            "Repository security audit must not use a self-hosted runner.")
+
+    job_steps = steps(job, "Repository security audit")
+    checkouts = [step for step in job_steps
+                 if str(step.get("uses", "")).startswith("actions/checkout")]
+    require(len(checkouts) == 1
+            and checkouts[0].get("with", {}).get("persist-credentials") is False,
+            "Repository security audit checkout must be pinned and credential-free.")
+    setup = [step for step in job_steps
+             if str(step.get("uses", "")).startswith("actions/setup-dotnet")]
+    require(len(setup) == 1
+            and setup[0].get("with", {}).get("global-json-file") == "global.json",
+            "Repository security audit setup-dotnet must use global.json as the SDK source.")
+    require(not any("actions/dependency-review-action" in str(step.get("uses", ""))
+                    for step in job_steps),
+            "Repository security audit must not claim hosted Dependency Review execution.")
+    require(not any(step.get("continue-on-error") for step in job_steps),
+            "Repository security audit must fail closed without continue-on-error.")
+
+    restore = named_step(job_steps, "Restore locked")
+    require("dotnet restore SmartPipe.Core.slnx --locked-mode" in str(restore.get("run", "")),
+            "Repository security audit must perform locked restore.")
+    build = named_step(job_steps, "Build repository checks")
+    require(build.get("shell") == "pwsh"
+            and "dotnet build eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+            "--configuration Release --no-restore -warnaserror" in str(build.get("run", "")),
+            "Repository security audit must build RepositoryChecks with warnings as errors.")
+    profile = named_step(job_steps, "Verify repository package contracts")
+    require(profile.get("shell") == "pwsh"
+            and "dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+            "--configuration Release --no-build --no-restore -- verify --profile sp220-05 "
+            "--format github --failures-only" in str(profile.get("run", "")),
+            "Repository security audit must run the strict repository package profile.")
+    vulnerable = named_step(job_steps, "Vulnerable package scan")
+    require(vulnerable.get("shell") == "pwsh"
+            and "dotnet package list --project SmartPipe.Core.slnx --vulnerable "
+            "--include-transitive --format json --output-version 1 --no-restore" in str(vulnerable.get("run", ""))
+            and "artifacts/audit/vulnerable.json" in str(vulnerable.get("run", "")),
+            "Repository security audit must produce a strict vulnerable package report.")
+    audit = named_step(job_steps, "Verify direct production audit policy")
+    require(audit.get("shell") == "pwsh"
+            and "verify-nuget-audit" in str(audit.get("run", ""))
+            and "--report artifacts/audit/vulnerable.json" in str(audit.get("run", "")),
+            "Repository security audit must enforce the repository NuGet audit policy.")
+    deprecated = named_step(job_steps, "Deprecated package scan")
+    require(deprecated.get("shell") == "pwsh"
+            and "dotnet package list --project SmartPipe.Core.slnx --deprecated "
+            "--include-transitive --format json --output-version 1 --no-restore" in str(deprecated.get("run", ""))
+            and "artifacts/audit/deprecated.json" in str(deprecated.get("run", "")),
+            "Repository security audit must report deprecated packages without suppressing failures.")
+
+
 def assert_reusable_windows_shell_contract(reusable_steps: list[dict]) -> None:
     release_version = named_step(reusable_steps, "Test release version validation")
     release_run = str(release_version.get("run", ""))
@@ -592,6 +662,18 @@ def assert_link_check_exclusion_scoped() -> None:
             "SmartPipe.Extensions.Json URL.")
     require(not any("nuget.org" in pattern and pattern != target for pattern in exclude),
             "lychee.toml must not contain a broad nuget.org exclusion.")
+
+
+def assert_private_repository_docs_links_are_local() -> None:
+    private_repository_prefix = "https://github.com/MrFr3di/SmartPipe-Core/"
+    sources = (
+        ROOT / "README.md",
+        ROOT / "docs" / "plans" / "2.2.0-extension-architecture.md",
+        ROOT / "docs" / "plans" / "2.2.0" / "SP220-00-governance-and-baseline.md",
+    )
+    for source in sources:
+        require(private_repository_prefix not in source.read_text(encoding="utf-8"),
+                f"{source.relative_to(ROOT)} must use local links for private repository references.")
 
 
 def assert_consumer_contract() -> None:
@@ -976,12 +1058,7 @@ def validate(documents: dict[str, dict]) -> None:
         CLEANUP_PULL_REQUEST_GUARD,
         cleanup_nuget=True,
     )
-    assert_cleanup_job(
-        dependency_review,
-        "dependency-review.yml",
-        ["dependency-review"],
-        CLEANUP_PULL_REQUEST_GUARD,
-    )
+    assert_repository_security_audit_contract(dependency_review)
     assert_nuget_isolation_contract(ci, "ci.yml")
     assert_nuget_isolation_contract(codeql, "codeql.yml")
 
@@ -990,12 +1067,6 @@ def validate(documents: dict[str, dict]) -> None:
     require_runner_expression(codeql_job, CODEQL_RUNNER, "CodeQL analyze")
     require_same_repository_pr_guard(codeql_job, "CodeQL analyze")
     assert_codeql_resource_contract(codeql_job)
-    dependency_review_job = dependency_review["jobs"].get("dependency-review")
-    require(isinstance(dependency_review_job, dict),
-            "Dependency Review must define the dependency-review job.")
-    require_self_hosted_windows(dependency_review_job, "Dependency Review")
-    require_same_repository_pr_guard(dependency_review_job, "Dependency Review", allow_non_pr=False)
-
     all_runs = windows_runs + hosting_runs + reusable_runs
     filtered = [command for command in all_runs
                 if "--filter-class" in command or "--filter-query" in command]
@@ -1008,6 +1079,7 @@ def validate(documents: dict[str, dict]) -> None:
     assert_persist_credentials_disabled(documents)
     assert_setup_dotnet_uses_global_json(documents)
     assert_link_check_exclusion_scoped()
+    assert_private_repository_docs_links_are_local()
     assert_consumer_contract()
 
     version = publish["jobs"].get("version")
@@ -1188,10 +1260,13 @@ def _use_hosted_runner_for_required_lanes(documents: dict[str, dict]) -> None:
         ("reusable-release-validation.yml", "build-test-pack"),
         ("reusable-release-validation.yml", "health-checks-concurrency"),
         ("codeql.yml", "analyze"),
-        ("dependency-review.yml", "dependency-review"),
     )
     for workflow_name, job_name in lanes:
         documents[workflow_name]["jobs"][job_name]["runs-on"] = "windows-latest"
+
+
+def _make_repository_security_audit_self_hosted(documents: dict[str, dict]) -> None:
+    documents["dependency-review.yml"]["jobs"]["repository-security-audit"]["runs-on"] = SELF_HOSTED_WINDOWS
 
 
 def _make_ci_validation_always_self_hosted(documents: dict[str, dict]) -> None:
@@ -1652,6 +1727,11 @@ def main() -> int:
     )
     assert_mutation_rejected(
         documents,
+        _make_repository_security_audit_self_hosted,
+        "must use hosted Linux",
+    )
+    assert_mutation_rejected(
+        documents,
         _make_ci_validation_always_self_hosted,
         "exact reusable workflow caller",
     )
@@ -1765,7 +1845,7 @@ def main() -> int:
         _remove_ci_cleanup_job,
         "must define cleanup-self-hosted",
     )
-    for workflow_name in ("ci.yml", "codeql.yml", "dependency-review.yml"):
+    for workflow_name in ("ci.yml", "codeql.yml"):
         assert_mutation_rejected(
             documents,
             lambda docs, name=workflow_name: _make_cleanup_non_pr_capable(docs, name),
@@ -1776,7 +1856,7 @@ def main() -> int:
         _make_ci_cleanup_delete_workspace_root,
         "must not delete the workspace root",
     )
-    for workflow_name in ("ci.yml", "codeql.yml", "dependency-review.yml"):
+    for workflow_name in ("ci.yml", "codeql.yml"):
         assert_mutation_rejected(
             documents,
             lambda docs, name=workflow_name: _remove_cleanup_direct_target_guard(docs, name),
