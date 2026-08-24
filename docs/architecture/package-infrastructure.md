@@ -74,7 +74,10 @@ The profile replaces duplicate central-package and project checks only.
 Packing, baseline provisioning/offline verification, package metadata and
 ownership, consumers, audit, and artifact upload remain specialized workflow
 gates. Consumer artifacts upload `result.json`; retained bounded logs stay in
-the local job workspace.
+the local job workspace. Pull-request validation skips only the shared artifact
+upload to avoid account-level storage quota failures; package/report generation
+and all preceding gates remain required. Push, dispatch, and release validation
+continue to require the fail-closed artifact for publish consumption.
 
 ## Agent context and exact-tree evidence
 

@@ -260,6 +260,7 @@ jobs:
         if ($exitCode -ne 0) { exit $exitCode }
 
     - name: Upload immutable packages and reports
+      if: github.event_name != 'pull_request'
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: ${{ inputs.artifact-name }}

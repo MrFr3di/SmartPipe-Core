@@ -965,6 +965,8 @@ def validate(documents: dict[str, dict]) -> None:
             and "--report artifacts/audit/vulnerable.json" in audit_policy_run,
             "Reusable validation must enforce the direct production audit policy from the vulnerable JSON report.")
     upload = named_step(reusable_steps, "Upload immutable packages and reports")
+    require(upload.get("if") == "github.event_name != 'pull_request'",
+            "Reusable validation artifact upload must skip only pull_request events and remain required for non-PR events.")
     require(upload.get("with", {}).get("name") == "${{ inputs.artifact-name }}",
             "Reusable validation must upload the caller-selected artifact name.")
     upload_path = str(upload.get("with", {}).get("path", ""))
@@ -1509,6 +1511,22 @@ def _duplicate_upload(documents: dict[str, dict]) -> None:
     job_steps.append(copy.deepcopy(named_step(job_steps, "Upload immutable packages and reports")))
 
 
+def _remove_upload_event_guard(documents: dict[str, dict]) -> None:
+    upload = named_step(
+        documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
+        "Upload immutable packages and reports",
+    )
+    upload.pop("if", None)
+
+
+def _restrict_upload_to_push(documents: dict[str, dict]) -> None:
+    upload = named_step(
+        documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
+        "Upload immutable packages and reports",
+    )
+    upload["if"] = "github.event_name == 'push'"
+
+
 def _hardcode_publish_package(documents: dict[str, dict]) -> None:
     publish_steps = documents["publish-nuget.yml"]["jobs"]["publish"]["steps"]
     push = named_step(publish_steps, "Publish packages in dependency order")
@@ -1855,6 +1873,16 @@ def main() -> int:
         documents,
         _duplicate_upload,
         "exactly one step named 'Upload immutable packages and reports'",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_upload_event_guard,
+        "skip only pull_request events and remain required for non-PR events",
+    )
+    assert_mutation_rejected(
+        documents,
+        _restrict_upload_to_push,
+        "skip only pull_request events and remain required for non-PR events",
     )
     assert_mutation_rejected(
         documents,
