@@ -317,6 +317,48 @@ function Assert-SmartPipeCanonicalRemote {
     throw "Workspace origin remote is not MrFr3di/SmartPipe-Core: $Workspace"
 }
 
+function Get-SmartPipeListenerClassification {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object] $Listener,
+
+        [Parameter(Mandatory = $true)]
+        [string] $Root
+    )
+
+    $runnerRoot = Get-SmartPipeFullPath -Path $Root
+    $executablePath = ''
+    $executableReadable = $true
+    try {
+        $executablePath = [string]$Listener.ExecutablePath
+    }
+    catch {
+        $executableReadable = $false
+    }
+
+    if (-not $executableReadable -or [string]::IsNullOrWhiteSpace($executablePath)) {
+        return 'unclassified'
+    }
+    try {
+        if (-not [IO.Path]::IsPathFullyQualified($executablePath)) {
+            return 'unclassified'
+        }
+    }
+    catch {
+        return 'unclassified'
+    }
+
+    try {
+        if (Test-SmartPipeContainedPath -Path $executablePath -Boundary $runnerRoot) {
+            return 'exact'
+        }
+        return 'outside'
+    }
+    catch {
+        return 'unclassified'
+    }
+}
+
 function Get-SmartPipeListenerProcesses {
     param(
         [Parameter(Mandatory = $true)]
@@ -325,41 +367,110 @@ function Get-SmartPipeListenerProcesses {
         [string] $FixturePath = ''
     )
 
+    $listenerRecords = @()
     if (-not [string]::IsNullOrWhiteSpace($FixturePath)) {
         if (-not (Test-Path -LiteralPath $FixturePath -PathType Leaf)) {
             return @()
         }
 
         $text = (Get-Content -LiteralPath $FixturePath -Raw -ErrorAction Stop).Trim()
-        $count = 0
-        if (-not [int]::TryParse($text, [Globalization.NumberStyles]::Integer, [Globalization.CultureInfo]::InvariantCulture, [ref]$count) -or $count -lt 0) {
-            throw "Invalid listener fixture state: $FixturePath"
+        $runnerRoot = Get-SmartPipeFullPath -Path $Root
+        $fixtureExecutable = Join-Path $runnerRoot 'bin\Runner.Listener.exe'
+        if ($text -eq 'unclassified-duplicate') {
+            $listenerRecords = @(
+                [pscustomobject]@{
+                    ProcessId = 4101
+                    Name = 'Runner.Listener.exe'
+                    ExecutablePath = $fixtureExecutable
+                    CommandLine = $fixtureExecutable
+                },
+                [pscustomobject]@{
+                    ProcessId = 4102
+                    Name = 'Runner.Listener.exe'
+                    ExecutablePath = $null
+                    CommandLine = "-RunnerRoot $runnerRoot"
+                }
+            )
         }
+        else {
+            $count = 0
+            if (-not [int]::TryParse($text, [Globalization.NumberStyles]::Integer, [Globalization.CultureInfo]::InvariantCulture, [ref]$count) -or $count -lt 0) {
+                throw "Invalid listener fixture state: $FixturePath"
+            }
 
-        $fixtureListeners = [Collections.Generic.List[object]]::new()
-        for ($index = 1; $index -le $count; $index++) {
-            [void]$fixtureListeners.Add([pscustomobject]@{
-                ProcessId = 0
-                Name = 'Runner.Listener.fixture'
-                CommandLine = $Root
+            $fixtureListeners = [Collections.Generic.List[object]]::new()
+            for ($index = 1; $index -le $count; $index++) {
+                [void]$fixtureListeners.Add([pscustomobject]@{
+                    ProcessId = 0
+                    Name = 'Runner.Listener.exe'
+                    ExecutablePath = $fixtureExecutable
+                    CommandLine = $fixtureExecutable
+                })
+            }
+            $listenerRecords = @($fixtureListeners)
+        }
+    }
+    else {
+        try {
+            $listenerRecords = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop | Where-Object {
+                $_.Name -in @('Runner.Listener.exe', 'Runner.Listener')
             })
         }
-        return @($fixtureListeners)
+        catch {
+            if ($IsWindows) {
+                throw "Unable to inspect listener processes for $Root."
+            }
+            return @()
+        }
     }
 
-    try {
-        $escapedRoot = [Regex]::Escape((Get-SmartPipeFullPath -Path $Root))
-        return @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop | Where-Object {
-            $_.Name -in @('Runner.Listener.exe', 'Runner.Listener') -and
-            $_.CommandLine -match $escapedRoot
-        })
-    }
-    catch {
-        if ($IsWindows) {
-            throw "Unable to inspect listener processes for $Root."
+    $exactListeners = [Collections.Generic.List[object]]::new()
+    $unclassifiedIds = [Collections.Generic.List[string]]::new()
+    $outsideIds = [Collections.Generic.List[string]]::new()
+    foreach ($listener in $listenerRecords) {
+        $processId = $null
+        try {
+            $processId = $listener.ProcessId
         }
-        return @()
+        catch {
+            $processId = $null
+        }
+        $processIdText = if ($null -eq $processId -or [string]::IsNullOrWhiteSpace([string]$processId)) { 'unknown' } else { [string]$processId }
+        $classification = Get-SmartPipeListenerClassification -Listener $listener -Root $Root
+        if ($classification -eq 'exact') {
+            [void]$exactListeners.Add($listener)
+        }
+        elseif ($classification -eq 'outside') {
+            [void]$outsideIds.Add($processIdText)
+        }
+        else {
+            [void]$unclassifiedIds.Add($processIdText)
+        }
     }
+
+    if ($unclassifiedIds.Count -gt 0 -or $outsideIds.Count -gt 0) {
+        $details = [Collections.Generic.List[string]]::new()
+        if ($unclassifiedIds.Count -gt 0) {
+            [void]$details.Add("unclassified Runner.Listener PID(s): $($unclassifiedIds -join ', ')")
+        }
+        if ($outsideIds.Count -gt 0) {
+            [void]$details.Add("Runner.Listener outside '$Root' PID(s): $($outsideIds -join ', ')")
+        }
+        throw "Runner listener safety check failed for '$Root': $($details -join '; '). No listener was stopped."
+    }
+
+    return @($exactListeners)
+}
+
+function Assert-SmartPipeListenerSafety {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Root,
+
+        [string] $FixturePath = ''
+    )
+
+    $null = @(Get-SmartPipeListenerProcesses -Root $Root -FixturePath $FixturePath)
 }
 
 function Stop-SmartPipeListenerProcesses {

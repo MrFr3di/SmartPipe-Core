@@ -113,7 +113,10 @@ writable persistent directory without granting access to
 `C:\Program Files\dotnet`.
 The hook entry is `ACTIONS_RUNNER_HOOK_JOB_STARTED`; upgrades remove the legacy
 `ACTIONS_RUNNER_HOOK_JOB_COMPLETED` entry and hook copy before writing the new
-owned state.
+owned state. Before any file, label, stop, or restart mutation, every
+`Runner.Listener.exe` must be classifiable to this exact root. Missing or
+unreadable process metadata and listeners belonging to another root fail closed
+with their PIDs; ambiguous listeners are never stopped automatically.
 
 The job-start hook accepts only `MrFr3di/SmartPipe-Core`, verifies the checkout
 remote, and canonicalizes every target beneath the dedicated runner root. It

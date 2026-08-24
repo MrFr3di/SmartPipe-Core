@@ -28,6 +28,7 @@ try {
     $resolvedRunnerName = Resolve-SmartPipeRunnerName -Root $runner -RequestedName $RunnerName
     Assert-SmartPipeActionsRunsIdle -Repository $Repository -GhPath $GhPath
     $remoteRunner = Assert-SmartPipeRemoteRunnerIdle -Repository $Repository -RunnerName $resolvedRunnerName -GhPath $GhPath
+    Assert-SmartPipeListenerSafety -Root $runner -FixturePath $ListenerFixturePath
 
     $environmentPath = Join-Path $runner '.env'
     Remove-SmartPipeEnvironment -EnvironmentPath $environmentPath

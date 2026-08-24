@@ -279,6 +279,24 @@ ACTIONS_RUNNER_HOOK_JOB_COMPLETED=C:\legacy\smartpipe-post-job-cleanup.ps1
     Assert-RunnerTrue -Condition (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-job-start-cleanup.ps1')) -Message 'Installer must copy the job-start hook.'
     Assert-RunnerTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $runnerRoot 'hooks\smartpipe-post-job-cleanup.ps1'))) -Message 'Installer must remove the legacy hook copy.'
 
+    $environmentBeforeAmbiguous = Get-Content -LiteralPath $environment -Raw
+    $labelsBeforeAmbiguous = Get-Content -LiteralPath $labelState -Raw
+    'unclassified-duplicate' | Set-Content -LiteralPath $listenerFixture -NoNewline
+    $ambiguousInstall = Invoke-RunnerScript -ScriptPath $installScript -Arguments @(
+        '-RunnerRoot', $runnerRoot,
+        '-Repository', 'MrFr3di/SmartPipe-Core',
+        '-RunnerName', 'SmartPipe-Runner',
+        '-GhPath', $runnerGh,
+        '-ListenerFixturePath', $listenerFixture,
+        '-AllowTestRoot'
+    )
+    Assert-RunnerTrue -Condition ($ambiguousInstall.ExitCode -ne 0) -Message "Installer must refuse an unclassified duplicate before mutation. $($ambiguousInstall.Output)"
+    Assert-RunnerTrue -Condition ($ambiguousInstall.Output -match '4102') -Message "Unclassified listener diagnostics must report the exact PID. $($ambiguousInstall.Output)"
+    Assert-RunnerEqual -Actual ((Get-Content -LiteralPath $listenerFixture -Raw).Trim()) -Expected 'unclassified-duplicate' -Message 'Unclassified duplicate refusal must not stop or rewrite the listener fixture.'
+    Assert-RunnerEqual -Actual (Get-Content -LiteralPath $environment -Raw) -Expected $environmentBeforeAmbiguous -Message 'Unclassified duplicate refusal must precede environment mutation.'
+    Assert-RunnerEqual -Actual (Get-Content -LiteralPath $labelState -Raw) -Expected $labelsBeforeAmbiguous -Message 'Unclassified duplicate refusal must precede label mutation.'
+    '1' | Set-Content -LiteralPath $listenerFixture -NoNewline
+
     $uninstall = Invoke-RunnerScript -ScriptPath $uninstallScript -Arguments @(
         '-RunnerRoot', $runnerRoot,
         '-Repository', 'MrFr3di/SmartPipe-Core',

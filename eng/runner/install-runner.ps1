@@ -33,6 +33,7 @@ try {
 
     Assert-SmartPipeActionsRunsIdle -Repository $Repository -GhPath $GhPath
     $remoteRunner = Assert-SmartPipeRemoteRunnerIdle -Repository $Repository -RunnerName $resolvedRunnerName -GhPath $GhPath
+    Assert-SmartPipeListenerSafety -Root $runner -FixturePath $ListenerFixturePath
 
     if ($Uninstall) {
         $environmentPath = Join-Path $runner '.env'
