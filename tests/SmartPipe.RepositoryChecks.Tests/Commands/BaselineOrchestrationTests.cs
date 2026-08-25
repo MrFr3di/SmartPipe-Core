@@ -218,6 +218,19 @@ public sealed class BaselineOrchestrationTests
     }
 
     [Fact]
+    public async Task IntegrityMode_AllowsCurrentSdkServicingDrift()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(scenario.GlobalJsonPath, "{\"sdk\":{\"version\":\"10.0.303\"}}", TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync(mode: BaselineVerificationMode.Integrity);
+
+        Assert.True(result.Success, result.Format());
+        Assert.DoesNotContain(result.Diagnostics, item => item.Code == "SPB004");
+    }
+
+    [Fact]
     public async Task MissingBaselineReport_FailsVerification()
     {
         using var scenario = new BaselineScenario();

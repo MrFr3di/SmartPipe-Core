@@ -67,7 +67,7 @@ public sealed class PackageInfrastructureGapTests
 
         Assert.Contains(central.Descendants("PackageVersion"), element =>
             (string?)element.Attribute("Include") == options
-            && (string?)element.Attribute("Version") == "10.0.8");
+            && (string?)element.Attribute("Version") == "10.0.11");
         Assert.Contains(facadeProject.Descendants("PackageReference"), element =>
             (string?)element.Attribute("Include") == options
             && element.Attribute("Version") is null);

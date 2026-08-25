@@ -187,18 +187,21 @@ internal sealed class BaselineVerificationService
             diagnostics.Add(new("SPB003", $"Capture commit is not an ancestor of HEAD or is unavailable: {exception.Message}"));
         }
 
-        try
+        if (options.Mode == BaselineVerificationMode.Full)
         {
-            var actualSdk = ReadSdkVersion(options.RepositoryRoot);
-            if (!string.Equals(actualSdk, manifest.Repository.SdkVersion, StringComparison.Ordinal))
+            try
             {
-                diagnostics.Add(new("SPB004", "global.json SDK mismatch", manifest.Repository.SdkVersion, actualSdk));
+                var actualSdk = ReadSdkVersion(options.RepositoryRoot);
+                if (!string.Equals(actualSdk, manifest.Repository.SdkVersion, StringComparison.Ordinal))
+                {
+                    diagnostics.Add(new("SPB004", "global.json SDK mismatch", manifest.Repository.SdkVersion, actualSdk));
+                }
             }
-        }
-        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException
-                                           or InvalidDataException or KeyNotFoundException or InvalidOperationException)
-        {
-            diagnostics.Add(new("SPB004", $"global.json SDK could not be read: {exception.Message}"));
+            catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException
+                                               or InvalidDataException or KeyNotFoundException or InvalidOperationException)
+            {
+                diagnostics.Add(new("SPB004", $"global.json SDK could not be read: {exception.Message}"));
+            }
         }
 
         var snapshotFiles = new[]
