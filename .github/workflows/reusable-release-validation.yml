@@ -44,7 +44,7 @@ jobs:
         cache-dependency-path: '**/packages.lock.json'
 
     - name: Restore locked
-      run: dotnet restore SmartPipe.Core.slnx --locked-mode
+      run: dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true
 
     - name: Test release version validation
       shell: pwsh
@@ -291,7 +291,7 @@ jobs:
         cache-dependency-path: '**/packages.lock.json'
 
     - name: Restore locked
-      run: dotnet restore SmartPipe.Core.slnx --locked-mode
+      run: dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true
 
     - name: Build concurrency projects
       shell: pwsh

@@ -167,6 +167,16 @@ def assert_setup_dotnet_cache_contract(workflow: dict, workflow_name: str) -> No
                 f"{workflow_name} restore-heavy setup-dotnet must use lock-file keyed caching.")
 
 
+def assert_hosted_restore_source_contract(documents: dict[str, dict]) -> None:
+    for workflow_name in ("ci.yml", "reusable-release-validation.yml"):
+        workflow = documents[workflow_name]
+        for job_name, job in workflow["jobs"].items():
+            for command in runs(job.get("steps", [])):
+                if "dotnet restore " in command:
+                    require("-p:DisableImplicitLibraryPacksFolder=true" in command,
+                            f"{workflow_name}:{job_name} hosted restore must disable the SDK library-packs source.")
+
+
 def assert_diagnostic_contract(ci: dict) -> None:
     dispatch = ci.get("on", {}).get("workflow_dispatch", {})
     inputs = dispatch.get("inputs", {}) if isinstance(dispatch, dict) else {}
@@ -202,7 +212,8 @@ def assert_diagnostic_contract(ci: dict) -> None:
             and "DIAGNOSTIC_SHA" in str(verify.get("run", "")),
             "Diagnostic consumer must verify the checked out commit SHA.")
     restore = named_step(diagnostic_steps, "Restore locked")
-    require(str(restore.get("run", "")).strip() == "dotnet restore SmartPipe.Core.slnx --locked-mode",
+    require(str(restore.get("run", "")).strip() ==
+            "dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true",
             "Diagnostic consumer must perform one locked solution restore.")
     build = named_step(diagnostic_steps, "Build")
     require("--no-restore" in str(build.get("run", ""))
@@ -716,6 +727,7 @@ def validate(documents: dict[str, dict]) -> None:
     for workflow_name, expected in expected_triggers.items():
         require(documents[workflow_name].get("on") == expected,
                 f"{workflow_name} trigger contract changed.")
+    assert_hosted_restore_source_contract(documents)
 
     workflow_call = reusable.get("on", {}).get("workflow_call")
     require(isinstance(workflow_call, dict), "Reusable validation must declare on.workflow_call.")
@@ -743,7 +755,9 @@ def validate(documents: dict[str, dict]) -> None:
     require(any("ruamel.yaml==0.18.16" in command for command in reusable_runs),
             "Reusable validation must install the pinned YAML 1.2 parser.")
     restores = [command for command in reusable_runs if "dotnet restore SmartPipe.Core.slnx" in command]
-    require(restores == ["dotnet restore SmartPipe.Core.slnx --locked-mode"],
+    require(restores == [
+        "dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true",
+    ],
             "Reusable validation must perform exactly one locked-mode solution restore.")
     build_step = named_step(reusable_steps, "Build")
     repository_test_step = named_step(reusable_steps, "Repository baseline contract tests")
@@ -926,7 +940,9 @@ def validate(documents: dict[str, dict]) -> None:
     windows_steps = steps(windows, "json-file-windows")
     windows_runs = runs(windows_steps)
     windows_restores = [command for command in windows_runs if "dotnet restore SmartPipe.Core.slnx" in command]
-    require(windows_restores == ["dotnet restore SmartPipe.Core.slnx --locked-mode"],
+    require(windows_restores == [
+        "dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true",
+    ],
             "Windows JSON lane must perform exactly one locked-mode solution restore.")
     require(not any("Category=Stress" in command for command in windows_runs),
             "Windows JSON lane must not execute the stress suite.")

@@ -60,7 +60,7 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
 
       - name: Restore Hosting integration tests
-        run: dotnet restore tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --locked-mode
+        run: dotnet restore tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true
 
       - name: Build Hosting integration tests
         run: dotnet build tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --configuration Release --no-restore -warnaserror
@@ -86,7 +86,7 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
 
       - name: Restore locked
-        run: dotnet restore SmartPipe.Core.slnx --locked-mode
+        run: dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true
 
       - name: Build JSON test project
         run: dotnet build tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-restore -warnaserror
@@ -200,7 +200,7 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
 
       - name: Restore locked
-        run: dotnet restore SmartPipe.Core.slnx --locked-mode
+        run: dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true
 
       - name: Build
         run: dotnet build SmartPipe.Core.slnx --configuration Release --no-restore -warnaserror
