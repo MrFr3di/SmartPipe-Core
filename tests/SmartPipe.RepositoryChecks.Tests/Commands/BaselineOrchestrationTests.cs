@@ -121,7 +121,7 @@ public sealed class BaselineOrchestrationTests
             scenario.ManifestPath, TestContext.Current.CancellationToken))!.AsObject();
 
         Assert.Equal(
-            ["CI", "Hosted .NET static analysis", "Repository security audit"],
+            ["CI", "CodeQL", "Dependency Review"],
             root["repository"]!["requiredWorkflows"]!.AsArray()
                 .Select(workflow => workflow!["name"]!.GetValue<string>())
                 .Order(StringComparer.Ordinal));
@@ -297,15 +297,15 @@ public sealed class BaselineOrchestrationTests
     }
 
     [Fact]
-    public async Task Capture_RejectsHistoricalSecurityWorkflowName()
+    public async Task Capture_RejectsSubstituteSecurityWorkflowName()
     {
         using var scenario = new BaselineScenario();
-        scenario.WriteWorkflowEvidence("historical-security-name");
+        scenario.WriteWorkflowEvidence("substitute-security-name");
 
         var exception = await Assert.ThrowsAsync<InvalidDataException>(
             () => scenario.CaptureAsync(TestContext.Current.CancellationToken));
 
-        Assert.Contains("Repository security audit", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Dependency Review", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -351,34 +351,17 @@ public sealed class BaselineOrchestrationTests
     }
 
     [Fact]
-    public async Task HistoricalManifestWorkflowNamesReachNormalIntegrityDiagnostics()
+    public async Task CanonicalManifestWorkflowNamesReachNormalIntegrityDiagnostics()
     {
         using var scenario = new BaselineScenario();
         await scenario.CaptureAsync(TestContext.Current.CancellationToken);
         var manifest = BaselineManifestSerializer.Deserialize(
             await File.ReadAllTextAsync(scenario.ManifestPath, TestContext.Current.CancellationToken));
-        var historicalManifest = manifest with
-        {
-            Repository = manifest.Repository with
-            {
-                RequiredWorkflows = manifest.Repository.RequiredWorkflows
-                    .Select(workflow => workflow with
-                    {
-                        Name = workflow.Name switch
-                        {
-                            "Hosted .NET static analysis" => "CodeQL",
-                            "Repository security audit" => "Dependency Review",
-                            _ => workflow.Name,
-                        },
-                    })
-                    .ToArray(),
-            },
-        };
         await BaselineManifestSerializer.WriteAsync(
-            scenario.ManifestPath, historicalManifest, TestContext.Current.CancellationToken);
+            scenario.ManifestPath, manifest, TestContext.Current.CancellationToken);
         await File.WriteAllBytesAsync(
             Path.Combine(scenario.BaselinePath, "baseline-report.md"),
-            BaselineReport.Create(historicalManifest), TestContext.Current.CancellationToken);
+            BaselineReport.Create(manifest), TestContext.Current.CancellationToken);
         await File.AppendAllTextAsync(scenario.PublicApiPath, "\nHistorical.Api", TestContext.Current.CancellationToken);
 
         var result = await scenario.VerifyAsync();
@@ -388,7 +371,7 @@ public sealed class BaselineOrchestrationTests
     }
 
     [Theory]
-    [InlineData("CodeQL")]
+    [InlineData("Dependency Review")]
     [InlineData("Unexpected workflow")]
     public async Task NonCompleteManifestWorkflowNamesFailSchemaValidation(string replacementName)
     {
@@ -397,7 +380,7 @@ public sealed class BaselineOrchestrationTests
         var root = JsonNode.Parse(await File.ReadAllTextAsync(
             scenario.ManifestPath, TestContext.Current.CancellationToken))!.AsObject();
         var workflows = root["repository"]!["requiredWorkflows"]!.AsArray();
-        workflows.Single(workflow => workflow!["name"]!.GetValue<string>() == "Hosted .NET static analysis")!["name"] = replacementName;
+        workflows.Single(workflow => workflow!["name"]!.GetValue<string>() == "CodeQL")!["name"] = replacementName;
         await File.WriteAllTextAsync(
             scenario.ManifestPath, root.ToJsonString(), TestContext.Current.CancellationToken);
 
@@ -806,9 +789,9 @@ public sealed class BaselineOrchestrationTests
             var ciSha = mutation == "mixed-sha" ? new string('a', 40) : Sha;
             var ciStatus = mutation == "pending" ? "in_progress" : "completed";
             var ciConclusion = mutation == "pending" ? string.Empty : mutation == "failed" ? "failure" : "success";
-            var securityWorkflowName = mutation == "historical-security-name"
-                ? "Dependency Review"
-                : "Repository security audit";
+            var securityWorkflowName = mutation == "substitute-security-name"
+                ? "Repository security audit"
+                : "Dependency Review";
             var extra = mutation switch
             {
                 "extra-pending" => $$"""
@@ -828,7 +811,7 @@ public sealed class BaselineOrchestrationTests
             var evidence = $$"""
                 [
                   {"databaseId":1,"workflowName":"CI","headSha":"{{ciSha}}","status":"{{ciStatus}}","conclusion":"{{ciConclusion}}","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/1","event":"push","createdAt":"2026-07-17T00:00:00Z"},
-                  {"databaseId":2,"workflowName":"Hosted .NET static analysis","headSha":"{{Sha}}","status":"completed","conclusion":"success","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/2","event":"push","createdAt":"2026-07-17T00:01:00Z"},
+                  {"databaseId":2,"workflowName":"CodeQL","headSha":"{{Sha}}","status":"completed","conclusion":"success","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/2","event":"push","createdAt":"2026-07-17T00:01:00Z"},
                   {"databaseId":3,"workflowName":"{{securityWorkflowName}}","headSha":"{{Sha}}","status":"completed","conclusion":"success","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/3","event":"pull_request","createdAt":"2026-07-17T00:02:00Z"}{{extra}}
                 ]
                 """;

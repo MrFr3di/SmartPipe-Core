@@ -1,4 +1,4 @@
-name: Repository security audit
+name: Dependency Review
 
 on:
   pull_request:
@@ -6,53 +6,15 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
-  repository-security-audit:
-    name: Repository security audit
-    if: github.event.pull_request.head.repo.full_name == github.repository
+  dependency-review:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
-        with:
-          global-json-file: global.json
-
-      - name: Restore locked
-        shell: pwsh
-        run: |
-          dotnet restore SmartPipe.Core.slnx --locked-mode
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Build repository checks
-        shell: pwsh
-        run: |
-          dotnet build eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-restore -warnaserror
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Verify repository package contracts
-        shell: pwsh
-        run: |
-          dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build --no-restore -- verify --profile sp220-05 --format github --failures-only
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Vulnerable package scan
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path artifacts/audit -Force | Out-Null
-          dotnet package list --project SmartPipe.Core.slnx --vulnerable --include-transitive --format json --output-version 1 --no-restore > artifacts/audit/vulnerable.json
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Verify direct production audit policy
-        shell: pwsh
-        run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build --no-restore -- verify-nuget-audit --repo-root . --report artifacts/audit/vulnerable.json
-
-      - name: Deprecated package scan
-        shell: pwsh
-        run: |
-          dotnet package list --project SmartPipe.Core.slnx --deprecated --include-transitive --format json --output-version 1 --no-restore > artifacts/audit/deprecated.json
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Dependency review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0

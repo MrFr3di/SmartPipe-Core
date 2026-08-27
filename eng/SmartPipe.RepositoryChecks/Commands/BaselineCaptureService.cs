@@ -328,8 +328,8 @@ internal sealed class BaselineCaptureService
             foreach (var requiredName in new[]
                      {
                          "CI",
-                         "Hosted .NET static analysis",
-                         "Repository security audit",
+                         "CodeQL",
+                         "Dependency Review",
                      })
             {
                 var successful = runs.Where(run =>

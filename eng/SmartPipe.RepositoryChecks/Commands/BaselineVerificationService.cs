@@ -45,25 +45,18 @@ internal sealed class BaselineVerificationService
     private const string TargetRelease = "2.2.0";
     private const string SolutionPath = "SmartPipe.Core.slnx";
     private static readonly TimeSpan ProcessTimeout = TimeSpan.FromMinutes(2);
-    private static readonly string[] HistoricalManifestWorkflowNames =
+    private static readonly string[] ManifestWorkflowNames =
     [
         "CI",
         "CodeQL",
         "Dependency Review",
     ];
 
-    private static readonly string[] CurrentManifestWorkflowNames =
-    [
-        "CI",
-        "Hosted .NET static analysis",
-        "Repository security audit",
-    ];
-
     private static readonly (string Name, string Path, string[] Events)[] CurrentWorkflowPolicy =
     [
         ("CI", ".github/workflows/ci.yml", ["push", "pull_request"]),
-        ("Hosted .NET static analysis", ".github/workflows/codeql.yml", ["push", "pull_request"]),
-        ("Repository security audit", ".github/workflows/dependency-review.yml", ["pull_request"]),
+        ("CodeQL", ".github/workflows/codeql.yml", ["push", "pull_request"]),
+        ("Dependency Review", ".github/workflows/dependency-review.yml", ["pull_request"]),
     ];
 
     private readonly IProcessRunner _processRunner;
@@ -132,11 +125,10 @@ internal sealed class BaselineVerificationService
             var workflowNames = manifest.Repository.RequiredWorkflows
                 .Select(static workflow => workflow.Name)
                 .ToHashSet(StringComparer.Ordinal);
-            if (!workflowNames.SetEquals(HistoricalManifestWorkflowNames)
-                && !workflowNames.SetEquals(CurrentManifestWorkflowNames))
+            if (!workflowNames.SetEquals(ManifestWorkflowNames))
             {
                 throw new JsonException(
-                    "Manifest workflow evidence must contain exactly either CI, CodeQL, and Dependency Review or CI, Hosted .NET static analysis, and Repository security audit.");
+                    "Manifest workflow evidence must contain exactly CI, CodeQL, and Dependency Review.");
             }
 
             // Resolve and de-alias every referenced path before any package, process, or repository work.

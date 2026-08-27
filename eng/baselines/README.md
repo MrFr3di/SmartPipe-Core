@@ -26,11 +26,11 @@ The manifest rejects unknown properties and schema versions. `repository.capture
 - `SPB007`-`SPB010`: package hash, signature, identity/assets, or dependencies mismatch;
 - `SPB014`: public API snapshot mismatch;
 - `SPB015`: repository dependency snapshot mismatch;
-- `SPB016`: required release branch missing from CI, Hosted .NET static analysis, or Repository security audit workflow policy.
+- `SPB016`: required release branch missing from CI, CodeQL, or Dependency Review workflow policy.
 
 Offline verification never fetches packages. It requires the capture commit to exist and be an ancestor of current HEAD, failing closed for unrelated or missing/shallow history. It hashes package bytes before signature or archive inspection and ignores unreferenced files in the baseline directory.
 
 Full verification also compares the current `global.json` SDK exactly and emits `SPB004` for a mismatch. Integrity verification keeps the manifest, snapshot, report, package, ancestry, and workflow-policy checks, but deliberately skips the current SDK comparison so an approved servicing SDK update does not invalidate the immutable 2.1.2 baseline.
 
-Capture consumes the literal JSON array produced by `gh run list --json databaseId,workflowName,headSha,status,conclusion,url,event,createdAt`. Every returned run must target the requested capture commit; that `headSha` is retained in each workflow manifest entry, and exactly one completed successful run is required for each of CI, Hosted .NET static analysis, and Repository security audit. Workflow policy verification uses a bounded parser for the repository's current YAML shape and checks `release/2.2.0` in the actual `on.push.branches` and/or `on.pull_request.branches` lists; comments, environment values, and step text do not count.
-Capture requires those current check names exactly and persists those literal names. Offline verification accepts only a complete historical manifest set (`CI`, `CodeQL`, `Dependency Review`) or a complete current set; mixed or extra workflow identities fail closed.
+Capture consumes the literal JSON array produced by `gh run list --json databaseId,workflowName,headSha,status,conclusion,url,event,createdAt`. Every returned run must target the requested capture commit; that `headSha` is retained in each workflow manifest entry, and exactly one completed successful run is required for each of CI, CodeQL, and Dependency Review. Workflow policy verification uses a bounded parser for the repository's current YAML shape and checks `release/2.2.0` in the actual `on.push.branches` and/or `on.pull_request.branches` lists; comments, environment values, and step text do not count.
+Capture requires those current check names exactly and persists those literal names. Offline verification accepts only the complete historical workflow set (`CI`, `CodeQL`, `Dependency Review`); mixed or extra workflow identities fail closed.
