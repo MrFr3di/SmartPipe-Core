@@ -31,21 +31,22 @@ FILES = {
     )
 }
 SHA_REF = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
-SELF_HOSTED_WINDOWS = ["self-hosted", "Windows", "X64", "smartpipe-cleanup-v1"]
-SELF_HOSTED_WINDOWS_JSON = '["self-hosted","Windows","X64","smartpipe-cleanup-v1"]'
+HOSTED_WINDOWS = "windows-latest"
+HOSTED_WINDOWS_JSON = '["windows-latest"]'
+CODEQL_ACTION_REF = (
+    "github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9"
+)
+CODEQL_ANALYZE_ACTION_REF = (
+    "github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9"
+)
+DEPENDENCY_REVIEW_ACTION_REF = (
+    "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294"
+)
 SAME_REPOSITORY_PR_GUARD = (
     "github.event_name != 'pull_request' || "
     "github.event.pull_request.head.repo.full_name == github.repository"
 )
 PULL_REQUEST_SAME_REPOSITORY_GUARD = "github.event.pull_request.head.repo.full_name == github.repository"
-CLEANUP_SAME_REPOSITORY_GUARD = (
-    "always() && (github.event_name != 'pull_request' || "
-    "github.event.pull_request.head.repo.full_name == github.repository)"
-)
-CLEANUP_PULL_REQUEST_GUARD = (
-    "always() && github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.repo.full_name == github.repository"
-)
 DIAGNOSTIC_INPUTS_EMPTY_GUARD = (
     "(github.event_name != 'workflow_dispatch' || "
     "(inputs.diagnostic-sha == '' && inputs.diagnostic-scenario == '' && "
@@ -59,26 +60,16 @@ DIAGNOSTIC_GUARD = (
 )
 CI_VALIDATION_RUNNER_INPUT = (
     "${{ github.event_name == 'pull_request' && "
-    "'[\"self-hosted\",\"Windows\",\"X64\",\"smartpipe-cleanup-v1\"]' || "
+    "'[\"windows-latest\"]' || "
     "'[\"ubuntu-latest\"]' }}"
 )
-CI_WINDOWS_RUNNER = (
-    "${{ github.event_name == 'pull_request' && "
-    "fromJSON('[\"self-hosted\",\"Windows\",\"X64\",\"smartpipe-cleanup-v1\"]') || "
-    "'windows-latest' }}"
-)
-NUGET_PACKAGES_PR = (
-    "${{ github.event_name == 'pull_request' && "
-    "format('{0}/.nuget/packages', github.workspace) || '' }}"
-)
-HOSTING_NAME = "${{ matrix.os == 'self-hosted' && 'Windows' || matrix.os }}"
-HOSTING_RUNNER = (
-    "${{ matrix.os == 'self-hosted' && "
-    "fromJSON('[\"self-hosted\",\"Windows\",\"X64\",\"smartpipe-cleanup-v1\"]') || matrix.os }}"
-)
+CI_WINDOWS_RUNNER = HOSTED_WINDOWS
+NUGET_PACKAGES_PATH = "${{ github.workspace }}/.nuget/packages"
+HOSTING_NAME = "${{ matrix.os == 'windows-latest' && 'Windows' || matrix.os }}"
+HOSTING_RUNNER = "${{ matrix.os }}"
 HOSTING_MATRIX = (
     "${{ fromJSON(github.event_name == 'pull_request' && "
-    "'{\"os\":[\"self-hosted\"]}' || "
+    "'{\"os\":[\"windows-latest\"]}' || "
     "'{\"os\":[\"ubuntu-latest\",\"windows-latest\"]}') }}"
 )
 LYCHEE_URL = (
@@ -99,9 +90,9 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
-def require_self_hosted_windows(job: dict, label: str) -> None:
-    require(job.get("runs-on") == SELF_HOSTED_WINDOWS,
-            f"{label} must target the self-hosted Windows X64 runner labels.")
+def require_hosted_windows(job: dict, label: str) -> None:
+    require(job.get("runs-on") == HOSTED_WINDOWS,
+            f"{label} must target hosted Windows (`windows-latest`).")
 
 
 def require_parameterized_runner(job: dict, label: str) -> None:
@@ -114,53 +105,66 @@ def require_runner_expression(job: dict, expected: str, label: str) -> None:
             f"{label} must use the event-aware runner expression.")
 
 
-def assert_static_analysis_contract(workflow: dict) -> None:
-    require(workflow.get("name") == "Hosted .NET static analysis",
-            "Static-analysis workflow must identify the hosted .NET analyzer check honestly.")
-    require(workflow.get("permissions") == {"contents": "read"},
-            "Static analysis must request only read access to repository contents.")
-    serialized = json.dumps(workflow).lower()
-    for forbidden in ("security-events", "codeql", "self-hosted", "cleanup-self-hosted"):
-        require(forbidden not in serialized,
-                f"Hosted static analysis must not retain {forbidden} configuration.")
-
+def assert_codeql_contract(workflow: dict) -> None:
+    require(workflow.get("name") == "CodeQL",
+            "CodeQL workflow must retain the official public check name.")
+    require(workflow.get("permissions") == {
+        "contents": "read",
+        "security-events": "write",
+    }, "CodeQL must request only contents read and security-events write permissions.")
     jobs = workflow.get("jobs", {})
     require(set(jobs) == {"analyze"},
-            "Hosted static analysis must define only the analyzer job.")
+            "CodeQL workflow must define only the analyze job.")
     job = jobs["analyze"]
-    require(job.get("name") == "Hosted .NET static analysis",
-            "Static analysis job must preserve its distinct check name.")
+    require(job.get("if") == SAME_REPOSITORY_PR_GUARD,
+            "CodeQL must skip untrusted fork pull requests.")
     require(job.get("runs-on") == "ubuntu-latest",
-            "Static analysis must use hosted Linux.")
-    static_steps = steps(job, "Hosted .NET static analysis")
+            "CodeQL must use hosted Linux.")
+    codeql_steps = steps(job, "CodeQL analyze")
     checkout = next(
-        step for step in static_steps
+        step for step in codeql_steps
         if str(step.get("uses", "")).startswith("actions/checkout")
     )
     require(checkout.get("with", {}).get("persist-credentials") is False,
-            "Static analysis checkout must disable persisted credentials.")
-    setup = named_step(static_steps, "Setup .NET")
+            "CodeQL checkout must disable persisted credentials.")
+    setup = named_step(codeql_steps, "Setup .NET")
     require(setup.get("with", {}).get("global-json-file") == "global.json",
-            "Static analysis must use the pinned SDK from global.json.")
-    restore = named_step(static_steps, "Restore locked")
-    restore_run = str(restore.get("run", ""))
-    require(restore.get("shell") == "pwsh"
-            and "dotnet restore SmartPipe.Core.slnx --locked-mode" in restore_run
-            and NATIVE_FAIL_FAST_GUARD in restore_run,
-            "Static analysis must perform a fail-closed locked restore.")
-    build = named_step(static_steps, "Build static analysis")
-    build_run = str(build.get("run", ""))
-    require(build.get("shell") == "pwsh"
-            and "dotnet build SmartPipe.Core.slnx --configuration Release --no-restore -warnaserror" in build_run
-            and NATIVE_FAIL_FAST_GUARD in build_run,
-            "Static analysis must use the existing analyzers with a fail-closed warnings-as-errors build.")
+            "CodeQL must use the pinned SDK from global.json.")
+    require(setup.get("with", {}).get("cache") is True
+            and setup.get("with", {}).get("cache-dependency-path") == "**/packages.lock.json",
+            "CodeQL setup-dotnet must cache only the lock-file keyed NuGet packages.")
+    init = named_step(codeql_steps, "Initialize CodeQL")
+    require(init.get("uses") == CODEQL_ACTION_REF
+            and init.get("with", {}).get("languages") == "csharp",
+            "CodeQL must initialize the official pinned C# action.")
+    build = named_step(codeql_steps, "Build")
+    require(build.get("run") == "dotnet build SmartPipe.Core.slnx -c Release",
+            "CodeQL must build the solution before analysis.")
+    analyze = named_step(codeql_steps, "Perform CodeQL Analysis")
+    require(analyze.get("uses") == CODEQL_ANALYZE_ACTION_REF,
+            "CodeQL must run the official pinned analysis action.")
 
 
 def assert_nuget_isolation_contract(workflow: dict, workflow_name: str) -> None:
     environment = workflow.get("env")
     require(isinstance(environment, dict)
-            and environment.get("NUGET_PACKAGES") == NUGET_PACKAGES_PR,
-            f"{workflow_name} must isolate pull-request NuGet packages inside GITHUB_WORKSPACE.")
+            and environment.get("NUGET_PACKAGES") == NUGET_PACKAGES_PATH,
+            f"{workflow_name} must isolate NuGet packages inside GITHUB_WORKSPACE.")
+
+
+def assert_setup_dotnet_cache_contract(workflow: dict, workflow_name: str) -> None:
+    setup_steps = [
+        step
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        if str(step.get("uses", "")).startswith("actions/setup-dotnet")
+    ]
+    require(bool(setup_steps), f"{workflow_name} must contain setup-dotnet steps.")
+    for step in setup_steps:
+        with_block = step.get("with", {})
+        require(with_block.get("cache") is True
+                and with_block.get("cache-dependency-path") == "**/packages.lock.json",
+                f"{workflow_name} restore-heavy setup-dotnet must use lock-file keyed caching.")
 
 
 def assert_diagnostic_contract(ci: dict) -> None:
@@ -179,7 +183,7 @@ def assert_diagnostic_contract(ci: dict) -> None:
     require(isinstance(job, dict), "CI must define the optional diagnostic-consumer job.")
     require(job.get("if") == DIAGNOSTIC_GUARD,
             "Diagnostic consumer must run only for a workflow dispatch with diagnostic input.")
-    require_self_hosted_windows(job, "Diagnostic consumer")
+    require_hosted_windows(job, "Diagnostic consumer")
     diagnostic_steps = steps(job, "diagnostic-consumer")
     validation = named_step(diagnostic_steps, "Validate diagnostic inputs")
     validation_script = str(validation.get("run", ""))
@@ -244,126 +248,30 @@ def require_ci_normal_job_guard(job: dict, label: str) -> None:
             f"{label} must retain the same-repository guard and skip only diagnostic dispatches.")
 
 
-def assert_cleanup_job(
-    workflow: dict,
-    workflow_name: str,
-    expected_needs: list[str],
-    expected_guard: str,
-    cleanup_nuget: bool = False,
-) -> None:
-    job = workflow["jobs"].get("cleanup-self-hosted")
-    require(isinstance(job, dict),
-            f"{workflow_name} must define cleanup-self-hosted.")
-    require(job.get("name") == "Cleanup self-hosted workspace",
-            f"{workflow_name} cleanup must preserve its check name.")
-    require(job.get("needs") == expected_needs,
-            f"{workflow_name} cleanup must wait for every workflow job.")
-    require_self_hosted_windows(job, f"{workflow_name} cleanup")
-    require(job.get("if") == expected_guard,
-            f"{workflow_name} cleanup must always run only for trusted repository work.")
-    cleanup_steps = steps(job, f"{workflow_name} cleanup")
-    require(len(cleanup_steps) == 1,
-            f"{workflow_name} cleanup must contain exactly one cleanup step.")
-    cleanup = named_step(cleanup_steps, "Cleanup generated outputs")
-    require(cleanup.get("shell") == "pwsh",
-            f"{workflow_name} cleanup must use PowerShell on Windows.")
-    script = str(cleanup.get("run", ""))
-    for token in (
-        "$env:GITHUB_WORKSPACE", "[IO.Path]::GetFullPath", "StartsWith",
-        "[StringComparison]::OrdinalIgnoreCase", "[IO.FileAttributes]::ReparsePoint",
-        "Join-Path $workspace 'artifacts'",
-        "Join-Path $workspace 'BenchmarkDotNet.Artifacts'",
-        "$directory.Name -in 'bin', 'obj'",
-        "Remove-Item -LiteralPath $fullPath -Recurse -Force",
-    ):
-        require(token in script,
-                f"{workflow_name} cleanup must enforce safe workspace-bound deletion ({token}).")
-    if cleanup_nuget:
-        require("Join-Path $workspace '.nuget'" in script,
-                f"{workflow_name} cleanup must remove its workspace-local NuGet packages.")
-    require("git clean" not in script.lower(),
-            f"{workflow_name} cleanup must not use git clean.")
-    require(re.search(r"Remove-Item\s+-LiteralPath\s+\$workspace(?:\s|$)", script) is None,
-            f"{workflow_name} cleanup must not delete the workspace root.")
-    direct_reparse_guard = (
-        "if ((Get-Item -LiteralPath $fullPath -Force).Attributes -band "
-        "[IO.FileAttributes]::ReparsePoint)"
-    )
-    require(direct_reparse_guard in script,
-            f"{workflow_name} cleanup must reject direct target reparse points before recursive deletion.")
-    require(script.index(direct_reparse_guard) < script.index(
-        "Get-ChildItem -LiteralPath $fullPath -Force -Recurse"),
-            f"{workflow_name} cleanup must check direct target reparse points before recursion.")
-
-
-def assert_repository_security_audit_contract(workflow: dict) -> None:
-    require(workflow.get("name") == "Repository security audit",
-            "Dependency Review workflow must identify the repository-controlled security audit.")
-    require(workflow.get("permissions") == {"contents": "read"},
-            "Repository security audit must request only read access to repository contents.")
+def assert_dependency_review_contract(workflow: dict) -> None:
+    require(workflow.get("name") == "Dependency Review",
+            "Dependency Review workflow must retain the official public check name.")
+    require(workflow.get("permissions") == {
+        "contents": "read",
+        "pull-requests": "read",
+    }, "Dependency Review must request only contents and pull-requests read permissions.")
     jobs = workflow.get("jobs", {})
-    require("cleanup-self-hosted" not in jobs,
-            "Hosted repository security audit must not depend on self-hosted cleanup.")
-    job = jobs.get("repository-security-audit")
-    require(isinstance(job, dict),
-            "Dependency Review workflow must define repository-security-audit.")
-    require(job.get("name") == "Repository security audit",
-            "Repository security audit must preserve its distinct check name.")
-    require(job.get("if") == PULL_REQUEST_SAME_REPOSITORY_GUARD,
-            "Repository security audit must run only for same-repository pull requests.")
+    require(set(jobs) == {"dependency-review"},
+            "Dependency Review workflow must define only the dependency-review job.")
+    job = jobs["dependency-review"]
     require(job.get("runs-on") == "ubuntu-latest",
-            "Repository security audit must use hosted Linux.")
-    require("self-hosted" not in str(job.get("runs-on", "")),
-            "Repository security audit must not use a self-hosted runner.")
-
-    job_steps = steps(job, "Repository security audit")
+            "Dependency Review must use hosted Linux.")
+    require("if" not in job,
+            "Dependency Review must run for public fork pull requests as well as same-repository requests.")
+    job_steps = steps(job, "Dependency Review")
     checkouts = [step for step in job_steps
                  if str(step.get("uses", "")).startswith("actions/checkout")]
     require(len(checkouts) == 1
             and checkouts[0].get("with", {}).get("persist-credentials") is False,
-            "Repository security audit checkout must be pinned and credential-free.")
-    setup = [step for step in job_steps
-             if str(step.get("uses", "")).startswith("actions/setup-dotnet")]
-    require(len(setup) == 1
-            and setup[0].get("with", {}).get("global-json-file") == "global.json",
-            "Repository security audit setup-dotnet must use global.json as the SDK source.")
-    require(not any("actions/dependency-review-action" in str(step.get("uses", ""))
-                    for step in job_steps),
-            "Repository security audit must not claim hosted Dependency Review execution.")
-    require(not any(step.get("continue-on-error") for step in job_steps),
-            "Repository security audit must fail closed without continue-on-error.")
-
-    restore = named_step(job_steps, "Restore locked")
-    require("dotnet restore SmartPipe.Core.slnx --locked-mode" in str(restore.get("run", "")),
-            "Repository security audit must perform locked restore.")
-    build = named_step(job_steps, "Build repository checks")
-    require(build.get("shell") == "pwsh"
-            and "dotnet build eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
-            "--configuration Release --no-restore -warnaserror" in str(build.get("run", "")),
-            "Repository security audit must build RepositoryChecks with warnings as errors.")
-    profile = named_step(job_steps, "Verify repository package contracts")
-    require(profile.get("shell") == "pwsh"
-            and "dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
-            "--configuration Release --no-build --no-restore -- verify --profile sp220-05 "
-            "--format github --failures-only" in str(profile.get("run", "")),
-            "Repository security audit must run the strict repository package profile.")
-    vulnerable = named_step(job_steps, "Vulnerable package scan")
-    require(vulnerable.get("shell") == "pwsh"
-            and "dotnet package list --project SmartPipe.Core.slnx --vulnerable "
-            "--include-transitive --format json --output-version 1 --no-restore" in str(vulnerable.get("run", ""))
-            and "artifacts/audit/vulnerable.json" in str(vulnerable.get("run", "")),
-            "Repository security audit must produce a strict vulnerable package report.")
-    audit = named_step(job_steps, "Verify direct production audit policy")
-    require(audit.get("shell") == "pwsh"
-            and "verify-nuget-audit" in str(audit.get("run", ""))
-            and "--report artifacts/audit/vulnerable.json" in str(audit.get("run", "")),
-            "Repository security audit must enforce the repository NuGet audit policy.")
-    deprecated = named_step(job_steps, "Deprecated package scan")
-    require(deprecated.get("shell") == "pwsh"
-            and "dotnet package list --project SmartPipe.Core.slnx --deprecated "
-            "--include-transitive --format json --output-version 1 --no-restore" in str(deprecated.get("run", ""))
-            and "artifacts/audit/deprecated.json" in str(deprecated.get("run", "")),
-            "Repository security audit must report deprecated packages without suppressing failures.")
+            "Dependency Review checkout must be pinned and credential-free.")
+    review = named_step(job_steps, "Dependency review")
+    require(review.get("uses") == DEPENDENCY_REVIEW_ACTION_REF,
+            "Dependency Review must run the official pinned public action.")
 
 
 def assert_reusable_windows_shell_contract(reusable_steps: list[dict]) -> None:
@@ -933,7 +841,7 @@ def validate(documents: dict[str, dict]) -> None:
     require_parameterized_runner(concurrency_job, "HealthChecks concurrency")
     require_same_repository_pr_guard(concurrency_job, "HealthChecks concurrency")
     require("strategy" not in concurrency_job,
-            "HealthChecks concurrency must use one self-hosted Windows lane while Linux hosted minutes are unavailable.")
+            "HealthChecks concurrency must use one hosted runner lane.")
     concurrency_steps = steps(concurrency_job, "reusable health-checks-concurrency")
     for step_name in ("Run bounded observation concurrency", "Run concurrent health evaluation"):
         command = str(named_step(concurrency_steps, step_name).get("run", ""))
@@ -969,6 +877,9 @@ def validate(documents: dict[str, dict]) -> None:
             "Reusable validation artifact upload must skip only pull_request events and remain required for non-PR events.")
     require(upload.get("with", {}).get("name") == "${{ inputs.artifact-name }}",
             "Reusable validation must upload the caller-selected artifact name.")
+    require(upload.get("with", {}).get("retention-days") ==
+            "${{ inputs.artifact-name == 'packages' && 7 || 90 }}",
+            "Reusable validation must retain generic CI packages for seven days and versioned artifacts for the existing policy.")
     upload_path = str(upload.get("with", {}).get("path", ""))
     require("artifacts/packages" in upload_path
             and "artifacts/consumers/**/result.json" in upload_path
@@ -1053,7 +964,6 @@ def validate(documents: dict[str, dict]) -> None:
                 explicit_names.append((str(job["name"]), file_name, job_id))
     duplicates = {name for name, _, _ in explicit_names
                   if sum(item[0] == name for item in explicit_names) > 1}
-    duplicates.discard("Cleanup self-hosted workspace")
     require(not duplicates, f"Required job/check names must be unique: {sorted(duplicates)}")
 
     windows_text = "\n".join(windows_runs)
@@ -1064,16 +974,19 @@ def validate(documents: dict[str, dict]) -> None:
             "Windows lifecycle filter must not use the obsolete "
             "SmartPipe.Extensions.Tests.Sinks namespace.")
 
-    assert_cleanup_job(
-        ci,
-        "ci.yml",
-        ["validation", "hosting-integration", "json-file-windows", "baseline-contract-windows"],
-        CLEANUP_PULL_REQUEST_GUARD,
-        cleanup_nuget=True,
-    )
-    assert_repository_security_audit_contract(dependency_review)
+    for workflow_name, document in documents.items():
+        require("cleanup-self-hosted" not in document["jobs"],
+                f"{workflow_name} must not define the obsolete cleanup-self-hosted job.")
+    assert_dependency_review_contract(dependency_review)
     assert_nuget_isolation_contract(ci, "ci.yml")
-    assert_static_analysis_contract(static_analysis)
+    assert_nuget_isolation_contract(static_analysis, "codeql.yml")
+    assert_codeql_contract(static_analysis)
+    for workflow_name, document in (
+        ("ci.yml", ci),
+        ("codeql.yml", static_analysis),
+        ("reusable-release-validation.yml", reusable),
+    ):
+        assert_setup_dotnet_cache_contract(document, workflow_name)
     all_runs = windows_runs + hosting_runs + reusable_runs
     filtered = [command for command in all_runs
                 if "--filter-class" in command or "--filter-query" in command]
@@ -1259,55 +1172,57 @@ def _add_consumer_logs_to_upload(documents: dict[str, dict]) -> None:
     upload["with"]["path"] += "\nartifacts/consumers/**/logs/**"
 
 
-def _use_hosted_runner_for_required_lanes(documents: dict[str, dict]) -> None:
-    lanes = (
-        ("ci.yml", "hosting-integration"),
-        ("ci.yml", "json-file-windows"),
-        ("ci.yml", "baseline-contract-windows"),
-        ("reusable-release-validation.yml", "build-test-pack"),
-        ("reusable-release-validation.yml", "health-checks-concurrency"),
-    )
-    for workflow_name, job_name in lanes:
-        documents[workflow_name]["jobs"][job_name]["runs-on"] = "windows-latest"
-
-
-def _make_repository_security_audit_self_hosted(documents: dict[str, dict]) -> None:
-    documents["dependency-review.yml"]["jobs"]["repository-security-audit"]["runs-on"] = SELF_HOSTED_WINDOWS
-
-
-def _make_ci_validation_always_self_hosted(documents: dict[str, dict]) -> None:
-    documents["ci.yml"]["jobs"]["validation"]["with"]["runner-labels"] = SELF_HOSTED_WINDOWS_JSON
-
-
-def _make_hosting_always_self_hosted(documents: dict[str, dict]) -> None:
+def _make_hosting_matrix_hosted_only(documents: dict[str, dict]) -> None:
     job = documents["ci.yml"]["jobs"]["hosting-integration"]
     job["strategy"]["matrix"] = (
-        "${{ fromJSON('{\"os\":[\"self-hosted\"]}') }}"
+        "${{ fromJSON('{\"os\":[\"ubuntu-latest\"]}') }}"
     )
 
 
 def _make_hosting_static_runner(documents: dict[str, dict]) -> None:
-    documents["ci.yml"]["jobs"]["hosting-integration"]["runs-on"] = SELF_HOSTED_WINDOWS
+    documents["ci.yml"]["jobs"]["hosting-integration"]["runs-on"] = HOSTED_WINDOWS
 
 
-def _make_ci_json_always_self_hosted(documents: dict[str, dict]) -> None:
-    documents["ci.yml"]["jobs"]["json-file-windows"]["runs-on"] = SELF_HOSTED_WINDOWS
+def _make_codeql_substitute_name(documents: dict[str, dict]) -> None:
+    documents["codeql.yml"]["name"] = "Private static analysis"
 
 
-def _make_ci_baseline_always_self_hosted(documents: dict[str, dict]) -> None:
-    documents["ci.yml"]["jobs"]["baseline-contract-windows"]["runs-on"] = SELF_HOSTED_WINDOWS
+def _make_codeql_non_official_action(documents: dict[str, dict]) -> None:
+    init = named_step(documents["codeql.yml"]["jobs"]["analyze"]["steps"], "Initialize CodeQL")
+    init["uses"] = "github/codeql-action/init@0000000000000000000000000000000000000000"
 
 
-def _make_static_analysis_always_self_hosted(documents: dict[str, dict]) -> None:
-    documents["codeql.yml"]["jobs"]["analyze"]["runs-on"] = SELF_HOSTED_WINDOWS
+def _make_dependency_review_non_official_action(documents: dict[str, dict]) -> None:
+    review = named_step(
+        documents["dependency-review.yml"]["jobs"]["dependency-review"]["steps"],
+        "Dependency review",
+    )
+    review["uses"] = "actions/dependency-review-action@0000000000000000000000000000000000000000"
 
 
 def _remove_nuget_isolation(documents: dict[str, dict], workflow_name: str) -> None:
     documents[workflow_name]["env"].pop("NUGET_PACKAGES", None)
 
 
-def _make_cleanup_non_pr_capable(documents: dict[str, dict], workflow_name: str) -> None:
-    documents[workflow_name]["jobs"]["cleanup-self-hosted"]["if"] = CLEANUP_SAME_REPOSITORY_GUARD
+def _remove_setup_dotnet_cache(documents: dict[str, dict], workflow_name: str) -> None:
+    for job in documents[workflow_name]["jobs"].values():
+        for step in job.get("steps", []):
+            if str(step.get("uses", "")).startswith("actions/setup-dotnet"):
+                step["with"].pop("cache", None)
+                step["with"].pop("cache-dependency-path", None)
+                return
+
+
+def _change_artifact_retention(documents: dict[str, dict]) -> None:
+    upload = named_step(
+        documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
+        "Upload immutable packages and reports",
+    )
+    upload["with"]["retention-days"] = 7
+
+
+def _add_ci_cleanup_job(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["jobs"]["cleanup-self-hosted"] = {}
 
 
 def _remove_ci_runner_override(documents: dict[str, dict]) -> None:
@@ -1319,7 +1234,7 @@ def _remove_diagnostic_input(documents: dict[str, dict]) -> None:
 
 
 def _make_diagnostic_hosted(documents: dict[str, dict]) -> None:
-    documents["ci.yml"]["jobs"]["diagnostic-consumer"]["runs-on"] = "windows-latest"
+    documents["ci.yml"]["jobs"]["diagnostic-consumer"]["runs-on"] = "ubuntu-latest"
 
 
 def _make_ci_normal_job_diagnostic_capable(documents: dict[str, dict]) -> None:
@@ -1373,7 +1288,7 @@ def _change_runner_default(documents: dict[str, dict]) -> None:
 def _override_publish_runner(documents: dict[str, dict]) -> None:
     documents["publish-nuget.yml"]["jobs"]["validation"].setdefault("with", {})[
         "runner-labels"
-    ] = SELF_HOSTED_WINDOWS_JSON
+    ] = HOSTED_WINDOWS_JSON
 
 
 def _remove_leaf_exit_guard(documents: dict[str, dict]) -> None:
@@ -1442,44 +1357,6 @@ def _add_lychee_token(documents: dict[str, dict]) -> None:
 
 def _remove_reusable_pr_guard(documents: dict[str, dict]) -> None:
     documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"].pop("if", None)
-
-
-def _remove_ci_cleanup_job(documents: dict[str, dict]) -> None:
-    del documents["ci.yml"]["jobs"]["cleanup-self-hosted"]
-
-
-def _make_ci_cleanup_delete_workspace_root(documents: dict[str, dict]) -> None:
-    cleanup = named_step(
-        documents["ci.yml"]["jobs"]["cleanup-self-hosted"]["steps"],
-        "Cleanup generated outputs",
-    )
-    cleanup["run"] = str(cleanup["run"]) + "\nRemove-Item -LiteralPath $workspace -Recurse -Force"
-
-
-def _remove_cleanup_direct_target_guard(documents: dict[str, dict], workflow_name: str) -> None:
-    cleanup = named_step(
-        documents[workflow_name]["jobs"]["cleanup-self-hosted"]["steps"],
-        "Cleanup generated outputs",
-    )
-    direct_reparse_guard = (
-        "if ((Get-Item -LiteralPath $fullPath -Force).Attributes -band "
-        "[IO.FileAttributes]::ReparsePoint)"
-    )
-    cleanup["run"] = "\n".join(
-        line for line in str(cleanup.get("run", "")).splitlines()
-        if direct_reparse_guard not in line
-    )
-
-
-def _remove_cleanup_nuget_target(documents: dict[str, dict], workflow_name: str) -> None:
-    cleanup = named_step(
-        documents[workflow_name]["jobs"]["cleanup-self-hosted"]["steps"],
-        "Cleanup generated outputs",
-    )
-    cleanup["run"] = "\n".join(
-        line for line in str(cleanup.get("run", "")).splitlines()
-        if "Join-Path $workspace '.nuget'" not in line
-    )
 
 
 def _restore_lychee_action(documents: dict[str, dict]) -> None:
@@ -1555,7 +1432,7 @@ def main() -> int:
     assert_mutation_rejected(
         documents,
         _make_diagnostic_hosted,
-        "must target the self-hosted Windows X64 runner labels",
+        "must target hosted Windows",
     )
     assert_mutation_rejected(
         documents,
@@ -1659,7 +1536,7 @@ def main() -> int:
     assert_mutation_rejected(
         documents,
         _restore_floating_sdk_selection,
-        "global.json as the SDK source",
+        "global.json",
     )
     assert_mutation_rejected(documents, _remove_release_branch, "release/2.2.0")
     assert_mutation_rejected(
@@ -1718,22 +1595,7 @@ def main() -> int:
     )
     assert_mutation_rejected(
         documents,
-        _use_hosted_runner_for_required_lanes,
-        "runner-labels workflow input",
-    )
-    assert_mutation_rejected(
-        documents,
-        _make_repository_security_audit_self_hosted,
-        "must use hosted Linux",
-    )
-    assert_mutation_rejected(
-        documents,
-        _make_ci_validation_always_self_hosted,
-        "exact reusable workflow caller",
-    )
-    assert_mutation_rejected(
-        documents,
-        _make_hosting_always_self_hosted,
+        _make_hosting_matrix_hosted_only,
         "original hosted non-PR matrix",
     )
     assert_mutation_rejected(
@@ -1743,24 +1605,43 @@ def main() -> int:
     )
     assert_mutation_rejected(
         documents,
-        _make_ci_json_always_self_hosted,
-        "event-aware runner expression",
+        lambda docs: docs["ci.yml"]["jobs"]["json-file-windows"].__setitem__(
+            "runs-on", "ubuntu-latest"),
+        "Windows JSON lane must use the event-aware runner expression",
     )
     assert_mutation_rejected(
         documents,
-        _make_ci_baseline_always_self_hosted,
-        "event-aware runner expression",
+        lambda docs: docs["ci.yml"]["jobs"]["baseline-contract-windows"].__setitem__(
+            "runs-on", "ubuntu-latest"),
+        "Windows baseline contract lane must use the event-aware runner expression",
     )
     assert_mutation_rejected(
         documents,
-        _make_static_analysis_always_self_hosted,
-        "must not retain self-hosted",
+        _make_codeql_substitute_name,
+        "official public check name",
     )
-    for workflow_name in ("ci.yml", "reusable-release-validation.yml"):
+    assert_mutation_rejected(
+        documents,
+        _make_codeql_non_official_action,
+        "official pinned C# action",
+    )
+    assert_mutation_rejected(
+        documents,
+        _make_dependency_review_non_official_action,
+        "official pinned public action",
+    )
+    for workflow_name in ("ci.yml", "reusable-release-validation.yml", "codeql.yml"):
         assert_mutation_rejected(
             documents,
             lambda docs, name=workflow_name: _remove_nuget_isolation(docs, name),
-            f"{workflow_name} must isolate pull-request NuGet packages",
+            f"{workflow_name} must isolate NuGet packages",
+        )
+        assert_mutation_rejected(
+            documents,
+            lambda docs, name=workflow_name: _remove_setup_dotnet_cache(docs, name),
+            "cache only the lock-file keyed"
+            if workflow_name == "codeql.yml"
+            else f"{workflow_name} restore-heavy setup-dotnet",
         )
     assert_mutation_rejected(
         documents,
@@ -1776,6 +1657,11 @@ def main() -> int:
         documents,
         _override_publish_runner,
         "Publish validation must use reusable hosted Linux runner default",
+    )
+    assert_mutation_rejected(
+        documents,
+        _change_artifact_retention,
+        "retain generic CI packages for seven days",
     )
     assert_mutation_rejected(
         documents,
@@ -1823,32 +1709,9 @@ def main() -> int:
     )
     assert_mutation_rejected(
         documents,
-        _remove_ci_cleanup_job,
-        "must define cleanup-self-hosted",
+        _add_ci_cleanup_job,
+        "must not define the obsolete cleanup-self-hosted job",
     )
-    for workflow_name in ("ci.yml",):
-        assert_mutation_rejected(
-            documents,
-            lambda docs, name=workflow_name: _make_cleanup_non_pr_capable(docs, name),
-            f"{workflow_name} cleanup must always run only for trusted repository work",
-        )
-    assert_mutation_rejected(
-        documents,
-        _make_ci_cleanup_delete_workspace_root,
-        "must not delete the workspace root",
-    )
-    for workflow_name in ("ci.yml",):
-        assert_mutation_rejected(
-            documents,
-            lambda docs, name=workflow_name: _remove_cleanup_direct_target_guard(docs, name),
-            f"{workflow_name} cleanup must reject direct target reparse points",
-        )
-    for workflow_name in ("ci.yml",):
-        assert_mutation_rejected(
-            documents,
-            lambda docs, name=workflow_name: _remove_cleanup_nuget_target(docs, name),
-            f"{workflow_name} cleanup must remove its workspace-local NuGet packages",
-        )
     assert_mutation_rejected(
         documents,
         _restore_lychee_action,

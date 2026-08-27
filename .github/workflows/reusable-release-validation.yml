@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 env:
-  NUGET_PACKAGES: ${{ github.event_name == 'pull_request' && format('{0}/.nuget/packages', github.workspace) || '' }}
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
 
 jobs:
   build-test-pack:
@@ -40,6 +40,8 @@ jobs:
       uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
       with:
         global-json-file: global.json
+        cache: true
+        cache-dependency-path: '**/packages.lock.json'
 
     - name: Restore locked
       run: dotnet restore SmartPipe.Core.slnx --locked-mode
@@ -264,6 +266,7 @@ jobs:
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: ${{ inputs.artifact-name }}
+        retention-days: ${{ inputs.artifact-name == 'packages' && 7 || 90 }}
         path: |
           artifacts/packages
           artifacts/consumers/**/result.json
@@ -284,6 +287,8 @@ jobs:
       uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
       with:
         global-json-file: global.json
+        cache: true
+        cache-dependency-path: '**/packages.lock.json'
 
     - name: Restore locked
       run: dotnet restore SmartPipe.Core.slnx --locked-mode
