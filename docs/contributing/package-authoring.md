@@ -12,6 +12,13 @@ Include="..."`; do not add a local `Version`, `VersionOverride`, range, or
 floating version. Transitive pinning is disabled, so a direct reference must be
 declared when the package is part of a package's supported contract.
 
+For an approved .NET servicing update, change only the named CPM entries with
+the pinned SDK from `global.json`, regenerate every tracked lock file with
+normal restore, keep the generated locks as UTF-8 without BOM using LF line
+endings, and finish with locked restore. Do not hand-edit lock files or upgrade
+unrelated analyzers, test infrastructure, coverage tools, or third-party
+packages.
+
 Run `verify-central-packages --mode current` and restore with locked mode after
 changing the manifest. Release mode treats unused versions and inventory drift
 as errors.
