@@ -1328,7 +1328,14 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     {
         Volatile.Write(ref _drainRequested, 1);
         RecordSourceStopReason(SourceStopReason.Drain);
-        _sourceCts.Cancel();
+        try
+        {
+            _sourceCts.Cancel();
+        }
+        catch (ObjectDisposedException) when (Volatile.Read(ref _disposed) != 0)
+        {
+            // Completion-owned disposal won the race; the run is already terminal.
+        }
     }
 
     private void RequestStopAccepting() => Volatile.Write(ref _stopAcceptingRequested, 1);

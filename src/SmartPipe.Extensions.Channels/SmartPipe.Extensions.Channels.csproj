@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <SmartPipePackage>true</SmartPipePackage>
+  </PropertyGroup>
+  <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
+  <PropertyGroup>
+    <PackageId>SmartPipe.Extensions.Channels</PackageId>
+    <Description>Channel merge primitives for SmartPipe.Core.</Description>
+    <PackageTags>SmartPipe;pipeline;channels</PackageTags>
+    <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)/README.md</SmartPipePackageReadmeSource>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <VerifyReferenceAotCompatibility>true</VerifyReferenceAotCompatibility>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../SmartPipe.Core/SmartPipe.Core.csproj" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SmartPipe.Extensions.Channels.Tests" />
+  </ItemGroup>
+
+</Project>

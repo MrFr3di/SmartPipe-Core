@@ -20,6 +20,14 @@ public sealed class PackageTemplateRendererTests
         var root = RepositoryRoot();
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var node = graph.Packages.Single(x => x.Id == id);
+        if (id == "SmartPipe.Extensions.Channels")
+        {
+            node = node with { Lifecycle = PackageLifecycle.Planned, ScaffoldKind = PackageScaffoldKind.CoreLeaf };
+            graph = graph with
+            {
+                Packages = graph.Packages.Select(item => item.Id == id ? node : item).ToArray(),
+            };
+        }
         var first = new PackageTemplateRenderer(root).Render(graph, node);
         var second = new PackageTemplateRenderer(root).Render(graph, node);
         Assert.Equal(kind, first.Kind.ToString());

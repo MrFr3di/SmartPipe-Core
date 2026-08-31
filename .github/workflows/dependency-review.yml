@@ -2,7 +2,7 @@ name: Dependency Review
 
 on:
   pull_request:
-    branches: [ main, release/2.2.0, sp220/checkpoint-c ]
+    branches: [ main, release/2.2.0, sp220/checkpoint-c, sp220/checkpoint-d ]
 
 permissions:
   contents: read

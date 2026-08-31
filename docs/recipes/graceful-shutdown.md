@@ -31,6 +31,10 @@ Drain cancels the source-read token. Cooperative sources blocked inside
 return on their own. Use `CancelAsync` or `AbortAsync` when shutdown must
 interrupt stages, sinks, processing, or output readers too.
 
+Drain is safe to request after `Completion`, including for factory-created runs
+whose scope has already been disposed. `TryDrainAsync` reports
+`AlreadyCompleted`; `DrainAsync` is an idempotent no-op.
+
 ## Cooperative cancellation
 
 `CancelAsync` requests cooperative cancellation. The run state becomes

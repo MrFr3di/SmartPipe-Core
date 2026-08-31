@@ -45,7 +45,14 @@ internal sealed class BaselineVerificationService
     private const string TargetRelease = "2.2.0";
     private const string SolutionPath = "SmartPipe.Core.slnx";
     private static readonly TimeSpan ProcessTimeout = TimeSpan.FromMinutes(2);
-    private static readonly (string Name, string Path, string[] Events)[] RequiredWorkflowFiles =
+    private static readonly string[] ManifestWorkflowNames =
+    [
+        "CI",
+        "CodeQL",
+        "Dependency Review",
+    ];
+
+    private static readonly (string Name, string Path, string[] Events)[] CurrentWorkflowPolicy =
     [
         ("CI", ".github/workflows/ci.yml", ["push", "pull_request"]),
         ("CodeQL", ".github/workflows/codeql.yml", ["push", "pull_request"]),
@@ -118,9 +125,10 @@ internal sealed class BaselineVerificationService
             var workflowNames = manifest.Repository.RequiredWorkflows
                 .Select(static workflow => workflow.Name)
                 .ToHashSet(StringComparer.Ordinal);
-            if (RequiredWorkflowFiles.Any(workflow => !workflowNames.Contains(workflow.Name)))
+            if (!workflowNames.SetEquals(ManifestWorkflowNames))
             {
-                throw new JsonException("Manifest workflow evidence must include CI, CodeQL, and Dependency Review.");
+                throw new JsonException(
+                    "Manifest workflow evidence must contain exactly CI, CodeQL, and Dependency Review.");
             }
 
             // Resolve and de-alias every referenced path before any package, process, or repository work.
@@ -171,18 +179,21 @@ internal sealed class BaselineVerificationService
             diagnostics.Add(new("SPB003", $"Capture commit is not an ancestor of HEAD or is unavailable: {exception.Message}"));
         }
 
-        try
+        if (options.Mode == BaselineVerificationMode.Full)
         {
-            var actualSdk = ReadSdkVersion(options.RepositoryRoot);
-            if (!string.Equals(actualSdk, manifest.Repository.SdkVersion, StringComparison.Ordinal))
+            try
             {
-                diagnostics.Add(new("SPB004", "global.json SDK mismatch", manifest.Repository.SdkVersion, actualSdk));
+                var actualSdk = ReadSdkVersion(options.RepositoryRoot);
+                if (!string.Equals(actualSdk, manifest.Repository.SdkVersion, StringComparison.Ordinal))
+                {
+                    diagnostics.Add(new("SPB004", "global.json SDK mismatch", manifest.Repository.SdkVersion, actualSdk));
+                }
             }
-        }
-        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException
-                                           or InvalidDataException or KeyNotFoundException or InvalidOperationException)
-        {
-            diagnostics.Add(new("SPB004", $"global.json SDK could not be read: {exception.Message}"));
+            catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException
+                                               or InvalidDataException or KeyNotFoundException or InvalidOperationException)
+            {
+                diagnostics.Add(new("SPB004", $"global.json SDK could not be read: {exception.Message}"));
+            }
         }
 
         var snapshotFiles = new[]
@@ -313,7 +324,7 @@ internal sealed class BaselineVerificationService
         }
 
         var releaseBranch = $"release/{manifest.TargetRelease}";
-        foreach (var workflow in RequiredWorkflowFiles)
+        foreach (var workflow in CurrentWorkflowPolicy)
         {
             var path = RepositoryPaths.ResolveWithinRoot(options.RepositoryRoot, workflow.Path, "workflow");
             if (!WorkflowPolicyContainsBranch(path, workflow.Events, releaseBranch))

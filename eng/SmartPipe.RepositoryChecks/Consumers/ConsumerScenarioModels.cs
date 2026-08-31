@@ -22,8 +22,17 @@ internal sealed record ConsumerScenario
     public required IReadOnlyList<string> ExpectedSmartPipeDependencies { get; init; }
     public required IReadOnlyList<string> ForbiddenDependencies { get; init; }
     public string? BaselineVersion { get; init; }
+    public ExpectedPublishDiagnostic? ExpectedPublishDiagnostic { get; init; }
     public required TimeSpan Timeout { get; init; }
     public required bool RunSecondLockedRestore { get; init; }
+}
+
+internal sealed record ExpectedPublishDiagnostic
+{
+    public required string Code { get; init; }
+    public required string SourcePath { get; init; }
+    public required int Line { get; init; }
+    public required IReadOnlyList<string> MsBuildProperties { get; init; }
 }
 
 internal sealed record ConsumerScenarioDocument

@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main, upd, release/2.2.0 ]
   pull_request:
-    branches: [ main, release/2.2.0, sp220/checkpoint-c ]
+    branches: [ main, release/2.2.0, sp220/checkpoint-c, sp220/checkpoint-d ]
   schedule:
     - cron: '27 3 * * 1'
 
@@ -12,8 +12,12 @@ permissions:
   contents: read
   security-events: write
 
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
 jobs:
   analyze:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -24,6 +28,8 @@ jobs:
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
@@ -35,3 +41,6 @@ jobs:
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          ram: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && '16384' || '' }}
+          threads: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && '2' || '' }}

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.0
+
+- Extracted Channels, Transforms, Logging, and DataAnnotations implementations
+  into narrow packages while preserving broad-facade type identities through
+  forwarding.
+- Added NativeAOT-safe channel, rule-transform, and safe logging paths; annotated
+  the reflection-based DataAnnotations invocation boundary for trimming.
+
 ## [2.2.0] — Development
 
 ### OpenTelemetry
@@ -54,6 +62,14 @@
   `ToFactory`; losing starts fail before activation.
 - Non-generic definition metadata now exposes defensive read-only collections and
   rejects duplicate stage IDs with the shared structural topology validator.
+
+### JSON definition integration
+
+- Added source-generated-metadata JSON definition builders and runtime-owned
+  source, transform, and sink components with lazy per-run activation.
+- Added direct, trimmed, NativeAOT, and DependencyInjection composition
+  consumers for the canonical JSON definitions while preserving the existing
+  facade-source and 2.1.2 binary compatibility scenarios.
 
 ### Build and package infrastructure
 

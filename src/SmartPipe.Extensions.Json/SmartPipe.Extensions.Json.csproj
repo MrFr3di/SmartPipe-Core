@@ -20,6 +20,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\Shared\JsonFraming\Utf8LineRecordReader.cs" Link="JsonFraming\Utf8LineRecordReader.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>

@@ -2,6 +2,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SmartPipe.Core\SmartPipe.Core.csproj" />
+    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Channels\SmartPipe.Extensions.Channels.csproj" />
+    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Transforms\SmartPipe.Extensions.Transforms.csproj" />
+    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Logging\SmartPipe.Extensions.Logging.csproj" />
+    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Json\SmartPipe.Extensions.Json.csproj" />
   </ItemGroup>
 
   <ItemGroup>

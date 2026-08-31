@@ -1,0 +1,38 @@
+#nullable enable
+SmartPipe.Extensions.Transforms.CompositeTransform<T>
+SmartPipe.Extensions.Transforms.CompositeTransform<T>.CompositeTransform(params SmartPipe.Core.IPipelineTransformer<T, T>![]! transforms) -> void
+SmartPipe.Extensions.Transforms.CompositeTransform<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.CompositeTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.CompositeTransform<T>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<T>>
+SmartPipe.Extensions.Transforms.CompressionAlgorithm
+SmartPipe.Extensions.Transforms.CompressionAlgorithm.Brotli = 0 -> SmartPipe.Extensions.Transforms.CompressionAlgorithm
+SmartPipe.Extensions.Transforms.CompressionAlgorithm.GZip = 1 -> SmartPipe.Extensions.Transforms.CompressionAlgorithm
+SmartPipe.Extensions.Transforms.CompressionTransform
+SmartPipe.Extensions.Transforms.CompressionTransform.CompressionTransform(SmartPipe.Extensions.Transforms.CompressionAlgorithm algorithm = SmartPipe.Extensions.Transforms.CompressionAlgorithm.Brotli, System.IO.Compression.CompressionLevel level = System.IO.Compression.CompressionLevel.Optimal) -> void
+SmartPipe.Extensions.Transforms.CompressionTransform.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.CompressionTransform.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.CompressionTransform.TransformAsync(SmartPipe.Core.ProcessingEnvelope<byte[]!>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<byte[]!>>
+SmartPipe.Extensions.Transforms.ConditionalTransform<T>
+SmartPipe.Extensions.Transforms.ConditionalTransform<T>.ConditionalTransform(System.Func<T, bool>! condition, SmartPipe.Core.IPipelineTransformer<T, T>! transform) -> void
+SmartPipe.Extensions.Transforms.ConditionalTransform<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.ConditionalTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.ConditionalTransform<T>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<T>>
+SmartPipe.Extensions.Transforms.FilterTransform<T>
+SmartPipe.Extensions.Transforms.FilterTransform<T>.And(SmartPipe.Extensions.Transforms.FilterTransform<T>! other) -> SmartPipe.Extensions.Transforms.FilterTransform<T>!
+SmartPipe.Extensions.Transforms.FilterTransform<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.FilterTransform<T>.FilterTransform(System.Func<T, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<bool>>! predicate) -> void
+SmartPipe.Extensions.Transforms.FilterTransform<T>.FilterTransform(System.Func<T, System.Threading.Tasks.Task<bool>!>! asyncPredicate) -> void
+SmartPipe.Extensions.Transforms.FilterTransform<T>.FilterTransform(System.Func<T, bool>! predicate) -> void
+SmartPipe.Extensions.Transforms.FilterTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.FilterTransform<T>.Not() -> SmartPipe.Extensions.Transforms.FilterTransform<T>!
+SmartPipe.Extensions.Transforms.FilterTransform<T>.Or(SmartPipe.Extensions.Transforms.FilterTransform<T>! other) -> SmartPipe.Extensions.Transforms.FilterTransform<T>!
+SmartPipe.Extensions.Transforms.FilterTransform<T>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<T>>
+SmartPipe.Extensions.Transforms.RuleValidationTransform<T>
+SmartPipe.Extensions.Transforms.RuleValidationTransform<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.RuleValidationTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.RuleValidationTransform<T>.Require(System.Func<T, bool>! condition, string! message) -> SmartPipe.Extensions.Transforms.RuleValidationTransform<T>!
+SmartPipe.Extensions.Transforms.RuleValidationTransform<T>.RuleValidationTransform() -> void
+SmartPipe.Extensions.Transforms.RuleValidationTransform<T>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<T>>
+static SmartPipe.Extensions.Transforms.FilterTransform<T>.operator !(SmartPipe.Extensions.Transforms.FilterTransform<T>! a) -> SmartPipe.Extensions.Transforms.FilterTransform<T>!
+static SmartPipe.Extensions.Transforms.FilterTransform<T>.operator &(SmartPipe.Extensions.Transforms.FilterTransform<T>! a, SmartPipe.Extensions.Transforms.FilterTransform<T>! b) -> SmartPipe.Extensions.Transforms.FilterTransform<T>!
+static SmartPipe.Extensions.Transforms.FilterTransform<T>.operator |(SmartPipe.Extensions.Transforms.FilterTransform<T>! a, SmartPipe.Extensions.Transforms.FilterTransform<T>! b) -> SmartPipe.Extensions.Transforms.FilterTransform<T>!

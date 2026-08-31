@@ -15,13 +15,13 @@
     {
       "typePattern": "SmartPipe.Extensions.ChannelMerge*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Channels",
       "targetImplementationAssembly": "SmartPipe.Extensions.Channels",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",
       "migrationEpic": "SP220-07",
       "namespacePreserved": true,
-      "evidence": "SP220 extraction plan"
+      "evidence": "facade ExportedType forwarder and Channels implementation"
     },
     {
       "typePattern": "SmartPipe.Extensions.DeadLetter*",
@@ -88,6 +88,17 @@
       "migrationEpic": "existing",
       "namespacePreserved": true,
       "evidence": "2.1.2 Json assembly implementation"
+    },
+    {
+      "typePattern": "SmartPipe.Extensions.Json.JsonPipeline*",
+      "baselineAssembly": "SmartPipe.Extensions.Json",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Json",
+      "targetImplementationAssembly": "SmartPipe.Extensions.Json",
+      "compatibilityAssembly": null,
+      "strategy": "stay",
+      "migrationEpic": "SP220-08",
+      "namespacePreserved": true,
+      "evidence": "Canonical source-generated JSON definition adapters introduced by SP220-08"
     },
     {
       "typePattern": "SmartPipe.Extensions.Selectors.CsvFileSource*",
@@ -213,13 +224,13 @@
     {
       "typePattern": "SmartPipe.Extensions.Sinks.LoggerSink*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Logging",
       "targetImplementationAssembly": "SmartPipe.Extensions.Logging",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",
       "migrationEpic": "SP220-07",
       "namespacePreserved": true,
-      "evidence": "SP220 logging extraction"
+      "evidence": "facade ExportedType forwarder and Logging implementation"
     },
     {
       "typePattern": "SmartPipe.Extensions.SmartPipeDefinition*",
@@ -290,35 +301,35 @@
     {
       "typePattern": "SmartPipe.Extensions.Transforms.CompositeTransform*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Transforms",
       "targetImplementationAssembly": "SmartPipe.Extensions.Transforms",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",
       "migrationEpic": "SP220-07",
       "namespacePreserved": true,
-      "evidence": "SP220 transforms extraction"
+      "evidence": "facade ExportedType forwarder and Transforms implementation"
     },
     {
       "typePattern": "SmartPipe.Extensions.Transforms.Compression*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Transforms",
       "targetImplementationAssembly": "SmartPipe.Extensions.Transforms",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",
       "migrationEpic": "SP220-07",
       "namespacePreserved": true,
-      "evidence": "SP220 transforms extraction"
+      "evidence": "facade ExportedType forwarder and Transforms implementation"
     },
     {
       "typePattern": "SmartPipe.Extensions.Transforms.ConditionalTransform*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Transforms",
       "targetImplementationAssembly": "SmartPipe.Extensions.Transforms",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",
       "migrationEpic": "SP220-07",
       "namespacePreserved": true,
-      "evidence": "SP220 transforms extraction"
+      "evidence": "facade ExportedType forwarder and Transforms implementation"
     },
     {
       "typePattern": "SmartPipe.Extensions.Transforms.CsvTransform*",
@@ -334,24 +345,24 @@
     {
       "typePattern": "SmartPipe.Extensions.Transforms.FilterTransform*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Transforms",
       "targetImplementationAssembly": "SmartPipe.Extensions.Transforms",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",
       "migrationEpic": "SP220-07",
       "namespacePreserved": true,
-      "evidence": "SP220 transforms extraction"
+      "evidence": "facade ExportedType forwarder and Transforms implementation"
     },
     {
       "typePattern": "SmartPipe.Extensions.Transforms.FilterValidationExtensions*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.DataAnnotations",
       "targetImplementationAssembly": "SmartPipe.Extensions.DataAnnotations",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",
       "migrationEpic": "SP220-07",
       "namespacePreserved": true,
-      "evidence": "SP220 validation extraction"
+      "evidence": "facade ExportedType forwarder and DataAnnotations implementation"
     },
     {
       "typePattern": "SmartPipe.Extensions.Transforms.JsonTransform*",
@@ -389,13 +400,13 @@
     {
       "typePattern": "SmartPipe.Extensions.Transforms.ValidationTransform*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.DataAnnotations",
       "targetImplementationAssembly": "SmartPipe.Extensions.DataAnnotations",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",
       "migrationEpic": "SP220-07",
       "namespacePreserved": true,
-      "evidence": "SP220 validation extraction"
+      "evidence": "facade ExportedType forwarder and DataAnnotations implementation"
     }
   ]
 }

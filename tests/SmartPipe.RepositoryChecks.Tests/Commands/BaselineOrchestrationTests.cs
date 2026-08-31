@@ -112,6 +112,22 @@ public sealed class BaselineOrchestrationTests
     }
 
     [Fact]
+    public async Task Capture_AcceptsAndPersistsCurrentWorkflowNames()
+    {
+        using var scenario = new BaselineScenario();
+
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var root = JsonNode.Parse(await File.ReadAllTextAsync(
+            scenario.ManifestPath, TestContext.Current.CancellationToken))!.AsObject();
+
+        Assert.Equal(
+            ["CI", "CodeQL", "Dependency Review"],
+            root["repository"]!["requiredWorkflows"]!.AsArray()
+                .Select(workflow => workflow!["name"]!.GetValue<string>())
+                .Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public async Task DescendantGovernanceHead_VerifiesByCaptureCommitAncestry()
     {
         using var scenario = new BaselineScenario();
@@ -202,6 +218,19 @@ public sealed class BaselineOrchestrationTests
     }
 
     [Fact]
+    public async Task IntegrityMode_AllowsCurrentSdkServicingDrift()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(scenario.GlobalJsonPath, "{\"sdk\":{\"version\":\"10.0.303\"}}", TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync(mode: BaselineVerificationMode.Integrity);
+
+        Assert.True(result.Success, result.Format());
+        Assert.DoesNotContain(result.Diagnostics, item => item.Code == "SPB004");
+    }
+
+    [Fact]
     public async Task MissingBaselineReport_FailsVerification()
     {
         using var scenario = new BaselineScenario();
@@ -268,6 +297,18 @@ public sealed class BaselineOrchestrationTests
     }
 
     [Fact]
+    public async Task Capture_RejectsSubstituteSecurityWorkflowName()
+    {
+        using var scenario = new BaselineScenario();
+        scenario.WriteWorkflowEvidence("substitute-security-name");
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(
+            () => scenario.CaptureAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("Dependency Review", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task FailedCapture_DoesNotReplaceExistingBaseline()
     {
         using var scenario = new BaselineScenario();
@@ -303,6 +344,45 @@ public sealed class BaselineOrchestrationTests
         var json = JsonNode.Parse(await File.ReadAllTextAsync(scenario.ManifestPath, TestContext.Current.CancellationToken))!.AsObject();
         json["targetRelease"] = "2.2.1";
         await File.WriteAllTextAsync(scenario.ManifestPath, json.ToJsonString(), TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB001");
+    }
+
+    [Fact]
+    public async Task CanonicalManifestWorkflowNamesReachNormalIntegrityDiagnostics()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var manifest = BaselineManifestSerializer.Deserialize(
+            await File.ReadAllTextAsync(scenario.ManifestPath, TestContext.Current.CancellationToken));
+        await BaselineManifestSerializer.WriteAsync(
+            scenario.ManifestPath, manifest, TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(
+            Path.Combine(scenario.BaselinePath, "baseline-report.md"),
+            BaselineReport.Create(manifest), TestContext.Current.CancellationToken);
+        await File.AppendAllTextAsync(scenario.PublicApiPath, "\nHistorical.Api", TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.DoesNotContain(result.Diagnostics, item => item.Code == "SPB001");
+        Assert.Contains(result.Diagnostics, item => item.Code == "SPB014");
+    }
+
+    [Theory]
+    [InlineData("Dependency Review")]
+    [InlineData("Unexpected workflow")]
+    public async Task NonCompleteManifestWorkflowNamesFailSchemaValidation(string replacementName)
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        var root = JsonNode.Parse(await File.ReadAllTextAsync(
+            scenario.ManifestPath, TestContext.Current.CancellationToken))!.AsObject();
+        var workflows = root["repository"]!["requiredWorkflows"]!.AsArray();
+        workflows.Single(workflow => workflow!["name"]!.GetValue<string>() == "CodeQL")!["name"] = replacementName;
+        await File.WriteAllTextAsync(
+            scenario.ManifestPath, root.ToJsonString(), TestContext.Current.CancellationToken);
 
         var result = await scenario.VerifyAsync();
 
@@ -709,6 +789,9 @@ public sealed class BaselineOrchestrationTests
             var ciSha = mutation == "mixed-sha" ? new string('a', 40) : Sha;
             var ciStatus = mutation == "pending" ? "in_progress" : "completed";
             var ciConclusion = mutation == "pending" ? string.Empty : mutation == "failed" ? "failure" : "success";
+            var securityWorkflowName = mutation == "substitute-security-name"
+                ? "Repository security audit"
+                : "Dependency Review";
             var extra = mutation switch
             {
                 "extra-pending" => $$"""
@@ -729,7 +812,7 @@ public sealed class BaselineOrchestrationTests
                 [
                   {"databaseId":1,"workflowName":"CI","headSha":"{{ciSha}}","status":"{{ciStatus}}","conclusion":"{{ciConclusion}}","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/1","event":"push","createdAt":"2026-07-17T00:00:00Z"},
                   {"databaseId":2,"workflowName":"CodeQL","headSha":"{{Sha}}","status":"completed","conclusion":"success","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/2","event":"push","createdAt":"2026-07-17T00:01:00Z"},
-                  {"databaseId":3,"workflowName":"Dependency Review","headSha":"{{Sha}}","status":"completed","conclusion":"success","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/3","event":"pull_request","createdAt":"2026-07-17T00:02:00Z"}{{extra}}
+                  {"databaseId":3,"workflowName":"{{securityWorkflowName}}","headSha":"{{Sha}}","status":"completed","conclusion":"success","url":"https://github.com/MrFr3di/SmartPipe-Core/actions/runs/3","event":"pull_request","createdAt":"2026-07-17T00:02:00Z"}{{extra}}
                 ]
                 """;
             File.WriteAllText(WorkflowEvidencePath, evidence);

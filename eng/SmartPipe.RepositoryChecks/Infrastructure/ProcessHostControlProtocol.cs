@@ -127,7 +127,18 @@ internal static class ProcessHostControlProtocol
         var totalRead = 0;
         while (totalRead < buffer.Length)
         {
-            var read = await stream.ReadAsync(buffer[totalRead..], cancellationToken).ConfigureAwait(false);
+            int read;
+            try
+            {
+                read = await stream.ReadAsync(buffer[totalRead..], cancellationToken).ConfigureAwait(false);
+            }
+            catch (IOException exception)
+            {
+                throw new ProcessHostProtocolException(
+                    "The process-host control channel failed before a complete frame was received.",
+                    exception);
+            }
+
             if (read == 0)
             {
                 throw new ProcessHostProtocolException(

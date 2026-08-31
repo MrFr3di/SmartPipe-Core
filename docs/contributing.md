@@ -79,3 +79,32 @@ unbounded-memory symptom in progress notes.
 
 README examples are intentionally minimal. CI consumer smoke is the executable
 check for the public quick-start scenarios.
+
+## Hosted CI operations
+
+GitHub-hosted runners provide the CI environment. Same-repository pull requests
+run validation and Windows-specific lanes on `windows-latest`; push and manual
+dispatch runs keep the Hosting integration Linux and Windows matrix. CodeQL and
+Dependency Review use their official public-repository workflows.
+
+Restore-heavy jobs set `NUGET_PACKAGES` below `GITHUB_WORKSPACE` and use the
+built-in `actions/setup-dotnet` cache keyed by `**/packages.lock.json`. Build
+outputs, credentials, and secrets are never cached. Generic CI package
+artifacts are retained for seven days; versioned release artifacts retain the
+repository's normal release retention.
+
+The optional diagnostic dispatch runs one exact commit and one internal
+consumer scenario without changing normal push or pull-request behavior:
+
+```powershell
+gh workflow run ci.yml --repo MrFr3di/SmartPipe.Core --ref sp220/checkpoint-d `
+  -f diagnostic-sha=0123456789abcdef0123456789abcdef01234567 `
+  -f diagnostic-scenario=dependency-injection-nativeaot `
+  -f diagnostic-repeat=1
+```
+
+The SHA must be 40 lowercase hexadecimal characters, the scenario must use
+lowercase letters, digits, and hyphens, and repeat must be `1` through `5`.
+The job restores, builds, and packs once, then reports bounded run snippets in
+the step summary without artifacts. Normal jobs run when all three inputs are
+empty.

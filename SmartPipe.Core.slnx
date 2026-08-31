@@ -7,10 +7,14 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/SmartPipe.Core/SmartPipe.Core.csproj" />
+    <Project Path="src/SmartPipe.Extensions.Channels/SmartPipe.Extensions.Channels.csproj" />
+    <Project Path="src/SmartPipe.Extensions.Transforms/SmartPipe.Extensions.Transforms.csproj" />
+    <Project Path="src/SmartPipe.Extensions.Logging/SmartPipe.Extensions.Logging.csproj" />
     <Project Path="src/SmartPipe.Extensions.OpenTelemetry/SmartPipe.Extensions.OpenTelemetry.csproj" />
     <Project Path="src/SmartPipe.Extensions/SmartPipe.Extensions.csproj" />
     <Project Path="src/SmartPipe.Extensions.DependencyInjection/SmartPipe.Extensions.DependencyInjection.csproj" />
     <Project Path="src/SmartPipe.Extensions.HealthChecks/SmartPipe.Extensions.HealthChecks.csproj" />
+    <Project Path="src/SmartPipe.Extensions.DataAnnotations/SmartPipe.Extensions.DataAnnotations.csproj" />
     <Project Path="src/SmartPipe.Extensions.Hosting/SmartPipe.Extensions.Hosting.csproj" />
     <Project Path="src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj" />
   </Folder>
@@ -18,6 +22,10 @@
     <Project Path="tests/SmartPipe.RepositoryChecks.ProcessFixture/SmartPipe.RepositoryChecks.ProcessFixture.csproj" />
     <Project Path="tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj" />
     <Project Path="tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj" />
+    <Project Path="tests/SmartPipe.Extensions.Channels.Tests/SmartPipe.Extensions.Channels.Tests.csproj" />
+    <Project Path="tests/SmartPipe.Extensions.Transforms.Tests/SmartPipe.Extensions.Transforms.Tests.csproj" />
+    <Project Path="tests/SmartPipe.Extensions.Logging.Tests/SmartPipe.Extensions.Logging.Tests.csproj" />
+    <Project Path="tests/SmartPipe.Extensions.DataAnnotations.Tests/SmartPipe.Extensions.DataAnnotations.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.HealthChecks.Tests/SmartPipe.Extensions.HealthChecks.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj" />

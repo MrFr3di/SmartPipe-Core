@@ -39,6 +39,8 @@
         "core-trim",
         "core-nativeaot",
         "json-nativeaot",
+        "json-trim",
+        "json-dependency-injection-direct",
         "dependency-injection-direct",
         "dependency-injection-keyed",
         "dependency-injection-from-keyed-services",
@@ -65,9 +67,9 @@
     {
       "id": "SmartPipe.Extensions.Channels",
       "projectPath": "src/SmartPipe.Extensions.Channels/SmartPipe.Extensions.Channels.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-07",
-      "scaffoldKind": "core-leaf",
+      "scaffoldKind": null,
       "publishOrder": 2,
       "baselineVersion": null,
       "aotContract": "full",
@@ -99,9 +101,9 @@
     {
       "id": "SmartPipe.Extensions.Transforms",
       "projectPath": "src/SmartPipe.Extensions.Transforms/SmartPipe.Extensions.Transforms.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-07",
-      "scaffoldKind": "core-leaf",
+      "scaffoldKind": null,
       "publishOrder": 3,
       "baselineVersion": null,
       "aotContract": "full",
@@ -133,9 +135,9 @@
     {
       "id": "SmartPipe.Extensions.Logging",
       "projectPath": "src/SmartPipe.Extensions.Logging/SmartPipe.Extensions.Logging.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-07",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 4,
       "baselineVersion": null,
       "aotContract": "full",
@@ -206,6 +208,8 @@
         "json-direct",
         "legacy-binary-2.1.2",
         "json-nativeaot",
+        "json-trim",
+        "json-dependency-injection-direct",
         "dependency-injection-facade-binary-2.1.2",
         "hosting-facade-binary-2.1.2"
       ]
@@ -548,6 +552,7 @@
       "temporaryAllowances": [],
       "consumerScenarios": [
         "dependency-injection-direct",
+        "json-dependency-injection-direct",
         "dependency-injection-keyed",
         "dependency-injection-from-keyed-services",
         "dependency-injection-facade-source",
@@ -706,9 +711,9 @@
     {
       "id": "SmartPipe.Extensions.DataAnnotations",
       "projectPath": "src/SmartPipe.Extensions.DataAnnotations/SmartPipe.Extensions.DataAnnotations.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-07",
-      "scaffoldKind": "composed-integration",
+      "scaffoldKind": null,
       "publishOrder": 18,
       "baselineVersion": null,
       "aotContract": "annotated-reflection",
@@ -736,7 +741,8 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "data-annotations-direct"
+        "data-annotations-direct",
+        "data-annotations-runtime"
       ]
     },
     {
@@ -751,6 +757,10 @@
       "currentDependencies": {
         "requiredSmartPipePackages": [
           "SmartPipe.Core",
+          "SmartPipe.Extensions.Channels",
+          "SmartPipe.Extensions.Transforms",
+          "SmartPipe.Extensions.Logging",
+          "SmartPipe.Extensions.DataAnnotations",
           "SmartPipe.Extensions.DependencyInjection",
           "SmartPipe.Extensions.Hosting",
           "SmartPipe.Extensions.Json"

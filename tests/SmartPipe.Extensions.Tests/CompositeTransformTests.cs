@@ -12,8 +12,10 @@ public class CompositeTransformTests
         var t1 = new TestTransform(x => x * 2);
         var t2 = new TestTransform(x => x + 1);
         var composite = new CompositeTransform<int>(t1, t2);
+        await composite.InitializeAsync(TestContext.Current.CancellationToken);
 
-        var result = await composite.TransformAsync(ProcessingEnvelope<int>.Create(5));
+        var result = await composite.TransformAsync(
+            ProcessingEnvelope<int>.Create(5), TestContext.Current.CancellationToken);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be(11); // (5*2)+1
@@ -26,8 +28,10 @@ public class CompositeTransformTests
         var t2 = new FailTransform<int>();
         var t3 = new TestTransform(x => x + 1);
         var composite = new CompositeTransform<int>(t1, t2, t3);
+        await composite.InitializeAsync(TestContext.Current.CancellationToken);
 
-        var result = await composite.TransformAsync(ProcessingEnvelope<int>.Create(5));
+        var result = await composite.TransformAsync(
+            ProcessingEnvelope<int>.Create(5), TestContext.Current.CancellationToken);
 
         result.IsSuccess.Should().BeFalse(); // t2 fails
     }
@@ -40,8 +44,9 @@ public class CompositeTransformTests
         var t2 = new ObservingTransform(x => x + 1, observedTraceIds);
         var composite = new CompositeTransform<int>(t1, t2);
         var envelope = ProcessingEnvelope<int>.Create(5);
+        await composite.InitializeAsync(TestContext.Current.CancellationToken);
 
-        var result = await composite.TransformAsync(envelope);
+        var result = await composite.TransformAsync(envelope, TestContext.Current.CancellationToken);
 
         result.IsSuccess.Should().BeTrue();
         observedTraceIds.Should().Equal(envelope.TraceId, envelope.TraceId);
