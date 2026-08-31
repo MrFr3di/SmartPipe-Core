@@ -619,7 +619,8 @@ def assert_consumer_contract() -> None:
     current = [scenario for scenario in document["scenarios"] if scenario["set"] == "current"]
     expected = {
         "core-direct", "json-direct", "extensions-meta", "legacy-binary-2.1.2",
-        "core-trim", "core-nativeaot", "json-nativeaot",
+        "core-trim", "core-nativeaot", "json-nativeaot", "json-trim",
+        "json-dependency-injection-direct",
         "dependency-injection-direct", "dependency-injection-keyed",
         "dependency-injection-from-keyed-services", "dependency-injection-facade-source",
         "dependency-injection-facade-binary-2.1.2", "dependency-injection-trim",
@@ -633,8 +634,8 @@ def assert_consumer_contract() -> None:
         "channels-direct", "transforms-direct", "logging-direct", "data-annotations-direct",
         "data-annotations-runtime",
     }
-    require(len(current) == 33 and {scenario["id"] for scenario in current} == expected,
-            "Current consumer set must contain the exact thirty-three scenarios.")
+    require(len(current) == 35 and {scenario["id"] for scenario in current} == expected,
+            "Current consumer set must contain the exact thirty-five scenarios.")
     hosting = [scenario for scenario in current if scenario.get("category") == "hosting"]
     require({scenario["id"] for scenario in hosting} == {
         "hosting-direct", "hosting-facade-source", "hosting-facade-binary-2.1.2",
