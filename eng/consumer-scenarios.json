@@ -96,6 +96,30 @@
       "runSecondLockedRestore": true
     },
     {
+      "id": "json-trim",
+      "set": "current",
+      "mode": "publish-trimmed",
+      "templatePath": "tests/Consumers/Scenarios/json-trim/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.Json"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.Json"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "CsvHelper", "Dapper", "Microsoft.EntityFrameworkCore", "Mapster", "Polly"],
+      "baselineVersion": null,
+      "timeout": "00:10:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "json-dependency-injection-direct",
+      "set": "current",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/json-dependency-injection-direct/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Json"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Json"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.HealthChecks", "Microsoft.Extensions.Hosting.Abstractions", "Microsoft.Extensions.Diagnostics.HealthChecks", "Microsoft.Extensions.Options"],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
       "id": "dependency-injection-direct",
       "set": "current",
       "mode": "build-and-run",

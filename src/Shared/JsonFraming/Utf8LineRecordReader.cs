@@ -1,4 +1,4 @@
-namespace SmartPipe.Extensions;
+namespace SmartPipe.Shared.JsonFraming;
 
 internal readonly record struct Utf8LineRecord(byte[] Bytes, bool TooLarge);
 

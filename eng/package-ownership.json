@@ -90,6 +90,17 @@
       "evidence": "2.1.2 Json assembly implementation"
     },
     {
+      "typePattern": "SmartPipe.Extensions.Json.JsonPipeline*",
+      "baselineAssembly": "SmartPipe.Extensions.Json",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Json",
+      "targetImplementationAssembly": "SmartPipe.Extensions.Json",
+      "compatibilityAssembly": null,
+      "strategy": "stay",
+      "migrationEpic": "SP220-08",
+      "namespacePreserved": true,
+      "evidence": "Canonical source-generated JSON definition adapters introduced by SP220-08"
+    },
+    {
       "typePattern": "SmartPipe.Extensions.Selectors.CsvFileSource*",
       "baselineAssembly": "SmartPipe.Extensions",
       "currentImplementationAssembly": "SmartPipe.Extensions",

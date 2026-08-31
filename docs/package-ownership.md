@@ -11,6 +11,7 @@ The machine-readable authority is `eng/package-ownership.json`.
 | Composite, conditional, compression, and filter transforms | `SmartPipe.Extensions.Transforms` | `SmartPipe.Extensions` | type forwarding |
 | `LoggerSink<T>` | `SmartPipe.Extensions.Logging` | `SmartPipe.Extensions` | type forwarding |
 | `ValidationTransform<T>` and `ToFilter` | `SmartPipe.Extensions.DataAnnotations` | `SmartPipe.Extensions` | type forwarding |
+| Canonical JSON pipeline definitions | `SmartPipe.Extensions.Json` | none | new 2.2 API |
 
 The HealthChecks leaf depends only on Core, DependencyInjection, DI abstractions, Diagnostics.HealthChecks, and Options. It does not depend on Hosting, ASP.NET Core, or the broad facade.
 

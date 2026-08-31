@@ -1,5 +1,5 @@
 using System.Text;
-using SmartPipe.Extensions;
+using SmartPipe.Shared.JsonFraming;
 
 namespace SmartPipe.Extensions.Tests;
 
@@ -115,6 +115,22 @@ public sealed class Utf8LineRecordReaderTests
         var record = Assert.Single(await ReadAllAsync(stream, expected.Length));
         Assert.False(record.TooLarge);
         Assert.Equal(expected, record.Bytes);
+    }
+
+    [Fact]
+    public async Task BomBlankLineAndCrLfSplitAcrossReads_AreFramedCorrectly()
+    {
+        var bytes = Encoding.UTF8.GetPreamble()
+            .Concat("  \r\n\"first\"\r\n\"second\"\n"u8.ToArray())
+            .ToArray();
+        await using var stream = new OneByteReadStream(bytes);
+
+        var records = await ReadAllAsync(stream, maxRecordSizeBytes: 16);
+
+        Assert.Equal(2, records.Count);
+        Assert.Equal("\"first\""u8.ToArray(), records[0].Bytes);
+        Assert.Equal("\"second\""u8.ToArray(), records[1].Bytes);
+        Assert.All(records, static record => Assert.False(record.TooLarge));
     }
 
     private static async Task<List<Utf8LineRecord>> ReadAllAsync(Stream stream, int maxRecordSizeBytes)

@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
 using SmartPipe.Core;
+using SmartPipe.Shared.JsonFraming;
 
 namespace SmartPipe.Extensions.Selectors;
 

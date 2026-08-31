@@ -3,15 +3,14 @@ using SmartPipe.Core;
 using SmartPipe.Extensions;
 using SmartPipe.Extensions.Json;
 
-var inputPath = Path.Combine(Path.GetTempPath(), $"smartpipe-json-direct-{Guid.NewGuid():N}-input.json");
-var outputPath = Path.Combine(Path.GetTempPath(), $"smartpipe-json-direct-{Guid.NewGuid():N}-output.jsonl");
+var inputPath = Path.Combine(Path.GetTempPath(), $"smartpipe-json-trim-{Guid.NewGuid():N}-input.json");
+var outputPath = Path.Combine(Path.GetTempPath(), $"smartpipe-json-trim-{Guid.NewGuid():N}-output.jsonl");
 try
 {
-    await File.WriteAllTextAsync(inputPath, "[{\"Value\":42}]\n");
-    var key = new PipelineKey("json-direct");
+    await File.WriteAllTextAsync(inputPath, "[{\"Value\":11}]\n");
     var definition = JsonPipelineDefinitionBuilder
         .FromJsonFile(
-            key,
+            new PipelineKey("json-trim"),
             inputPath,
             ConsumerJsonContext.Default.ConsumerModel,
             ConsumerJsonContext.Default.ListConsumerModel,
@@ -34,7 +33,7 @@ try
     await using var run = await definition.StartAsync();
     await run.Completion;
     var output = await File.ReadAllTextAsync(outputPath);
-    if (!output.Contains("42", StringComparison.Ordinal)) return 1;
+    if (!output.Contains("11", StringComparison.Ordinal)) return 1;
 }
 finally
 {
@@ -42,7 +41,7 @@ finally
     File.Delete(outputPath);
 }
 
-Console.WriteLine("CONSUMER_OK json-direct");
+Console.WriteLine("CONSUMER_OK json-trim");
 return 0;
 
 internal sealed record ConsumerModel(int Value);

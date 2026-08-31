@@ -5,6 +5,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
 using SmartPipe.Core;
+using SmartPipe.Extensions.Json;
+using SmartPipe.Shared.JsonFraming;
 
 namespace SmartPipe.Extensions.Selectors;
 
@@ -111,7 +113,10 @@ public class JsonFileSource<T> : IPipelineSource<T>
         ArgumentNullException.ThrowIfNull(listTypeInfo);
         _options = JsonInputOptionsValidator.Validate(options, logger);
         _logger = logger;
-        var frozenTypeInfo = FreezeSourceGeneratedOptions(itemTypeInfo, listTypeInfo, _options.MaxDepth);
+        var frozenTypeInfo = JsonMetadataSnapshot.ForFile(
+            itemTypeInfo,
+            listTypeInfo,
+            _options.MaxDepth);
         _deserializeItems = (stream, topLevelValues, token) =>
             WrapJsonErrors(
                 JsonSerializer.DeserializeAsyncEnumerable(stream, frozenTypeInfo.Item, topLevelValues, token),
@@ -119,11 +124,11 @@ public class JsonFileSource<T> : IPipelineSource<T>
                 "document");
         _deserializeBatches = (stream, token) =>
             WrapJsonErrors(
-                JsonSerializer.DeserializeAsyncEnumerable(stream, frozenTypeInfo.List, topLevelValues: true, token),
+                JsonSerializer.DeserializeAsyncEnumerable(stream, frozenTypeInfo.Batch, topLevelValues: true, token),
                 _path,
                 "document");
         _deserializeItemRecord = bytes => JsonSerializer.Deserialize(bytes, frozenTypeInfo.Item);
-        _deserializeBatchRecord = bytes => JsonSerializer.Deserialize(bytes, frozenTypeInfo.List);
+        _deserializeBatchRecord = bytes => JsonSerializer.Deserialize(bytes, frozenTypeInfo.Batch);
     }
 
     [RequiresUnreferencedCode("Reflection-based JSON file reading is not trimming-safe.")]
@@ -351,30 +356,6 @@ public class JsonFileSource<T> : IPipelineSource<T>
         clone.MaxDepth = maxDepth;
         clone.MakeReadOnly(populateMissingResolver: true);
         return clone;
-    }
-
-    private static (JsonTypeInfo<T> Item, JsonTypeInfo<List<T>> List) FreezeSourceGeneratedOptions(
-        JsonTypeInfo<T> itemTypeInfo,
-        JsonTypeInfo<List<T>> listTypeInfo,
-        int maxDepth)
-    {
-        if (itemTypeInfo.Type != typeof(T) || listTypeInfo.Type != typeof(List<T>))
-            throw new ArgumentException("JSON type metadata does not match the source item and batch types.");
-        if (!ReferenceEquals(itemTypeInfo.Options, listTypeInfo.Options))
-            throw new ArgumentException("Item and list JSON type metadata must come from the same serializer context.");
-        if (itemTypeInfo.Options.TypeInfoResolver == null)
-            throw new ArgumentException("Source-generated JSON metadata must provide a type-info resolver.");
-
-        var clone = new JsonSerializerOptions(itemTypeInfo.Options)
-        {
-            MaxDepth = maxDepth,
-            TypeInfoResolver = itemTypeInfo.Options.TypeInfoResolver,
-        };
-        if (clone.GetTypeInfo(typeof(T)) is not JsonTypeInfo<T> frozenItem
-            || clone.GetTypeInfo(typeof(List<T>)) is not JsonTypeInfo<List<T>> frozenList)
-            throw new ArgumentException("The JSON metadata resolver cannot resolve both item and batch types.");
-        clone.MakeReadOnly();
-        return (frozenItem, frozenList);
     }
 
     private static async IAsyncEnumerable<TValue?> WrapJsonErrors<TValue>(

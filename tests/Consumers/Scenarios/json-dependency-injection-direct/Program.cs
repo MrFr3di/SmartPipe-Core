@@ -1,14 +1,16 @@
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.DependencyInjection;
 using SmartPipe.Core;
 using SmartPipe.Extensions;
+using SmartPipe.Extensions.DependencyInjection;
 using SmartPipe.Extensions.Json;
 
-var inputPath = Path.Combine(Path.GetTempPath(), $"smartpipe-json-direct-{Guid.NewGuid():N}-input.json");
-var outputPath = Path.Combine(Path.GetTempPath(), $"smartpipe-json-direct-{Guid.NewGuid():N}-output.jsonl");
+var inputPath = Path.Combine(Path.GetTempPath(), $"smartpipe-json-di-{Guid.NewGuid():N}-input.json");
+var outputPath = Path.Combine(Path.GetTempPath(), $"smartpipe-json-di-{Guid.NewGuid():N}-output.jsonl");
 try
 {
-    await File.WriteAllTextAsync(inputPath, "[{\"Value\":42}]\n");
-    var key = new PipelineKey("json-direct");
+    await File.WriteAllTextAsync(inputPath, "[{\"Value\":13}]\n");
+    var key = new PipelineKey("json-dependency-injection-direct");
     var definition = JsonPipelineDefinitionBuilder
         .FromJsonFile(
             key,
@@ -31,10 +33,20 @@ try
                 FlushInterval = 1,
             });
 
-    await using var run = await definition.StartAsync();
+    var services = new ServiceCollection();
+    services.AddSmartPipe().AddPipeline(definition);
+    await using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+    {
+        ValidateScopes = true,
+        ValidateOnBuild = true,
+    });
+    var factory = provider
+        .GetRequiredService<ISmartPipeFactoryProvider>()
+        .GetFactory<ConsumerModel, ConsumerModel>(key);
+    await using var run = await factory.StartAsync();
     await run.Completion;
     var output = await File.ReadAllTextAsync(outputPath);
-    if (!output.Contains("42", StringComparison.Ordinal)) return 1;
+    if (!output.Contains("13", StringComparison.Ordinal)) return 1;
 }
 finally
 {
@@ -42,7 +54,7 @@ finally
     File.Delete(outputPath);
 }
 
-Console.WriteLine("CONSUMER_OK json-direct");
+Console.WriteLine("CONSUMER_OK json-dependency-injection-direct");
 return 0;
 
 internal sealed record ConsumerModel(int Value);
