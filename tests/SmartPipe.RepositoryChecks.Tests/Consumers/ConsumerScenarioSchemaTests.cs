@@ -9,12 +9,12 @@ namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 public sealed class ConsumerScenarioSchemaTests
 {
     [Fact]
-    public async Task CurrentManifest_HasExactlyThirtyThreeStrictScenarios()
+    public async Task CurrentManifest_HasExactlyThirtyFiveStrictScenarios()
     {
         var root = RepositoryRoot();
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var document = await new ConsumerScenarioLoader().LoadAsync(root, "eng/consumer-scenarios.json", graph, TestContext.Current.CancellationToken);
-        Assert.Equal(33, document.Scenarios.Count);
+        Assert.Equal(35, document.Scenarios.Count);
         Assert.Equal(
             [
                 "core-direct",
@@ -24,6 +24,8 @@ public sealed class ConsumerScenarioSchemaTests
                 "core-trim",
                 "core-nativeaot",
                 "json-nativeaot",
+                "json-trim",
+                "json-dependency-injection-direct",
                 "dependency-injection-direct",
                 "dependency-injection-keyed",
                 "dependency-injection-from-keyed-services",
