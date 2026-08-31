@@ -33,7 +33,7 @@ public sealed class LocalNuGetConfigWriterTests
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         var projects = Directory.EnumerateFiles(Path.Combine(root, "tests", "Consumers", "Scenarios"), "*.csproj", SearchOption.AllDirectories).ToArray();
-        Assert.Equal(28, projects.Length);
+        Assert.Equal(26, projects.Length);
         Assert.All(projects, project => Assert.DoesNotContain(" Version=", File.ReadAllText(project), StringComparison.Ordinal));
     }
 

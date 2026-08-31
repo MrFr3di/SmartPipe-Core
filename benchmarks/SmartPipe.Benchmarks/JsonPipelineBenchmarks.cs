@@ -209,14 +209,8 @@ public class JsonPipelineBenchmarks
             BenchmarkJsonContext.Default.ListJsonBenchmarkItem,
             new JsonFileSourceOptions { Format = JsonFileFormat.Ndjson });
         await source.InitializeAsync().ConfigureAwait(false);
-        var count = 0;
-        await foreach (var _ in source.ReadEnvelopesAsync().ConfigureAwait(false))
-        {
-            count++;
-            break;
-        }
-
-        return count;
+        await using var enumerator = source.ReadEnvelopesAsync().GetAsyncEnumerator();
+        return await enumerator.MoveNextAsync().ConfigureAwait(false) ? 1 : 0;
     }
 
     [Benchmark]
@@ -234,7 +228,7 @@ public class JsonPipelineBenchmarks
             var readTask = ConsumeSourceAsync(source, cancellation.Token);
             await Task.Yield();
             var disposalTask = source.DisposeAsync().AsTask();
-            cancellation.Cancel();
+            await cancellation.CancelAsync().ConfigureAwait(false);
             try
             {
                 await Task.WhenAll(readTask, disposalTask).ConfigureAwait(false);

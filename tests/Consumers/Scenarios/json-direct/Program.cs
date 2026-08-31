@@ -1,3 +1,4 @@
+using JsonDirectConsumer;
 using System.Text.Json.Serialization;
 using SmartPipe.Core;
 using SmartPipe.Extensions;
@@ -45,7 +46,11 @@ finally
 Console.WriteLine("CONSUMER_OK json-direct");
 return 0;
 
-internal sealed record ConsumerModel(int Value);
-[JsonSerializable(typeof(ConsumerModel))]
-[JsonSerializable(typeof(List<ConsumerModel>))]
-internal sealed partial class ConsumerJsonContext : JsonSerializerContext;
+namespace JsonDirectConsumer
+{
+    internal sealed record ConsumerModel(int Value);
+
+    [JsonSerializable(typeof(ConsumerModel))]
+    [JsonSerializable(typeof(List<ConsumerModel>))]
+    internal sealed partial class ConsumerJsonContext : JsonSerializerContext;
+}
