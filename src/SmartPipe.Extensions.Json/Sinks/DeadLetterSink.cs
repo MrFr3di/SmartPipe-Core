@@ -324,14 +324,7 @@ public partial class DeadLetterSink<T> : IPipelineSink<DeadLetterEnvelope<T>>
     }
 
     private static DeadLetterSinkOptions ValidateOptions(DeadLetterSinkOptions? options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(options.RetryDelays);
-        ArgumentNullException.ThrowIfNull(options.TimeProvider);
-        if (options.RetryDelays.Any(static delay => delay < TimeSpan.Zero))
-            throw new ArgumentOutOfRangeException(nameof(options), "Retry delays cannot be negative.");
-        return options with { RetryDelays = options.RetryDelays.ToArray() };
-    }
+        => JsonInputOptionsValidator.Validate(options, loggerAvailable: true);
 
     [LoggerMessage(1, LogLevel.Warning, "IOException on attempt {Attempt}/{MaxAttempts} writing to dead letter file {Path}. Retrying in {DelayMilliseconds}ms.")]
     private static partial void LogRetry(

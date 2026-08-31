@@ -190,3 +190,27 @@ CPU, .NET SDK/runtime, BenchmarkDotNet job/configuration, raw artifact, and
 allocation shape from the same environment. No absolute timing or percentage
 threshold is a correctness gate; deterministic tests prove compile-once,
 resource-free compilation, activation order, and bounded cleanup counts.
+
+## JSON Line Framing
+
+`SmartPipe.Extensions.Json` compiles the internal
+`src/Shared/JsonFraming/Utf8LineRecordReader.cs` as a linked source. This
+transport-neutral helper is BCL-only and handles only bounded LF/CRLF framing,
+UTF-8 bytes, BOM handling, cancellation, and discard-through-boundary for
+oversized records. It is not a public API or a separate package. JSON stream
+probing, unframed-input limits, record validation, path diagnostics, and
+invalid-record policy remain owned by the JSON package.
+
+## JSON Definition Adapters
+
+`SmartPipe.Extensions.Json` exposes `JsonPipelineComponents` plus the typed
+`JsonPipelineDefinitionBuilder` and `JsonPipelineDefinitionBuilderExtensions`
+adapters. File sources, file sinks, transforms, and dead-letter components are
+created through Core `RuntimeOwned` descriptors, so definition construction is
+resource-free and each activation receives a fresh component. Source-generated
+metadata is accepted only when its resolver can be re-run from a private,
+read-only `JsonSerializerOptions` snapshot; item and batch metadata must share
+one caller options instance, while transform input and output metadata are
+snapshotted independently. Logger factories are borrowed and logger instances
+are created at activation for policies that require logging; JSON never disposes
+the factory.

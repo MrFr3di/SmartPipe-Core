@@ -39,6 +39,8 @@
         "core-trim",
         "core-nativeaot",
         "json-nativeaot",
+        "json-trim",
+        "json-dependency-injection-direct",
         "dependency-injection-direct",
         "dependency-injection-keyed",
         "dependency-injection-from-keyed-services",
@@ -206,6 +208,8 @@
         "json-direct",
         "legacy-binary-2.1.2",
         "json-nativeaot",
+        "json-trim",
+        "json-dependency-injection-direct",
         "dependency-injection-facade-binary-2.1.2",
         "hosting-facade-binary-2.1.2"
       ]
@@ -548,6 +552,7 @@
       "temporaryAllowances": [],
       "consumerScenarios": [
         "dependency-injection-direct",
+        "json-dependency-injection-direct",
         "dependency-injection-keyed",
         "dependency-injection-from-keyed-services",
         "dependency-injection-facade-source",

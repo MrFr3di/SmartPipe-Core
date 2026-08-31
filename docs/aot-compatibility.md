@@ -55,6 +55,12 @@ These five integrations are implemented by `SmartPipe.Extensions.Json`.
 `JsonLinesDeadLetterSerializer<T>` remains in `SmartPipe.Core` and also exposes
 a source-generated metadata constructor.
 
+For canonical typed definitions, use `JsonPipelineDefinitionBuilder.FromJsonFile`
+or `FromJsonDeadLetterFile`, then `TransformJson` and `ToJsonFile` from
+`SmartPipe.Extensions.Json`. Those adapters require source-generated metadata,
+snapshot it into private resolver-backed options, and keep component activation
+and logger creation lazy and trimming-safe.
+
 The legacy `JsonFileSink<T>` batch-metadata constructors and the default
 `BatchJsonLines` format write one JSON array per flushed line. Explicit
 `Ndjson` writes one value per line, while `Array` writes one root array. The

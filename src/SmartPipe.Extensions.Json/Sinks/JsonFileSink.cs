@@ -356,16 +356,7 @@ public class JsonFileSink<T> : IPipelineSink<T>
     }
 
     private static JsonFileSinkOptions ValidateOptions(JsonFileSinkOptions? options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        if (options.Format == JsonFileFormat.Auto)
-            throw new ArgumentException("Auto format is valid only for JSON sources.", nameof(options));
-        if (options.Format == JsonFileFormat.Array && options.OpenMode == JsonFileOpenMode.Append)
-            throw new ArgumentException("A root JSON array cannot be appended safely.", nameof(options));
-        if (options.FlushInterval <= 0)
-            throw new ArgumentOutOfRangeException(nameof(options), options.FlushInterval, "Flush interval must be greater than zero.");
-        return options with { };
-    }
+        => JsonInputOptionsValidator.Validate(options);
 
     private static string ValidatePath(string? path)
     {
