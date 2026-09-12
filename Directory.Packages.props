@@ -43,6 +43,7 @@
     <PackageVersion Include="SmartPipe.Extensions.HealthChecks" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.Hosting" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions" Version="2.2.0" />
+    <PackageVersion Include="SmartPipe.Extensions.Csv" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.Json" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.OpenTelemetry" Version="2.2.0" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />

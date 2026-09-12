@@ -61,7 +61,12 @@
         "opentelemetry-otlp",
         "opentelemetry-facade",
         "opentelemetry-trim",
-        "opentelemetry-nativeaot"
+        "opentelemetry-nativeaot",
+        "csv-direct",
+        "csv-di-composition",
+        "csv-facade-source",
+        "csv-facade-binary-2.1.2",
+        "csv-trim-diagnostic"
       ]
     },
     {
@@ -217,9 +222,9 @@
     {
       "id": "SmartPipe.Extensions.Csv",
       "projectPath": "src/SmartPipe.Extensions.Csv/SmartPipe.Extensions.Csv.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-09",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 6,
       "baselineVersion": null,
       "aotContract": "verified-no-blanket",
@@ -229,7 +234,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "CsvHelper"
+          "CsvHelper",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -241,7 +247,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "CsvHelper"
+          "CsvHelper",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -249,7 +256,9 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "csv-direct"
+        "csv-direct",
+        "csv-di-composition",
+        "csv-trim-diagnostic"
       ]
     },
     {
@@ -553,6 +562,7 @@
       "consumerScenarios": [
         "dependency-injection-direct",
         "json-dependency-injection-direct",
+        "csv-di-composition",
         "dependency-injection-keyed",
         "dependency-injection-from-keyed-services",
         "dependency-injection-facade-source",
@@ -763,11 +773,13 @@
           "SmartPipe.Extensions.DataAnnotations",
           "SmartPipe.Extensions.DependencyInjection",
           "SmartPipe.Extensions.Hosting",
-          "SmartPipe.Extensions.Json"
+          "SmartPipe.Extensions.Json",
+          "SmartPipe.Extensions.Csv"
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Logging.Abstractions"
+          "Microsoft.Extensions.Logging.Abstractions",
+          "CsvHelper"
         ],
         "forbiddenPackagePatterns": []
       },
@@ -798,18 +810,12 @@
           "Microsoft.Extensions.Http",
           "Microsoft.Extensions.Options",
           "Microsoft.Extensions.Resilience",
-          "Microsoft.Extensions.Logging.Abstractions"
+          "Microsoft.Extensions.Logging.Abstractions",
+          "CsvHelper"
         ],
         "forbiddenPackagePatterns": []
       },
       "temporaryAllowances": [
-        {
-          "dependency": "CsvHelper",
-          "reason": "CSV implementation remains embedded until extraction",
-          "ownerEpic": "SP220-09",
-          "expiresBeforeRelease": true,
-          "evidence": "SmartPipe.Extensions current PackageReference"
-        },
         {
           "dependency": "Dapper",
           "reason": "Dapper implementation remains embedded until extraction",
@@ -881,6 +887,8 @@
         "dependency-injection-facade-binary-2.1.2",
         "hosting-facade-source",
         "hosting-facade-binary-2.1.2",
+        "csv-facade-source",
+        "csv-facade-binary-2.1.2",
         "opentelemetry-facade"
       ]
     }

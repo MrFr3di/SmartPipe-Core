@@ -26,6 +26,7 @@
     <ProjectReference Include="..\SmartPipe.Extensions.DependencyInjection\SmartPipe.Extensions.DependencyInjection.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Hosting\SmartPipe.Extensions.Hosting.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Json\SmartPipe.Extensions.Json.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.Csv\SmartPipe.Extensions.Csv.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -103,7 +103,7 @@
     {
       "typePattern": "SmartPipe.Extensions.Selectors.CsvFileSource*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Csv",
       "targetImplementationAssembly": "SmartPipe.Extensions.Csv",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",
@@ -169,7 +169,7 @@
     {
       "typePattern": "SmartPipe.Extensions.Sinks.CsvFileSink*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Csv",
       "targetImplementationAssembly": "SmartPipe.Extensions.Csv",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",
@@ -334,7 +334,7 @@
     {
       "typePattern": "SmartPipe.Extensions.Transforms.CsvTransform*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Csv",
       "targetImplementationAssembly": "SmartPipe.Extensions.Csv",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",

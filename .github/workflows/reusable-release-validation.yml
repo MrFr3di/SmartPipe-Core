@@ -172,6 +172,9 @@ jobs:
     - name: Extensions tests
       run: dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build --verbosity normal -c Release
 
+    - name: CSV Extensions tests
+      run: dotnet test --project tests/SmartPipe.Extensions.Csv.Tests/SmartPipe.Extensions.Csv.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
     - name: SP220-07 leaf tests
       shell: pwsh
       run: |

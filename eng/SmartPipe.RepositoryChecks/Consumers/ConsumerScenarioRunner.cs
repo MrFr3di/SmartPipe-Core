@@ -101,7 +101,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             externalPackageIds).ConfigureAwait(false);
         var packages = Path.Combine(workspace, "packages");
         var rid = RuntimeIdentifier();
-        var restore = new List<string> { "restore", project, "--configfile", config, "--packages", packages, "--use-lock-file" };
+        var restore = new List<string> { "restore", project, "--configfile", config, "--packages", packages, "--use-lock-file", "--force-evaluate" };
         if (scenario.Mode is ConsumerMode.PublishTrimmed or ConsumerMode.PublishNativeAot) { restore.Add("-r"); restore.Add(rid); }
         if (scenario.Mode == ConsumerMode.PublishNativeAot) restore.Add("-p:PublishAot=true");
         if (scenario.ExpectedPublishDiagnostic is { } restoreExpectation)
@@ -109,7 +109,10 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         await RunRequiredAsync("dotnet", restore, source, logs, options.RepositoryRoot, scenario.Timeout, events, ct).ConfigureAwait(false);
         if (scenario.RunSecondLockedRestore)
         {
-            var locked = restore.ToList(); locked.Remove("--use-lock-file"); locked.Add("--locked-mode");
+            var locked = restore.ToList();
+            locked.Remove("--use-lock-file");
+            locked.Remove("--force-evaluate");
+            locked.Add("--locked-mode");
             await RunRequiredAsync("dotnet", locked, source, logs, options.RepositoryRoot, scenario.Timeout, events, ct).ConfigureAwait(false);
         }
         if (scenario.Mode == ConsumerMode.PublishNativeAot)
@@ -159,6 +162,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         {
             var diagnosticRestore = restore.ToList();
             diagnosticRestore.Remove("--use-lock-file");
+            diagnosticRestore.Remove("--force-evaluate");
             diagnosticRestore.Add("--locked-mode");
             var diagnosticPublish = publishArguments!.ToList();
             diagnosticPublish[diagnosticPublish.IndexOf("-o") + 1] = Path.Combine(workspace, "expected-diagnostic-publish");

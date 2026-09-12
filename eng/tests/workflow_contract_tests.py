@@ -31,6 +31,10 @@ FILES = {
     )
 }
 SHA_REF = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
+SCENARIO_ID_PATTERN = r"^[a-z0-9-]+(?:\.[a-z0-9-]+)*$"
+SCENARIO_TEMPLATE_PATTERN = (
+    r"^tests/Consumers/Scenarios/[a-z0-9-]+(?:\.[a-z0-9-]+)*/[^/]+\.(cs|csproj)$"
+)
 HOSTED_WINDOWS = "windows-latest"
 HOSTED_WINDOWS_JSON = '["windows-latest"]'
 CODEQL_ACTION_REF = (
@@ -71,6 +75,13 @@ HOSTING_MATRIX = (
     "${{ fromJSON(github.event_name == 'pull_request' && "
     "'{\"os\":[\"windows-latest\"]}' || "
     "'{\"os\":[\"ubuntu-latest\",\"windows-latest\"]}') }}"
+)
+CSV_INTEGRATION_NAME = "CSV file integration (${{ matrix.os == 'windows-latest' && 'Windows' || matrix.os }})"
+CSV_INTEGRATION_MATRIX = (
+    "${{ fromJSON('{\"os\":[\"ubuntu-latest\",\"windows-latest\"]}') }}"
+)
+CSV_TEST_PROJECT = (
+    "tests/SmartPipe.Extensions.Csv.Tests/SmartPipe.Extensions.Csv.Tests.csproj"
 )
 LYCHEE_URL = (
     "https://github.com/lycheeverse/lychee/releases/download/"
@@ -197,9 +208,11 @@ def assert_diagnostic_contract(ci: dict) -> None:
     diagnostic_steps = steps(job, "diagnostic-consumer")
     validation = named_step(diagnostic_steps, "Validate diagnostic inputs")
     validation_script = str(validation.get("run", ""))
-    for token in ("^[0-9a-f]{40}$", "^[a-z0-9-]+$", "^[1-5]$"):
+    for token in ("^[0-9a-f]{40}$", SCENARIO_ID_PATTERN, "^[1-5]$"):
         require(token in validation_script,
-                f"Diagnostic input validation must enforce {token}.")
+                "Diagnostic input validation must enforce the safe dotted ID grammar."
+                if token == SCENARIO_ID_PATTERN
+                else f"Diagnostic input validation must enforce {token}.")
     checkout = next(
         step for step in diagnostic_steps
         if str(step.get("uses", "")).startswith("actions/checkout")
@@ -613,11 +626,45 @@ def assert_private_repository_docs_links_are_local() -> None:
                 f"{source.relative_to(ROOT)} must use local links for private repository references.")
 
 
-def assert_consumer_contract() -> None:
-    manifest_path = ROOT / "eng" / "consumer-scenarios.json"
-    document = json.loads(manifest_path.read_text(encoding="utf-8"))
+def assert_scenario_id_grammar() -> None:
+    valid = ("csv-direct", "csv.facade-1", "a.b.c")
+    invalid = (".leading", "trailing.", "double..dot", "UPPER")
+    for value in valid:
+        require(re.fullmatch(SCENARIO_ID_PATTERN, value) is not None,
+                f"Scenario ID grammar must accept '{value}'.")
+    for value in invalid:
+        require(re.fullmatch(SCENARIO_ID_PATTERN, value) is None,
+                f"Scenario ID grammar must reject '{value}'.")
+
+
+def assert_consumer_schema_contract(schema: dict | None = None) -> None:
+    if schema is None:
+        schema_path = ROOT / "eng" / "consumer-scenarios.schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    properties = schema.get("properties", {})
+    scenarios = properties.get("scenarios", {})
+    require(scenarios.get("minItems") == 40 and scenarios.get("maxItems") == 40,
+            "Consumer scenario schema must require exactly forty scenarios.")
+    required_pattern = properties.get("requiredAtRelease", {}).get("items", {}).get("pattern")
+    require(required_pattern == SCENARIO_ID_PATTERN,
+            "Consumer scenario schema must use the safe dotted ID grammar.")
+    scenario_properties = schema.get("$defs", {}).get("scenario", {}).get("properties", {})
+    for property_name in ("id", "category"):
+        require(scenario_properties.get(property_name, {}).get("pattern") == SCENARIO_ID_PATTERN,
+                f"Consumer scenario schema {property_name} must use the safe dotted ID grammar.")
+    require(scenario_properties.get("templatePath", {}).get("pattern") == SCENARIO_TEMPLATE_PATTERN,
+            "Consumer scenario schema template paths must use the safe dotted ID grammar.")
+    assert_scenario_id_grammar()
+
+
+def assert_consumer_contract(document: dict | None = None) -> None:
+    if document is None:
+        manifest_path = ROOT / "eng" / "consumer-scenarios.json"
+        document = json.loads(manifest_path.read_text(encoding="utf-8"))
     current = [scenario for scenario in document["scenarios"] if scenario["set"] == "current"]
     expected = {
+        "csv-direct", "csv-di-composition", "csv-facade-source",
+        "csv-facade-binary-2.1.2", "csv-trim-diagnostic",
         "core-direct", "json-direct", "extensions-meta", "legacy-binary-2.1.2",
         "core-trim", "core-nativeaot", "json-nativeaot", "json-trim",
         "json-dependency-injection-direct",
@@ -634,8 +681,8 @@ def assert_consumer_contract() -> None:
         "channels-direct", "transforms-direct", "logging-direct", "data-annotations-direct",
         "data-annotations-runtime",
     }
-    require(len(current) == 35 and {scenario["id"] for scenario in current} == expected,
-            "Current consumer set must contain the exact thirty-five scenarios.")
+    require(len(current) == 40 and {scenario["id"] for scenario in current} == expected,
+            "Current consumer set must contain the exact forty scenarios.")
     hosting = [scenario for scenario in current if scenario.get("category") == "hosting"]
     require({scenario["id"] for scenario in hosting} == {
         "hosting-direct", "hosting-facade-source", "hosting-facade-binary-2.1.2",
@@ -663,12 +710,79 @@ def assert_consumer_contract() -> None:
 
 
 
+def assert_csv_integration_contract(ci: dict, reusable: dict) -> None:
+    job = ci["jobs"].get("csv-file-integration")
+    require(isinstance(job, dict), "CI must define the CSV file integration matrix job.")
+    require(job.get("name") == CSV_INTEGRATION_NAME,
+            "CSV file integration must use the stable matrix check name.")
+    require_ci_normal_job_guard(job, "CSV file integration")
+    require_runner_expression(job, HOSTING_RUNNER, "CSV file integration")
+    strategy = job.get("strategy")
+    require(isinstance(strategy, dict)
+            and strategy.get("fail-fast") is False
+            and strategy.get("matrix") == CSV_INTEGRATION_MATRIX
+            and "ubuntu-latest" in str(strategy.get("matrix"))
+            and "windows-latest" in str(strategy.get("matrix")),
+            "CSV file integration must use the Windows/Linux hosted matrix.")
+
+    csv_steps = steps(job, "csv-file-integration")
+    checkout = next(
+        step for step in csv_steps
+        if str(step.get("uses", "")).startswith("actions/checkout")
+    )
+    require(checkout.get("with", {}).get("persist-credentials") is False,
+            "CSV file integration checkout must disable persisted credentials.")
+    setup = next(
+        step for step in csv_steps
+        if str(step.get("uses", "")).startswith("actions/setup-dotnet")
+    )
+    require(setup.get("with", {}).get("global-json-file") == "global.json"
+            and setup.get("with", {}).get("cache") is True
+            and setup.get("with", {}).get("cache-dependency-path") == "**/packages.lock.json",
+            "CSV file integration setup-dotnet must use the standard lock-file cache.")
+    restore = named_step(csv_steps, "Restore locked")
+    require(str(restore.get("run", "")).strip() ==
+            f"dotnet restore {CSV_TEST_PROJECT} --locked-mode -p:DisableImplicitLibraryPacksFolder=true",
+            "CSV file integration must perform one locked CSV test-project restore.")
+    build = named_step(csv_steps, "Build CSV test project")
+    require(" ".join(str(build.get("run", "")).split()) ==
+            f"dotnet build {CSV_TEST_PROJECT} --configuration Release --no-restore -warnaserror",
+            "CSV file integration must build the CSV test project in Release.")
+    expected_tests = {
+        "CSV strict source tests": "SmartPipe.Extensions.Csv.Tests.CsvStrictSourceTests",
+        "CSV strict sink tests": "SmartPipe.Extensions.Csv.Tests.CsvStrictSinkTests",
+    }
+    for step_name, test_class in expected_tests.items():
+        test_run = " ".join(str(named_step(csv_steps, step_name).get("run", "")).split())
+        require("--minimum-expected-tests 1" in test_run,
+                f"{step_name} must set --minimum-expected-tests 1.")
+        require(test_run == (
+            f"dotnet test --project {CSV_TEST_PROJECT} --configuration Release --no-build "
+            f"--filter-class {test_class} --minimum-expected-tests 1"
+        ), f"CSV file integration must run the {test_class} filter with a non-empty gate.")
+    require(csv_steps.index(restore) < csv_steps.index(build)
+            < csv_steps.index(named_step(csv_steps, "CSV strict source tests"))
+            < csv_steps.index(named_step(csv_steps, "CSV strict sink tests")),
+            "CSV file integration must restore, build, then run source and sink tests.")
+
+    reusable_job = reusable["jobs"].get("build-test-pack")
+    require(isinstance(reusable_job, dict),
+            "Reusable validation must define build-test-pack for CSV tests.")
+    reusable_steps = steps(reusable_job, "reusable build-test-pack")
+    csv_step = named_step(reusable_steps, "CSV Extensions tests")
+    require(" ".join(str(csv_step.get("run", "")).split()) == (
+        f"dotnet test --project {CSV_TEST_PROJECT} --configuration Release --no-build "
+        "--minimum-expected-tests 1"
+    ), "Reusable validation must run the complete CSV test project with a non-empty gate.")
+
+
 def validate(documents: dict[str, dict]) -> None:
     reusable = documents["reusable-release-validation.yml"]
     ci = documents["ci.yml"]
     static_analysis = documents["codeql.yml"]
     dependency_review = documents["dependency-review.yml"]
     publish = documents["publish-nuget.yml"]
+    assert_consumer_schema_contract()
 
     for workflow_name, workflow in (
         ("ci.yml", ci),
@@ -676,15 +790,18 @@ def validate(documents: dict[str, dict]) -> None:
         ("dependency-review.yml", dependency_review),
     ):
         branches = workflow.get("on", {}).get("pull_request", {}).get("branches", [])
-        require("sp220/checkpoint-c" in branches,
-                f"{workflow_name} pull_request must include sp220/checkpoint-c.")
-        require("sp220/checkpoint-d" in branches,
-                f"{workflow_name} pull_request must include sp220/checkpoint-d.")
+        for checkpoint in ("c", "d", "e"):
+            require(f"sp220/checkpoint-{checkpoint}" in branches,
+                    f"{workflow_name} pull_request must include sp220/checkpoint-{checkpoint}.")
 
     for event in ("push", "pull_request"):
         branches = ci.get("on", {}).get(event, {}).get("branches", [])
         require("release/2.2.0" in branches,
                 f"CI {event} must include release/2.2.0.")
+    for workflow_name in ("ci.yml", "codeql.yml"):
+        branches = documents[workflow_name].get("on", {}).get("push", {}).get("branches", [])
+        require("sp220/checkpoint-e" in branches,
+                f"{workflow_name} push must include sp220/checkpoint-e.")
     assert_diagnostic_contract(ci)
 
     expected_triggers = {
@@ -711,18 +828,18 @@ def validate(documents: dict[str, dict]) -> None:
                     },
                 },
             },
-            "push": {"branches": ["main", "upd", "release/2.2.0"]},
+            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e"]},
             "pull_request": {
-                "branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d"]
+                "branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e"]
             },
         },
         "codeql.yml": {
-            "push": {"branches": ["main", "upd", "release/2.2.0"]},
-            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d"]},
+            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e"]},
+            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e"]},
             "schedule": [{"cron": "27 3 * * 1"}],
         },
         "dependency-review.yml": {
-            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d"]},
+            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e"]},
         },
     }
     for workflow_name, expected in expected_triggers.items():
@@ -801,6 +918,7 @@ def validate(documents: dict[str, dict]) -> None:
         "JSON Extensions tests", "Core correctness regressions",
         "Core concurrency regressions", "Extensions correctness regressions",
         "PR concurrency regression repeat", "Test and benchmark warning gate",
+        "CSV Extensions tests",
         "Pack packages from graph", "Provision 2.1.2 baseline packages",
         "Verify package graph current", "Verify package metadata current",
         "Verify package ownership current", "Verify release versions current",
@@ -1015,6 +1133,7 @@ def validate(documents: dict[str, dict]) -> None:
 
     assert_persist_credentials_disabled(documents)
     assert_setup_dotnet_uses_global_json(documents)
+    assert_csv_integration_contract(ci, reusable)
     assert_link_check_exclusion_scoped()
     assert_private_repository_docs_links_are_local()
     assert_consumer_contract()
@@ -1071,6 +1190,117 @@ def validate(documents: dict[str, dict]) -> None:
             "Availability checks must derive package IDs and versions from manifest.json.")
 
     assert_immutable_action_refs(documents)
+
+
+def _remove_csv_scenario(document: dict) -> None:
+    document["scenarios"] = [
+        scenario for scenario in document["scenarios"] if scenario["id"] != "csv-direct"
+    ]
+
+
+def _relax_schema_scenario_count(schema: dict) -> None:
+    schema["properties"]["scenarios"]["maxItems"] = 39
+
+
+def _relax_schema_scenario_id_pattern(schema: dict) -> None:
+    schema["properties"]["requiredAtRelease"]["items"]["pattern"] = "^[a-z0-9-]+$"
+
+
+def _relax_ci_scenario_id_validation(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["diagnostic-consumer"]["steps"],
+        "Validate diagnostic inputs",
+    )
+    step["run"] = str(step["run"]).replace(SCENARIO_ID_PATTERN, "^[a-z0-9-]+$")
+
+
+def _remove_ci_checkpoint_e_push_branch(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["on"]["push"]["branches"].remove("sp220/checkpoint-e")
+
+
+def _remove_ci_checkpoint_e_branch(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-e")
+
+
+def _remove_codeql_checkpoint_e_push_branch(documents: dict[str, dict]) -> None:
+    documents["codeql.yml"]["on"]["push"]["branches"].remove("sp220/checkpoint-e")
+
+
+def _remove_codeql_checkpoint_e_branch(documents: dict[str, dict]) -> None:
+    documents["codeql.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-e")
+
+
+def _remove_dependency_review_checkpoint_e_branch(documents: dict[str, dict]) -> None:
+    documents["dependency-review.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-e")
+
+
+def _remove_csv_integration_job(documents: dict[str, dict]) -> None:
+    del documents["ci.yml"]["jobs"]["csv-file-integration"]
+
+
+def _change_csv_integration_name(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["jobs"]["csv-file-integration"]["name"] = "CSV integration"
+
+
+def _change_csv_integration_matrix(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["jobs"]["csv-file-integration"]["strategy"]["matrix"] = (
+        "${{ fromJSON('{\"os\":[\"windows-latest\"]}') }}"
+    )
+
+
+def _remove_csv_integration_cache(documents: dict[str, dict]) -> None:
+    for step in documents["ci.yml"]["jobs"]["csv-file-integration"]["steps"]:
+        if str(step.get("uses", "")).startswith("actions/setup-dotnet"):
+            step["with"].pop("cache", None)
+            return
+
+
+def _change_csv_integration_restore(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["csv-file-integration"]["steps"],
+        "Restore locked",
+    )
+    step["run"] = str(step["run"]).replace("--locked-mode", "")
+
+
+def _change_csv_integration_build(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["csv-file-integration"]["steps"],
+        "Build CSV test project",
+    )
+    step["run"] = str(step["run"]).replace("--configuration Release", "--configuration Debug")
+
+
+def _change_csv_source_filter(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["csv-file-integration"]["steps"],
+        "CSV strict source tests",
+    )
+    step["run"] = str(step["run"]).replace(
+        "SmartPipe.Extensions.Csv.Tests.CsvStrictSourceTests",
+        "SmartPipe.Extensions.Csv.Tests.CsvStrictSinkTests",
+    )
+
+
+def _strip_csv_test_minimum(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["csv-file-integration"]["steps"],
+        "CSV strict source tests",
+    )
+    step["run"] = str(step["run"]).replace(" --minimum-expected-tests 1", "")
+
+
+def _remove_csv_reusable_step(documents: dict[str, dict]) -> None:
+    job = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]
+    job["steps"] = [step for step in job["steps"] if step.get("name") != "CSV Extensions tests"]
+
+
+def _strip_csv_reusable_minimum(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
+        "CSV Extensions tests",
+    )
+    step["run"] = str(step["run"]).replace(" --minimum-expected-tests 1", "")
 
 
 def _revert_windows_lifecycle_namespace(documents: dict[str, dict]) -> None:
@@ -1427,6 +1657,17 @@ def _hardcode_publish_package(documents: dict[str, dict]) -> None:
     push["run"] = str(push["run"]) + "\ndotnet nuget push artifacts/packages/SmartPipe.Core.2.2.0.nupkg"
 
 
+def assert_document_mutation_rejected(document: dict, mutate, validator, expected: str) -> None:
+    mutated = copy.deepcopy(document)
+    mutate(mutated)
+    try:
+        validator(mutated)
+    except AssertionError as error:
+        require(expected in str(error), f"Mutation failed for the wrong reason: {error}")
+        return
+    raise AssertionError(f"RED mutation was accepted: {expected}")
+
+
 def assert_mutation_rejected(documents: dict[str, dict], mutate, expected: str) -> None:
     mutated = copy.deepcopy(documents)
     mutate(mutated)
@@ -1441,6 +1682,44 @@ def assert_mutation_rejected(documents: dict[str, dict], mutate, expected: str) 
 def main() -> int:
     documents = load_workflows()
     validate(documents)
+    manifest = json.loads((ROOT / "eng" / "consumer-scenarios.json").read_text(encoding="utf-8"))
+    schema = json.loads((ROOT / "eng" / "consumer-scenarios.schema.json").read_text(encoding="utf-8"))
+    assert_document_mutation_rejected(
+        manifest, _remove_csv_scenario, assert_consumer_contract, "exact forty scenarios"
+    )
+    assert_document_mutation_rejected(
+        schema, _relax_schema_scenario_count, assert_consumer_schema_contract,
+        "exactly forty scenarios",
+    )
+    assert_document_mutation_rejected(
+        schema, _relax_schema_scenario_id_pattern, assert_consumer_schema_contract,
+        "safe dotted ID grammar",
+    )
+    assert_mutation_rejected(
+        documents, _relax_ci_scenario_id_validation, "safe dotted ID grammar"
+    )
+    for mutate, expected in (
+        (_remove_ci_checkpoint_e_push_branch, "ci.yml push must include sp220/checkpoint-e"),
+        (_remove_ci_checkpoint_e_branch, "ci.yml pull_request must include sp220/checkpoint-e"),
+        (_remove_codeql_checkpoint_e_push_branch, "codeql.yml push must include sp220/checkpoint-e"),
+        (_remove_codeql_checkpoint_e_branch, "codeql.yml pull_request must include sp220/checkpoint-e"),
+        (_remove_dependency_review_checkpoint_e_branch,
+         "dependency-review.yml pull_request must include sp220/checkpoint-e"),
+    ):
+        assert_mutation_rejected(documents, mutate, expected)
+    for mutate, expected in (
+        (_remove_csv_integration_job, "define the CSV file integration matrix job"),
+        (_change_csv_integration_name, "stable matrix check name"),
+        (_change_csv_integration_matrix, "Windows/Linux hosted matrix"),
+        (_remove_csv_integration_cache, "ci.yml restore-heavy setup-dotnet"),
+        (_change_csv_integration_restore, "locked CSV test-project restore"),
+        (_change_csv_integration_build, "build the CSV test project in Release"),
+        (_change_csv_source_filter, "CsvStrictSourceTests filter"),
+        (_strip_csv_test_minimum, "CSV strict source tests must set --minimum-expected-tests 1"),
+        (_remove_csv_reusable_step, "exactly one step named 'CSV Extensions tests'"),
+        (_strip_csv_reusable_minimum, "complete CSV test project with a non-empty gate"),
+    ):
+        assert_mutation_rejected(documents, mutate, expected)
     assert_mutation_rejected(
         documents,
         _remove_diagnostic_input,

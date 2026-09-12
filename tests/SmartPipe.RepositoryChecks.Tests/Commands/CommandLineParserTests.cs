@@ -323,7 +323,7 @@ public sealed class CommandLineParserTests
     }
 
     [Fact]
-    public void Parse_RunConsumersAcceptsExactScenario()
+    public void Parse_RunConsumersAcceptsExactDottedScenario()
     {
         using var repository = new CommandRepository();
 
@@ -333,10 +333,10 @@ public sealed class CommandLineParserTests
             "--set", "current",
             "--package-directory", "packages",
             "--package-version", "2.2.0",
-            "--scenario", "dependency-injection-nativeaot",
+            "--scenario", "csv-facade-binary-2.1.2",
         ]));
 
-        Assert.Equal("dependency-injection-nativeaot", command.Scenario);
+        Assert.Equal("csv-facade-binary-2.1.2", command.Scenario);
         Assert.Null(command.Category);
     }
 
@@ -361,7 +361,9 @@ public sealed class CommandLineParserTests
     [Theory]
     [InlineData("Dependency-Injection")]
     [InlineData("dependency_injection")]
-    [InlineData("dependency.injection")]
+    [InlineData("dependency..injection")]
+    [InlineData(".dependency-injection")]
+    [InlineData("dependency-injection.")]
     [InlineData("")]
     public void Parse_RunConsumersRejectsMalformedScenario(string scenario)
     {
@@ -376,7 +378,7 @@ public sealed class CommandLineParserTests
             "--scenario", scenario,
         ]));
 
-        Assert.Equal("Option '--scenario' must contain lowercase letters, digits, or hyphens.", error.Message);
+        Assert.Equal("Option '--scenario' must contain lowercase letters, digits, hyphens, or separated dot segments.", error.Message);
     }
 
     [Fact]

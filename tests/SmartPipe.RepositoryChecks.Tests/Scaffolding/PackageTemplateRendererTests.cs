@@ -12,7 +12,7 @@ public sealed class PackageTemplateRendererTests
 {
     [Theory]
     [InlineData("SmartPipe.Extensions.Channels", "CoreLeaf", "1bc7c64f427265aa7849c734b3a8f9eceba03b6adb6d37d7e12cad08d0ad8a69")]
-    [InlineData("SmartPipe.Extensions.Csv", "FrameworkIntegration", "177f4386223f16c8666b01f54ef34018f925f14704d85c04d2d812f065fa3fd5")]
+    [InlineData("SmartPipe.Extensions.Dapper", "FrameworkIntegration", "dd229cabd0f13d508c5d99d0b5ea37ee554d04489c469b16620c4d88d42ba285")]
     [InlineData("SmartPipe.Extensions.Http.Json", "ComposedIntegration", "4b28a61c212a2815d0b7830c846ba1b5e14daad2ffe1678ac528c482fae758d0")]
     [InlineData("SmartPipe.Testing", "Testing", "7312db365c704bd43f5d0f2f8a364a5ca067a055a143be9ce1743f26283289e3")]
     public async Task Render_AllKindsAreDeterministicLfOnlySnapshots(string id, string kind, string expectedSnapshot)
@@ -62,7 +62,7 @@ public sealed class PackageTemplateRendererTests
     {
         var root = RepositoryRoot();
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
-        var plan = new PackageTemplateRenderer(root).Render(graph, graph.Packages.Single(x => x.Id == "SmartPipe.Extensions.Csv"));
+        var plan = new PackageTemplateRenderer(root).Render(graph, graph.Packages.Single(x => x.Id == "SmartPipe.Extensions.Dapper"));
         using var fixture = new RepositoryTestDirectory();
         fixture.Write("Directory.Build.props", File.ReadAllText(Path.Combine(root, "Directory.Build.props")));
         fixture.Write("Directory.Build.targets", File.ReadAllText(Path.Combine(root, "Directory.Build.targets")));
@@ -78,7 +78,7 @@ public sealed class PackageTemplateRendererTests
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("\"IsPackable\": \"true\"", result.StandardOutput);
         Assert.Contains("\"SmartPipePackage\": \"true\"", result.StandardOutput);
-        Assert.Contains("SmartPipe.Extensions.Csv", result.StandardOutput);
+        Assert.Contains("SmartPipe.Extensions.Dapper", result.StandardOutput);
         Assert.Equal(1, result.StandardOutput.Split("\"PackagePath\": \"README.md\"", StringSplitOptions.None).Length - 1);
     }
 

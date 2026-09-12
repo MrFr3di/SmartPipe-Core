@@ -12,9 +12,15 @@ The machine-readable authority is `eng/package-ownership.json`.
 | `LoggerSink<T>` | `SmartPipe.Extensions.Logging` | `SmartPipe.Extensions` | type forwarding |
 | `ValidationTransform<T>` and `ToFilter` | `SmartPipe.Extensions.DataAnnotations` | `SmartPipe.Extensions` | type forwarding |
 | Canonical JSON pipeline definitions | `SmartPipe.Extensions.Json` | none | new 2.2 API |
+| CSV file source, sink, transform, and strict definitions | `SmartPipe.Extensions.Csv` | `SmartPipe.Extensions` | legacy type forwarding plus new strict 2.2 API |
 
 The HealthChecks leaf depends only on Core, DependencyInjection, DI abstractions, Diagnostics.HealthChecks, and Options. It does not depend on Hosting, ASP.NET Core, or the broad facade.
 
 The four SP220-07 leaves do not reference the broad facade. DataAnnotations has
 the single narrow leaf edge to Transforms required by `ToFilter`; other leaves
 depend only on Core and Logging additionally uses Logging.Abstractions.
+
+`SmartPipe.Extensions.Csv` depends only on Core, CsvHelper, and
+Logging.Abstractions. The broad facade keeps its direct CsvHelper dependency
+through 2.2 as a compatibility quarantine; the CSV leaf has no dependency on
+the facade, DI, Hosting, JSON, or HTTP packages.

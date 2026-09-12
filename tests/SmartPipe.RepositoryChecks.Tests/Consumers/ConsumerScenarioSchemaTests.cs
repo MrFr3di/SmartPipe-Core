@@ -9,14 +9,19 @@ namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 public sealed class ConsumerScenarioSchemaTests
 {
     [Fact]
-    public async Task CurrentManifest_HasExactlyThirtyFiveStrictScenarios()
+    public async Task CurrentManifest_HasExactlyFortyStrictScenarios()
     {
         var root = RepositoryRoot();
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var document = await new ConsumerScenarioLoader().LoadAsync(root, "eng/consumer-scenarios.json", graph, TestContext.Current.CancellationToken);
-        Assert.Equal(35, document.Scenarios.Count);
+        Assert.Equal(40, document.Scenarios.Count);
         Assert.Equal(
             [
+                "csv-direct",
+                "csv-di-composition",
+                "csv-facade-source",
+                "csv-facade-binary-2.1.2",
+                "csv-trim-diagnostic",
                 "core-direct",
                 "json-direct",
                 "extensions-meta",

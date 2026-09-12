@@ -4,6 +4,12 @@ SmartPipe.Core typed runtime APIs are designed to be explicit and reflection
 light. Reflection-based extension helpers are annotated when they are not safe
 for trimming or NativeAOT.
 
+`SmartPipe.Extensions.Csv` deliberately has no blanket NativeAOT claim.
+CsvHelper object mapping builds expression trees and compiled delegates at
+runtime, so strict CSV mapping entry points expose the applicable trimming and
+dynamic-code diagnostics. No hidden reflection fallback or blanket warning
+suppression is provided.
+
 Use source-generated JSON metadata as the primary path for JSON file and
 dead-letter helpers:
 

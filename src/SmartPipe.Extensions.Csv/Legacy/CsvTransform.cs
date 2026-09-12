@@ -52,7 +52,7 @@ public class CsvTransform<TInput, TOutput> : IPipelineTransformer<TInput, TOutpu
     /// <inheritdoc/>
     public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public ValueTask<StageResult<TOutput>> TransformAsync(
         ProcessingEnvelope<TInput> envelope,
         CancellationToken ct = default
@@ -101,6 +101,6 @@ public class CsvTransform<TInput, TOutput> : IPipelineTransformer<TInput, TOutpu
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
