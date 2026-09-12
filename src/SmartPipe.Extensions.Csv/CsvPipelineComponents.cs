@@ -31,6 +31,27 @@ public static class CsvPipelineComponents
                     cancellationToken)));
     }
 
+    /// <summary>Creates a lazy, per-run strict CSV file sink.</summary>
+    [RequiresUnreferencedCode("CsvHelper object mapping uses reflection.")]
+    [RequiresDynamicCode("CsvHelper object mapping compiles delegates at runtime.")]
+    public static PipelineComponent<IPipelineSink<T>> FileSink<T>(
+        string path,
+        CsvSinkOptions options,
+        CsvMapRegistration<T>? map = null)
+    {
+        var validatedPath = ValidatePath(path);
+        var snapshot = CsvSinkOptionsSnapshot.Create(options);
+        var registration = map ?? CsvMapRegistration<T>.Auto;
+
+        return PipelineComponent.RuntimeOwned<IPipelineSink<T>>(
+            (_, cancellationToken) => ValueTask.FromResult<IPipelineSink<T>>(
+                new StrictCsvFileSink<T>(
+                    validatedPath,
+                    snapshot,
+                    registration,
+                    cancellationToken)));
+    }
+
     private static string ValidatePath(string? path)
     {
         ArgumentNullException.ThrowIfNull(path);

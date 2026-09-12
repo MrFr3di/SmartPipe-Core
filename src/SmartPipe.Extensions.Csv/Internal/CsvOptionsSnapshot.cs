@@ -161,8 +161,8 @@ internal sealed record CsvSinkOptionsSnapshot(
         if (!Enum.IsDefined(options.FormulaInjectionMode))
             throw new ArgumentOutOfRangeException(nameof(options.FormulaInjectionMode));
         ArgumentNullException.ThrowIfNull(options.NewLine);
-        if (options.NewLine.Length == 0)
-            throw new ArgumentException("NewLine cannot be empty.", nameof(options));
+        if (options.NewLine is not ("\r\n" or "\n" or "\r"))
+            throw new ArgumentException("NewLine must be CRLF, LF, or CR.", nameof(options));
         if (options.FlushEveryRecords <= 0)
             throw new ArgumentOutOfRangeException(nameof(options.FlushEveryRecords));
 

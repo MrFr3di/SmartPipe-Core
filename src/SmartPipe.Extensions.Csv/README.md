@@ -14,6 +14,12 @@ dotnet add package SmartPipe.Extensions.Csv --version 2.2.0
 
 The source bounds logical records, fields, and columns before CsvHelper maps them. Recovery occurs only after a proven record boundary; invalid encoding, header failure, ambiguous quoted EOF, I/O, and cancellation remain terminal. Activation and enumeration cancellation stay linked for the full enumeration lifetime.
 
+The sink stages one character-bounded record, supports create or append, validates append encoding and header semantics, preserves an existing BOM exactly once (including BOM-only files), and rolls a failed record back to its file checkpoint. It does not promise whole-file atomicity or concurrent same-file writers.
+
 ## Mapping and compatibility
 
 Use `CsvMapRegistration<T>.Auto`, `From<TMap>()`, or `FromFactory(...)`. A map factory creates a fresh map per activated run; caller-owned mutable maps are not retained.
+
+## Trimming and NativeAOT
+
+CsvHelper object mapping uses reflection, expression trees, and compiled delegates. This package intentionally does not advertise blanket NativeAOT compatibility; heed the RUC/RDC diagnostics on executable mapping entry points.
