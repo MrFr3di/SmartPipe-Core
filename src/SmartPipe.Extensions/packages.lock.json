@@ -307,6 +307,14 @@
           "SmartPipe.Core": "[2.2.0, )"
         }
       },
+      "smartpipe.extensions.csv": {
+        "type": "Project",
+        "dependencies": {
+          "CsvHelper": "[33.1.0, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.11, )",
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
       "smartpipe.extensions.dataannotations": {
         "type": "Project",
         "dependencies": {

@@ -12,11 +12,11 @@ SmartPipe.Extensions.ISmartPipeFactory<TInput, TOutput>.Start(System.Threading.C
 SmartPipe.Extensions.ISmartPipeFactory<TInput, TOutput>.StartAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SmartPipe.Core.PipelineRun<TOutput>!>!
 SmartPipe.Extensions.ISmartPipeRunHealthMonitor<TInput, TOutput>
 SmartPipe.Extensions.ISmartPipeRunHealthMonitor<TInput, TOutput>.CaptureSnapshot() -> SmartPipe.Extensions.SmartPipeHealthSnapshot!
-SmartPipe.Extensions.Selectors.CsvFileSource<T>
-SmartPipe.Extensions.Selectors.CsvFileSource<T>.CsvFileSource(string! path, string! delimiter = ",", System.Globalization.CultureInfo? culture = null) -> void
-SmartPipe.Extensions.Selectors.CsvFileSource<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Selectors.CsvFileSource<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Selectors.CsvFileSource<T>.ReadEnvelopesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingEnvelope<T>!>!
+SmartPipe.Extensions.Selectors.CsvFileSource<T> (forwarded, contained in SmartPipe.Extensions.Csv)
+SmartPipe.Extensions.Selectors.CsvFileSource<T>.CsvFileSource(string! path, string! delimiter = ",", System.Globalization.CultureInfo? culture = null) -> void (forwarded, contained in SmartPipe.Extensions.Csv)
+SmartPipe.Extensions.Selectors.CsvFileSource<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Csv)
+SmartPipe.Extensions.Selectors.CsvFileSource<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Csv)
+SmartPipe.Extensions.Selectors.CsvFileSource<T>.ReadEnvelopesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingEnvelope<T>!>! (forwarded, contained in SmartPipe.Extensions.Csv)
 SmartPipe.Extensions.Selectors.DapperSelector<T>
 SmartPipe.Extensions.Selectors.DapperSelector<T>.DapperSelector(System.Data.Common.DbConnection! connection, string! sql, object? parameters, bool leaveOpen, int commandTimeout, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.DapperSelector<T>!>? logger) -> void
 SmartPipe.Extensions.Selectors.DapperSelector<T>.DapperSelector(System.Data.IDbConnection! connection, string! sql, object? parameters = null, int commandTimeout = 30, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.DapperSelector<T>!>? logger = null) -> void
@@ -57,11 +57,11 @@ SmartPipe.Extensions.Selectors.HttpSelector<T>.ReadEnvelopesAsync(System.Threadi
 SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode
 SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode.JsonArray = 0 -> SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode
 SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode.Ndjson = 1 -> SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode
-SmartPipe.Extensions.Sinks.CsvFileSink<T>
-SmartPipe.Extensions.Sinks.CsvFileSink<T>.CsvFileSink(string! path, string! delimiter = ",", System.Globalization.CultureInfo? culture = null) -> void
-SmartPipe.Extensions.Sinks.CsvFileSink<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Sinks.CsvFileSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Sinks.CsvFileSink<T>.WriteAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Sinks.CsvFileSink<T> (forwarded, contained in SmartPipe.Extensions.Csv)
+SmartPipe.Extensions.Sinks.CsvFileSink<T>.CsvFileSink(string! path, string! delimiter = ",", System.Globalization.CultureInfo? culture = null) -> void (forwarded, contained in SmartPipe.Extensions.Csv)
+SmartPipe.Extensions.Sinks.CsvFileSink<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Csv)
+SmartPipe.Extensions.Sinks.CsvFileSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Csv)
+SmartPipe.Extensions.Sinks.CsvFileSink<T>.WriteAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Csv)
 SmartPipe.Extensions.Sinks.DbSink<T>
 SmartPipe.Extensions.Sinks.DbSink<T>.DbSink(System.Data.IDbConnection! connection, string? sql = null) -> void
 SmartPipe.Extensions.Sinks.DbSink<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
@@ -164,11 +164,11 @@ SmartPipe.Extensions.Transforms.ConditionalTransform<T>.ConditionalTransform(Sys
 SmartPipe.Extensions.Transforms.ConditionalTransform<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Transforms)
 SmartPipe.Extensions.Transforms.ConditionalTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Transforms)
 SmartPipe.Extensions.Transforms.ConditionalTransform<T>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<T>> (forwarded, contained in SmartPipe.Extensions.Transforms)
-SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>
-SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.CsvTransform(string! delimiter = ",", System.Globalization.CultureInfo? culture = null, System.Action<CsvHelper.Configuration.CsvConfiguration!>? configure = null) -> void
-SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<TInput>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<TOutput>>
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput> (forwarded, contained in SmartPipe.Extensions.Csv)
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.CsvTransform(string! delimiter = ",", System.Globalization.CultureInfo? culture = null, System.Action<CsvHelper.Configuration.CsvConfiguration!>? configure = null) -> void (forwarded, contained in SmartPipe.Extensions.Csv)
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.DisposeAsync() -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Csv)
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Csv)
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<TInput>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<TOutput>> (forwarded, contained in SmartPipe.Extensions.Csv)
 SmartPipe.Extensions.Transforms.FilterTransform<T> (forwarded, contained in SmartPipe.Extensions.Transforms)
 SmartPipe.Extensions.Transforms.FilterTransform<T>.And(SmartPipe.Extensions.Transforms.FilterTransform<T>! other) -> SmartPipe.Extensions.Transforms.FilterTransform<T>! (forwarded, contained in SmartPipe.Extensions.Transforms)
 SmartPipe.Extensions.Transforms.FilterTransform<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Transforms)

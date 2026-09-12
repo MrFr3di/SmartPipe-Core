@@ -20,6 +20,8 @@ The sink stages one character-bounded record, supports create or append, validat
 
 Use `CsvMapRegistration<T>.Auto`, `From<TMap>()`, or `FromFactory(...)`. A map factory creates a fresh map per activated run; caller-owned mutable maps are not retained.
 
+The legacy `CsvFileSource<T>`, `CsvFileSink<T>`, and `CsvTransform<TInput,TOutput>` namespaces and constructors are preserved in this assembly. `SmartPipe.Extensions` forwards those identities and retains its direct CsvHelper dependency through the 2.2 line.
+
 ## Trimming and NativeAOT
 
 CsvHelper object mapping uses reflection, expression trees, and compiled delegates. This package intentionally does not advertise blanket NativeAOT compatibility; heed the RUC/RDC diagnostics on executable mapping entry points.
