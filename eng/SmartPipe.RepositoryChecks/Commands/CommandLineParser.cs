@@ -222,8 +222,11 @@ internal static class CommandLineParser
             throw new CommandLineException("Option '--category' must contain lowercase letters, digits, or hyphens.");
         if (scenario is not null
             && (scenario.Length == 0
-                || scenario.Any(character => character is not (>= 'a' and <= 'z' or >= '0' and <= '9' or '-'))))
-            throw new CommandLineException("Option '--scenario' must contain lowercase letters, digits, or hyphens.");
+                || scenario[0] == '.'
+                || scenario[^1] == '.'
+                || scenario.Contains("..", StringComparison.Ordinal)
+                || scenario.Any(character => character is not (>= 'a' and <= 'z' or >= '0' and <= '9' or '-' or '.'))))
+            throw new CommandLineException("Option '--scenario' must contain lowercase letters, digits, hyphens, or separated dot segments.");
         if (category is not null && scenario is not null)
             throw new CommandLineException("Options '--category' and '--scenario' are mutually exclusive.");
         return new(root, set, ResolveWithinRoot(root, packages, "--package-directory"), version, Path.GetRelativePath(root, resolvedManifest).Replace('\\', '/'), category, scenario);

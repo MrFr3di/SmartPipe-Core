@@ -8,6 +8,23 @@ namespace SmartPipe.Extensions.Csv.Tests;
 
 public sealed class CsvStrictSinkTests
 {
+    [Theory]
+    [InlineData("\r\n", true)]
+    [InlineData("\n", true)]
+    [InlineData("\r", true)]
+    [InlineData("", false)]
+    [InlineData("|", false)]
+    [InlineData("\n\r", false)]
+    public void SinkOptions_AcceptOnlySupportedRecordTerminators(string newLine, bool accepted)
+    {
+        var options = new CsvSinkOptions { NewLine = newLine };
+
+        if (accepted)
+            Assert.Equal(newLine, CsvSinkOptionsSnapshot.Create(options).NewLine);
+        else
+            Assert.Throws<ArgumentException>(() => CsvSinkOptionsSnapshot.Create(options));
+    }
+
     [Fact]
     public async Task FileSink_CreateWritesHeaderAndBoundedRecords()
     {

@@ -484,7 +484,7 @@ public sealed class ConsumerScenarioRunnerTests
             graph, ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Json"]);
 
         Assert.Equal(
-            ["SmartPipe.Core", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms",
+            ["SmartPipe.Core", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Csv", "SmartPipe.Extensions.Transforms",
              "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection",
              "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json",
              "SmartPipe.Extensions.Logging", "SmartPipe.Extensions"],
