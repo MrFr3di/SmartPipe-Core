@@ -47,9 +47,11 @@ public sealed class PackageOwnershipTests
             typeof(FilterValidationExtensions),
             typeof(ValidationTransform<>),
             typeof(LoggerSink<>),
+            typeof(DapperSelector<>),
+            typeof(DbSink<>),
         };
 
-        var extensionsAssembly = typeof(DapperSelector<>).Assembly;
+        var extensionsAssembly = typeof(SmartPipeHostedService<,>).Assembly;
         var forwardedTypes = extensionsAssembly.GetForwardedTypes().ToHashSet();
 
         Assert.True(expectedForwardedTypes.SetEquals(forwardedTypes));

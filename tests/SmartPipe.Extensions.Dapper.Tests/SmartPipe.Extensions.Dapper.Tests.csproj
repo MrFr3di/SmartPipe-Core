@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -13,16 +12,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Dapper" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
     <PackageReference Include="xunit.v3.mtp-v2" />
     <PackageReference Include="xunit.runner.visualstudio" />
-    <PackageReference Include="Moq" />
   </ItemGroup>
 
   <ItemGroup>
@@ -30,16 +27,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\SmartPipe.Extensions\SmartPipe.Extensions.csproj" />
     <ProjectReference Include="..\..\src\SmartPipe.Core\SmartPipe.Core.csproj" />
-    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Csv\SmartPipe.Extensions.Csv.csproj" />
     <ProjectReference Include="..\..\src\SmartPipe.Extensions.Dapper\SmartPipe.Extensions.Dapper.csproj" />
-    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Hosting\SmartPipe.Extensions.Hosting.csproj" />
-    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Channels\SmartPipe.Extensions.Channels.csproj" />
-    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Transforms\SmartPipe.Extensions.Transforms.csproj" />
-    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Logging\SmartPipe.Extensions.Logging.csproj" />
-    <ProjectReference Include="..\..\src\SmartPipe.Extensions.DataAnnotations\SmartPipe.Extensions.DataAnnotations.csproj" />
-    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Json\SmartPipe.Extensions.Json.csproj" />
+    <ProjectReference Include="..\..\src\SmartPipe.Extensions\SmartPipe.Extensions.csproj" />
   </ItemGroup>
-
 </Project>

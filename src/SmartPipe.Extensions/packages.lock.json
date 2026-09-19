@@ -315,6 +315,14 @@
           "SmartPipe.Core": "[2.2.0, )"
         }
       },
+      "smartpipe.extensions.dapper": {
+        "type": "Project",
+        "dependencies": {
+          "Dapper": "[2.1.79, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.11, )",
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
       "smartpipe.extensions.dataannotations": {
         "type": "Project",
         "dependencies": {

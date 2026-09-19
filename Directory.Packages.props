@@ -44,9 +44,13 @@
     <PackageVersion Include="SmartPipe.Extensions.Hosting" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.Csv" Version="2.2.0" />
+    <PackageVersion Include="SmartPipe.Extensions.Dapper" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.Json" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.OpenTelemetry" Version="2.2.0" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+    <PackageVersion Include="SQLitePCLRaw.core" Version="2.1.12" />
+    <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
+    <PackageVersion Include="SQLitePCLRaw.provider.e_sqlite3" Version="2.1.12" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="xunit.v3.mtp-v2" Version="3.2.2" />
   </ItemGroup>

@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using SmartPipe.Extensions;
-using SmartPipe.Extensions.Selectors;
 using SmartPipe.Extensions.Sinks;
 using Mapster;
 using SmartPipe.Core;
@@ -16,7 +15,7 @@ _ = new FilterTransform<int>(static value => value > 0)
 _ = new ValidationTransform<int>().Require(static value => value > 0, "positive required");
 _ = new LoggerSink<int>(NullLogger<LoggerSink<int>>.Instance);
 
-var forwarded = typeof(DapperSelector<>).Assembly.GetForwardedTypes();
+var forwarded = typeof(SmartPipeHostedService<,>).Assembly.GetForwardedTypes();
 Type[] expectedForwarded =
 [
     typeof(ChannelMerge), typeof(CompositeTransform<>), typeof(FilterTransform<>),

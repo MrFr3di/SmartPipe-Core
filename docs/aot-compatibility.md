@@ -81,6 +81,12 @@ Database helpers have source-safe paths:
 - `DapperSelector<T>` default mapping reflects over writable properties on
   `T`. Prefer the `Func<DbDataReader,T>` mapper overload for NativeAOT and
   trimming-sensitive applications.
+- `SmartPipe.Extensions.Dapper` annotates its explicit-SQL entry points with
+  `RequiresUnreferencedCode` and `RequiresDynamicCode`, because Dapper row
+  mapping and parameter binding use reflection and runtime code generation.
+  Supplying an explicit `Func<DbDataReader,T>` row mapper removes the
+  application's own mapping reflection, but the package makes no blanket
+  NativeAOT claim.
 
 The runtime does not add hidden persistence, dynamic plugin loading, or source
 materialization for replay.

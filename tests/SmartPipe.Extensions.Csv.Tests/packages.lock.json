@@ -380,6 +380,7 @@
           "SmartPipe.Core": "[2.2.0, )",
           "SmartPipe.Extensions.Channels": "[2.2.0, )",
           "SmartPipe.Extensions.Csv": "[2.2.0, )",
+          "SmartPipe.Extensions.Dapper": "[2.2.0, )",
           "SmartPipe.Extensions.DataAnnotations": "[2.2.0, )",
           "SmartPipe.Extensions.DependencyInjection": "[2.2.0, )",
           "SmartPipe.Extensions.Hosting": "[2.2.0, )",
@@ -398,6 +399,14 @@
         "type": "Project",
         "dependencies": {
           "CsvHelper": "[33.1.0, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.11, )",
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
+      "smartpipe.extensions.dapper": {
+        "type": "Project",
+        "dependencies": {
+          "Dapper": "[2.1.79, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.11, )",
           "SmartPipe.Core": "[2.2.0, )"
         }

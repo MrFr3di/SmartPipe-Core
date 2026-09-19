@@ -114,7 +114,7 @@
     {
       "typePattern": "SmartPipe.Extensions.Selectors.DapperSelector*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Dapper",
       "targetImplementationAssembly": "SmartPipe.Extensions.Dapper",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",
@@ -180,7 +180,7 @@
     {
       "typePattern": "SmartPipe.Extensions.Sinks.DbSink*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Dapper",
       "targetImplementationAssembly": "SmartPipe.Extensions.Dapper",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",

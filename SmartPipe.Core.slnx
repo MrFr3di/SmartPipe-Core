@@ -18,6 +18,7 @@
     <Project Path="src/SmartPipe.Extensions.Hosting/SmartPipe.Extensions.Hosting.csproj" />
     <Project Path="src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj" />
     <Project Path="src/SmartPipe.Extensions.Csv/SmartPipe.Extensions.Csv.csproj" />
+    <Project Path="src/SmartPipe.Extensions.Dapper/SmartPipe.Extensions.Dapper.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SmartPipe.RepositoryChecks.ProcessFixture/SmartPipe.RepositoryChecks.ProcessFixture.csproj" />
@@ -32,6 +33,7 @@
     <Project Path="tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Csv.Tests/SmartPipe.Extensions.Csv.Tests.csproj" />
+    <Project Path="tests/SmartPipe.Extensions.Dapper.Tests/SmartPipe.Extensions.Dapper.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.OpenTelemetry.Tests/SmartPipe.Extensions.OpenTelemetry.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj" />
   </Folder>
