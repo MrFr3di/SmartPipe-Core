@@ -4,6 +4,7 @@ using CsvHelper.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SmartPipe.Core;
+using SmartPipe.Extensions.Csv.Internal;
 
 namespace SmartPipe.Extensions.Csv.Tests;
 
@@ -347,6 +348,140 @@ public sealed class CsvStrictSourceTests
         }
     }
 
+    [Fact]
+    public async Task FileSource_ReadFailurePreservesPrimaryAndCleansOwnedResourcesOnceInOrder()
+    {
+        var events = new List<string>();
+        var reader = new FaultInjectingReader(events) { FailNextRead = true, FailNextDispose = true };
+        FaultInjectingBridge? bridge = null;
+        var source = new StrictCsvFileSource<Person>(
+            "injected.csv",
+            CsvSourceOptionsSnapshot.Create(new CsvSourceOptions { HasHeaderRecord = false }, loggerAvailable: false),
+            CsvMapRegistration<Person>.Auto,
+            logger: null,
+            activationCancellationToken: CancellationToken.None,
+            readerFactory: (_, _, _) => ValueTask.FromResult<TextReader>(reader),
+            bridgeFactory: (framer, cancellationToken) =>
+            {
+                bridge = new FaultInjectingBridge(framer, cancellationToken, events)
+                {
+                    FailNextDispose = true,
+                };
+                return bridge;
+            });
+
+        var failure = await Assert.ThrowsAsync<AggregateException>(async () =>
+        {
+            await foreach (var _ in source.ReadEnvelopesAsync())
+            {
+            }
+        });
+
+        Assert.Collection(
+            failure.InnerExceptions,
+            primary => Assert.IsType<TestReadException>(primary),
+            bridgeCleanup => Assert.IsType<TestDisposeException>(bridgeCleanup),
+            readerCleanup => Assert.IsType<TestDisposeException>(readerCleanup));
+        Assert.Equal(["read", "bridge-dispose", "reader-dispose"], events);
+        Assert.Equal(1, bridge!.DisposeCalls);
+        Assert.Equal(1, reader.DisposeCalls);
+
+        await source.DisposeAsync();
+
+        Assert.Equal(1, bridge.DisposeCalls);
+        Assert.Equal(1, reader.DisposeCalls);
+    }
+
+    [Fact]
+    public async Task FileSource_RepeatedDisposeAfterCleanupFailureReturnsSameFailureWithoutObjectDisposed()
+    {
+        var events = new List<string>();
+        var reader = new FaultInjectingReader(events) { FailNextDispose = true };
+        FaultInjectingBridge? bridge = null;
+        var source = CreateInjectedSource(reader, events, value => bridge = value);
+
+        await source.InitializeAsync();
+        bridge!.FailNextDispose = true;
+
+        var firstFailure = await Assert.ThrowsAsync<AggregateException>(() => source.DisposeAsync().AsTask());
+        var secondFailure = await Assert.ThrowsAsync<AggregateException>(() => source.DisposeAsync().AsTask());
+
+        Assert.Same(firstFailure, secondFailure);
+        Assert.Equal(["bridge-dispose", "reader-dispose"], events);
+        Assert.Equal(1, bridge.DisposeCalls);
+        Assert.Equal(1, reader.DisposeCalls);
+    }
+
+    [Fact]
+    public async Task FileSource_ConcurrentDisposeIsSingleFlightAndCleansOnce()
+    {
+        var events = new List<string>();
+        var reader = new FaultInjectingReader(events);
+        FaultInjectingBridge? bridge = null;
+        var source = CreateInjectedSource(reader, events, value => bridge = value);
+
+        await source.InitializeAsync();
+        bridge!.BlockDispose = true;
+
+        var first = Task.Run(() => source.DisposeAsync().AsTask());
+        await bridge.DisposeStarted.Task;
+        var second = source.DisposeAsync().AsTask();
+
+        bridge.ReleaseDispose();
+        await Task.WhenAll(first, second);
+        await source.DisposeAsync();
+
+        Assert.Equal(["bridge-dispose", "reader-dispose"], events);
+        Assert.Equal(1, bridge.DisposeCalls);
+        Assert.Equal(1, reader.DisposeCalls);
+    }
+
+    [Fact]
+    public async Task FileSource_InitializationFailurePreservesPrimaryAndCleansAcquiredResourcesOnce()
+    {
+        var events = new List<string>();
+        var reader = new FaultInjectingReader(events) { FailNextDispose = true };
+        var source = new StrictCsvFileSource<Person>(
+            "injected.csv",
+            CsvSourceOptionsSnapshot.Create(new CsvSourceOptions { HasHeaderRecord = false }, loggerAvailable: false),
+            CsvMapRegistration<Person>.Auto,
+            logger: null,
+            activationCancellationToken: CancellationToken.None,
+            readerFactory: (_, _, _) => ValueTask.FromResult<TextReader>(reader),
+            bridgeFactory: (_, _) => throw new TestReadException("primary-bridge"));
+
+        var failure = await Assert.ThrowsAsync<AggregateException>(() => source.InitializeAsync().AsTask());
+
+        Assert.Collection(
+            failure.InnerExceptions,
+            primary => Assert.IsType<TestReadException>(primary),
+            readerCleanup => Assert.IsType<TestDisposeException>(readerCleanup));
+        Assert.Equal(["reader-dispose"], events);
+        Assert.Equal(1, reader.DisposeCalls);
+
+        await source.DisposeAsync();
+
+        Assert.Equal(1, reader.DisposeCalls);
+    }
+
+    private static StrictCsvFileSource<Person> CreateInjectedSource(
+        FaultInjectingReader reader,
+        List<string> events,
+        Action<FaultInjectingBridge> captureBridge) =>
+        new(
+            "injected.csv",
+            CsvSourceOptionsSnapshot.Create(new CsvSourceOptions { HasHeaderRecord = false }, loggerAvailable: false),
+            CsvMapRegistration<Person>.Auto,
+            logger: null,
+            activationCancellationToken: CancellationToken.None,
+            readerFactory: (_, _, _) => ValueTask.FromResult<TextReader>(reader),
+            bridgeFactory: (framer, cancellationToken) =>
+            {
+                var bridge = new FaultInjectingBridge(framer, cancellationToken, events);
+                captureBridge(bridge);
+                return bridge;
+            });
+
     private static Assembly LoadLeafAssembly() => Assembly.Load("SmartPipe.Extensions.Csv");
 
     private static object CreateOptions(Assembly assembly) =>
@@ -483,6 +618,90 @@ public sealed class CsvStrictSourceTests
             public static readonly NullScope Instance = new();
 
             public void Dispose() { }
+        }
+    }
+
+    private sealed class TestReadException(string message) : IOException(message);
+    private sealed class TestDisposeException(string message) : IOException(message);
+
+    private sealed class FaultInjectingReader(List<string> events) : StringReader("Name\r\nAlice\r\n")
+    {
+        public bool FailNextRead { get; set; }
+        public bool FailNextDispose { get; set; }
+        public int DisposeCalls { get; private set; }
+
+        public override ValueTask<int> ReadAsync(
+            Memory<char> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            if (FailNextRead)
+            {
+                FailNextRead = false;
+                events.Add("read");
+                return ValueTask.FromException<int>(new TestReadException("primary-read"));
+            }
+
+            return base.ReadAsync(buffer, cancellationToken);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (!disposing)
+            {
+                base.Dispose(disposing);
+                return;
+            }
+
+            DisposeCalls++;
+            events.Add("reader-dispose");
+            if (FailNextDispose)
+            {
+                FailNextDispose = false;
+                throw new TestDisposeException("reader-dispose");
+            }
+
+            base.Dispose(disposing);
+        }
+    }
+
+    private sealed class FaultInjectingBridge(
+        CsvLogicalRecordFramer framer,
+        CancellationToken cancellationToken,
+        List<string> events) : CsvBoundedRecordTextReader(framer, cancellationToken)
+    {
+        public bool FailNextDispose { get; set; }
+        public bool BlockDispose { get; set; }
+        public int DisposeCalls { get; private set; }
+        public TaskCompletionSource DisposeStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource DisposeRelease { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void ReleaseDispose() => DisposeRelease.TrySetResult();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (!disposing)
+            {
+                base.Dispose(disposing);
+                return;
+            }
+
+            DisposeCalls++;
+            events.Add("bridge-dispose");
+            if (BlockDispose)
+            {
+                DisposeStarted.TrySetResult();
+                DisposeRelease.Task.GetAwaiter().GetResult();
+            }
+
+            if (FailNextDispose)
+            {
+                FailNextDispose = false;
+                throw new TestDisposeException("bridge-dispose");
+            }
+
+            base.Dispose(disposing);
         }
     }
 }

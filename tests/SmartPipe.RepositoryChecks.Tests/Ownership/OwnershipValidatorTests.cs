@@ -36,6 +36,33 @@ public sealed class OwnershipValidatorTests
         Assert.Contains(invalidWrapper.Violations, x => x.Code == "SPOWN023");
     }
 
+    [Fact]
+    public void RemovedStrategyRequiresCurrentIdentityToBeAbsent()
+    {
+        const string type = "SmartPipe.Extensions.Obsolete";
+        var graph = Graph(false);
+        var baseline = Snapshot((type, "SmartPipe.Extensions"), forward: false);
+        var removed = Assignment(type, "SmartPipe.Extensions") with { Strategy = OwnershipStrategy.Removed };
+
+        var accepted = new OwnershipValidator().Validate(
+            new() { SchemaVersion = 1, Assignments = [removed] },
+            graph,
+            baseline,
+            new(
+                new Dictionary<string, IReadOnlySet<string>>(),
+                new Dictionary<string, IReadOnlySet<string>>()),
+            PackageGraphMode.Current);
+        Assert.True(accepted.Success);
+
+        var rejected = new OwnershipValidator().Validate(
+            new() { SchemaVersion = 1, Assignments = [removed] },
+            graph,
+            baseline,
+            baseline,
+            PackageGraphMode.Current);
+        Assert.Contains(rejected.Violations, x => x.Code == "SPOWN025");
+    }
+
     private static OwnershipAssignment Assignment(string pattern, string target) => new() { TypePattern = pattern, BaselineAssembly = pattern.StartsWith("SmartPipe.Core", StringComparison.Ordinal) ? "SmartPipe.Core" : "SmartPipe.Extensions", CurrentImplementationAssembly = "SmartPipe.Extensions", TargetImplementationAssembly = target, CompatibilityAssembly = null, Strategy = OwnershipStrategy.Stay, MigrationEpic = "SP220-08", NamespacePreserved = true, Evidence = "test" };
     private static PackageGraphDocument Graph(bool plannedJson)
     {

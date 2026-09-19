@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using CsvHelper;
 using CsvHelper.Configuration;
 using Microsoft.Extensions.Logging;
@@ -16,24 +17,34 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
     private readonly CancellationToken _activationCancellationToken;
     private readonly SemaphoreSlim _initializeGate = new(1, 1);
 
-    private StreamReader? _reader;
+    private readonly Func<string, CsvSourceOptionsSnapshot, CancellationToken, ValueTask<TextReader>> _readerFactory;
+    private readonly Func<CsvLogicalRecordFramer, CancellationToken, CsvBoundedRecordTextReader> _bridgeFactory;
+    private readonly object _disposeSync = new();
+
+    private TextReader? _reader;
     private CsvBoundedRecordTextReader? _bridge;
     private CsvReader? _csv;
     private bool _initialized;
     private bool _disposed;
+    private Task? _disposeTask;
 
     public StrictCsvFileSource(
         string path,
         CsvSourceOptionsSnapshot options,
         CsvMapRegistration<T> map,
         ILogger<StrictCsvFileSource<T>>? logger,
-        CancellationToken activationCancellationToken)
+        CancellationToken activationCancellationToken,
+        Func<string, CsvSourceOptionsSnapshot, CancellationToken, ValueTask<TextReader>>? readerFactory = null,
+        Func<CsvLogicalRecordFramer, CancellationToken, CsvBoundedRecordTextReader>? bridgeFactory = null)
     {
         _path = path;
         _options = options;
         _map = map;
         _logger = logger;
         _activationCancellationToken = activationCancellationToken;
+        _readerFactory = readerFactory ?? OpenReaderAsync;
+        _bridgeFactory = bridgeFactory ?? (static (framer, cancellationToken) =>
+            new CsvBoundedRecordTextReader(framer, cancellationToken));
     }
 
     public async ValueTask InitializeAsync(CancellationToken ct = default)
@@ -46,8 +57,8 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
                 return;
 
             using var linked = CreateLinkedCancellation(ct, out var cancellationToken);
-            _reader = await CsvStrictEncoding.OpenReaderAsync(_path, _options, cancellationToken).ConfigureAwait(false);
-            _bridge = new CsvBoundedRecordTextReader(
+            _reader = await _readerFactory(_path, _options, cancellationToken).ConfigureAwait(false);
+            _bridge = _bridgeFactory(
                 new CsvLogicalRecordFramer(
                     _reader,
                     _options.Delimiter,
@@ -57,13 +68,15 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
                     _options.MaxColumnCount,
                     cancellationToken),
                 cancellationToken);
-            _csv = new CsvReader(_bridge, CreateConfiguration(), leaveOpen: false);
+            _csv = new CsvReader(_bridge, CreateConfiguration(), leaveOpen: true);
             _map.Register(_csv.Context);
             _initialized = true;
         }
-        catch
+        catch (Exception primaryFailure)
         {
-            await DisposeResourcesAsync().ConfigureAwait(false);
+            var cleanupFailures = await DisposeResourcesAsync().ConfigureAwait(false);
+            ThrowFailures(primaryFailure, cleanupFailures);
+            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
             throw;
         }
         finally
@@ -79,58 +92,91 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         var csv = _csv!;
         var recordIndex = 0L;
+        Exception? primaryFailure = null;
 
         try
         {
             if (_options.HasHeaderRecord)
             {
-                var headerResult = await ReadNextAsync(csv, cancellationToken, recordIndex, isHeader: true).ConfigureAwait(false);
-                recordIndex = headerResult.RecordIndex;
-                if (!headerResult.HasRecord)
-                    yield break;
-
                 try
                 {
+                    var headerResult = await ReadNextAsync(csv, cancellationToken, recordIndex, isHeader: true).ConfigureAwait(false);
+                    recordIndex = headerResult.RecordIndex;
+                    if (!headerResult.HasRecord)
+                        yield break;
+
                     csv.ReadHeader();
                     csv.ValidateHeader<T>();
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException exception)
                 {
-                    throw;
+                    primaryFailure = exception;
                 }
                 catch (Exception exception) when (exception is CsvHelperException or InvalidDataException)
                 {
-                    throw CreateHeaderException(exception);
+                    primaryFailure = CreateHeaderException(exception);
+                }
+                catch (Exception exception)
+                {
+                    primaryFailure = exception;
                 }
             }
 
-            while (true)
+            while (primaryFailure is null)
             {
-                var readResult = await ReadNextAsync(csv, cancellationToken, recordIndex, isHeader: false).ConfigureAwait(false);
-                recordIndex = readResult.RecordIndex;
+                CsvReadResult readResult;
+                try
+                {
+                    readResult = await ReadNextAsync(csv, cancellationToken, recordIndex, isHeader: false).ConfigureAwait(false);
+                    recordIndex = readResult.RecordIndex;
+                }
+                catch (OperationCanceledException exception)
+                {
+                    primaryFailure = exception;
+                    break;
+                }
+                catch (Exception exception)
+                {
+                    primaryFailure = exception;
+                    break;
+                }
+
                 if (!readResult.HasRecord)
                     break;
 
-                T value;
+                T value = default!;
                 try
                 {
                     value = csv.GetRecord<T>();
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException exception)
                 {
-                    throw;
+                    primaryFailure = exception;
                 }
                 catch (Exception exception) when (exception is CsvHelperException or InvalidDataException)
                 {
                     if (!HandleDataFailure(recordIndex, exception, "mapping"))
-                        throw CreateDataException(recordIndex, exception, "mapping");
-                    continue;
+                        primaryFailure = CreateDataException(recordIndex, exception, "mapping");
+                    else
+                        continue;
                 }
+                catch (Exception exception)
+                {
+                    primaryFailure = exception;
+                }
+
+                if (primaryFailure is not null)
+                    break;
 
                 if (value is null)
                 {
-                    if (!HandleDataFailure(recordIndex, new InvalidDataException("CSV record mapped to null."), "mapping"))
-                        throw CreateDataException(recordIndex, new InvalidDataException("CSV record mapped to null."), "mapping");
+                    var exception = new InvalidDataException("CSV record mapped to null.");
+                    if (!HandleDataFailure(recordIndex, exception, "mapping"))
+                    {
+                        primaryFailure = CreateDataException(recordIndex, exception, "mapping");
+                        break;
+                    }
+
                     continue;
                 }
 
@@ -139,11 +185,49 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
         }
         finally
         {
-            await DisposeResourcesAsync().ConfigureAwait(false);
+            var cleanupFailures = await DisposeResourcesAsync().ConfigureAwait(false);
+            ThrowFailures(primaryFailure, cleanupFailures);
+        }
+
+        if (primaryFailure is not null)
+            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        TaskCompletionSource? starter = null;
+        Task task;
+        lock (_disposeSync)
+        {
+            if (_disposeTask is null)
+            {
+                starter = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                _disposeTask = starter.Task;
+            }
+
+            task = _disposeTask;
+        }
+
+        if (starter is not null)
+            _ = RunDisposeAsync(starter);
+
+        return new ValueTask(task);
+    }
+
+    private async Task RunDisposeAsync(TaskCompletionSource completion)
+    {
+        try
+        {
+            await DisposeCoreAsync().ConfigureAwait(false);
+            completion.SetResult();
+        }
+        catch (Exception exception)
+        {
+            completion.SetException(exception);
         }
     }
 
-    public async ValueTask DisposeAsync()
+    private async Task DisposeCoreAsync()
     {
         await _initializeGate.WaitAsync().ConfigureAwait(false);
         try
@@ -151,7 +235,8 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
             if (_disposed)
                 return;
             _disposed = true;
-            await DisposeResourcesAsync().ConfigureAwait(false);
+            var cleanupFailures = await DisposeResourcesAsync().ConfigureAwait(false);
+            ThrowFailures(null, cleanupFailures);
         }
         finally
         {
@@ -274,18 +359,65 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
         return configuration;
     }
 
-    private async ValueTask DisposeResourcesAsync()
+    private ValueTask<IReadOnlyList<Exception>> DisposeResourcesAsync()
     {
-        _csv?.Dispose();
-        _csv = null;
-        _bridge?.Dispose();
-        _bridge = null;
-        if (_reader is not null)
+        var failures = new List<Exception>();
+        var csv = Interlocked.Exchange(ref _csv, null);
+        try
         {
-            _reader.Dispose();
-            _reader = null;
+            csv?.Dispose();
         }
+        catch (Exception exception)
+        {
+            failures.Add(exception);
+        }
+
+        var bridge = Interlocked.Exchange(ref _bridge, null);
+        try
+        {
+            bridge?.Dispose();
+        }
+        catch (Exception exception)
+        {
+            failures.Add(exception);
+        }
+
+        var reader = Interlocked.Exchange(ref _reader, null);
+        try
+        {
+            reader?.Dispose();
+        }
+        catch (Exception exception)
+        {
+            failures.Add(exception);
+        }
+
         _initialized = false;
+        return ValueTask.FromResult<IReadOnlyList<Exception>>(failures);
+    }
+
+    private static async ValueTask<TextReader> OpenReaderAsync(
+        string path,
+        CsvSourceOptionsSnapshot options,
+        CancellationToken cancellationToken) =>
+        await CsvStrictEncoding.OpenReaderAsync(path, options, cancellationToken).ConfigureAwait(false);
+
+    private static void ThrowFailures(Exception? primaryFailure, IReadOnlyList<Exception> cleanupFailures)
+    {
+        if (primaryFailure is not null)
+        {
+            if (cleanupFailures.Count != 0)
+                throw new AggregateException(
+                    "CSV operation failed and cleanup also failed.",
+                    new[] { primaryFailure }.Concat(cleanupFailures));
+
+            return;
+        }
+
+        if (cleanupFailures.Count == 1)
+            ExceptionDispatchInfo.Capture(cleanupFailures[0]).Throw();
+        if (cleanupFailures.Count > 1)
+            throw new AggregateException("CSV cleanup failed.", cleanupFailures);
     }
 
     private CancellationTokenSource? CreateLinkedCancellation(
