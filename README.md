@@ -184,19 +184,21 @@ not increment failed metrics.
 
 ## DI And Hosting
 
-`SmartPipe.Extensions` registers immutable definitions and per-run factories:
+Use the dedicated leaf packages for DI registration and hosting:
+`SmartPipe.Extensions.DependencyInjection` provides immutable definitions and
+per-run factories; `SmartPipe.Extensions.Hosting` provides background hosting.
 
 ```csharp
-services.AddSmartPipe<Order, OrderDto>(
-    "orders",
-    builder => builder
-        .UseSource<OrderSource>()
-        .UseStage<OrderStage>()
-        .UseSink<OrderSink>());
+using SmartPipe.Extensions.DependencyInjection;
+using SmartPipe.Extensions.Hosting;
+
+var smartPipe = services.AddSmartPipe();
+smartPipe.AddPipeline(definition)
+    .RunAsHostedService(options => options.Order = 0);
 ```
 
-Resolve `ISmartPipeFactory<Order, OrderDto>` and call `Start()`, or use
-`AddSmartPipeHostedService<TInput,TOutput>()` for background hosting.
+Resolve the keyed `ISmartPipeRunFactory<Order, OrderDto>` and call `StartAsync()`
+for direct runs, or use `RunAsHostedService(...)` for background hosting.
 
 Factory-created runs preserve the underlying runtime controls: `CancelAsync`,
 `DrainAsync`, `TryDrainAsync`, `AbortAsync`, `Metrics`, `Outputs`, and `State`.
@@ -269,16 +271,18 @@ NDJSON. Sources stream arrays and top-level values, reject null records by
 default, and enforce configurable depth and framed-record limits.
 
 JSON file, transform, and JSON dead-letter integrations live in
-`SmartPipe.Extensions.Json`. HTTP JSON helpers remain in `SmartPipe.Extensions`.
+`SmartPipe.Extensions.Json`. HTTP JSON helpers live in
+`SmartPipe.Extensions.Http.Json`.
 Some non-JSON integrations may not be AOT-friendly.
 
 ## Extensions Package Surface
 
 `SmartPipe.Extensions.Json` owns JSON file sources and sinks, JSON transforms,
 and JSON dead-letter persistence without the broad Extensions dependency graph.
-`SmartPipe.Extensions` 2.1.2 retains type forwarders and a transitive JSON
-dependency for 2.x source and binary compatibility. New JSON applications
-should reference the dedicated package directly.
+`SmartPipe.Extensions` 2.2.0 is a dependency-only bundle: it contains no
+implementation DLL, type forwarders, aliases, or legacy wrappers. The 2.2.0
+migration permits intentional source and binary breaks. New JSON applications
+should reference dedicated packages directly.
 
 README examples are intentionally minimal. CI consumer smoke is the executable
 check for the public quick-start scenarios.
@@ -308,8 +312,9 @@ check for the public quick-start scenarios.
 - `SmartPipe.Core` depends on `Microsoft.Extensions.Logging.Abstractions`.
 - `SmartPipe.Extensions.Json` adds System.Text.Json file, transform, and
   dead-letter integrations.
-- `SmartPipe.Extensions` adds HTTP, EF Core, Dapper, CSV, Mapster, Polly,
-  hosting, health-check, and compatibility forwarding for JSON integrations.
+- `SmartPipe.Extensions` is a dependency-only bundle for the runtime
+  integration dependencies; it has no implementation DLL or compatibility
+  forwarding.
 
 ## License
 

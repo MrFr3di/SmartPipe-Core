@@ -8,6 +8,7 @@ internal enum OwnershipStrategy
     [JsonStringEnumMemberName("stay")] Stay,
     [JsonStringEnumMemberName("type-forward")] TypeForward,
     [JsonStringEnumMemberName("obsolete-wrapper")] ObsoleteWrapper,
+    [JsonStringEnumMemberName("removed")] Removed,
 }
 
 internal sealed record OwnershipDocument

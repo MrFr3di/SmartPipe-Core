@@ -60,9 +60,15 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
             await InitializeCoreAsync(cancellationToken).ConfigureAwait(false);
             _initialized = true;
         }
-        catch
+        catch (Exception primaryFailure)
         {
-            await DisposeResourcesAsync().ConfigureAwait(false);
+            var cleanupFailures = await DisposeResourcesAsync().ConfigureAwait(false);
+            if (cleanupFailures.Count != 0)
+                throw new AggregateException(
+                    "CSV operation failed and cleanup also failed.",
+                    new[] { primaryFailure }.Concat(cleanupFailures));
+
+            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
             throw;
         }
         finally
@@ -520,42 +526,45 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
         }
     }
 
-    private async ValueTask DisposeResourcesAsync()
+    private async ValueTask<IReadOnlyList<Exception>> DisposeResourcesAsync()
     {
-        try
-        {
-            _csv?.Dispose();
-        }
-        catch
-        {
-            // Initialization failure is reported by the original operation.
-        }
-
+        var failures = new List<Exception>();
+        var csv = _csv;
         _csv = null;
         try
         {
-            _recordWriter?.Dispose();
+            csv?.Dispose();
         }
-        catch
+        catch (Exception exception)
         {
-            // Initialization failure is reported by the original operation.
+            failures.Add(exception);
         }
 
+        var recordWriter = _recordWriter;
         _recordWriter = null;
-        if (_stream is not null)
+        try
         {
-            try
-            {
-                await _stream.DisposeAsync().ConfigureAwait(false);
-            }
-            catch
-            {
-                // Initialization failure is reported by the original operation.
-            }
+            recordWriter?.Dispose();
+        }
+        catch (Exception exception)
+        {
+            failures.Add(exception);
         }
 
+        var stream = _stream;
         _stream = null;
+        try
+        {
+            if (stream is not null)
+                await stream.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            failures.Add(exception);
+        }
+
         _initialized = false;
+        return failures;
     }
 
     private static Exception? CombineCleanup(Exception? existing, Exception next) =>

@@ -7,7 +7,7 @@ namespace SmartPipe.Extensions.Csv.Internal;
 /// A single reader instance is intended to live for one activated run. It never starts a background
 /// pump and keeps cancellation in the framer so CsvHelper's token-less parser read cannot lose it.
 /// </remarks>
-internal sealed class CsvBoundedRecordTextReader : TextReader
+internal class CsvBoundedRecordTextReader : TextReader
 {
     private readonly CsvLogicalRecordFramer _framer;
     private CancellationToken _cancellationToken;

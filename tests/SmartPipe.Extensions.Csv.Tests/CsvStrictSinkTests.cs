@@ -173,6 +173,30 @@ public sealed class CsvStrictSinkTests
     }
 
     [Fact]
+    public async Task FileSink_InitializationPrimaryAndCleanupFailuresPreserveOrder()
+    {
+        var stream = new FaultInjectingStream
+        {
+            FailNextRead = true,
+            FailNextDispose = true,
+        };
+        var sink = CreateInjectedSink(stream, new CsvSinkOptions
+        {
+            HasHeaderRecord = false,
+            FlushEveryRecords = 1,
+        });
+
+        var failure = await Assert.ThrowsAsync<AggregateException>(() => sink.InitializeAsync().AsTask());
+
+        Assert.Collection(
+            failure.InnerExceptions,
+            primary => Assert.IsType<TestReadException>(primary),
+            cleanup => Assert.IsType<TestDisposeException>(cleanup));
+        Assert.Equal(["read", "dispose"], stream.Events);
+        Assert.Equal(1, stream.DisposeCalls);
+    }
+
+    [Fact]
     public async Task FileSink_FlushFailureRollsBackToRecordCheckpoint()
     {
         var stream = new FaultInjectingStream { FailNextFlush = true };
@@ -341,6 +365,8 @@ public sealed class CsvStrictSinkTests
     private sealed class TestWriteException(string message) : IOException(message);
     private sealed class TestFlushException(string message) : IOException(message);
     private sealed class TestRollbackException(string message) : IOException(message);
+    private sealed class TestReadException(string message) : IOException(message);
+    private sealed class TestDisposeException(string message) : IOException(message);
 
     private sealed class FaultInjectingStream : Stream
     {
@@ -351,10 +377,13 @@ public sealed class CsvStrictSinkTests
         public int? FailNextWriteAfterBytes { get; set; }
         public bool FailNextFlush { get; set; }
         public bool FailNextRollback { get; set; }
+        public bool FailNextRead { get; set; }
+        public bool FailNextDispose { get; set; }
         public bool BlockDispose { get; set; }
         public bool BlockNextWrite { get; set; }
         public int FlushCalls { get; private set; }
         public int DisposeCalls { get; private set; }
+        public List<string> Events { get; } = [];
         public long LengthAtDispose { get; private set; } = -1;
         public TaskCompletionSource DisposeStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -397,10 +426,16 @@ public sealed class CsvStrictSinkTests
         public override async ValueTask DisposeAsync()
         {
             DisposeCalls++;
+            Events.Add("dispose");
             LengthAtDispose = _inner.Length;
             DisposeStarted.TrySetResult();
             if (BlockDispose)
                 await _disposeRelease.Task;
+            if (FailNextDispose)
+            {
+                FailNextDispose = false;
+                throw new TestDisposeException("cleanup-dispose");
+            }
             await _inner.DisposeAsync();
             GC.SuppressFinalize(this);
         }
@@ -409,7 +444,9 @@ public sealed class CsvStrictSinkTests
         public override ValueTask<int> ReadAsync(
             Memory<byte> buffer,
             CancellationToken cancellationToken = default) =>
-            _inner.ReadAsync(buffer, cancellationToken);
+            FailNextRead
+                ? FailReadAsync()
+                : _inner.ReadAsync(buffer, cancellationToken);
         public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
         public override void SetLength(long value)
         {
@@ -443,6 +480,13 @@ public sealed class CsvStrictSinkTests
             }
 
             await _inner.WriteAsync(buffer, cancellationToken);
+        }
+
+        private ValueTask<int> FailReadAsync()
+        {
+            FailNextRead = false;
+            Events.Add("read");
+            return ValueTask.FromException<int>(new TestReadException("primary-read"));
         }
 
         private static class TaskCompletionSourceWithoutResult

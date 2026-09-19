@@ -18,6 +18,13 @@ internal sealed class OwnershipValidator
             var baselineOwners = (baseline.Implementations.GetValueOrDefault(type) ?? new HashSet<string>())
                 .Concat(baseline.Forwarders.GetValueOrDefault(type) ?? new HashSet<string>()).ToHashSet(StringComparer.OrdinalIgnoreCase);
             if (!baselineOwners.Contains(assignment.BaselineAssembly)) errors.Add(new("SPOWN021", type, $"baseline assembly {assignment.BaselineAssembly} does not expose the type"));
+            if (assignment.Strategy == OwnershipStrategy.Removed)
+            {
+                if (HasAny(current.Implementations, type) || HasAny(current.Forwarders, type))
+                    errors.Add(new("SPOWN025", type, "removed type is still present in the current package graph"));
+                continue;
+            }
+
             var targetNode = nodes[assignment.TargetImplementationAssembly];
             var future = mode == PackageGraphMode.Current && targetNode.Lifecycle == PackageLifecycle.Planned;
             if (future)
@@ -44,4 +51,5 @@ internal sealed class OwnershipValidator
         return new(baselineTypes.Length, errors.OrderBy(x => x.Type, StringComparer.Ordinal).ThenBy(x => x.Code, StringComparer.Ordinal).ToArray());
     }
     private static bool Has(IReadOnlyDictionary<string, IReadOnlySet<string>> map, string type, string package) => map.TryGetValue(type, out var owners) && owners.Contains(package);
+    private static bool HasAny(IReadOnlyDictionary<string, IReadOnlySet<string>> map, string type) => map.TryGetValue(type, out var owners) && owners.Count != 0;
 }
