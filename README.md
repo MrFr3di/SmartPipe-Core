@@ -271,8 +271,10 @@ NDJSON. Sources stream arrays and top-level values, reject null records by
 default, and enforce configurable depth and framed-record limits.
 
 JSON file, transform, and JSON dead-letter integrations live in
-`SmartPipe.Extensions.Json`. HTTP and the other non-JSON integrations remain in
-the convenience bundle until their own leaf packages land.
+`SmartPipe.Extensions.Json`; the Channels, Transforms, DataAnnotations, and
+Logging leaves are also split out and reachable through the bundle. HTTP, Dapper,
+EF Core, Mapster, and Polly still live in `SmartPipe.Extensions` until their own
+leaf packages land.
 Some non-JSON integrations may not be AOT-friendly.
 
 ## Extensions Package Surface
