@@ -436,6 +436,34 @@ public sealed class CsvStrictSourceTests
         Assert.Equal(1, reader.DisposeCalls);
     }
 
+    [Fact]
+    public async Task FileSource_InitializationFailurePreservesPrimaryAndCleansAcquiredResourcesOnce()
+    {
+        var events = new List<string>();
+        var reader = new FaultInjectingReader(events) { FailNextDispose = true };
+        var source = new StrictCsvFileSource<Person>(
+            "injected.csv",
+            CsvSourceOptionsSnapshot.Create(new CsvSourceOptions { HasHeaderRecord = false }, loggerAvailable: false),
+            CsvMapRegistration<Person>.Auto,
+            logger: null,
+            activationCancellationToken: CancellationToken.None,
+            readerFactory: (_, _, _) => ValueTask.FromResult<TextReader>(reader),
+            bridgeFactory: (_, _) => throw new TestReadException("primary-bridge"));
+
+        var failure = await Assert.ThrowsAsync<AggregateException>(() => source.InitializeAsync().AsTask());
+
+        Assert.Collection(
+            failure.InnerExceptions,
+            primary => Assert.IsType<TestReadException>(primary),
+            readerCleanup => Assert.IsType<TestDisposeException>(readerCleanup));
+        Assert.Equal(["reader-dispose"], events);
+        Assert.Equal(1, reader.DisposeCalls);
+
+        await source.DisposeAsync();
+
+        Assert.Equal(1, reader.DisposeCalls);
+    }
+
     private static StrictCsvFileSource<Person> CreateInjectedSource(
         FaultInjectingReader reader,
         List<string> events,

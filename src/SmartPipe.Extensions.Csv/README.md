@@ -22,7 +22,7 @@ The sink stages one character-bounded record, supports create or append, validat
 
 Use `CsvMapRegistration<T>.Auto`, `From<TMap>()`, or `FromFactory(...)`. A map factory creates a fresh map per activated run; caller-owned mutable maps are not retained.
 
-The legacy `CsvFileSource<T>`, `CsvFileSink<T>`, and `CsvTransform<TInput,TOutput>` types remain valid in this leaf assembly. Accepted post-SP220-09 source still has transitional forwarders from `SmartPipe.Extensions`; SP220-16 removes them before final dependency-only packaging. SmartPipe 2.2.0 does not promise old-binary compatibility; current consumers should reference this package directly and recompile.
+The legacy `CsvFileSource<T>`, `CsvFileSink<T>`, and `CsvTransform<TInput,TOutput>` types remain valid in this leaf assembly and are exposed from `SmartPipe.Extensions` through type forwarding, which retains its direct CsvHelper dependency while those forwarders exist. New code should reference this package directly.
 
 ## Trimming and NativeAOT
 

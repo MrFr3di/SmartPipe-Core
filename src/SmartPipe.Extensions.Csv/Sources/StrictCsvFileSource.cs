@@ -96,7 +96,7 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
 
         try
         {
-            if (_options.HasHeaderRecord && primaryFailure is null)
+            if (_options.HasHeaderRecord)
             {
                 try
                 {

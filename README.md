@@ -271,18 +271,20 @@ NDJSON. Sources stream arrays and top-level values, reject null records by
 default, and enforce configurable depth and framed-record limits.
 
 JSON file, transform, and JSON dead-letter integrations live in
-`SmartPipe.Extensions.Json`. HTTP JSON helpers live in
-`SmartPipe.Extensions.Http.Json`.
+`SmartPipe.Extensions.Json`. HTTP and the other non-JSON integrations remain in
+the convenience bundle until their own leaf packages land.
 Some non-JSON integrations may not be AOT-friendly.
 
 ## Extensions Package Surface
 
 `SmartPipe.Extensions.Json` owns JSON file sources and sinks, JSON transforms,
 and JSON dead-letter persistence without the broad Extensions dependency graph.
-`SmartPipe.Extensions` 2.2.0 is a dependency-only bundle: it contains no
-implementation DLL, type forwarders, aliases, or legacy wrappers. The 2.2.0
-migration permits intentional source and binary breaks. New JSON applications
-should reference dedicated packages directly.
+`SmartPipe.Extensions` remains the convenience bundle and compatibility facade:
+moved public types are exposed from it through type forwarding, and the
+[ADR-0002](docs/adr/0002-smartpipe-2.2-legacy-compatibility-quarantine.md) legacy
+DI/Hosting/Health cluster stays there under `obsolete-wrapper` ownership for
+2.2.0. SP220-16 completes the remaining facade work. New JSON applications should
+reference dedicated packages directly.
 
 README examples are intentionally minimal. CI consumer smoke is the executable
 check for the public quick-start scenarios.
@@ -312,9 +314,8 @@ check for the public quick-start scenarios.
 - `SmartPipe.Core` depends on `Microsoft.Extensions.Logging.Abstractions`.
 - `SmartPipe.Extensions.Json` adds System.Text.Json file, transform, and
   dead-letter integrations.
-- `SmartPipe.Extensions` is a dependency-only bundle for the runtime
-  integration dependencies; it has no implementation DLL or compatibility
-  forwarding.
+- `SmartPipe.Extensions` is the convenience bundle and compatibility facade for
+  the runtime integration dependencies.
 
 ## License
 
