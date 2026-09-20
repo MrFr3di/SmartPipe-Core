@@ -8,7 +8,7 @@ namespace SmartPipe.RepositoryChecks.Tests.Scaffolding;
 public sealed class ScaffoldPackageCommandTests
 {
     [Fact]
-    public async Task DryRun_AllSevenPlannedIds_WritesNothing()
+    public async Task DryRun_AllSixPlannedIds_WritesNothing()
     {
         var root = RepositoryRoot(); var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var command = new ScaffoldPackageCommand();
@@ -17,7 +17,7 @@ public sealed class ScaffoldPackageCommandTests
             var report = await command.ExecuteAsync(new(root, node.Id, true, null), TestContext.Current.CancellationToken);
             Assert.True(report.Success); Assert.Equal(node.Id, report.PackageId); Assert.All(report.Files, path => Assert.False(File.Exists(Path.Combine(root, path))));
         }
-        Assert.Equal(7, graph.Packages.Count(x => x.Lifecycle == PackageLifecycle.Planned));
+        Assert.Equal(6, graph.Packages.Count(x => x.Lifecycle == PackageLifecycle.Planned));
     }
 
     [Fact]
@@ -25,7 +25,7 @@ public sealed class ScaffoldPackageCommandTests
     {
         using var fixture = new RepositoryTestDirectory();
         var root = RepositoryRoot(); var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
-        var node = graph.Packages.Single(x => x.Id == "SmartPipe.Extensions.Dapper");
+        var node = graph.Packages.Single(x => x.Id == "SmartPipe.Extensions.EntityFrameworkCore");
         var plan = new PackageTemplateRenderer(root).Render(graph, node);
         fixture.Write(plan.Files[0].RelativePath, "collision");
         var collision = await Assert.ThrowsAsync<ScaffoldException>(() => new AtomicFileWriter().WriteAsync(fixture.Path, plan.Files, TestContext.Current.CancellationToken));
