@@ -85,8 +85,11 @@ Important selector and streaming contracts:
   Reflection JSON constructors are annotated for trimming and NativeAOT risk;
   prefer the `JsonTypeInfo<List<T>>` buffered overload or `JsonTypeInfo<T>`
   streaming overload in trimmed or NativeAOT applications.
-- `EfCoreSelector<T>` reads with `AsNoTracking()` by default. Use
-  `.WithTracking()` to opt into EF Core change tracking for returned entities.
+- `EfCoreSelector<T>` (forwarded from `SmartPipe.Extensions.EntityFrameworkCore`) reads with
+  `AsNoTracking()` by default. Use `.WithTracking()` to opt into EF Core change tracking for returned
+  entities. New code uses `EfCorePipelineComponents.QuerySource`/`CompiledQuerySource` or the typed
+  `FromQuery`/`FromCompiledQuery` builders, which own exactly one context per run and select the
+  tracking mode through `EfCoreQueryOptions.TrackingMode`.
 - `DapperSelector<T>` uses asynchronous `DbConnection` open/read operations and
   leaves externally supplied connections open by default. Use the explicit
   ownership overload with `leaveOpen: false` when the selector should dispose

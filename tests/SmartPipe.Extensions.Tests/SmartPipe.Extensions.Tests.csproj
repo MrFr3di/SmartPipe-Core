@@ -34,6 +34,7 @@
     <ProjectReference Include="..\..\src\SmartPipe.Core\SmartPipe.Core.csproj" />
     <ProjectReference Include="..\..\src\SmartPipe.Extensions.Csv\SmartPipe.Extensions.Csv.csproj" />
     <ProjectReference Include="..\..\src\SmartPipe.Extensions.Dapper\SmartPipe.Extensions.Dapper.csproj" />
+    <ProjectReference Include="..\..\src\SmartPipe.Extensions.EntityFrameworkCore\SmartPipe.Extensions.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\src\SmartPipe.Extensions.Hosting\SmartPipe.Extensions.Hosting.csproj" />
     <ProjectReference Include="..\..\src\SmartPipe.Extensions.Channels\SmartPipe.Extensions.Channels.csproj" />
     <ProjectReference Include="..\..\src\SmartPipe.Extensions.Transforms\SmartPipe.Extensions.Transforms.csproj" />

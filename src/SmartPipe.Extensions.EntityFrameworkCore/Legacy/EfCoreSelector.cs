@@ -30,7 +30,7 @@ public class EfCoreSelector<T> : IPipelineSource<T>
     /// <summary>Configure query before reading (filtering, ordering, etc.).</summary>
     public EfCoreSelector<T> WithQuery(Func<DbSet<T>, IQueryable<T>> configure)
     {
-        _query = configure(_dbContext.Set<T>());
+        _query = configure(ResolveSet());
         return this;
     }
 
@@ -44,6 +44,12 @@ public class EfCoreSelector<T> : IPipelineSource<T>
         return this;
     }
 
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2091",
+        Justification = "The shipped legacy selector resolves its entity set from the caller-owned DbContext. This path is documented as trimming-unsafe in the package README and docs/aot-compatibility.md; the factory-based EfCorePipelineComponents sources are the supported alternative.")]
+    private DbSet<T> ResolveSet() => _dbContext.Set<T>();
+
     /// <inheritdoc />
     public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
@@ -52,7 +58,7 @@ public class EfCoreSelector<T> : IPipelineSource<T>
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
     )
     {
-        var query = _query ?? _dbContext.Set<T>();
+        var query = _query ?? ResolveSet();
         query = _trackingEnabled ? query.AsTracking() : query.AsNoTracking();
         var entities = query.AsAsyncEnumerable().WithCancellation(ct);
 

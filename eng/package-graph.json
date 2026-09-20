@@ -71,7 +71,12 @@
         "dapper-di-composition",
         "dapper-facade-source",
         "dapper-facade-binary-2.1.2",
-        "dapper-trim-diagnostic"
+        "dapper-trim-diagnostic",
+        "entity-framework-core-direct",
+        "entity-framework-core-di-composition",
+        "entity-framework-core-facade-source",
+        "entity-framework-core-facade-binary-2.1.2",
+        "entity-framework-core-trim-diagnostic"
       ]
     },
     {
@@ -311,9 +316,9 @@
     {
       "id": "SmartPipe.Extensions.EntityFrameworkCore",
       "projectPath": "src/SmartPipe.Extensions.EntityFrameworkCore/SmartPipe.Extensions.EntityFrameworkCore.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-11",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 8,
       "baselineVersion": null,
       "aotContract": "no-blanket",
@@ -323,7 +328,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.EntityFrameworkCore"
+          "Microsoft.EntityFrameworkCore",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -335,7 +341,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.EntityFrameworkCore"
+          "Microsoft.EntityFrameworkCore",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -343,7 +350,9 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "entity-framework-core-direct"
+        "entity-framework-core-direct",
+        "entity-framework-core-di-composition",
+        "entity-framework-core-trim-diagnostic"
       ]
     },
     {
@@ -573,6 +582,7 @@
         "json-dependency-injection-direct",
         "csv-di-composition",
         "dapper-di-composition",
+        "entity-framework-core-di-composition",
         "dependency-injection-keyed",
         "dependency-injection-from-keyed-services",
         "dependency-injection-facade-source",
@@ -785,13 +795,15 @@
           "SmartPipe.Extensions.Hosting",
           "SmartPipe.Extensions.Json",
           "SmartPipe.Extensions.Csv",
-          "SmartPipe.Extensions.Dapper"
+          "SmartPipe.Extensions.Dapper",
+          "SmartPipe.Extensions.EntityFrameworkCore"
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
           "Microsoft.Extensions.Logging.Abstractions",
           "CsvHelper",
-          "Dapper"
+          "Dapper",
+          "Microsoft.EntityFrameworkCore"
         ],
         "forbiddenPackagePatterns": []
       },
@@ -824,18 +836,12 @@
           "Microsoft.Extensions.Resilience",
           "Microsoft.Extensions.Logging.Abstractions",
           "CsvHelper",
-          "Dapper"
+          "Dapper",
+          "Microsoft.EntityFrameworkCore"
         ],
         "forbiddenPackagePatterns": []
       },
       "temporaryAllowances": [
-        {
-          "dependency": "Microsoft.EntityFrameworkCore",
-          "reason": "EF implementation remains embedded until extraction",
-          "ownerEpic": "SP220-11",
-          "expiresBeforeRelease": true,
-          "evidence": "SmartPipe.Extensions current PackageReference"
-        },
         {
           "dependency": "Mapster",
           "reason": "Mapster implementation remains embedded until extraction",
@@ -897,6 +903,8 @@
         "csv-facade-binary-2.1.2",
         "dapper-facade-source",
         "dapper-facade-binary-2.1.2",
+        "entity-framework-core-facade-source",
+        "entity-framework-core-facade-binary-2.1.2",
         "opentelemetry-facade"
       ]
     }

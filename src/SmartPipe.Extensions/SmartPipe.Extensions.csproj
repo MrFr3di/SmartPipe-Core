@@ -28,6 +28,7 @@
     <ProjectReference Include="..\SmartPipe.Extensions.Json\SmartPipe.Extensions.Json.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Csv\SmartPipe.Extensions.Csv.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Dapper\SmartPipe.Extensions.Dapper.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.EntityFrameworkCore\SmartPipe.Extensions.EntityFrameworkCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>

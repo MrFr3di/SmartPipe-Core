@@ -95,3 +95,9 @@ Channels, reflection-free Transforms rules, and the safe Logging options path ar
 trim and NativeAOT consumer-tested. `ValidationTransform<T>.TransformAsync` and
 `ToFilter` are explicitly `RequiresUnreferencedCode`; use
 `RuleValidationTransform<T>` instead when publishing trimmed or NativeAOT code.
+
+`SmartPipe.Extensions.EntityFrameworkCore` makes no blanket trimming or NativeAOT claim: query shape,
+provider, compiled models, and generated query delegates are evaluated by the consumer. The forwarded
+legacy `EfCoreSelector<T>` resolves its entity set through `DbContext.Set<T>()`, which is
+trimming-unsafe; its narrow internal suppression documents that boundary, and the factory-based
+`EfCorePipelineComponents` sources are the supported alternative.
