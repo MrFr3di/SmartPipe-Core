@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using SmartPipe.ConsumerScenarios;
 using SmartPipe.Core;
 using SmartPipe.Extensions.EntityFrameworkCore;
 
@@ -69,17 +70,20 @@ static async IAsyncEnumerable<int> CountRowsAsync(
     yield return await context.Rows.CountAsync(cancellationToken);
 }
 
-internal sealed class DirectContext(DbContextOptions<DirectContext> options) : DbContext(options)
+namespace SmartPipe.ConsumerScenarios
 {
-    public DbSet<Row> Rows => Set<Row>();
+    internal sealed class DirectContext(DbContextOptions<DirectContext> options) : DbContext(options)
+    {
+        public DbSet<Row> Rows => Set<Row>();
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder) =>
-        modelBuilder.Entity<Row>().ToTable("In");
-}
+        protected override void OnModelCreating(ModelBuilder modelBuilder) =>
+            modelBuilder.Entity<Row>().ToTable("In");
+    }
 
-internal sealed class Row
-{
-    public int Id { get; set; }
+    internal sealed class Row
+    {
+        public int Id { get; set; }
 
-    public string Name { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+    }
 }

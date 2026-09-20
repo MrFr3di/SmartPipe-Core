@@ -51,11 +51,8 @@ internal sealed class EfCoreOptionsSnapshot
         if (value.Length > 64)
             throw new ArgumentException("The operation name must be at most 64 characters long.", parameterName);
 
-        foreach (var character in value)
-        {
-            if (char.IsControl(character))
-                throw new ArgumentException("The operation name must not contain control characters.", parameterName);
-        }
+        if (value.Any(char.IsControl))
+            throw new ArgumentException("The operation name must not contain control characters.", parameterName);
 
         return value;
     }

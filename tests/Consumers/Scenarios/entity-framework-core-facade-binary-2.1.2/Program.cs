@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using SmartPipe.ConsumerScenarios;
 using SmartPipe.Extensions.Selectors;
 
 var databasePath = Path.Combine(Path.GetTempPath(), $"smartpipe-efcore-facade-binary-{Guid.NewGuid():N}.db");
@@ -20,13 +21,15 @@ try
 
     var options = new DbContextOptionsBuilder<FacadeContext>().UseSqlite(connectionString).Options;
     await using var context = new FacadeContext(options);
-    await using var selector = new EfCoreSelector<Row>(context).WithQuery(static set => set.OrderBy(row => row.Id));
+    await using var selector = new EfCoreSelector<Row>(context)
+        .WithQuery(static set => set.Where(row => row.Id > 0))
+        .WithTracking();
     await selector.InitializeAsync();
-    var names = new List<string>();
+    var trackedDuringEnumeration = 0;
     await foreach (var envelope in selector.ReadEnvelopesAsync())
-        names.Add(envelope.Payload.Name);
-    if (names.Count != 2 || names[0] != "Ada" || names[1] != "Grace")
-        return 1;
+        trackedDuringEnumeration = Math.Max(trackedDuringEnumeration, context.ChangeTracker.Entries().Count());
+    if (trackedDuringEnumeration != 2)
+        throw new InvalidOperationException($"The forwarded legacy selector did not track the returned entities: {trackedDuringEnumeration}.");
 }
 finally
 {
@@ -36,17 +39,20 @@ finally
 Console.WriteLine("CONSUMER_OK entity-framework-core-facade-binary-2.1.2");
 return 0;
 
-internal sealed class FacadeContext(DbContextOptions<FacadeContext> options) : DbContext(options)
+namespace SmartPipe.ConsumerScenarios
 {
-    public DbSet<Row> Rows => Set<Row>();
+    internal sealed class FacadeContext(DbContextOptions<FacadeContext> options) : DbContext(options)
+    {
+        public DbSet<Row> Rows => Set<Row>();
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder) =>
-        modelBuilder.Entity<Row>().ToTable("In");
-}
+        protected override void OnModelCreating(ModelBuilder modelBuilder) =>
+            modelBuilder.Entity<Row>().ToTable("In");
+    }
 
-internal sealed class Row
-{
-    public int Id { get; set; }
+    internal sealed class Row
+    {
+        public int Id { get; set; }
 
-    public string Name { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+    }
 }

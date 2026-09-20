@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SmartPipe.ConsumerScenarios;
 using SmartPipe.Core;
 using SmartPipe.Extensions.DependencyInjection;
 using SmartPipe.Extensions.EntityFrameworkCore;
@@ -49,17 +50,20 @@ finally
 Console.WriteLine("CONSUMER_OK entity-framework-core-di-composition");
 return 0;
 
-internal sealed class DiContext(DbContextOptions<DiContext> options) : DbContext(options)
+namespace SmartPipe.ConsumerScenarios
 {
-    public DbSet<Row> Rows => Set<Row>();
+    internal sealed class DiContext(DbContextOptions<DiContext> options) : DbContext(options)
+    {
+        public DbSet<Row> Rows => Set<Row>();
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder) =>
-        modelBuilder.Entity<Row>().ToTable("In");
-}
+        protected override void OnModelCreating(ModelBuilder modelBuilder) =>
+            modelBuilder.Entity<Row>().ToTable("In");
+    }
 
-internal sealed class Row
-{
-    public int Id { get; set; }
+    internal sealed class Row
+    {
+        public int Id { get; set; }
 
-    public string Name { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+    }
 }
