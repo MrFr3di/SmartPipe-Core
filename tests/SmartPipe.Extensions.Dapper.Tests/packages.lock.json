@@ -425,6 +425,7 @@
           "SmartPipe.Extensions.Dapper": "[2.2.0, )",
           "SmartPipe.Extensions.DataAnnotations": "[2.2.0, )",
           "SmartPipe.Extensions.DependencyInjection": "[2.2.0, )",
+          "SmartPipe.Extensions.EntityFrameworkCore": "[2.2.0, )",
           "SmartPipe.Extensions.Hosting": "[2.2.0, )",
           "SmartPipe.Extensions.Json": "[2.2.0, )",
           "SmartPipe.Extensions.Logging": "[2.2.0, )",
@@ -464,6 +465,14 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.11, )",
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
+      "smartpipe.extensions.entityframeworkcore": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore": "[10.0.11, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.11, )",
           "SmartPipe.Core": "[2.2.0, )"
         }
       },

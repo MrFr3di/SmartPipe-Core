@@ -24,13 +24,13 @@ SmartPipe.Extensions.Selectors.DapperSelector<T>.Dispose() -> void (forwarded, c
 SmartPipe.Extensions.Selectors.DapperSelector<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Dapper)
 SmartPipe.Extensions.Selectors.DapperSelector<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Dapper)
 SmartPipe.Extensions.Selectors.DapperSelector<T>.ReadEnvelopesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingEnvelope<T>!>! (forwarded, contained in SmartPipe.Extensions.Dapper)
-SmartPipe.Extensions.Selectors.EfCoreSelector<T>
-SmartPipe.Extensions.Selectors.EfCoreSelector<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Selectors.EfCoreSelector<T>.EfCoreSelector(Microsoft.EntityFrameworkCore.DbContext! dbContext, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.EfCoreSelector<T!>!>? logger = null) -> void
-SmartPipe.Extensions.Selectors.EfCoreSelector<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Selectors.EfCoreSelector<T>.ReadEnvelopesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingEnvelope<T!>!>!
-SmartPipe.Extensions.Selectors.EfCoreSelector<T>.WithQuery(System.Func<Microsoft.EntityFrameworkCore.DbSet<T!>!, System.Linq.IQueryable<T!>!>! configure) -> SmartPipe.Extensions.Selectors.EfCoreSelector<T!>!
-SmartPipe.Extensions.Selectors.EfCoreSelector<T>.WithTracking(bool enabled = true) -> SmartPipe.Extensions.Selectors.EfCoreSelector<T!>!
+SmartPipe.Extensions.Selectors.EfCoreSelector<T> (forwarded, contained in SmartPipe.Extensions.EntityFrameworkCore)
+SmartPipe.Extensions.Selectors.EfCoreSelector<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.EntityFrameworkCore)
+SmartPipe.Extensions.Selectors.EfCoreSelector<T>.EfCoreSelector(Microsoft.EntityFrameworkCore.DbContext! dbContext, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.EfCoreSelector<T!>!>? logger = null) -> void (forwarded, contained in SmartPipe.Extensions.EntityFrameworkCore)
+SmartPipe.Extensions.Selectors.EfCoreSelector<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.EntityFrameworkCore)
+SmartPipe.Extensions.Selectors.EfCoreSelector<T>.ReadEnvelopesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingEnvelope<T!>!>! (forwarded, contained in SmartPipe.Extensions.EntityFrameworkCore)
+SmartPipe.Extensions.Selectors.EfCoreSelector<T>.WithQuery(System.Func<Microsoft.EntityFrameworkCore.DbSet<T!>!, System.Linq.IQueryable<T!>!>! configure) -> SmartPipe.Extensions.Selectors.EfCoreSelector<T!>! (forwarded, contained in SmartPipe.Extensions.EntityFrameworkCore)
+SmartPipe.Extensions.Selectors.EfCoreSelector<T>.WithTracking(bool enabled = true) -> SmartPipe.Extensions.Selectors.EfCoreSelector<T!>! (forwarded, contained in SmartPipe.Extensions.EntityFrameworkCore)
 SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>
 SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
 SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.HttpClientFactorySelector(System.Net.Http.IHttpClientFactory! httpClientFactory, string! requestUri, string! clientName, Polly.ResiliencePipeline? pipeline, System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Generic.List<T>!>? listTypeInfo, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.HttpSelector<T>!>? logger) -> void

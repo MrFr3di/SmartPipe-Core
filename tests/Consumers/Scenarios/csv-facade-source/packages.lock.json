@@ -6,7 +6,7 @@
         "type": "Direct",
         "requested": "[2.2.0, )",
         "resolved": "2.2.0",
-        "contentHash": "jCrmljFc5Y6UlLY6FlbG9LW4h5rlQCMdsrmUenG/CZcJq9LQRuB+Gvh5i84mB4ECAktx/J0rZrL5DaCzBOMHHw==",
+        "contentHash": "odgy7PilK/1B/buEot6J4t8dXkQ/W3FxR0j2QflmCzxdENIaqQHdkBfKN7BoMc7EZeayZwcNKiUVibYgnrHymw==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "10.0.11"
         }
@@ -15,7 +15,7 @@
         "type": "Direct",
         "requested": "[2.2.0, )",
         "resolved": "2.2.0",
-        "contentHash": "VjxjZvJ/mPBqW6wc4S5hXBDTFsp6jPoW7u0rISE1ggoszAV3vd4I6ij7ZdCtiTqmky2LFiAqjhbbHcEY21fSfQ==",
+        "contentHash": "zZv5c7JYSKdedGpuNW21+e9SnASByStpxiR7WPaqTlEZT9UH6PtUrtFFbrQeCZwb+g2D2aY1rBTzQ34xoqGV/A==",
         "dependencies": {
           "CsvHelper": "33.1.0",
           "Dapper": "2.1.86",
@@ -33,6 +33,7 @@
           "SmartPipe.Extensions.Dapper": "2.2.0",
           "SmartPipe.Extensions.DataAnnotations": "2.2.0",
           "SmartPipe.Extensions.DependencyInjection": "2.2.0",
+          "SmartPipe.Extensions.EntityFrameworkCore": "2.2.0",
           "SmartPipe.Extensions.Hosting": "2.2.0",
           "SmartPipe.Extensions.Json": "2.2.0",
           "SmartPipe.Extensions.Logging": "2.2.0",
@@ -219,7 +220,7 @@
       "SmartPipe.Extensions.Channels": {
         "type": "Transitive",
         "resolved": "2.2.0",
-        "contentHash": "p3ncT5pvrQ/IyCIIzBrbuqiFBRFD7Yy6OExehxBS96eSaCWRcrFUFl+Lx5UWeBBHj4xMzmeW1xVeql0MpWdy6A==",
+        "contentHash": "TWTsV+CL/Fa6yUicP37f5IzSZ05tGqeI9n2BiZg72Qm9PRItI75xXMRw3pOmQVkVO0h8Tc9iI5HtJ0tA2BlAUw==",
         "dependencies": {
           "SmartPipe.Core": "2.2.0"
         }
@@ -227,7 +228,7 @@
       "SmartPipe.Extensions.Csv": {
         "type": "Transitive",
         "resolved": "2.2.0",
-        "contentHash": "1JpSeP1/VWQaHYWQTnNHHQZ/p+BplcxLZu5AlTHmk8a9Ecma4w3j7gIaW8ROxXGemBSfGgoGPKjrmW6HPWXGyw==",
+        "contentHash": "WEryiEosZvSnpwi5a2DGwhMBD63n4hRSliYRJXsf7Xmc+6LV1+Pq+G2h6UKlH5cBybbShmHXbRKo5vbU9Ouxcg==",
         "dependencies": {
           "CsvHelper": "33.1.0",
           "Microsoft.Extensions.Logging.Abstractions": "10.0.11",
@@ -237,7 +238,7 @@
       "SmartPipe.Extensions.Dapper": {
         "type": "Transitive",
         "resolved": "2.2.0",
-        "contentHash": "dkryvgv3XMf9FVQ+eb13v2CeHhfaxJ/7uOwOnoG1wfR+HUkeLZll6nd02dmF/fTbhfdSW6FthXScoiefbteFYg==",
+        "contentHash": "ixvEkya+Hh97XllPaZt90hM3Jo5EZ//exAMQ+OTR0TSoX3CCEIeNmx2fIXG9f9F1JTa0CamTrDWUvX3UEVFCcQ==",
         "dependencies": {
           "Dapper": "2.1.86",
           "Microsoft.Extensions.Logging.Abstractions": "10.0.11",
@@ -247,7 +248,7 @@
       "SmartPipe.Extensions.DataAnnotations": {
         "type": "Transitive",
         "resolved": "2.2.0",
-        "contentHash": "E1t8bE2g6/z6BkYr7/M9GFtSiPhCih2bcHB1qsAX783wExw1dvrRDT4wy7qfeE2KdganiwLcKZaQnZZ79e/wEA==",
+        "contentHash": "V+F1WIs+HXIxFNnTD9BVrlnJUlRD7Q5EeRmsrtsqzJ3dQGOxaobZF6QPQlOc88N54Gfld3xbjxKIIVxoEqEuqQ==",
         "dependencies": {
           "SmartPipe.Core": "2.2.0",
           "SmartPipe.Extensions.Transforms": "2.2.0"
@@ -256,16 +257,26 @@
       "SmartPipe.Extensions.DependencyInjection": {
         "type": "Transitive",
         "resolved": "2.2.0",
-        "contentHash": "vrkPX/8RWB4F3GDuEjD/NCnx+c8Nb1Q8hAGLhb+HD0axXAm75PqLhKmyGF1xrHwLiR+IfkaPGGiYgMlz6hStbg==",
+        "contentHash": "oDlHTUAxll1dgAzEYTT191DENz+YAoHA4njsLnwXj0qJ1835qgANJqrVI0QH8weJB4XslsmKej3w1Ag/J1lKLw==",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.11",
+          "SmartPipe.Core": "2.2.0"
+        }
+      },
+      "SmartPipe.Extensions.EntityFrameworkCore": {
+        "type": "Transitive",
+        "resolved": "2.2.0",
+        "contentHash": "/VsbSSCEysx+ufQTfiWS35JWwRto7TL1+zQV4c3LI2lt94feOEwRPqv+2C+06uJXZNTaagDF7i6Dt9fdN1kpqw==",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore": "10.0.11",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.11",
           "SmartPipe.Core": "2.2.0"
         }
       },
       "SmartPipe.Extensions.Hosting": {
         "type": "Transitive",
         "resolved": "2.2.0",
-        "contentHash": "yQNvFmsNlQ1jFXX35B2sVLMAaxLmh8/T31FifYxAFq3kC+qA/EQBPxVaOFqVl37ryqauMe0H7fAtZua0cEYfaQ==",
+        "contentHash": "LT9+hTR18Fub/HGF3zMoeNLBu9Q6RcW1gsPEynyJicJrUFs45XwylKr9LgTJdj5jYZufhhrqt/xFh08cZQ5wBA==",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.11",
           "Microsoft.Extensions.Hosting.Abstractions": "10.0.11",
@@ -277,7 +288,7 @@
       "SmartPipe.Extensions.Json": {
         "type": "Transitive",
         "resolved": "2.2.0",
-        "contentHash": "uc0Yb93S3n1pg7D6SkV0A6MBxcrkiIka1Ap5VAW+PFlbrKQJ/6iDYAkMVc+Cgw1R/34DuFFXMcW+V/nRcxE9Lg==",
+        "contentHash": "zlshtO10tBD4V9wNrHKzLqyLPac9cXLw4ytDER+LwIImIDuwr2ebyutsdvmC456OxZiwkmCuReOnA8OQ9MVPVA==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "10.0.11",
           "SmartPipe.Core": "2.2.0"
@@ -286,7 +297,7 @@
       "SmartPipe.Extensions.Logging": {
         "type": "Transitive",
         "resolved": "2.2.0",
-        "contentHash": "uDtZo+gmxVHa2MiKSMFYfZRl7aeNmIEhg2vePBynzFLPnLwO16vimtKom9Ys7SmYV36hxAuBzMORIa9MD33x4Q==",
+        "contentHash": "F+vjdO5rVwfEvrvfQtqzkjdT+WQ2HGMp+O3wL3BpUTx4DAwNnGswvLUNFrBfjtM3qvYQbvAHJP3lwq2krA+3nA==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "10.0.11",
           "SmartPipe.Core": "2.2.0"
@@ -295,7 +306,7 @@
       "SmartPipe.Extensions.Transforms": {
         "type": "Transitive",
         "resolved": "2.2.0",
-        "contentHash": "p5I7vYITk7dhsymBXp7pNviqbBy2jxWJPQlZ7C2xdJ05Zv06vKKg8IfWH+HgJFnnsY82KMLzPz0ssx23JM28/A==",
+        "contentHash": "UIjE3jB++GeRog7/sFZIIOef60nvjmt4dh5KPn4mOw8XQcRFR+Wqq5A+DshcHbjdpHF8SjiQArm6hfQACmt8Rw==",
         "dependencies": {
           "SmartPipe.Core": "2.2.0"
         }

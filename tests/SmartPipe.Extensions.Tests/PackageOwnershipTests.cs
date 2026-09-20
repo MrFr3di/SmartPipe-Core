@@ -49,6 +49,7 @@ public sealed class PackageOwnershipTests
             typeof(LoggerSink<>),
             typeof(DapperSelector<>),
             typeof(DbSink<>),
+            typeof(EfCoreSelector<>),
         };
 
         var extensionsAssembly = typeof(SmartPipeHostedService<,>).Assembly;

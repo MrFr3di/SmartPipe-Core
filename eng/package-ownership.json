@@ -136,7 +136,7 @@
     {
       "typePattern": "SmartPipe.Extensions.Selectors.EfCoreSelector*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.EntityFrameworkCore",
       "targetImplementationAssembly": "SmartPipe.Extensions.EntityFrameworkCore",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",

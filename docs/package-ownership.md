@@ -14,6 +14,7 @@ The machine-readable authority is `eng/package-ownership.json`.
 | Canonical JSON pipeline definitions | `SmartPipe.Extensions.Json` | none | new 2.2 API |
 | CSV file source, sink, transform, and strict definitions | `SmartPipe.Extensions.Csv` | `SmartPipe.Extensions` | legacy type forwarding plus new strict 2.2 API |
 | Dapper selector and DB sink plus explicit-SQL definitions | `SmartPipe.Extensions.Dapper` | `SmartPipe.Extensions` | legacy type forwarding plus new explicit-SQL 2.2 API |
+| Entity Framework Core query sources | `SmartPipe.Extensions.EntityFrameworkCore` | `SmartPipe.Extensions` | legacy type forwarding plus new provider-neutral 2.2 query sources |
 
 The HealthChecks leaf depends only on Core, DependencyInjection, DI abstractions, Diagnostics.HealthChecks, and Options. It does not depend on Hosting, ASP.NET Core, or the broad facade.
 
@@ -30,3 +31,8 @@ the facade, DI, Hosting, JSON, or HTTP packages.
 Logging.Abstractions. The broad facade keeps its direct Dapper dependency while
 the `DapperSelector<T>` and `DbSink<T>` forwarders exist, and the Dapper leaf has
 no dependency on the facade, DI, Hosting, JSON, CSV, or HTTP packages.
+
+`SmartPipe.Extensions.EntityFrameworkCore` depends only on Core, `Microsoft.EntityFrameworkCore`, and
+Logging.Abstractions. The broad facade keeps its direct Entity Framework Core dependency while the
+`EfCoreSelector<T>` forwarder exists. The leaf has no dependency on the facade, DI, Hosting, JSON,
+CSV, Dapper, or HTTP packages, and no dependency on any Entity Framework Core provider.

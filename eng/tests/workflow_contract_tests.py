@@ -86,6 +86,10 @@ CSV_TEST_PROJECT = (
 DAPPER_TEST_PROJECT = (
     "tests/SmartPipe.Extensions.Dapper.Tests/SmartPipe.Extensions.Dapper.Tests.csproj"
 )
+EFCORE_TEST_PROJECT = (
+    "tests/SmartPipe.Extensions.EntityFrameworkCore.Tests/"
+    "SmartPipe.Extensions.EntityFrameworkCore.Tests.csproj"
+)
 LYCHEE_URL = (
     "https://github.com/lycheeverse/lychee/releases/download/"
     "lychee-v0.21.0/lychee-x86_64-windows.exe"
@@ -646,8 +650,8 @@ def assert_consumer_schema_contract(schema: dict | None = None) -> None:
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
     properties = schema.get("properties", {})
     scenarios = properties.get("scenarios", {})
-    require(scenarios.get("minItems") == 45 and scenarios.get("maxItems") == 45,
-            "Consumer scenario schema must require exactly forty-five scenarios.")
+    require(scenarios.get("minItems") == 50 and scenarios.get("maxItems") == 50,
+            "Consumer scenario schema must require exactly fifty scenarios.")
     required_pattern = properties.get("requiredAtRelease", {}).get("items", {}).get("pattern")
     require(required_pattern == SCENARIO_ID_PATTERN,
             "Consumer scenario schema must use the safe dotted ID grammar.")
@@ -670,6 +674,9 @@ def assert_consumer_contract(document: dict | None = None) -> None:
         "csv-facade-binary-2.1.2", "csv-trim-diagnostic",
         "dapper-direct", "dapper-di-composition", "dapper-facade-source",
         "dapper-facade-binary-2.1.2", "dapper-trim-diagnostic",
+        "entity-framework-core-direct", "entity-framework-core-di-composition",
+        "entity-framework-core-facade-source", "entity-framework-core-facade-binary-2.1.2",
+        "entity-framework-core-trim-diagnostic",
         "core-direct", "json-direct", "extensions-meta", "legacy-binary-2.1.2",
         "core-trim", "core-nativeaot", "json-nativeaot", "json-trim",
         "json-dependency-injection-direct",
@@ -686,8 +693,8 @@ def assert_consumer_contract(document: dict | None = None) -> None:
         "channels-direct", "transforms-direct", "logging-direct", "data-annotations-direct",
         "data-annotations-runtime",
     }
-    require(len(current) == 45 and {scenario["id"] for scenario in current} == expected,
-            "Current consumer set must contain the exact forty-five scenarios.")
+    require(len(current) == 50 and {scenario["id"] for scenario in current} == expected,
+            "Current consumer set must contain the exact fifty scenarios.")
     hosting = [scenario for scenario in current if scenario.get("category") == "hosting"]
     require({scenario["id"] for scenario in hosting} == {
         "hosting-direct", "hosting-facade-source", "hosting-facade-binary-2.1.2",
@@ -784,6 +791,11 @@ def assert_csv_integration_contract(ci: dict, reusable: dict) -> None:
         f"dotnet test --project {DAPPER_TEST_PROJECT} --configuration Release --no-build "
         "--minimum-expected-tests 1"
     ), "Reusable validation must run the complete Dapper test project with a non-empty gate.")
+    efcore_step = named_step(reusable_steps, "EntityFrameworkCore Extensions tests")
+    require(" ".join(str(efcore_step.get("run", "")).split()) == (
+        f"dotnet test --project {EFCORE_TEST_PROJECT} --configuration Release --no-build "
+        "--minimum-expected-tests 1"
+    ), "Reusable validation must run the complete EntityFrameworkCore test project with a non-empty gate.")
 
 
 def validate(documents: dict[str, dict]) -> None:
@@ -1209,7 +1221,7 @@ def _remove_csv_scenario(document: dict) -> None:
 
 
 def _relax_schema_scenario_count(schema: dict) -> None:
-    schema["properties"]["scenarios"]["maxItems"] = 44
+    schema["properties"]["scenarios"]["maxItems"] = 49
 
 
 def _relax_schema_scenario_id_pattern(schema: dict) -> None:
@@ -1695,11 +1707,11 @@ def main() -> int:
     manifest = json.loads((ROOT / "eng" / "consumer-scenarios.json").read_text(encoding="utf-8"))
     schema = json.loads((ROOT / "eng" / "consumer-scenarios.schema.json").read_text(encoding="utf-8"))
     assert_document_mutation_rejected(
-        manifest, _remove_csv_scenario, assert_consumer_contract, "exact forty-five scenarios"
+        manifest, _remove_csv_scenario, assert_consumer_contract, "exact fifty scenarios"
     )
     assert_document_mutation_rejected(
         schema, _relax_schema_scenario_count, assert_consumer_schema_contract,
-        "exactly forty-five scenarios",
+        "exactly fifty scenarios",
     )
     assert_document_mutation_rejected(
         schema, _relax_schema_scenario_id_pattern, assert_consumer_schema_contract,
