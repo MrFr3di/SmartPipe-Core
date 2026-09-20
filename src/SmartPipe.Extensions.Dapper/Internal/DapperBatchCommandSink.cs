@@ -20,12 +20,11 @@ internal sealed class DapperBatchCommandSink<T> : IPipelineSink<IReadOnlyList<T>
     private readonly ILogger<DapperBatchCommandSink<T>>? _logger;
     private readonly CancellationToken _activationCancellationToken;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
-    private readonly object _disposeSync = new();
+    private readonly DapperSingleFlightDisposal _disposal = new();
 
     private DapperConnectionLease? _lease;
     private bool _initialized;
     private bool _disposed;
-    private Task? _disposeTask;
 
     internal DapperBatchCommandSink(
         Func<PipelineActivationContext, CancellationToken, ValueTask<DbConnection>> acquireConnection,
@@ -56,7 +55,10 @@ internal sealed class DapperBatchCommandSink<T> : IPipelineSink<IReadOnlyList<T>
             if (_initialized)
                 return;
 
-            using var linkedCancellation = CreateLinkedCancellation(ct, out var cancellationToken);
+            using var linkedCancellation = DapperCancellation.CreateLinked(
+                _activationCancellationToken,
+                ct,
+                out var cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             _lease = await DapperConnectionLease
                 .OpenAsync(_acquireConnection, _context, cancellationToken)
@@ -80,7 +82,10 @@ internal sealed class DapperBatchCommandSink<T> : IPipelineSink<IReadOnlyList<T>
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            using var linkedCancellation = CreateLinkedCancellation(ct, out var cancellationToken);
+            using var linkedCancellation = DapperCancellation.CreateLinked(
+                _activationCancellationToken,
+                ct,
+                out var cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             var lease = _lease
@@ -111,67 +116,19 @@ internal sealed class DapperBatchCommandSink<T> : IPipelineSink<IReadOnlyList<T>
                     : _itemParameterFactory(items[index]));
             }
 
-            DbTransaction? transaction = null;
-            Exception? primaryFailure = null;
-            var affectedRows = 0;
             var startedTimestamp = _context.TimeProvider.GetTimestamp();
-            try
-            {
-                if (_options.TransactionMode == DapperBatchTransactionMode.PerBatch)
-                {
-                    transaction = _options.IsolationLevel is { } isolationLevel
-                        ? await lease.Connection
-                            .BeginTransactionAsync(isolationLevel, cancellationToken)
-                            .ConfigureAwait(false)
-                        : await lease.Connection
-                            .BeginTransactionAsync(cancellationToken)
-                            .ConfigureAwait(false);
-                }
+            var execution = await ExecuteBatchAsync(
+                lease.Connection,
+                parameters,
+                cancellationToken).ConfigureAwait(false);
 
-                affectedRows = await lease.Connection
-                    .ExecuteAsync(CreateCommandDefinition(parameters, transaction, cancellationToken))
-                    .ConfigureAwait(false);
-
-                if (transaction is not null)
-                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception exception)
-            {
-                primaryFailure = exception;
-            }
-
-            var cleanupFailures = new List<Exception>();
-            if (primaryFailure is not null && transaction is not null)
-            {
-                try
-                {
-                    await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (Exception exception)
-                {
-                    cleanupFailures.Add(exception);
-                }
-            }
-
-            if (transaction is not null)
-            {
-                try
-                {
-                    await transaction.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (Exception exception)
-                {
-                    cleanupFailures.Add(exception);
-                }
-            }
-
-            LogOutcome(startedTimestamp, affectedRows, DescribeOutcome(primaryFailure));
+            LogOutcome(startedTimestamp, execution.AffectedRows, DescribeOutcome(execution.PrimaryFailure));
             DapperCleanup.ThrowPrimaryFirst(
-                primaryFailure,
-                cleanupFailures,
+                execution.PrimaryFailure,
+                execution.CleanupFailures,
                 "The Dapper batch command failed and cleanup also failed.");
-            if (primaryFailure is not null)
-                ExceptionDispatchInfo.Capture(primaryFailure).Throw();
+            if (execution.PrimaryFailure is not null)
+                ExceptionDispatchInfo.Capture(execution.PrimaryFailure).Throw();
         }
         finally
         {
@@ -180,20 +137,11 @@ internal sealed class DapperBatchCommandSink<T> : IPipelineSink<IReadOnlyList<T>
     }
 
     /// <summary>Releases the current run connection without executing any SQL.</summary>
-    public ValueTask DisposeAsync()
-    {
-        Task task;
-        lock (_disposeSync)
-        {
-            task = _disposeTask ??= DisposeCoreAsync();
-        }
-
-        return new ValueTask(task);
-    }
+    public ValueTask DisposeAsync() => _disposal.DisposeAsync(DisposeCoreAsync);
 
     private async Task DisposeCoreAsync()
     {
-        await _writeGate.WaitAsync().ConfigureAwait(false);
+        await _writeGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
             if (_disposed)
@@ -221,6 +169,84 @@ internal sealed class DapperBatchCommandSink<T> : IPipelineSink<IReadOnlyList<T>
             _writeGate.Release();
             _writeGate.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Begins the optional per-batch transaction, executes the command and commits, then releases the
+    /// transaction: a failed attempt rolls back with <see cref="CancellationToken.None"/> before disposal,
+    /// and the primary failure stays first in the returned result.
+    /// </summary>
+    private async ValueTask<BatchExecution> ExecuteBatchAsync(
+        DbConnection connection,
+        object parameters,
+        CancellationToken cancellationToken)
+    {
+        DbTransaction? transaction = null;
+        var affectedRows = 0;
+        Exception? primaryFailure = null;
+
+        try
+        {
+            transaction = await BeginTransactionAsync(connection, cancellationToken).ConfigureAwait(false);
+            affectedRows = await connection
+                .ExecuteAsync(CreateCommandDefinition(parameters, transaction, cancellationToken))
+                .ConfigureAwait(false);
+            if (transaction is not null)
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+        }
+
+        var cleanupFailures = await ReleaseTransactionAsync(transaction, primaryFailure is not null)
+            .ConfigureAwait(false);
+        return new(affectedRows, primaryFailure, cleanupFailures);
+    }
+
+    private async ValueTask<DbTransaction?> BeginTransactionAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken)
+    {
+        if (_options.TransactionMode != DapperBatchTransactionMode.PerBatch)
+            return null;
+
+        if (_options.IsolationLevel is { } isolationLevel)
+            return await connection.BeginTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
+
+        return await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async ValueTask<IReadOnlyList<Exception>> ReleaseTransactionAsync(
+        DbTransaction? transaction,
+        bool rollback)
+    {
+        var cleanupFailures = new List<Exception>();
+        if (transaction is null)
+            return cleanupFailures;
+
+        if (rollback)
+        {
+            try
+            {
+                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                cleanupFailures.Add(exception);
+            }
+        }
+
+        try
+        {
+            await transaction.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            cleanupFailures.Add(exception);
+        }
+
+        return cleanupFailures;
     }
 
     private CommandDefinition CreateCommandDefinition(
@@ -251,29 +277,20 @@ internal sealed class DapperBatchCommandSink<T> : IPipelineSink<IReadOnlyList<T>
             affectedRows);
     }
 
-    private static string DescribeOutcome(Exception? failure) =>
-        failure is null ? "succeeded" : failure is OperationCanceledException ? "cancelled" : "failed";
-
-    private CancellationTokenSource? CreateLinkedCancellation(
-        CancellationToken requested,
-        out CancellationToken effective)
+    private static string DescribeOutcome(Exception? failure)
     {
-        if (!_activationCancellationToken.CanBeCanceled)
-        {
-            effective = requested;
-            return null;
-        }
+        if (failure is null)
+            return "succeeded";
 
-        if (!requested.CanBeCanceled || requested == _activationCancellationToken)
-        {
-            effective = _activationCancellationToken;
-            return null;
-        }
+        if (failure is OperationCanceledException)
+            return "cancelled";
 
-        var linked = CancellationTokenSource.CreateLinkedTokenSource(
-            _activationCancellationToken,
-            requested);
-        effective = linked.Token;
-        return linked;
+        return "failed";
     }
+
+    /// <summary>Carries one batch execution outcome and the cleanup failures of its transaction.</summary>
+    private readonly record struct BatchExecution(
+        int AffectedRows,
+        Exception? PrimaryFailure,
+        IReadOnlyList<Exception> CleanupFailures);
 }

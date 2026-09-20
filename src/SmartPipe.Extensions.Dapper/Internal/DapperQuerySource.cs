@@ -21,14 +21,13 @@ internal sealed class DapperQuerySource<T> : IPipelineSource<T>
     private readonly ILogger<DapperQuerySource<T>>? _logger;
     private readonly CancellationToken _activationCancellationToken;
     private readonly SemaphoreSlim _initializeGate = new(1, 1);
-    private readonly object _disposeSync = new();
+    private readonly DapperSingleFlightDisposal _disposal = new();
 
     private DapperConnectionLease? _lease;
     private DbDataReader? _reader;
     private object? _parameters;
     private bool _initialized;
     private bool _disposed;
-    private Task? _disposeTask;
 
     internal DapperQuerySource(
         Func<PipelineActivationContext, CancellationToken, ValueTask<DbConnection>> acquireConnection,
@@ -60,7 +59,10 @@ internal sealed class DapperQuerySource<T> : IPipelineSource<T>
             if (_initialized)
                 return;
 
-            using var linkedCancellation = CreateLinkedCancellation(ct, out var cancellationToken);
+            using var linkedCancellation = DapperCancellation.CreateLinked(
+                _activationCancellationToken,
+                ct,
+                out var cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             var lease = await DapperConnectionLease
                 .OpenAsync(_acquireConnection, _context, cancellationToken)
@@ -101,7 +103,10 @@ internal sealed class DapperQuerySource<T> : IPipelineSource<T>
     public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        using var linkedCancellation = CreateLinkedCancellation(ct, out var cancellationToken);
+        using var linkedCancellation = DapperCancellation.CreateLinked(
+            _activationCancellationToken,
+            ct,
+            out var cancellationToken);
         if (!_initialized)
             await InitializeAsync(cancellationToken).ConfigureAwait(false);
 
@@ -129,7 +134,7 @@ internal sealed class DapperQuerySource<T> : IPipelineSource<T>
             {
                 _reader = reader;
                 var map = _rowMapper ?? SqlMapper.GetRowParser<T>(reader);
-                while (primaryFailure is null)
+                while (true)
                 {
                     bool hasRow;
                     try
@@ -175,20 +180,11 @@ internal sealed class DapperQuerySource<T> : IPipelineSource<T>
     }
 
     /// <summary>Releases the run resources without executing any SQL.</summary>
-    public ValueTask DisposeAsync()
-    {
-        Task task;
-        lock (_disposeSync)
-        {
-            task = _disposeTask ??= DisposeCoreAsync();
-        }
-
-        return new ValueTask(task);
-    }
+    public ValueTask DisposeAsync() => _disposal.DisposeAsync(DisposeCoreAsync);
 
     private async Task DisposeCoreAsync()
     {
-        await _initializeGate.WaitAsync().ConfigureAwait(false);
+        await _initializeGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
             if (_disposed)
@@ -266,29 +262,14 @@ internal sealed class DapperQuerySource<T> : IPipelineSource<T>
             rowCount);
     }
 
-    private static string DescribeOutcome(Exception? failure) =>
-        failure is null ? "succeeded" : failure is OperationCanceledException ? "cancelled" : "failed";
-
-    private CancellationTokenSource? CreateLinkedCancellation(
-        CancellationToken requested,
-        out CancellationToken effective)
+    private static string DescribeOutcome(Exception? failure)
     {
-        if (!_activationCancellationToken.CanBeCanceled)
-        {
-            effective = requested;
-            return null;
-        }
+        if (failure is null)
+            return "succeeded";
 
-        if (!requested.CanBeCanceled || requested == _activationCancellationToken)
-        {
-            effective = _activationCancellationToken;
-            return null;
-        }
+        if (failure is OperationCanceledException)
+            return "cancelled";
 
-        var linked = CancellationTokenSource.CreateLinkedTokenSource(
-            _activationCancellationToken,
-            requested);
-        effective = linked.Token;
-        return linked;
+        return "failed";
     }
 }

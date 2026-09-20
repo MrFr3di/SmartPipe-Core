@@ -15,10 +15,9 @@ namespace SmartPipe.Extensions.Dapper.Internal;
 /// </remarks>
 internal sealed class DapperConnectionLease : IAsyncDisposable
 {
-    private readonly object _disposeSync = new();
+    private readonly DapperSingleFlightDisposal _disposal = new();
 
     private DbConnection? _connection;
-    private Task? _disposeTask;
 
     private DapperConnectionLease(DbConnection connection) => _connection = connection;
 
@@ -64,16 +63,7 @@ internal sealed class DapperConnectionLease : IAsyncDisposable
     }
 
     /// <summary>Releases the connection exactly once.</summary>
-    public ValueTask DisposeAsync()
-    {
-        Task task;
-        lock (_disposeSync)
-        {
-            task = _disposeTask ??= DisposeCoreAsync();
-        }
-
-        return new ValueTask(task);
-    }
+    public ValueTask DisposeAsync() => _disposal.DisposeAsync(DisposeCoreAsync);
 
     private async Task DisposeCoreAsync()
     {

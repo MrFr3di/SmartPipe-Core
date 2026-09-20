@@ -19,12 +19,11 @@ internal sealed class DapperCommandSink<T> : IPipelineSink<T>
     private readonly ILogger<DapperCommandSink<T>>? _logger;
     private readonly CancellationToken _activationCancellationToken;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
-    private readonly object _disposeSync = new();
+    private readonly DapperSingleFlightDisposal _disposal = new();
 
     private DapperConnectionLease? _lease;
     private bool _initialized;
     private bool _disposed;
-    private Task? _disposeTask;
 
     internal DapperCommandSink(
         Func<PipelineActivationContext, CancellationToken, ValueTask<DbConnection>> acquireConnection,
@@ -55,7 +54,10 @@ internal sealed class DapperCommandSink<T> : IPipelineSink<T>
             if (_initialized)
                 return;
 
-            using var linkedCancellation = CreateLinkedCancellation(ct, out var cancellationToken);
+            using var linkedCancellation = DapperCancellation.CreateLinked(
+                _activationCancellationToken,
+                ct,
+                out var cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             _lease = await DapperConnectionLease
                 .OpenAsync(_acquireConnection, _context, cancellationToken)
@@ -77,7 +79,10 @@ internal sealed class DapperCommandSink<T> : IPipelineSink<T>
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            using var linkedCancellation = CreateLinkedCancellation(ct, out var cancellationToken);
+            using var linkedCancellation = DapperCancellation.CreateLinked(
+                _activationCancellationToken,
+                ct,
+                out var cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             var lease = _lease
                 ?? throw new InvalidOperationException(
@@ -105,20 +110,11 @@ internal sealed class DapperCommandSink<T> : IPipelineSink<T>
     }
 
     /// <summary>Releases the run connection without executing any SQL.</summary>
-    public ValueTask DisposeAsync()
-    {
-        Task task;
-        lock (_disposeSync)
-        {
-            task = _disposeTask ??= DisposeCoreAsync();
-        }
-
-        return new ValueTask(task);
-    }
+    public ValueTask DisposeAsync() => _disposal.DisposeAsync(DisposeCoreAsync);
 
     private async Task DisposeCoreAsync()
     {
-        await _writeGate.WaitAsync().ConfigureAwait(false);
+        await _writeGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
             if (_disposed)
@@ -173,29 +169,14 @@ internal sealed class DapperCommandSink<T> : IPipelineSink<T>
             affectedRows);
     }
 
-    private static string DescribeOutcome(Exception? failure) =>
-        failure is null ? "succeeded" : failure is OperationCanceledException ? "cancelled" : "failed";
-
-    private CancellationTokenSource? CreateLinkedCancellation(
-        CancellationToken requested,
-        out CancellationToken effective)
+    private static string DescribeOutcome(Exception? failure)
     {
-        if (!_activationCancellationToken.CanBeCanceled)
-        {
-            effective = requested;
-            return null;
-        }
+        if (failure is null)
+            return "succeeded";
 
-        if (!requested.CanBeCanceled || requested == _activationCancellationToken)
-        {
-            effective = _activationCancellationToken;
-            return null;
-        }
+        if (failure is OperationCanceledException)
+            return "cancelled";
 
-        var linked = CancellationTokenSource.CreateLinkedTokenSource(
-            _activationCancellationToken,
-            requested);
-        effective = linked.Token;
-        return linked;
+        return "failed";
     }
 }
