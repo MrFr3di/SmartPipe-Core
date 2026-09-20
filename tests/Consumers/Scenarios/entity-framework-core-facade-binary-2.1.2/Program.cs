@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SmartPipe.ConsumerScenarios;
 using SmartPipe.Extensions.Selectors;
 
-var databasePath = Path.Combine(Path.GetTempPath(), $"smartpipe-efcore-facade-binary-{Guid.NewGuid():N}.db");
+var databasePath = Path.Combine(Path.GetTempPath(), $"smartpipe-efcore-binary-{Guid.NewGuid():N}.db");
 var connectionString = $"Data Source={databasePath};Pooling=False";
 try
 {
@@ -12,23 +12,31 @@ try
     {
         await seed.OpenAsync();
         command.CommandText = """
-            CREATE TABLE "In" (Id INTEGER NOT NULL, Name TEXT NOT NULL);
-            INSERT INTO "In" (Id, Name) VALUES (1, 'Ada');
-            INSERT INTO "In" (Id, Name) VALUES (2, 'Grace');
+            CREATE TABLE "Tickets" (TicketId INTEGER NOT NULL PRIMARY KEY, Title TEXT NOT NULL);
+            INSERT INTO "Tickets" (TicketId, Title) VALUES (10, 'first');
+            INSERT INTO "Tickets" (TicketId, Title) VALUES (11, 'second');
+            INSERT INTO "Tickets" (TicketId, Title) VALUES (12, 'third');
             """;
         await command.ExecuteNonQueryAsync();
     }
 
-    var options = new DbContextOptionsBuilder<FacadeContext>().UseSqlite(connectionString).Options;
-    await using var context = new FacadeContext(options);
-    await using var selector = new EfCoreSelector<Row>(context)
-        .WithQuery(static set => set.Where(row => row.Id > 0))
+    var options = new DbContextOptionsBuilder<TicketContext>().UseSqlite(connectionString).Options;
+    await using var context = new TicketContext(options);
+    await using var selector = new EfCoreSelector<Ticket>(context)
+        .WithQuery(static set => set.Where(ticket => ticket.TicketId >= 10))
         .WithTracking();
     await selector.InitializeAsync();
+    var titles = new List<string>();
     var trackedDuringEnumeration = 0;
     await foreach (var envelope in selector.ReadEnvelopesAsync())
+    {
+        titles.Add(envelope.Payload.Title);
         trackedDuringEnumeration = Math.Max(trackedDuringEnumeration, context.ChangeTracker.Entries().Count());
-    if (trackedDuringEnumeration != 2)
+    }
+
+    if (titles.Count != 3 || titles[0] != "first" || titles[2] != "third")
+        throw new InvalidOperationException($"The forwarded legacy selector returned unexpected rows: {string.Join(',', titles)}.");
+    if (trackedDuringEnumeration != 3)
         throw new InvalidOperationException($"The forwarded legacy selector did not track the returned entities: {trackedDuringEnumeration}.");
 }
 finally
@@ -41,18 +49,16 @@ return 0;
 
 namespace SmartPipe.ConsumerScenarios
 {
-    internal sealed class FacadeContext(DbContextOptions<FacadeContext> options) : DbContext(options)
+    internal sealed class TicketContext(DbContextOptions<TicketContext> options) : DbContext(options)
     {
-        public DbSet<Row> Rows => Set<Row>();
-
         protected override void OnModelCreating(ModelBuilder modelBuilder) =>
-            modelBuilder.Entity<Row>().ToTable("In");
+            modelBuilder.Entity<Ticket>().ToTable("Tickets");
     }
 
-    internal sealed class Row
+    internal sealed class Ticket
     {
-        public int Id { get; set; }
+        public int TicketId { get; set; }
 
-        public string Name { get; set; } = string.Empty;
+        public string Title { get; set; } = string.Empty;
     }
 }
