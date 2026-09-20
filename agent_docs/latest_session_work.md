@@ -1,5 +1,42 @@
 # Latest Session Work
 
+## SP220-10 — SmartPipe.Extensions.Dapper activation (current)
+
+2026-09-20 — Deployment `sp220_10_dapper` completed its implementation, gate and
+review preparation phase in the isolated worktree `.work/wt-sp220-10-dapper`
+(branch `upd-sp220-10-dapper`), based on the accepted Checkpoint E merge
+`c3c655f29be9562d0cde926c763b0082a625bf97` (tree `1bb294f8a8d5e9d6eb2ac994c1968cf41f90f502`).
+
+**Delivered.** `src/SmartPipe.Extensions.Dapper` owns the explicit-SQL surface
+(`DapperPipelineComponents.QuerySource/CommandSink/BatchCommandSink`, typed
+`FromQuery`/`ToCommand`/`ToBatchCommand`, option validation at composition, one fresh
+per-run connection released exactly once, explicit `PerBatch`/`None` transaction
+mode, bounded preformed batches, payload-free logging) plus the physically moved
+`Legacy/DapperSelector.cs` and `Legacy/DbSink.cs`, which keep their
+`SmartPipe.Extensions.Selectors` / `SmartPipe.Extensions.Sinks` namespaces and are
+forwarded from `SmartPipe.Extensions`. The package graph node is active, both
+ownership rows resolve to the leaf, five consumer scenarios exist, and the canonical
+documentation (architecture §15, migration guide, ownership, AOT, API reference, leaf
+README) matches the implementation.
+
+**Frozen candidate.** `2dedc94` (tree `19bb6465a6b897c048b60e3a3e3c2d066af1321c`),
+two commits over `c3c655f`: `c5f8150` leaf activation and move, `2dedc94` the
+`Dapper 2.1.86` adoption plus five facade-closure consumer expectations.
+
+**Evidence.** Leaf `53/53`; legacy `DapperSelectorTests` `39/39`, `DbSinkTests`
+`10/10`, `PackageOwnershipTests` `5/5`; pack `packages=13`; graph current `19/13/6`;
+release graph `violations=23` with zero Dapper-owned; metadata `13`; ownership `157`;
+release version `2.2.0`; `dotnet format` clean; CI-equivalent build clean; five
+`dapper-*` consumers with closures 2/3/11/3/2; lock and central-package gates green.
+
+**Continuation point.** Independent review of the frozen candidate, then the
+authorization-gated contribution to `sp220/checkpoint-e`. Nothing was pushed, merged,
+promoted or published, and `Dapper 2.1.86` is the only dependency change.
+
+## Historical — SP220-09 CSV package split
+
+The record below documents the earlier SP220-09 deployment and is retained unchanged
+as evidence for that workstream.
 2026-09-11 — Heavy deployment `sp220_09_checkpoint_e_20260911_c` resumed at the
 first tracked clean-clone acceptance failure.
 

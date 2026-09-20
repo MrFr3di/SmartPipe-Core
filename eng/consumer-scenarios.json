@@ -1,7 +1,6 @@
 {
   "schemaVersion": 1,
   "requiredAtRelease": [
-    "dapper-direct",
     "entity-framework-core-direct",
     "mapster-direct",
     "polly-direct",
@@ -40,7 +39,7 @@
       "mode": "build-and-run",
       "templatePath": "tests/Consumers/Scenarios/csv-facade-source/Consumer.csproj",
       "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions"],
-      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Csv"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Csv", "SmartPipe.Extensions.Dapper"],
       "forbiddenDependencies": [],
       "baselineVersion": null,
       "timeout": "00:05:00",
@@ -100,7 +99,7 @@
       "mode": "build-and-run",
       "templatePath": "tests/Consumers/Scenarios/extensions-meta/Consumer.csproj",
       "packageIds": ["SmartPipe.Extensions"],
-      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Csv"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Csv", "SmartPipe.Extensions.Dapper"],
       "forbiddenDependencies": [],
       "baselineVersion": null,
       "timeout": "00:05:00",
@@ -220,7 +219,7 @@
       "mode": "build-and-run",
       "templatePath": "tests/Consumers/Scenarios/dependency-injection-facade-source/Consumer.csproj",
       "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions"],
-      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Csv"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Csv", "SmartPipe.Extensions.Dapper"],
       "forbiddenDependencies": [],
       "baselineVersion": null,
       "timeout": "00:05:00",
@@ -282,7 +281,7 @@
       "mode": "build-and-run",
       "templatePath": "tests/Consumers/Scenarios/hosting-facade-source/Consumer.csproj",
       "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions"],
-      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Csv"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Csv", "SmartPipe.Extensions.Dapper"],
       "forbiddenDependencies": [],
       "baselineVersion": null,
       "timeout": "00:05:00",
@@ -412,7 +411,7 @@
       "mode": "build-and-run",
       "templatePath": "tests/Consumers/Scenarios/opentelemetry-facade/Consumer.csproj",
       "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.OpenTelemetry"],
-      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.OpenTelemetry", "SmartPipe.Extensions.Csv"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.OpenTelemetry", "SmartPipe.Extensions.Csv", "SmartPipe.Extensions.Dapper"],
       "forbiddenDependencies": ["SmartPipe.Extensions.HealthChecks"],
       "baselineVersion": null,
       "timeout": "00:05:00",
@@ -514,6 +513,65 @@
       "baselineVersion": null,
       "timeout": "00:05:00",
       "runSecondLockedRestore": true
-    }
-  ]
+    },
+    {
+      "id": "dapper-direct",
+      "set": "current",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/dapper-direct/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.Dapper"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.Dapper"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Csv"],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "dapper-di-composition",
+      "set": "current",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/dapper-di-composition/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.Dapper", "SmartPipe.Extensions.DependencyInjection"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.Dapper", "SmartPipe.Extensions.DependencyInjection"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Csv"],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "dapper-facade-source",
+      "set": "current",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/dapper-facade-source/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Csv", "SmartPipe.Extensions.Dapper"],
+      "forbiddenDependencies": [],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "dapper-facade-binary-2.1.2",
+      "set": "current",
+      "mode": "binary-compatibility",
+      "templatePath": "tests/Consumers/Scenarios/dapper-facade-binary-2.1.2/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Json"],
+      "forbiddenDependencies": [],
+      "baselineVersion": "2.1.2",
+      "timeout": "00:10:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "dapper-trim-diagnostic",
+      "set": "current",
+      "mode": "publish-trimmed",
+      "templatePath": "tests/Consumers/Scenarios/dapper-trim-diagnostic/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.Dapper"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.Dapper"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Csv"],
+      "baselineVersion": null,
+      "timeout": "00:10:00",
+      "runSecondLockedRestore": true
+    }  ]
 }

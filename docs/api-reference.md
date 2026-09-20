@@ -96,6 +96,14 @@ Important selector and streaming contracts:
   `leaveOpen: false`. Prefer the explicit `DbConnection` overloads for new
   code: use `leaveOpen: true` for externally owned connections, and provide
   explicit INSERT SQL in trimming or NativeAOT-sensitive applications.
+- `SmartPipe.Extensions.Dapper` adds explicit-SQL components: composing
+  `DapperPipelineComponents.QuerySource<T>`, `CommandSink<T>`, or
+  `BatchCommandSink<T>` performs no I/O, each run borrows a `DbDataSource` or a
+  caller-supplied connection factory and owns one fresh connection, and no
+  `leaveOpen` or external transaction option exists. A batch sink treats one
+  preformed `IReadOnlyList<T>` envelope as a single bounded parameter sequence
+  with an explicit `PerBatch` or `None` transaction mode. The entry points carry
+  `RequiresUnreferencedCode` and `RequiresDynamicCode` annotations.
 - `JsonFileSink<T>` writes newline-delimited JSON batches: each flush appends
   one UTF-8 JSON array followed by a newline. Path-backed files use append
   semantics, checkpoint seekable stream length and position before each batch,

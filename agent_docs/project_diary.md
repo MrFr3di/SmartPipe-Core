@@ -239,3 +239,28 @@ Record only durable decisions, discarded approaches, and reusable lessons.
   from its isolated exact feed, then immediately require a locked restore. For
   binary facade scenarios, keep baseline dependency expectations separate from
   the current runtime-replacement closure.
+
+- 2026-09-20 — A build result is only evidence once the tooling state it depends on has been restored: enabling
+  `EnableTrimAnalyzer`/`EnableAotAnalyzer` and then building with `--no-restore` leaves the ILLink analyzer
+  uninjected, so the green result proves nothing. The same class of false green appeared when a test suite was
+  run against a stale executable and when a hardcoded `projects=3` message was read as a count.
+- 2026-09-20 — `pack-packages` refuses to overwrite an existing package manifest (`SPPACK002`). A stale
+  `artifacts/packages` directory therefore looks exactly like a product failure and can invalidate an otherwise
+  valid dependency probe; clear the output directory before re-packing, and treat a pack failure whose output
+  line is missing as environmental until the directory state is known.
+- 2026-09-20 — Consumer workspaces map only central-package IDs to NuGet sources, so a consumer template may
+  reference only packages that have a `Directory.Packages.props` entry. A transitive native dependency such as
+  `SQLitePCLRaw.lib.e_sqlite3` is unmapped (`NU1100`) until it becomes a central version referenced by a scanned
+  project; `tests/Consumers` is inside the central-package scan, while `artifacts`, `bin`, `obj`, `packages` and
+  `Fixtures` are ignored.
+- 2026-09-20 — A type forwarder does not satisfy the compiler on its own: a project that consumes a moved type
+  through the facade still needs a direct project reference to the target leaf (`CS1069` names the assembly).
+  The facade public-API baseline records forwarded members with the `(forwarded, contained in <assembly>)`
+  suffix, while the leaf baseline lists them as ordinary members.
+- 2026-09-20 — Moving already-shipped code into a project that enables the trim/AOT analyzers can surface ILLink
+  diagnostics the original project never evaluated. Suppress them narrowly at the individual reflective member
+  with a justification that names the supported alternative; do not annotate the public API, add `NoWarn`, or
+  disable analyzers, because that either breaks consumers or hides the boundary.
+- 2026-09-20 — For SQLite, a streaming source and a writing sink must not share one database file: holding the
+  read connection for the run while the sink writes the same file produces `SQLite Error 5: 'database is
+  locked'`. Point the sink at its own store, mirroring the established in/out file shape of the CSV consumers.

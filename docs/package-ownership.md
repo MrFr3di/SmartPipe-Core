@@ -13,6 +13,7 @@ The machine-readable authority is `eng/package-ownership.json`.
 | `ValidationTransform<T>` and `ToFilter` | `SmartPipe.Extensions.DataAnnotations` | `SmartPipe.Extensions` | type forwarding |
 | Canonical JSON pipeline definitions | `SmartPipe.Extensions.Json` | none | new 2.2 API |
 | CSV file source, sink, transform, and strict definitions | `SmartPipe.Extensions.Csv` | `SmartPipe.Extensions` | legacy type forwarding plus new strict 2.2 API |
+| Dapper selector and DB sink plus explicit-SQL definitions | `SmartPipe.Extensions.Dapper` | `SmartPipe.Extensions` | legacy type forwarding plus new explicit-SQL 2.2 API |
 
 The HealthChecks leaf depends only on Core, DependencyInjection, DI abstractions, Diagnostics.HealthChecks, and Options. It does not depend on Hosting, ASP.NET Core, or the broad facade.
 
@@ -24,3 +25,8 @@ depend only on Core and Logging additionally uses Logging.Abstractions.
 Logging.Abstractions. The broad facade keeps its direct CsvHelper dependency
 through 2.2 as a compatibility quarantine; the CSV leaf has no dependency on
 the facade, DI, Hosting, JSON, or HTTP packages.
+
+`SmartPipe.Extensions.Dapper` depends only on Core, Dapper, and
+Logging.Abstractions. The broad facade keeps its direct Dapper dependency while
+the `DapperSelector<T>` and `DbSink<T>` forwarders exist, and the Dapper leaf has
+no dependency on the facade, DI, Hosting, JSON, CSV, or HTTP packages.

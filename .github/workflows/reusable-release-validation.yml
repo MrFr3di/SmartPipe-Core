@@ -175,6 +175,9 @@ jobs:
     - name: CSV Extensions tests
       run: dotnet test --project tests/SmartPipe.Extensions.Csv.Tests/SmartPipe.Extensions.Csv.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
 
+    - name: Dapper Extensions tests
+      run: dotnet test --project tests/SmartPipe.Extensions.Dapper.Tests/SmartPipe.Extensions.Dapper.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
     - name: SP220-07 leaf tests
       shell: pwsh
       run: |

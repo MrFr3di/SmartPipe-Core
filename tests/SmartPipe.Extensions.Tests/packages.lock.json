@@ -388,19 +388,6 @@
           "SQLitePCLRaw.provider.e_sqlite3": "3.0.3"
         }
       },
-      "SQLitePCLRaw.core": {
-        "type": "Transitive",
-        "resolved": "3.0.3",
-        "contentHash": "bjm6FY4lZyP+t7GmiuvSM0QXpFihAvyE0Y9O2yibm3g95AAWJPNnHOKVNJGyPTGIKuK7Pr4Wh8Rd8/aOtAclQw=="
-      },
-      "SQLitePCLRaw.provider.e_sqlite3": {
-        "type": "Transitive",
-        "resolved": "3.0.3",
-        "contentHash": "wd+fGvZTrr3BJNe48opSczmC176Okd61ZgoZNQcdvZwkek6to978ccdpcFmNo5GHxCnk29KwT+f+lAZYgfLVZg==",
-        "dependencies": {
-          "SQLitePCLRaw.core": "3.0.3"
-        }
-      },
       "System.Diagnostics.EventLog": {
         "type": "Transitive",
         "resolved": "6.0.0",
@@ -478,7 +465,7 @@
         "type": "Project",
         "dependencies": {
           "CsvHelper": "[33.1.0, )",
-          "Dapper": "[2.1.79, )",
+          "Dapper": "[2.1.86, )",
           "Mapster": "[10.0.10, )",
           "Microsoft.EntityFrameworkCore": "[10.0.11, )",
           "Microsoft.Extensions.Diagnostics.HealthChecks": "[10.0.11, )",
@@ -490,6 +477,7 @@
           "SmartPipe.Core": "[2.2.0, )",
           "SmartPipe.Extensions.Channels": "[2.2.0, )",
           "SmartPipe.Extensions.Csv": "[2.2.0, )",
+          "SmartPipe.Extensions.Dapper": "[2.2.0, )",
           "SmartPipe.Extensions.DataAnnotations": "[2.2.0, )",
           "SmartPipe.Extensions.DependencyInjection": "[2.2.0, )",
           "SmartPipe.Extensions.Hosting": "[2.2.0, )",
@@ -508,6 +496,14 @@
         "type": "Project",
         "dependencies": {
           "CsvHelper": "[33.1.0, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.11, )",
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
+      "smartpipe.extensions.dapper": {
+        "type": "Project",
+        "dependencies": {
+          "Dapper": "[2.1.86, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.11, )",
           "SmartPipe.Core": "[2.2.0, )"
         }
@@ -564,9 +560,9 @@
       },
       "Dapper": {
         "type": "CentralTransitive",
-        "requested": "[2.1.79, )",
-        "resolved": "2.1.79",
-        "contentHash": "8YijbzgTfmqmQOnVNorYM6K++pxqnW3nJ4aC1sRHzxUA2CcuoJ9gsTem3kgBnPRMc38zZHl4Esb6hAezXIEEuw=="
+        "requested": "[2.1.86, )",
+        "resolved": "2.1.86",
+        "contentHash": "v5wQfl9GfHhfTeFhorWTefa8c1Ev4HO8VF8i8wbSdZkq+P/az+1DTcqpkz8s9lMGyFf9kvoeJ+b2ABShW4cuIA=="
       },
       "Mapster": {
         "type": "CentralTransitive",
@@ -665,6 +661,21 @@
           "Microsoft.Extensions.Telemetry.Abstractions": "10.6.0",
           "Polly.Extensions": "8.4.2",
           "Polly.RateLimiting": "8.4.2"
+        }
+      },
+      "SQLitePCLRaw.core": {
+        "type": "CentralTransitive",
+        "requested": "[2.1.12, )",
+        "resolved": "3.0.3",
+        "contentHash": "bjm6FY4lZyP+t7GmiuvSM0QXpFihAvyE0Y9O2yibm3g95AAWJPNnHOKVNJGyPTGIKuK7Pr4Wh8Rd8/aOtAclQw=="
+      },
+      "SQLitePCLRaw.provider.e_sqlite3": {
+        "type": "CentralTransitive",
+        "requested": "[2.1.12, )",
+        "resolved": "3.0.3",
+        "contentHash": "wd+fGvZTrr3BJNe48opSczmC176Okd61ZgoZNQcdvZwkek6to978ccdpcFmNo5GHxCnk29KwT+f+lAZYgfLVZg==",
+        "dependencies": {
+          "SQLitePCLRaw.core": "3.0.3"
         }
       }
     }

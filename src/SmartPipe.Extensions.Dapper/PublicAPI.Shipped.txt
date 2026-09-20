@@ -1,0 +1,99 @@
+#nullable enable
+SmartPipe.Extensions.Selectors.DapperSelector<T>
+SmartPipe.Extensions.Selectors.DapperSelector<T>.DapperSelector(System.Data.Common.DbConnection! connection, string! sql, object? parameters, bool leaveOpen, int commandTimeout, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.DapperSelector<T>!>? logger) -> void
+SmartPipe.Extensions.Selectors.DapperSelector<T>.DapperSelector(System.Data.IDbConnection! connection, string! sql, object? parameters = null, int commandTimeout = 30, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.DapperSelector<T>!>? logger = null) -> void
+SmartPipe.Extensions.Selectors.DapperSelector<T>.Dispose() -> void
+SmartPipe.Extensions.Selectors.DapperSelector<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Selectors.DapperSelector<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Selectors.DapperSelector<T>.ReadEnvelopesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingEnvelope<T>!>!
+SmartPipe.Extensions.Sinks.DbSink<T>
+SmartPipe.Extensions.Sinks.DbSink<T>.DbSink(System.Data.IDbConnection! connection, string? sql = null) -> void
+SmartPipe.Extensions.Sinks.DbSink<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Sinks.DbSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Sinks.DbSink<T>.WriteAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Selectors.DapperSelector<T>.DapperSelector(System.Data.Common.DbConnection! connection, string! sql, System.Func<System.Data.Common.DbDataReader!, T>! mapper, object? parameters, bool leaveOpen, int commandTimeout, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.DapperSelector<T>!>? logger) -> void
+SmartPipe.Extensions.Selectors.DapperSelector<T>.DapperSelector(System.Data.Common.DbConnection! connection, string! sql, System.Func<System.Data.Common.DbDataReader!, T>! mapper) -> void
+SmartPipe.Extensions.Sinks.DbSink<T>.DbSink(System.Data.Common.DbConnection! connection, bool leaveOpen) -> void
+SmartPipe.Extensions.Sinks.DbSink<T>.DbSink(System.Data.Common.DbConnection! connection, string! sql, bool leaveOpen) -> void
+override SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.Equals(object? obj) -> bool
+override SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.GetHashCode() -> int
+override SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.ToString() -> string!
+override SmartPipe.Extensions.Dapper.DapperQueryOptions.Equals(object? obj) -> bool
+override SmartPipe.Extensions.Dapper.DapperQueryOptions.GetHashCode() -> int
+override SmartPipe.Extensions.Dapper.DapperQueryOptions.ToString() -> string!
+override SmartPipe.Extensions.Dapper.DapperSinkOptions.Equals(object? obj) -> bool
+override SmartPipe.Extensions.Dapper.DapperSinkOptions.GetHashCode() -> int
+override SmartPipe.Extensions.Dapper.DapperSinkOptions.ToString() -> string!
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.<Clone>$() -> SmartPipe.Extensions.Dapper.DapperBatchSinkOptions!
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.CacheMode.get -> SmartPipe.Extensions.Dapper.DapperCommandCacheMode
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.CacheMode.init -> void
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.CommandTimeoutSeconds.get -> int?
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.CommandTimeoutSeconds.init -> void
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.CommandType.get -> System.Data.CommandType
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.CommandType.init -> void
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.DapperBatchSinkOptions() -> void
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.Equals(SmartPipe.Extensions.Dapper.DapperBatchSinkOptions? other) -> bool
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.IsolationLevel.get -> System.Data.IsolationLevel?
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.IsolationLevel.init -> void
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.MaxBatchItems.get -> int
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.MaxBatchItems.init -> void
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.OperationName.get -> string!
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.OperationName.init -> void
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.TransactionMode.get -> SmartPipe.Extensions.Dapper.DapperBatchTransactionMode
+SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.TransactionMode.init -> void
+SmartPipe.Extensions.Dapper.DapperBatchTransactionMode
+SmartPipe.Extensions.Dapper.DapperBatchTransactionMode.None = 0 -> SmartPipe.Extensions.Dapper.DapperBatchTransactionMode
+SmartPipe.Extensions.Dapper.DapperBatchTransactionMode.PerBatch = 1 -> SmartPipe.Extensions.Dapper.DapperBatchTransactionMode
+SmartPipe.Extensions.Dapper.DapperCommandCacheMode
+SmartPipe.Extensions.Dapper.DapperCommandCacheMode.Default = 0 -> SmartPipe.Extensions.Dapper.DapperCommandCacheMode
+SmartPipe.Extensions.Dapper.DapperCommandCacheMode.NoCache = 1 -> SmartPipe.Extensions.Dapper.DapperCommandCacheMode
+SmartPipe.Extensions.Dapper.DapperPipelineComponents
+SmartPipe.Extensions.Dapper.DapperPipelineDefinitionBuilder
+SmartPipe.Extensions.Dapper.DapperPipelineDefinitionBuilderExtensions
+SmartPipe.Extensions.Dapper.DapperQueryOptions
+SmartPipe.Extensions.Dapper.DapperQueryOptions.<Clone>$() -> SmartPipe.Extensions.Dapper.DapperQueryOptions!
+SmartPipe.Extensions.Dapper.DapperQueryOptions.CacheMode.get -> SmartPipe.Extensions.Dapper.DapperCommandCacheMode
+SmartPipe.Extensions.Dapper.DapperQueryOptions.CacheMode.init -> void
+SmartPipe.Extensions.Dapper.DapperQueryOptions.CommandTimeoutSeconds.get -> int?
+SmartPipe.Extensions.Dapper.DapperQueryOptions.CommandTimeoutSeconds.init -> void
+SmartPipe.Extensions.Dapper.DapperQueryOptions.CommandType.get -> System.Data.CommandType
+SmartPipe.Extensions.Dapper.DapperQueryOptions.CommandType.init -> void
+SmartPipe.Extensions.Dapper.DapperQueryOptions.DapperQueryOptions() -> void
+SmartPipe.Extensions.Dapper.DapperQueryOptions.Equals(SmartPipe.Extensions.Dapper.DapperQueryOptions? other) -> bool
+SmartPipe.Extensions.Dapper.DapperQueryOptions.OperationName.get -> string!
+SmartPipe.Extensions.Dapper.DapperQueryOptions.OperationName.init -> void
+SmartPipe.Extensions.Dapper.DapperSinkOptions
+SmartPipe.Extensions.Dapper.DapperSinkOptions.<Clone>$() -> SmartPipe.Extensions.Dapper.DapperSinkOptions!
+SmartPipe.Extensions.Dapper.DapperSinkOptions.CacheMode.get -> SmartPipe.Extensions.Dapper.DapperCommandCacheMode
+SmartPipe.Extensions.Dapper.DapperSinkOptions.CacheMode.init -> void
+SmartPipe.Extensions.Dapper.DapperSinkOptions.CommandTimeoutSeconds.get -> int?
+SmartPipe.Extensions.Dapper.DapperSinkOptions.CommandTimeoutSeconds.init -> void
+SmartPipe.Extensions.Dapper.DapperSinkOptions.CommandType.get -> System.Data.CommandType
+SmartPipe.Extensions.Dapper.DapperSinkOptions.CommandType.init -> void
+SmartPipe.Extensions.Dapper.DapperSinkOptions.DapperSinkOptions() -> void
+SmartPipe.Extensions.Dapper.DapperSinkOptions.Equals(SmartPipe.Extensions.Dapper.DapperSinkOptions? other) -> bool
+SmartPipe.Extensions.Dapper.DapperSinkOptions.OperationName.get -> string!
+SmartPipe.Extensions.Dapper.DapperSinkOptions.OperationName.init -> void
+static SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.operator !=(SmartPipe.Extensions.Dapper.DapperBatchSinkOptions? left, SmartPipe.Extensions.Dapper.DapperBatchSinkOptions? right) -> bool
+static SmartPipe.Extensions.Dapper.DapperBatchSinkOptions.operator ==(SmartPipe.Extensions.Dapper.DapperBatchSinkOptions? left, SmartPipe.Extensions.Dapper.DapperBatchSinkOptions? right) -> bool
+static SmartPipe.Extensions.Dapper.DapperPipelineComponents.BatchCommandSink<T>(System.Data.Common.DbDataSource! dataSource, string! sql, SmartPipe.Extensions.Dapper.DapperBatchSinkOptions! options, System.Func<T, object?>? itemParameterFactory = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSink<System.Collections.Generic.IReadOnlyList<T>!>!>!
+static SmartPipe.Extensions.Dapper.DapperPipelineComponents.BatchCommandSink<T>(System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Data.Common.DbConnection!>>! connectionFactory, string! sql, SmartPipe.Extensions.Dapper.DapperBatchSinkOptions! options, System.Func<T, object?>? itemParameterFactory = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSink<System.Collections.Generic.IReadOnlyList<T>!>!>!
+static SmartPipe.Extensions.Dapper.DapperPipelineComponents.CommandSink<T>(System.Data.Common.DbDataSource! dataSource, string! sql, SmartPipe.Extensions.Dapper.DapperSinkOptions! options, System.Func<SmartPipe.Core.ProcessingEnvelope<T>!, object?>? parameterFactory = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSink<T>!>!
+static SmartPipe.Extensions.Dapper.DapperPipelineComponents.CommandSink<T>(System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Data.Common.DbConnection!>>! connectionFactory, string! sql, SmartPipe.Extensions.Dapper.DapperSinkOptions! options, System.Func<SmartPipe.Core.ProcessingEnvelope<T>!, object?>? parameterFactory = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSink<T>!>!
+static SmartPipe.Extensions.Dapper.DapperPipelineComponents.QuerySource<T>(System.Data.Common.DbDataSource! dataSource, string! sql, SmartPipe.Extensions.Dapper.DapperQueryOptions! options, System.Func<SmartPipe.Core.PipelineActivationContext!, object?>? parametersFactory = null, System.Func<System.Data.Common.DbDataReader!, T>? rowMapper = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSource<T>!>!
+static SmartPipe.Extensions.Dapper.DapperPipelineComponents.QuerySource<T>(System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Data.Common.DbConnection!>>! connectionFactory, string! sql, SmartPipe.Extensions.Dapper.DapperQueryOptions! options, System.Func<SmartPipe.Core.PipelineActivationContext!, object?>? parametersFactory = null, System.Func<System.Data.Common.DbDataReader!, T>? rowMapper = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSource<T>!>!
+static SmartPipe.Extensions.Dapper.DapperPipelineDefinitionBuilder.FromQuery<T>(SmartPipe.Core.PipelineKey pipelineKey, System.Data.Common.DbDataSource! dataSource, string! sql, SmartPipe.Extensions.Dapper.DapperQueryOptions! options, System.Func<SmartPipe.Core.PipelineActivationContext!, object?>? parametersFactory = null, System.Func<System.Data.Common.DbDataReader!, T>? rowMapper = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineDefinitionBuilder<T>!
+static SmartPipe.Extensions.Dapper.DapperPipelineDefinitionBuilder.FromQuery<T>(SmartPipe.Core.PipelineKey pipelineKey, System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Data.Common.DbConnection!>>! connectionFactory, string! sql, SmartPipe.Extensions.Dapper.DapperQueryOptions! options, System.Func<SmartPipe.Core.PipelineActivationContext!, object?>? parametersFactory = null, System.Func<System.Data.Common.DbDataReader!, T>? rowMapper = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineDefinitionBuilder<T>!
+static SmartPipe.Extensions.Dapper.DapperPipelineDefinitionBuilderExtensions.ToBatchCommand<T>(this SmartPipe.Core.PipelineDefinitionBuilder<System.Collections.Generic.IReadOnlyList<T>!>! builder, System.Data.Common.DbDataSource! dataSource, string! sql, SmartPipe.Extensions.Dapper.DapperBatchSinkOptions! options, System.Func<T, object?>? itemParameterFactory = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineDefinition<System.Collections.Generic.IReadOnlyList<T>!, System.Collections.Generic.IReadOnlyList<T>!>!
+static SmartPipe.Extensions.Dapper.DapperPipelineDefinitionBuilderExtensions.ToBatchCommand<T>(this SmartPipe.Core.PipelineDefinitionBuilder<System.Collections.Generic.IReadOnlyList<T>!>! builder, System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Data.Common.DbConnection!>>! connectionFactory, string! sql, SmartPipe.Extensions.Dapper.DapperBatchSinkOptions! options, System.Func<T, object?>? itemParameterFactory = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineDefinition<System.Collections.Generic.IReadOnlyList<T>!, System.Collections.Generic.IReadOnlyList<T>!>!
+static SmartPipe.Extensions.Dapper.DapperPipelineDefinitionBuilderExtensions.ToBatchCommand<TPipelineInput, T>(this SmartPipe.Core.PipelineDefinitionBuilder<TPipelineInput, System.Collections.Generic.IReadOnlyList<T>!>! builder, System.Data.Common.DbDataSource! dataSource, string! sql, SmartPipe.Extensions.Dapper.DapperBatchSinkOptions! options, System.Func<T, object?>? itemParameterFactory = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineDefinition<TPipelineInput, System.Collections.Generic.IReadOnlyList<T>!>!
+static SmartPipe.Extensions.Dapper.DapperPipelineDefinitionBuilderExtensions.ToBatchCommand<TPipelineInput, T>(this SmartPipe.Core.PipelineDefinitionBuilder<TPipelineInput, System.Collections.Generic.IReadOnlyList<T>!>! builder, System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Data.Common.DbConnection!>>! connectionFactory, string! sql, SmartPipe.Extensions.Dapper.DapperBatchSinkOptions! options, System.Func<T, object?>? itemParameterFactory = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineDefinition<TPipelineInput, System.Collections.Generic.IReadOnlyList<T>!>!
+static SmartPipe.Extensions.Dapper.DapperPipelineDefinitionBuilderExtensions.ToCommand<T>(this SmartPipe.Core.PipelineDefinitionBuilder<T>! builder, System.Data.Common.DbDataSource! dataSource, string! sql, SmartPipe.Extensions.Dapper.DapperSinkOptions! options, System.Func<SmartPipe.Core.ProcessingEnvelope<T>!, object?>? parameterFactory = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineDefinition<T, T>!
+static SmartPipe.Extensions.Dapper.DapperPipelineDefinitionBuilderExtensions.ToCommand<T>(this SmartPipe.Core.PipelineDefinitionBuilder<T>! builder, System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Data.Common.DbConnection!>>! connectionFactory, string! sql, SmartPipe.Extensions.Dapper.DapperSinkOptions! options, System.Func<SmartPipe.Core.ProcessingEnvelope<T>!, object?>? parameterFactory = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineDefinition<T, T>!
+static SmartPipe.Extensions.Dapper.DapperPipelineDefinitionBuilderExtensions.ToCommand<TPipelineInput, TCurrent>(this SmartPipe.Core.PipelineDefinitionBuilder<TPipelineInput, TCurrent>! builder, System.Data.Common.DbDataSource! dataSource, string! sql, SmartPipe.Extensions.Dapper.DapperSinkOptions! options, System.Func<SmartPipe.Core.ProcessingEnvelope<TCurrent>!, object?>? parameterFactory = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineDefinition<TPipelineInput, TCurrent>!
+static SmartPipe.Extensions.Dapper.DapperPipelineDefinitionBuilderExtensions.ToCommand<TPipelineInput, TCurrent>(this SmartPipe.Core.PipelineDefinitionBuilder<TPipelineInput, TCurrent>! builder, System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Data.Common.DbConnection!>>! connectionFactory, string! sql, SmartPipe.Extensions.Dapper.DapperSinkOptions! options, System.Func<SmartPipe.Core.ProcessingEnvelope<TCurrent>!, object?>? parameterFactory = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineDefinition<TPipelineInput, TCurrent>!
+static SmartPipe.Extensions.Dapper.DapperQueryOptions.operator !=(SmartPipe.Extensions.Dapper.DapperQueryOptions? left, SmartPipe.Extensions.Dapper.DapperQueryOptions? right) -> bool
+static SmartPipe.Extensions.Dapper.DapperQueryOptions.operator ==(SmartPipe.Extensions.Dapper.DapperQueryOptions? left, SmartPipe.Extensions.Dapper.DapperQueryOptions? right) -> bool
+static SmartPipe.Extensions.Dapper.DapperSinkOptions.operator !=(SmartPipe.Extensions.Dapper.DapperSinkOptions? left, SmartPipe.Extensions.Dapper.DapperSinkOptions? right) -> bool
+static SmartPipe.Extensions.Dapper.DapperSinkOptions.operator ==(SmartPipe.Extensions.Dapper.DapperSinkOptions? left, SmartPipe.Extensions.Dapper.DapperSinkOptions? right) -> bool
