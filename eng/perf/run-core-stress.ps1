@@ -182,6 +182,15 @@ function Invoke-StressProfile {
     if ([long]$result.Checksum -ne [long]$result.ExpectedChecksum) {
         throw "Stress profile '$Profile' for '$targetId' checksum mismatch."
     }
+    if ([int]$result.TerminalRuns -ne [int]$result.ExpectedTerminalRuns) {
+        throw "Stress profile '$Profile' for '$targetId' terminal-run mismatch: $($result.TerminalRuns) of $($result.ExpectedTerminalRuns)."
+    }
+    if ([long]$result.DisposedComponents -ne [long]$result.ExpectedDisposedComponents) {
+        throw "Stress profile '$Profile' for '$targetId' disposal mismatch: $($result.DisposedComponents) of $($result.ExpectedDisposedComponents)."
+    }
+    if (-not [bool]$result.LifecycleInvariantPassed) {
+        throw "Stress profile '$Profile' for '$targetId' failed its lifecycle invariant."
+    }
 
     return [ordered]@{
         slot = $Slot
@@ -192,7 +201,14 @@ function Invoke-StressProfile {
         elapsedMilliseconds = [double]$result.ElapsedMilliseconds
         completedItems = [long]$result.CompletedItems
         expectedItems = [long]$result.ExpectedItems
+        checksum = [long]$result.Checksum
+        expectedChecksum = [long]$result.ExpectedChecksum
         errors = [long]$result.Errors
+        terminalRuns = [int]$result.TerminalRuns
+        expectedTerminalRuns = [int]$result.ExpectedTerminalRuns
+        disposedComponents = [long]$result.DisposedComponents
+        expectedDisposedComponents = [long]$result.ExpectedDisposedComponents
+        lifecycleInvariantPassed = [bool]$result.LifecycleInvariantPassed
         processWorkingSetBytes = [long]$result.ProcessWorkingSetBytes
         threadPoolThreadCount = [int]$result.ThreadPoolThreadCount
         threadPoolPendingWorkItems = [long]$result.ThreadPoolPendingWorkItems
@@ -228,6 +244,10 @@ $executions.Add((Invoke-StressProfile -Target $v212 -Profile 'parallel32' -Slot 
 $executions.Add((Invoke-StressProfile -Target $v220 -Profile 'parallel32' -Slot 2))
 $executions.Add((Invoke-StressProfile -Target $v220 -Profile 'sequential1000' -Slot 3))
 $executions.Add((Invoke-StressProfile -Target $v212 -Profile 'sequential1000' -Slot 4))
+$executions.Add((Invoke-StressProfile -Target $v212 -Profile 'cancel32' -Slot 5))
+$executions.Add((Invoke-StressProfile -Target $v220 -Profile 'cancel32' -Slot 6))
+$executions.Add((Invoke-StressProfile -Target $v220 -Profile 'sourcefailure1000' -Slot 7))
+$executions.Add((Invoke-StressProfile -Target $v212 -Profile 'sourcefailure1000' -Slot 8))
 
 $manifest = [ordered]@{
     schemaVersion = 1
@@ -258,4 +278,4 @@ $manifest = [ordered]@{
 $manifest | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath (Join-Path $runRoot 'run-manifest.json') -Encoding utf8
 (& dotnet --info) | Set-Content -LiteralPath (Join-Path $runRoot 'dotnet-info.txt') -Encoding utf8
 
-Write-Output "PERF_CORE_STRESS_OK runId=$runId order=parallel32:v212,v220;sequential1000:v220,v212"
+Write-Output "PERF_CORE_STRESS_OK runId=$runId order=parallel32:v212,v220;sequential1000:v220,v212;cancel32:v212,v220;sourcefailure1000:v220,v212"
