@@ -27,6 +27,7 @@ on:
           - materialize
           - stress
           - di-smoke
+          - di-bench
           - soak
       candidate-sha:
         description: Exact candidate SHA override; must match the pinned SP220-01-11 target
@@ -38,8 +39,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]') || (contains(github.event.head_commit.message, '[perf-stress]') || contains(github.event.head_commit.message, '[perf-di-smoke]'))) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
-  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !contains(github.event.head_commit.message, '[perf-materialize]') && !contains(github.event.head_commit.message, '[perf-bench]') && !(contains(github.event.head_commit.message, '[perf-stress]') || contains(github.event.head_commit.message, '[perf-di-smoke]'))) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
+  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]') || contains(github.event.head_commit.message, '[perf-stress]') || contains(github.event.head_commit.message, '[perf-di-smoke]') || contains(github.event.head_commit.message, '[perf-di-bench]')) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
+  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !contains(github.event.head_commit.message, '[perf-materialize]') && !contains(github.event.head_commit.message, '[perf-bench]') && !contains(github.event.head_commit.message, '[perf-stress]') && !contains(github.event.head_commit.message, '[perf-di-smoke]') && !contains(github.event.head_commit.message, '[perf-di-bench]')) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
@@ -74,7 +75,9 @@ jobs:
 
       - name: Test performance reporting
         shell: pwsh
-        run: ./eng/tests/perf-report.Tests.ps1
+        run: |
+          ./eng/tests/perf-report.Tests.ps1
+          ./eng/tests/perf-di-report.Tests.ps1
 
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -242,8 +245,8 @@ jobs:
 
 
   di-evolution:
-    name: DI evolution benchmark smoke
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'di-smoke') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[perf-di-smoke]')) }}
+    name: DI evolution lab
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.mode == 'di-smoke' || inputs.mode == 'di-bench')) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-di-smoke]') || contains(github.event.head_commit.message, '[perf-di-bench]'))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -261,6 +264,10 @@ jobs:
         shell: pwsh
         run: ./eng/tests/perf-scripts.Tests.ps1
 
+      - name: Test DI reporting
+        shell: pwsh
+        run: ./eng/tests/perf-di-report.Tests.ps1
+
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
@@ -268,20 +275,27 @@ jobs:
           cache: true
           cache-dependency-path: '**/packages.lock.json'
 
-      - name: Prepare DI evolution targets and run Dry
+      - name: Run DI evolution mode
         shell: pwsh
         run: |
           $candidate = "$env:PERF_CANDIDATE_SHA"
           if ([string]::IsNullOrWhiteSpace($candidate)) {
             $candidate = '61ceef6bf69aef0a4f79b25384352d238979200f'
           }
-          ./eng/perf/prepare-di-evolution.ps1 -CandidateSha $candidate -RunDry
+          $mode = '${{ inputs.mode }}'
+          $message = '${{ github.event.head_commit.message }}'
+          if ($mode -eq 'di-bench' -or $message.Contains('[perf-di-bench]')) {
+            ./eng/perf/run-di-evolution.ps1 -CandidateSha $candidate -Job Short
+          }
+          else {
+            ./eng/perf/prepare-di-evolution.ps1 -CandidateSha $candidate -RunDry
+          }
 
       - name: Upload DI smoke evidence
-        if: ${{ always() }}
+        if: ${{ always() && inputs.mode != 'di-bench' && !contains(github.event.head_commit.message, '[perf-di-bench]') }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: perf-di-evolution-${{ github.sha }}
+          name: perf-di-evolution-smoke-${{ github.sha }}
           path: |
             artifacts/perf/targets/**/target.json
             artifacts/perf/targets/**/diagnostics/**
@@ -291,4 +305,19 @@ jobs:
             artifacts/perf/dependency-injection/dotnet-info.txt
           if-no-files-found: warn
           retention-days: 3
+          compression-level: 9
+
+      - name: Upload DI benchmark evidence
+        if: ${{ always() && (inputs.mode == 'di-bench' || contains(github.event.head_commit.message, '[perf-di-bench]')) }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: perf-di-evolution-bench-${{ github.sha }}
+          path: |
+            artifacts/perf/targets/**/target.json
+            artifacts/perf/targets/**/diagnostics/**
+            artifacts/perf/dependency-injection/**/build-provenance.json
+            artifacts/perf/dependency-injection/**/packages.lock.json
+            artifacts/perf/runs/dependency-injection/**
+          if-no-files-found: warn
+          retention-days: 7
           compression-level: 9
