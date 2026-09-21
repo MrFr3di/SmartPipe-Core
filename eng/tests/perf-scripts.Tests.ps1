@@ -30,7 +30,9 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/prepare-extensions-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-extensions-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-extensions-strict-ab.ps1'),
-    (Join-Path $repoRoot 'eng/perf/prepare-json-strict-ab.ps1')
+    (Join-Path $repoRoot 'eng/perf/prepare-json-strict-ab.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-json-strict-ab.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-json-strict-ab.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -311,6 +313,24 @@ $jsonV220Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/Smart
 Assert-True ($jsonV212Project -match 'SmartPipe.Extensions.Json" Version="2\.1\.2"') 'JSON baseline project must reference SmartPipe.Extensions.Json 2.1.2.'
 Assert-True ($jsonV220Project -match 'SmartPipe.Extensions.Json" Version="2\.2\.0"') 'JSON candidate project must reference SmartPipe.Extensions.Json 2.2.0.'
 
+$jsonRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-json-strict-ab.ps1') -Raw
+Assert-True ($jsonRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'JSON strict A/B order must remain counter-balanced A-B-B-A.'
+Assert-True ($jsonRunner -match "scenarioClass = 'strict-ab'") 'JSON runner must remain strict-ab.'
+Assert-True ($jsonRunner -match "comparisonPolicy = 'strict-cross-version-ratio'") 'JSON runner must preserve strict ratio policy.'
+Assert-True ($jsonRunner.Contains('authoritativeTiming = $false')) 'Hosted JSON timing must remain non-authoritative.'
+Assert-True ($jsonRunner -match 'Assert-BenchmarkResult') 'JSON Short must reject missing BenchmarkDotNet evidence.'
+Assert-True ($jsonRunner -match 'produced no statistics') 'JSON Short must reject results without statistics.'
+Assert-True ($jsonRunner -match 'produced no measurements') 'JSON Short must reject results without measurements.'
+
+$jsonReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-json-strict-ab.ps1') -Raw
+Assert-True ($jsonReport -match 'strict-cross-version-ratio') 'JSON report must preserve strict ratio policy.'
+Assert-True ($jsonReport -match 'timeDeltaPercent') 'JSON report must emit strict timing deltas.'
+Assert-True ($jsonReport -match 'allocationDeltaPercent') 'JSON report must emit strict allocation deltas.'
+Assert-True ($jsonReport -match 'baselineRepeatDriftPercent') 'JSON report must expose baseline repeat drift.'
+Assert-True ($jsonReport -match 'candidateRepeatDriftPercent') 'JSON report must expose candidate repeat drift.'
+Assert-True ($jsonReport -match 'records.Count -ne \(\$expectedMethods.Count \* 4\)') 'JSON report must reject incomplete A-B-B-A evidence.'
+
+
 
 
 
@@ -355,4 +375,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=22'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=24'
