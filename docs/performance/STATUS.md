@@ -32,3 +32,5 @@ Updated: 2026-09-21
 - PERF-04 DI: multi-method reporter regression fixed and self-test passed; normalized DI Short rerun requested.
 
 - PERF-04 Hosting: immutable evolution Dry harness implemented; first Hosting lifecycle/provider Dry requested.
+
+- PERF-04 HealthChecks: evolution targets/materializer/contracts implemented; first immutable registered/not-started Dry requested.
