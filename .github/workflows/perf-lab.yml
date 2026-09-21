@@ -244,6 +244,15 @@ jobs:
             ./eng/perf/prepare-target.ps1 -Target all -CandidateSha $candidate
           }
 
+      - name: Report package footprint
+        shell: pwsh
+        run: |
+          $candidate = "$env:PERF_CANDIDATE_SHA"
+          if ([string]::IsNullOrWhiteSpace($candidate)) {
+            $candidate = '61ceef6bf69aef0a4f79b25384352d238979200f'
+          }
+          ./eng/perf/report-package-footprint.ps1 -CandidateSha $candidate
+
       - name: Upload target provenance and smoke evidence
         if: ${{ always() && inputs.mode != 'bench' && !contains(github.event.head_commit.message, '[perf-bench]') }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -258,6 +267,7 @@ jobs:
             artifacts/perf/core-ab/**/BenchmarkDotNet.Artifacts/**
             artifacts/perf/core-ab/dotnet-info.txt
             artifacts/perf/targets/**/diagnostics/**
+            artifacts/perf/package-footprint/**
           if-no-files-found: warn
           retention-days: 3
           compression-level: 9
@@ -272,6 +282,7 @@ jobs:
             artifacts/perf/core-ab/**/build-provenance.json
             artifacts/perf/core-ab/**/packages.lock.json
             artifacts/perf/runs/core-ab/**
+            artifacts/perf/package-footprint/**
           if-no-files-found: error
           retention-days: 7
           compression-level: 9
