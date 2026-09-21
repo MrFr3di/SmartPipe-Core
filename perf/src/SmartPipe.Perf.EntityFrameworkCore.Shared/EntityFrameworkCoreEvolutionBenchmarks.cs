@@ -1,7 +1,7 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Data.Sqlite;
 
 namespace SmartPipe.Perf.EntityFrameworkCore;
 
@@ -68,19 +68,12 @@ public sealed class EfBenchmarkRow
 
 internal sealed class EfBenchmarkContext : DbContext
 {
-    private readonly string _databaseName;
-    private readonly InMemoryDatabaseRoot _databaseRoot;
-
-    internal EfBenchmarkContext(string databaseName, InMemoryDatabaseRoot databaseRoot)
+    internal EfBenchmarkContext(DbContextOptions<EfBenchmarkContext> options)
+        : base(options)
     {
-        _databaseName = databaseName;
-        _databaseRoot = databaseRoot;
     }
 
     internal DbSet<EfBenchmarkRow> Rows => Set<EfBenchmarkRow>();
-
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) =>
-        optionsBuilder.UseInMemoryDatabase(_databaseName, _databaseRoot);
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -90,37 +83,59 @@ internal sealed class EfBenchmarkContext : DbContext
 
 internal sealed class EfBenchmarkDatabase : IAsyncDisposable
 {
-    private readonly InMemoryDatabaseRoot _root = new();
-    private readonly string _name = $"smartpipe-perf-ef-{Guid.NewGuid():N}";
+    private readonly SqliteConnection _connection;
 
-    private EfBenchmarkDatabase()
-    {
-    }
+    private EfBenchmarkDatabase(SqliteConnection connection) =>
+        _connection = connection;
 
     internal static async Task<EfBenchmarkDatabase> CreateAsync()
     {
-        var database = new EfBenchmarkDatabase();
-        await using var context = database.CreateContext();
+        var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync().ConfigureAwait(false);
 
-        for (int id = 1; id <= 100; id++)
+        var database = new EfBenchmarkDatabase(connection);
+
+        try
         {
-            context.Rows.Add(
-                new EfBenchmarkRow
-                {
-                    Id = id,
-                    Name = $"row-{id:D3}",
-                });
-        }
+            await using var context = database.CreateContext();
+            await context.Database.EnsureCreatedAsync().ConfigureAwait(false);
 
-        await context.SaveChangesAsync().ConfigureAwait(false);
-        return database;
+            for (int id = 1; id <= 100; id++)
+            {
+                context.Rows.Add(
+                    new EfBenchmarkRow
+                    {
+                        Id = id,
+                        Name = $"row-{id:D3}",
+                    });
+            }
+
+            await context.SaveChangesAsync().ConfigureAwait(false);
+            return database;
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
-    internal EfBenchmarkContext CreateContext() => new(_name, _root);
+    internal EfBenchmarkContext CreateContext()
+    {
+        var options = new DbContextOptionsBuilder<EfBenchmarkContext>()
+            .UseSqlite(_connection)
+            .Options;
+
+        return new EfBenchmarkContext(options);
+    }
 
     public async ValueTask DisposeAsync()
     {
-        await using var context = CreateContext();
-        await context.Database.EnsureDeletedAsync().ConfigureAwait(false);
+        await using (var context = CreateContext())
+        {
+            await context.Database.EnsureDeletedAsync().ConfigureAwait(false);
+        }
+
+        await _connection.DisposeAsync().ConfigureAwait(false);
     }
 }
