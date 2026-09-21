@@ -11,7 +11,8 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $scripts = @(
     (Join-Path $repoRoot 'eng/perf/validate-perf-lab.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-target.ps1'),
-    (Join-Path $repoRoot 'eng/perf/prepare-core-ab.ps1')
+    (Join-Path $repoRoot 'eng/perf/prepare-core-ab.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-core-ab.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -43,4 +44,9 @@ Assert-True ($coreAb -match "'--locked-mode'") 'Core A/B restore must verify the
 Assert-True ($coreAb -match 'contentHash') 'Core A/B restore must verify NuGet package content hash.'
 Assert-True ($coreAb -match 'sharedSourceSha256') 'Core A/B provenance must record the shared workload source hash.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=3'
+$runner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-core-ab.ps1') -Raw
+Assert-True ($runner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'Core A/B order must remain counter-balanced A-B-B-A.'
+Assert-True ($runner -match "scenarioClass = 'strict-ab'") 'Core A/B run manifest must classify the scenario as strict-ab.'
+Assert-True ($runner -match "authoritativeTiming = \$false") 'GitHub-compatible Core A/B timing must default to non-authoritative.'
+
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=4'
