@@ -22,3 +22,5 @@ Updated: 2026-09-21
 - PERF-04 DI: Dry is green; first DI evolution Short requested with side-by-side/no-ratio reporting.
 
 - PERF-04 DI: correctness-prechecked DI Short queued after the exploratory Short.
+
+- PERF-04 DI: BenchmarkDotNet false-green validation fixed; result artifacts are now mandatory; real DI/scale Dry requested.
