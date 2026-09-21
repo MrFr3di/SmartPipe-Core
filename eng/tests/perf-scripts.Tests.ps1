@@ -21,7 +21,9 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/prepare-hosting-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-healthchecks-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-hosting-evolution.ps1'),
-    (Join-Path $repoRoot 'eng/perf/report-hosting-evolution.ps1')
+    (Join-Path $repoRoot 'eng/perf/report-hosting-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-healthchecks-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-healthchecks-evolution.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -168,6 +170,21 @@ Assert-True ($hostingReport -match 'Group-Object \{ \[string\]\$_\.method \}') '
 Assert-True ($hostingReport -match 'baselineRepeatDriftPercent') 'Hosting report must expose baseline repeat drift.'
 Assert-True ($hostingReport -match 'candidateRepeatDriftPercent') 'Hosting report must expose candidate repeat drift.'
 
+$healthRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-healthchecks-evolution.ps1') -Raw
+Assert-True ($healthRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'HealthChecks evolution order must remain counter-balanced A-B-B-A.'
+Assert-True ($healthRunner -match "scenarioClass = 'evolution'") 'HealthChecks runner must classify the scenario as evolution.'
+Assert-True ($healthRunner -match "comparisonPolicy = 'side-by-side-no-cross-version-ratio'") 'HealthChecks runner must forbid cross-version ratio reporting.'
+Assert-True ($healthRunner.Contains('authoritativeTiming = $false')) 'Hosted HealthChecks timing must remain non-authoritative.'
+Assert-True ($healthRunner -match 'Assert-BenchmarkResult') 'HealthChecks runner must reject missing BenchmarkDotNet JSON evidence.'
+
+$healthReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-healthchecks-evolution.ps1') -Raw
+Assert-True ($healthReport -match 'side-by-side-no-cross-version-ratio') 'HealthChecks report must preserve evolution comparison policy.'
+Assert-True ($healthReport -notmatch 'timeDeltaPercent') 'HealthChecks report must not emit a strict A/B timing percentage.'
+Assert-True ($healthReport -notmatch 'allocationDeltaPercent') 'HealthChecks report must not emit a strict A/B allocation percentage.'
+Assert-True ($healthReport -match 'Group-Object \{ \[string\]\$_\.method \}') 'HealthChecks reporter must group normalized records by method value.'
+Assert-True ($healthReport -match 'baselineRepeatDriftPercent') 'HealthChecks report must expose baseline repeat drift.'
+Assert-True ($healthReport -match 'candidateRepeatDriftPercent') 'HealthChecks report must expose candidate repeat drift.'
+
 $report = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-core-ab.ps1') -Raw
 Assert-True ($report -match 'baselineRepeatDriftPercent') 'Core A/B report must expose baseline repeat drift.'
 Assert-True ($report -match 'candidateRepeatDriftPercent') 'Core A/B report must expose candidate repeat drift.'
@@ -175,4 +192,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=13'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=15'
