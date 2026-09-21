@@ -40,6 +40,9 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/prepare-dapper-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-dapper-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-dapper-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-dapper-decomposition-v220.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-dapper-decomposition-v220.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-dapper-decomposition-v220.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-entity-framework-core-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-entity-framework-core-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-entity-framework-core-evolution.ps1'),
@@ -538,6 +541,46 @@ Assert-True ($dapperReport -notmatch 'allocationDeltaPercent') 'Dapper report mu
 Assert-True ($dapperReport -match 'baselineRepeatDriftPercent') 'Dapper report must expose baseline repeat drift.'
 Assert-True ($dapperReport -match 'candidateRepeatDriftPercent') 'Dapper report must expose candidate repeat drift.'
 
+$dapperDecomp = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-dapper-decomposition-v220.ps1') -Raw
+Assert-True ($dapperDecomp -match "scenario = 'dapper-decomposition'") 'Dapper decomposition scenario id must remain canonical.'
+Assert-True ($dapperDecomp -match "scenarioClass = 'v220-only'") 'Dapper decomposition must remain v220-only.'
+Assert-True ($dapperDecomp -match 'SmartPipe.Extensions.Dapper 2.2.0') 'Dapper decomposition must bind to SmartPipe.Extensions.Dapper 2.2.0.'
+Assert-True ($dapperDecomp -match 'packageSourceMapping') 'Dapper decomposition restore must use NuGet Package Source Mapping.'
+Assert-True ($dapperDecomp -match 'dotnet nuget verify') 'Dapper decomposition provenance must use NuGet-native content hashes.'
+Assert-True ($dapperDecomp -match "'--locked-mode'") 'Dapper decomposition restore must verify the generated lock in locked mode.'
+Assert-True ($dapperDecomp -match 'Assert-BenchmarkResult') 'Dapper decomposition Dry must reject incomplete BenchmarkDotNet evidence.'
+Assert-True ($dapperDecomp -match 'RawSingle') 'Dapper decomposition Dry must require RawSingle.'
+Assert-True ($dapperDecomp -match 'PipelineSingle') 'Dapper decomposition Dry must require PipelineSingle.'
+Assert-True ($dapperDecomp -match 'RawHundredRows') 'Dapper decomposition Dry must require RawHundredRows.'
+Assert-True ($dapperDecomp -match 'PipelineHundredRows') 'Dapper decomposition Dry must require PipelineHundredRows.'
+
+$dapperDecompSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.Decomposition.V220/DapperDecompositionBenchmarks.cs') -Raw
+Assert-True ($dapperDecompSource -match 'BenchmarkCategory\("V220Only", "Dapper", "Decomposition"\)') 'Dapper decomposition benchmark must remain candidate-only.'
+Assert-True ($dapperDecompSource -match 'ExecuteReaderAsync') 'Dapper raw path must use the same Dapper ExecuteReaderAsync primitive as the integration.'
+Assert-True ($dapperDecompSource -match 'DapperPipelineComponents\.QuerySource') 'Dapper pipeline path must use the public QuerySource component.'
+Assert-True ($dapperDecompSource -match 'MapRow\(reader\)') 'Dapper raw path must use the same row mapper shape.'
+Assert-True ($dapperDecompSource -match 'Pooling = false') 'Dapper decomposition must disable SQLite pooling.'
+Assert-True ($dapperDecompSource -match 'SqliteOpenMode\.Memory') 'Dapper decomposition must use in-memory SQLite.'
+Assert-True ($dapperDecompSource -notmatch 'SmartPipe\.Extensions\.Dapper\.Internal') 'Dapper decomposition must not use internal SmartPipe APIs.'
+
+$dapperDecompProject = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.Decomposition.V220/SmartPipe.Perf.Dapper.Decomposition.V220.csproj') -Raw
+Assert-True ($dapperDecompProject -match 'Dapper" Version="2\.1\.86"') 'Dapper decomposition must pin Dapper 2.1.86.'
+Assert-True ($dapperDecompProject -match 'Microsoft.Data.Sqlite" Version="10\.0\.11"') 'Dapper decomposition must pin Microsoft.Data.Sqlite 10.0.11.'
+Assert-True ($dapperDecompProject -match 'SmartPipe.Extensions.Dapper" Version="2\.2\.0"') 'Dapper decomposition must pin SmartPipe.Extensions.Dapper 2.2.0.'
+
+$dapperDecompRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-dapper-decomposition-v220.ps1') -Raw
+Assert-True ($dapperDecompRunner -match "scenarioClass = 'v220-only'") 'Dapper decomposition runner must remain v220-only.'
+Assert-True ($dapperDecompRunner -match "comparisonPolicy = 'within-version-raw-vs-pipeline'") 'Dapper decomposition runner must preserve within-version policy.'
+Assert-True ($dapperDecompRunner.Contains('authoritativeTiming = $false')) 'Hosted Dapper decomposition timing must remain non-authoritative.'
+Assert-True ($dapperDecompRunner -match 'foreach \(\$slot in 1\.\.2\)') 'Dapper decomposition must repeat twice on the same runner.'
+
+$dapperDecompReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-dapper-decomposition-v220.ps1') -Raw
+Assert-True ($dapperDecompReport -match 'pipelineOverRawRatio') 'Dapper decomposition report must expose Pipeline/Raw ratio.'
+Assert-True ($dapperDecompReport -match 'allocationDeltaBytes') 'Dapper decomposition report must expose allocation overhead.'
+Assert-True ($dapperDecompReport -match 'incrementalPipelineTimePerAdditionalRowNs') 'Dapper decomposition report must expose the descriptive per-row model.'
+Assert-True ($dapperDecompReport -match 'Descriptive two-point model only') 'Dapper decomposition report must label the two-point model as descriptive.'
+
+
 $efCore = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-entity-framework-core-evolution.ps1') -Raw
 Assert-True ($efCore -match "scenarioClass = 'evolution'") 'SP220-11 EF Core comparison must remain evolution-classified.'
 Assert-True ($efCore -match "scenario = 'entity-framework-core'") 'SP220-11 EF Core scenario id must remain canonical.'
@@ -703,4 +746,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=40'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=43'
