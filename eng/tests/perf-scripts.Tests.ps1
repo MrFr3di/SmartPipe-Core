@@ -18,7 +18,8 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/prepare-di-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-di-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-di-evolution.ps1'),
-    (Join-Path $repoRoot 'eng/perf/prepare-hosting-evolution.ps1')
+    (Join-Path $repoRoot 'eng/perf/prepare-hosting-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-healthchecks-evolution.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -134,6 +135,22 @@ Assert-True ($hostingSource -match 'SetupAsync') 'Hosting benchmark must run a c
 Assert-True ($hostingSource -match 'StartStopFreshAsync') 'Hosting correctness precheck must exercise start/stop lifecycle.'
 Assert-True ($hostingSource -notmatch 'public sealed class HostingEvolutionBenchmarks') 'BenchmarkDotNet Hosting type must remain unsealed.'
 
+$health = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-healthchecks-evolution.ps1') -Raw
+Assert-True ($health -match "scenarioClass = 'evolution'") 'HealthChecks comparison must remain classified as evolution.'
+Assert-True ($health -match 'SmartPipe\.Extensions\.HealthChecks') 'HealthChecks candidate must use SmartPipe.Extensions.HealthChecks.'
+Assert-True ($health -match 'packageSourceMapping') 'HealthChecks restore must use NuGet Package Source Mapping.'
+Assert-True ($health -match 'SmartPipe\.\*') 'HealthChecks SmartPipe packages must map to the local target feed.'
+Assert-True ($health -match 'dotnet nuget verify') 'HealthChecks provenance must use NuGet-native content hashes.'
+Assert-True ($health -match "'--locked-mode'") 'HealthChecks restore must verify the generated lock in locked mode.'
+Assert-True ($health -match "'--exporters'[\s\S]{0,80}'json'") 'HealthChecks Dry must explicitly export BenchmarkDotNet JSON.'
+Assert-True ($health -match 'Assert-BenchmarkResult') 'HealthChecks Dry must fail when BenchmarkDotNet produces no JSON result.'
+Assert-True ($health -match 'PERF_HEALTHCHECKS_EVOLUTION_READY') 'HealthChecks materializer must expose the correct completion marker.'
+$healthSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.HealthChecks.Shared/HealthChecksEvolutionBenchmarks.cs') -Raw
+Assert-True ($healthSource -match 'BenchmarkCategory\("Evolution", "HealthChecks"\)') 'HealthChecks benchmark must remain evolution-classified.'
+Assert-True ($healthSource -match 'HealthStatus\.Degraded') 'HealthChecks correctness precheck must validate the registered/not-started Degraded outcome.'
+Assert-True ($healthSource -match 'CheckRegisteredPipelineAsync') 'HealthChecks correctness precheck must evaluate through HealthCheckService.'
+Assert-True ($healthSource -notmatch 'public sealed class HealthChecksEvolutionBenchmarks') 'BenchmarkDotNet HealthChecks type must remain unsealed.'
+
 $report = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-core-ab.ps1') -Raw
 Assert-True ($report -match 'baselineRepeatDriftPercent') 'Core A/B report must expose baseline repeat drift.'
 Assert-True ($report -match 'candidateRepeatDriftPercent') 'Core A/B report must expose candidate repeat drift.'
@@ -141,4 +158,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=10'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=11'

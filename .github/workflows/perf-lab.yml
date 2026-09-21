@@ -29,6 +29,7 @@ on:
           - di-smoke
           - di-bench
           - hosting-smoke
+          - health-smoke
           - soak
       candidate-sha:
         description: Exact candidate SHA override; must match the pinned SP220-01-11 target
@@ -40,8 +41,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]') || contains(github.event.head_commit.message, '[perf-stress]') || contains(github.event.head_commit.message, '[perf-di-smoke]') || contains(github.event.head_commit.message, '[perf-di-bench]') || contains(github.event.head_commit.message, '[perf-hosting-smoke]')) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
-  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !contains(github.event.head_commit.message, '[perf-materialize]') && !contains(github.event.head_commit.message, '[perf-bench]') && !contains(github.event.head_commit.message, '[perf-stress]') && !contains(github.event.head_commit.message, '[perf-di-smoke]') && !contains(github.event.head_commit.message, '[perf-di-bench]') && !contains(github.event.head_commit.message, '[perf-hosting-smoke]')) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
+  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]') || contains(github.event.head_commit.message, '[perf-stress]') || contains(github.event.head_commit.message, '[perf-di-smoke]') || contains(github.event.head_commit.message, '[perf-di-bench]') || contains(github.event.head_commit.message, '[perf-hosting-smoke]') || contains(github.event.head_commit.message, '[perf-health-smoke]')) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
+  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !contains(github.event.head_commit.message, '[perf-materialize]') && !contains(github.event.head_commit.message, '[perf-bench]') && !contains(github.event.head_commit.message, '[perf-stress]') && !contains(github.event.head_commit.message, '[perf-di-smoke]') && !contains(github.event.head_commit.message, '[perf-di-bench]') && !contains(github.event.head_commit.message, '[perf-hosting-smoke]') && !contains(github.event.head_commit.message, '[perf-health-smoke]')) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
@@ -372,6 +373,59 @@ jobs:
             artifacts/perf/hosting/**/packages.lock.json
             artifacts/perf/hosting/**/BenchmarkDotNet.Artifacts/**
             artifacts/perf/hosting/dotnet-info.txt
+          if-no-files-found: warn
+          retention-days: 3
+          compression-level: 9
+
+
+  healthchecks-evolution:
+    name: HealthChecks evolution benchmark smoke
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'health-smoke') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[perf-health-smoke]')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Validate lab contracts
+        shell: pwsh
+        run: ./eng/perf/validate-perf-lab.ps1 -Mode smoke -CandidateSha "$env:PERF_CANDIDATE_SHA"
+
+      - name: Test performance-lab scripts
+        shell: pwsh
+        run: ./eng/tests/perf-scripts.Tests.ps1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Prepare HealthChecks evolution targets and run Dry
+        shell: pwsh
+        run: |
+          $candidate = "$env:PERF_CANDIDATE_SHA"
+          if ([string]::IsNullOrWhiteSpace($candidate)) {
+            $candidate = '61ceef6bf69aef0a4f79b25384352d238979200f'
+          }
+          ./eng/perf/prepare-healthchecks-evolution.ps1 -CandidateSha $candidate -RunDry
+
+      - name: Upload HealthChecks smoke evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: perf-healthchecks-evolution-${{ github.sha }}
+          path: |
+            artifacts/perf/targets/**/target.json
+            artifacts/perf/targets/**/diagnostics/**
+            artifacts/perf/health-checks/**/build-provenance.json
+            artifacts/perf/health-checks/**/packages.lock.json
+            artifacts/perf/health-checks/**/BenchmarkDotNet.Artifacts/**
+            artifacts/perf/health-checks/dotnet-info.txt
           if-no-files-found: warn
           retention-days: 3
           compression-level: 9
