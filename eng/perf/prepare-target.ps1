@@ -174,11 +174,12 @@ function Prepare-Candidate {
             '-warnaserror'
         ) -Step 'Build candidate'
 
-        $version = (& dotnet msbuild (Join-Path $worktreeRoot 'src/SmartPipe.Core/SmartPipe.Core.csproj') '-getProperty:Version' '-nologo').Trim()
-        Assert-ExitCode 'Read candidate package version'
-        if ([string]::IsNullOrWhiteSpace($version)) {
-            throw 'Candidate package version is empty.'
+        $productVersion = (& dotnet msbuild (Join-Path $worktreeRoot 'src/SmartPipe.Core/SmartPipe.Core.csproj') '-getProperty:Version' '-nologo').Trim()
+        Assert-ExitCode 'Read candidate product version'
+        if ([string]::IsNullOrWhiteSpace($productVersion)) {
+            throw 'Candidate product version is empty.'
         }
+        $packageVersion = "$productVersion-perflab.$shortSha"
 
         Invoke-DotNet -Arguments @(
             'run', '--project', $candidateChecks,
@@ -187,7 +188,7 @@ function Prepare-Candidate {
             'pack-packages',
             '--mode', 'current',
             '--configuration', $Configuration,
-            '--package-version', $version,
+            '--package-version', $packageVersion,
             '--output', $packagesDir,
             '--manifest', $candidateManifest
         ) -Step 'Pack candidate packages'
@@ -230,7 +231,8 @@ function Prepare-Candidate {
         Write-JsonFile -Path (Join-Path $targetRoot 'target.json') -Value ([ordered]@{
             schemaVersion = 1
             targetId = [string]$targetsManifest.candidate.id
-            version = $version
+            productVersion = $productVersion
+            packageVersion = $packageVersion
             productSha = $CandidateSha
             harnessSha = $harnessSha
             source = 'exact-git-sha-local-pack'
