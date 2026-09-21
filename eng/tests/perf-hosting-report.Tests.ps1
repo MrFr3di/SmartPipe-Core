@@ -25,8 +25,8 @@ function Write-SyntheticResult {
         Benchmarks = @(
             [ordered]@{
                 DisplayInfo = 'Synthetic Hosting ResolveHostedServiceGraph'
-                Namespace = 'SmartPipe.Perf.DependencyInjection'
-                Type = 'DependencyInjectionEvolutionBenchmarks'
+                Namespace = 'SmartPipe.Perf.Hosting'
+                Type = 'HostingEvolutionBenchmarks'
                 Method = 'ResolveHostedServiceGraph'
                 MethodTitle = 'ResolveHostedServiceGraph'
                 Parameters = ''
@@ -44,8 +44,8 @@ function Write-SyntheticResult {
             },
             [ordered]@{
                 DisplayInfo = 'Synthetic Hosting StartStopHostedPipeline'
-                Namespace = 'SmartPipe.Perf.DependencyInjection'
-                Type = 'DependencyInjectionEvolutionBenchmarks'
+                Namespace = 'SmartPipe.Perf.Hosting'
+                Type = 'HostingEvolutionBenchmarks'
                 Method = 'StartStopHostedPipeline'
                 MethodTitle = 'StartStopHostedPipeline'
                 Parameters = ''
@@ -95,7 +95,7 @@ try {
     Write-SyntheticResult -Root $tempRoot -Slot '04-v212' -Mean 900.0 -Allocated 102.0
 
     $output = @(& $report -RunRoot $tempRoot)
-    Assert-True ($output -contains 'PERF_Hosting_REPORT_OK run=synthetic-hosting-report-test comparisons=2') 'Hosting report did not complete successfully.'
+    Assert-True ($output -contains 'PERF_HOSTING_REPORT_OK run=synthetic-hosting-report-test comparisons=2') 'Hosting report did not complete successfully.'
 
     $normalizedPath = Join-Path $tempRoot 'normalized-results.json'
     $markdownPath = Join-Path $tempRoot 'comparison.md'
@@ -110,8 +110,8 @@ try {
 
     $methods = @($normalized.sideBySide | ForEach-Object { [string]$_.method } | Sort-Object)
     Assert-True ($methods.Count -eq 2) 'Expected exactly two Hosting method groups.'
-    Assert-True ($methods[0] -ceq 'StartStopHostedPipeline') 'StartStopHostedPipeline comparison is missing.'
-    Assert-True ($methods[1] -ceq 'ResolveHostedServiceGraph') 'ResolveHostedServiceGraph comparison is missing.'
+    Assert-True ($methods[0] -ceq 'ResolveHostedServiceGraph') 'ResolveHostedServiceGraph comparison is missing.'
+    Assert-True ($methods[1] -ceq 'StartStopHostedPipeline') 'StartStopHostedPipeline comparison is missing.'
 
     $comparison = @($normalized.sideBySide | Where-Object method -eq 'ResolveHostedServiceGraph')[0]
     Assert-True ($null -ne $comparison) 'ResolveHostedServiceGraph comparison is missing.'
@@ -124,7 +124,7 @@ try {
     Assert-True ($markdown.Contains('Cross-version percentage deltas are intentionally omitted.')) 'Hosting Markdown must explain omitted cross-version deltas.'
     Assert-True (-not $markdown.Contains('Time Δ')) 'Hosting Markdown must not render a strict timing delta column.'
 
-    Write-Output 'PERF_Hosting_REPORT_TESTS_OK comparisons=2'
+    Write-Output 'PERF_HOSTING_REPORT_TESTS_OK comparisons=2'
 }
 finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
