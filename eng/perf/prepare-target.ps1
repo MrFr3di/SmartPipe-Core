@@ -157,7 +157,7 @@ function Prepare-Candidate {
 
         $candidateSolution = Join-Path $worktreeRoot 'SmartPipe.Core.slnx'
         $candidateChecks = Join-Path $worktreeRoot 'eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj'
-        $candidateManifest = Join-Path $targetRoot 'package-manifest.json'
+        $candidateManifest = Join-Path $packagesDir 'manifest.json'
         $metadataReport = Join-Path $targetRoot 'metadata-report.json'
 
         Invoke-DotNet -Arguments @(
