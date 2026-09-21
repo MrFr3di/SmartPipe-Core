@@ -10,12 +10,28 @@ public static class Program
 }
 
 [MemoryDiagnoser]
+[BenchmarkCategory("Evolution", "DependencyInjection")]
 public sealed class DependencyInjectionEvolutionBenchmarks
 {
     private DependencyInjectionTarget? _target;
 
     [GlobalSetup]
-    public void Setup() => _target = new DependencyInjectionTarget();
+    public async Task SetupAsync()
+    {
+        _target = new DependencyInjectionTarget();
+
+        var descriptorCount = DependencyInjectionTarget.RegisterAndBuildProvider();
+        if (descriptorCount <= 0)
+            throw new InvalidOperationException("DI correctness precheck built an empty service collection.");
+
+        if (_target.ResolveFactory() is null)
+            throw new InvalidOperationException("DI correctness precheck failed to resolve a factory.");
+
+        var completedRuns = await _target.StartCompleteDisposeRunAsync().ConfigureAwait(false);
+        if (completedRuns != 1)
+            throw new InvalidOperationException(
+                $"DI correctness precheck expected one completed run, got {completedRuns}.");
+    }
 
     [GlobalCleanup]
     public void Cleanup()
