@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>SmartPipe.Perf.EntityFrameworkCore.V220</AssemblyName>
+    <RootNamespace>SmartPipe.Perf.EntityFrameworkCore</RootNamespace>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../SmartPipe.Perf.EntityFrameworkCore.Shared/*.cs" Link="%(Filename)%(Extension)" />
+    <Compile Include="EntityFrameworkCoreEvolutionTarget.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.11" />
+    <PackageReference Include="SmartPipe.Extensions.EntityFrameworkCore" Version="2.2.0" />
+  </ItemGroup>
+</Project>
