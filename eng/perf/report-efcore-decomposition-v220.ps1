@@ -9,9 +9,11 @@ Set-StrictMode -Version Latest
 $expectedMethods = @(
     'RawSingle',
     'PipelineSingle',
+    'RawCompiledSingle',
     'CompiledPipelineSingle',
     'RawHundredRows',
     'PipelineHundredRows',
+    'RawCompiledHundredRows',
     'CompiledPipelineHundredRows'
 )
 
@@ -100,6 +102,10 @@ foreach ($slotDirectory in $slots) {
     }
 }
 
+if ($records.Count -ne ($expectedMethods.Count * 2)) {
+    throw "Expected $($expectedMethods.Count * 2) normalized EF decomposition records, got $($records.Count)."
+}
+
 $summary = [ordered]@{}
 foreach ($method in $expectedMethods) {
     $rows = @($records | Where-Object { $_.method -ceq $method } | Sort-Object slot)
@@ -124,11 +130,13 @@ function New-Comparison {
         [int]$Rows,
         [string]$RawMethod,
         [string]$NormalMethod,
+        [string]$RawCompiledMethod,
         [string]$CompiledMethod
     )
 
     $raw = $summary[$RawMethod]
     $normal = $summary[$NormalMethod]
+    $rawCompiled = $summary[$RawCompiledMethod]
     $compiled = $summary[$CompiledMethod]
 
     return [ordered]@{
@@ -136,41 +144,41 @@ function New-Comparison {
         rows = $Rows
         rawMeanNs = [double]$raw.meanNs
         normalPipelineMeanNs = [double]$normal.meanNs
+        rawCompiledMeanNs = [double]$rawCompiled.meanNs
         compiledPipelineMeanNs = [double]$compiled.meanNs
         normalOverRawRatio = if ([double]$raw.meanNs -eq 0) { $null } else { [double]$normal.meanNs / [double]$raw.meanNs }
-        compiledOverRawRatio = if ([double]$raw.meanNs -eq 0) { $null } else { [double]$compiled.meanNs / [double]$raw.meanNs }
+        rawCompiledOverRawRatio = if ([double]$raw.meanNs -eq 0) { $null } else { [double]$rawCompiled.meanNs / [double]$raw.meanNs }
+        compiledOverRawCompiledRatio = if ([double]$rawCompiled.meanNs -eq 0) { $null } else { [double]$compiled.meanNs / [double]$rawCompiled.meanNs }
         compiledOverNormalRatio = if ([double]$normal.meanNs -eq 0) { $null } else { [double]$compiled.meanNs / [double]$normal.meanNs }
         normalTimeDeltaNs = [double]$normal.meanNs - [double]$raw.meanNs
-        compiledTimeDeltaNs = [double]$compiled.meanNs - [double]$raw.meanNs
+        compiledTimeDeltaNs = [double]$compiled.meanNs - [double]$rawCompiled.meanNs
         rawAllocatedBytes = [double]$raw.allocatedBytes
         normalAllocatedBytes = [double]$normal.allocatedBytes
+        rawCompiledAllocatedBytes = [double]$rawCompiled.allocatedBytes
         compiledAllocatedBytes = [double]$compiled.allocatedBytes
         normalAllocationDeltaBytes = [double]$normal.allocatedBytes - [double]$raw.allocatedBytes
-        compiledAllocationDeltaBytes = [double]$compiled.allocatedBytes - [double]$raw.allocatedBytes
+        compiledAllocationDeltaBytes = [double]$compiled.allocatedBytes - [double]$rawCompiled.allocatedBytes
         rawRepeatDriftPercent = $raw.repeatDriftPercent
         normalRepeatDriftPercent = $normal.repeatDriftPercent
+        rawCompiledRepeatDriftPercent = $rawCompiled.repeatDriftPercent
         compiledRepeatDriftPercent = $compiled.repeatDriftPercent
     }
 }
 
-$single = New-Comparison -Name 'single' -Rows 1 -RawMethod 'RawSingle' -NormalMethod 'PipelineSingle' -CompiledMethod 'CompiledPipelineSingle'
-$hundred = New-Comparison -Name 'hundred' -Rows 100 -RawMethod 'RawHundredRows' -NormalMethod 'PipelineHundredRows' -CompiledMethod 'CompiledPipelineHundredRows'
+$single = New-Comparison -Name 'single' -Rows 1 -RawMethod 'RawSingle' -NormalMethod 'PipelineSingle' -RawCompiledMethod 'RawCompiledSingle' -CompiledMethod 'CompiledPipelineSingle'
+$hundred = New-Comparison -Name 'hundred' -Rows 100 -RawMethod 'RawHundredRows' -NormalMethod 'PipelineHundredRows' -RawCompiledMethod 'RawCompiledHundredRows' -CompiledMethod 'CompiledPipelineHundredRows'
 
-$normalIncrementalNs =
-    ([double]$hundred.normalTimeDeltaNs - [double]$single.normalTimeDeltaNs) / 99.0
-$compiledIncrementalNs =
-    ([double]$hundred.compiledTimeDeltaNs - [double]$single.compiledTimeDeltaNs) / 99.0
-$normalIncrementalAlloc =
-    ([double]$hundred.normalAllocationDeltaBytes - [double]$single.normalAllocationDeltaBytes) / 99.0
-$compiledIncrementalAlloc =
-    ([double]$hundred.compiledAllocationDeltaBytes - [double]$single.compiledAllocationDeltaBytes) / 99.0
+$normalIncrementalNs = ([double]$hundred.normalTimeDeltaNs - [double]$single.normalTimeDeltaNs) / 99.0
+$compiledIncrementalNs = ([double]$hundred.compiledTimeDeltaNs - [double]$single.compiledTimeDeltaNs) / 99.0
+$normalIncrementalAlloc = ([double]$hundred.normalAllocationDeltaBytes - [double]$single.normalAllocationDeltaBytes) / 99.0
+$compiledIncrementalAlloc = ([double]$hundred.compiledAllocationDeltaBytes - [double]$single.compiledAllocationDeltaBytes) / 99.0
 
 $normalized = [ordered]@{
-    schemaVersion = 1
+    schemaVersion = 2
     runId = [string]$manifest.runId
     scenario = 'efcore-decomposition'
     scenarioClass = 'v220-only'
-    comparisonPolicy = 'within-version-raw-vs-normal-vs-compiled'
+    comparisonPolicy = 'paired-raw-vs-pipeline-normal-and-compiled'
     authoritativeTiming = [bool]$manifest.authoritativeTiming
     candidateSha = [string]$manifest.candidateSha
     harnessSha = [string]$manifest.harnessSha
@@ -182,7 +190,7 @@ $normalized = [ordered]@{
         compiledIncrementalTimePerAdditionalRowNs = $compiledIncrementalNs
         normalIncrementalAllocationPerAdditionalRowBytes = $normalIncrementalAlloc
         compiledIncrementalAllocationPerAdditionalRowBytes = $compiledIncrementalAlloc
-        note = 'Descriptive two-point model only; hosted timing is non-authoritative.'
+        note = 'Descriptive two-point model only; each pipeline path is paired with its matching raw query shape. Hosted timing is non-authoritative.'
     }
 }
 
@@ -196,30 +204,31 @@ $lines.Add('# EF Core 2.2.0 lifecycle decomposition')
 $lines.Add('')
 $lines.Add("Run: $($manifest.runId)")
 $lines.Add('')
-$lines.Add('This is a v2.2-only within-version decomposition on the same SQLite 10.0.11 fixture. Raw EF, normal QuerySource and CompiledQuerySource use no-tracking semantics. Hosted timing remains informational.')
+$lines.Add('This is a v2.2-only within-version decomposition on one SQLite 10.0.11 fixture. Normal QuerySource is paired with raw LINQ/EF execution; CompiledQuerySource is paired with raw EF.CompileAsyncQuery execution. All paths are no-tracking. Hosted timing remains informational.')
 $lines.Add('')
-$lines.Add('| Workload | Raw us | Normal pipeline us | Compiled pipeline us | Normal/Raw | Compiled/Raw | Compiled/Normal | Normal extra KiB | Compiled extra KiB |')
-$lines.Add('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |')
+$lines.Add('| Workload | Raw normal us | Normal pipeline us | Normal/Raw | Raw compiled us | Compiled pipeline us | Compiled/RawCompiled | Compiled/NormalPipeline | Normal extra KiB | Compiled extra KiB |')
+$lines.Add('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |')
 
 foreach ($row in @($single, $hundred)) {
     $rawUs = ([double]$row.rawMeanNs / 1000.0).ToString('F3', $culture)
     $normalUs = ([double]$row.normalPipelineMeanNs / 1000.0).ToString('F3', $culture)
+    $rawCompiledUs = ([double]$row.rawCompiledMeanNs / 1000.0).ToString('F3', $culture)
     $compiledUs = ([double]$row.compiledPipelineMeanNs / 1000.0).ToString('F3', $culture)
     $normalRaw = ([double]$row.normalOverRawRatio).ToString('F3', $culture) + 'x'
-    $compiledRaw = ([double]$row.compiledOverRawRatio).ToString('F3', $culture) + 'x'
+    $compiledRaw = ([double]$row.compiledOverRawCompiledRatio).ToString('F3', $culture) + 'x'
     $compiledNormal = ([double]$row.compiledOverNormalRatio).ToString('F3', $culture) + 'x'
     $normalKiB = ([double]$row.normalAllocationDeltaBytes / 1024.0).ToString('F3', $culture)
     $compiledKiB = ([double]$row.compiledAllocationDeltaBytes / 1024.0).ToString('F3', $culture)
 
-    $lines.Add("| $($row.name) | $rawUs | $normalUs | $compiledUs | $normalRaw | $compiledRaw | $compiledNormal | $normalKiB | $compiledKiB |")
+    $lines.Add("| $($row.name) | $rawUs | $normalUs | $normalRaw | $rawCompiledUs | $compiledUs | $compiledRaw | $compiledNormal | $normalKiB | $compiledKiB |")
 }
 
 $lines.Add('')
-$lines.Add("Normal QuerySource descriptive incremental overhead per additional row: $(([double]$normalIncrementalNs).ToString('F2', $culture)) ns and $(([double]$normalIncrementalAlloc).ToString('F2', $culture)) bytes.")
-$lines.Add("CompiledQuerySource descriptive incremental overhead per additional row: $(([double]$compiledIncrementalNs).ToString('F2', $culture)) ns and $(([double]$compiledIncrementalAlloc).ToString('F2', $culture)) bytes.")
+$lines.Add("Normal QuerySource descriptive incremental SmartPipe overhead per additional row: $(([double]$normalIncrementalNs).ToString('F2', $culture)) ns and $(([double]$normalIncrementalAlloc).ToString('F2', $culture)) bytes.")
+$lines.Add("CompiledQuerySource descriptive incremental SmartPipe overhead per additional row: $(([double]$compiledIncrementalNs).ToString('F2', $culture)) ns and $(([double]$compiledIncrementalAlloc).ToString('F2', $culture)) bytes.")
 $lines.Add('')
 $lines.Add('The two-point models are descriptive only and must not be extrapolated outside the measured one-row and 100-row workloads.')
 
 $lines | Set-Content -LiteralPath (Join-Path $resolvedRunRoot 'comparison.md') -Encoding utf8
 
-Write-Output "PERF_EFCORE_DECOMPOSITION_REPORT_OK run=$($manifest.runId) workloads=2"
+Write-Output "PERF_EFCORE_DECOMPOSITION_REPORT_OK run=$($manifest.runId) workloads=2 pairedBaselines=2"
