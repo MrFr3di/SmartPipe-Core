@@ -10,7 +10,8 @@ function Assert-True {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $scripts = @(
     (Join-Path $repoRoot 'eng/perf/validate-perf-lab.ps1'),
-    (Join-Path $repoRoot 'eng/perf/prepare-target.ps1')
+    (Join-Path $repoRoot 'eng/perf/prepare-target.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-core-ab.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -36,4 +37,10 @@ Assert-True ($materializer -match 'Get-FileHash.+SHA256') 'Target package proven
 Assert-True ($materializer -match '61ceef6bf69aef0a4f79b25384352d238979200f') 'Materializer default candidate SHA must remain pinned.'
 Assert-True ($materializer -notmatch '(?m)git\s+-C\s+\$repoRoot\s+(checkout|reset)') 'Materializer must not checkout/reset the harness working tree.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=2'
+$coreAb = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-core-ab.ps1') -Raw
+Assert-True ($coreAb -match "'--use-lock-file'") 'Core A/B restore must generate a lock file.'
+Assert-True ($coreAb -match "'--locked-mode'") 'Core A/B restore must verify the generated lock in locked mode.'
+Assert-True ($coreAb -match 'contentHash') 'Core A/B restore must verify NuGet package content hash.'
+Assert-True ($coreAb -match 'sharedSourceSha256') 'Core A/B provenance must record the shared workload source hash.'
+
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=3'
