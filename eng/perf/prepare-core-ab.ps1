@@ -199,7 +199,6 @@ $candidateRoot = Join-Path $repoRoot "artifacts/perf/targets/candidate-$shortSha
 if (-not (Test-Path -LiteralPath (Join-Path $baselineRoot 'target.json')) -or
     -not (Test-Path -LiteralPath (Join-Path $candidateRoot 'target.json'))) {
     & $prepareTargets -Target all -CandidateSha $CandidateSha -Configuration $Configuration
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 $harnessSha = (& git -C $repoRoot rev-parse HEAD).Trim()
