@@ -37,7 +37,7 @@ permissions:
 
 concurrency:
   group: perf-lab-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'push' || inputs.mode == 'smoke' || inputs.mode == 'benchmark-smoke' }}
+  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !contains(github.event.head_commit.message, '[perf-materialize]')) || inputs.mode == 'smoke' || inputs.mode == 'benchmark-smoke' }}
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
