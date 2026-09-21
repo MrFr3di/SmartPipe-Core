@@ -9,4 +9,4 @@ Updated: 2026-09-21
 - PERF-01: immutable baseline/candidate materializer implemented.
 - PERF-02: first shared strict A/B Core workload and isolated target projects implemented.
 - Core A/B orchestration: counter-balanced A→B→B→A runner implemented.
-- Current validation: clean Core A/B preparation script restored; full materialization + NuGet provenance + BDN Dry requested.
+- Current validation: end-to-end A/B Dry is green; first counter-balanced BenchmarkDotNet Short run requested.
