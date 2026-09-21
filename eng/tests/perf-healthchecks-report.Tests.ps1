@@ -38,6 +38,14 @@ function Write-SyntheticResult {
                     Median = $Mean
                     StandardDeviation = 5.0
                 }
+                Measurements = @(
+                    [ordered]@{
+                        IterationMode = 'Workload'
+                        IterationStage = 'Actual'
+                        Operations = 1
+                        Nanoseconds = $Mean
+                    }
+                )
                 Memory = [ordered]@{
                     BytesAllocatedPerOperation = $Allocated
                 }
@@ -57,6 +65,14 @@ function Write-SyntheticResult {
                     Median = ($Mean * 2.0)
                     StandardDeviation = 10.0
                 }
+                Measurements = @(
+                    [ordered]@{
+                        IterationMode = 'Workload'
+                        IterationStage = 'Actual'
+                        Operations = 1
+                        Nanoseconds = ($Mean * 2.0)
+                    }
+                )
                 Memory = [ordered]@{
                     BytesAllocatedPerOperation = ($Allocated * 2.0)
                 }
@@ -124,7 +140,24 @@ try {
     Assert-True ($markdown.Contains('Cross-version percentage deltas are intentionally omitted.')) 'HealthChecks Markdown must explain omitted cross-version deltas.'
     Assert-True (-not $markdown.Contains('Time Δ')) 'HealthChecks Markdown must not render a strict timing delta column.'
 
-    Write-Output 'PERF_HEALTHCHECKS_REPORT_TESTS_OK comparisons=2'
+
+    $failedResult = Join-Path $tempRoot '02-v220/results/Synthetic-report-full-compressed.json'
+    $failedDocument = Get-Content -LiteralPath $failedResult -Raw | ConvertFrom-Json -Depth 64
+    $failedDocument.Benchmarks[0].Statistics = $null
+    $failedDocument | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath $failedResult -Encoding utf8
+
+    $failed = $false
+    try {
+        & $report -RunRoot $tempRoot | Out-Null
+    }
+    catch {
+        $failed = $true
+        Assert-True ($_.Exception.Message.Contains("Statistics is missing")) 'HealthChecks reporter must diagnose missing Statistics explicitly.'
+    }
+
+    Assert-True $failed 'HealthChecks reporter must reject incomplete BenchmarkDotNet evidence.'
+
+    Write-Output 'PERF_HEALTHCHECKS_REPORT_TESTS_OK comparisons=2 incompleteEvidenceGuard=ok'
 }
 finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
