@@ -180,7 +180,7 @@ function Prepare-Candidate {
         if ([string]::IsNullOrWhiteSpace($productVersion)) {
             throw 'Candidate product version is empty.'
         }
-        $packageVersion = "$productVersion-perflab.$shortSha"
+        $packageVersion = $productVersion
 
         Invoke-DotNet -Arguments @(
             'run', '--project', $candidateChecks,
