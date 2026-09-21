@@ -12,10 +12,9 @@ $methods = @(
     'Build_ZeroStage',
     'Build_OneStage',
     'Build_TenStages',
-    'Compile_First_ZeroStage',
-    'Compile_First_TenStages',
-    'Compile_Cached_ZeroStage',
-    'Compile_Cached_TenStages',
+    'BuildAndStart_ZeroStage',
+    'BuildAndStart_OneStage',
+    'BuildAndStart_TenStages',
     'StartAndComplete_ZeroStage',
     'StartAndComplete_OneStage',
     'StartAndComplete_TenStages',
@@ -90,7 +89,7 @@ try {
     Write-SyntheticResult -Root $tempRoot -Slot '02-v220' -BaseMean 120.0 -BaseAllocated 12.0
 
     $output = @(& $report -RunRoot $tempRoot)
-    Assert-True ($output -contains 'PERF_DEFINITION_MODEL_V220_REPORT_OK run=synthetic-definition-report-test methods=11') 'Definition-model report did not complete successfully.'
+    Assert-True ($output -contains 'PERF_DEFINITION_MODEL_V220_REPORT_OK run=synthetic-definition-report-test methods=10') 'Definition-model report did not complete successfully.'
 
     $normalizedPath = Join-Path $tempRoot 'normalized-results.json'
     $markdownPath = Join-Path $tempRoot 'comparison.md'
@@ -100,8 +99,8 @@ try {
     $normalized = Get-Content -LiteralPath $normalizedPath -Raw | ConvertFrom-Json -Depth 64
     Assert-True ([string]$normalized.scenarioClass -ceq 'v220-only') 'Definition normalized class must remain v220-only.'
     Assert-True ([string]$normalized.comparisonPolicy -ceq 'absolute-and-intraversion-scaling') 'Definition comparison policy drifted.'
-    Assert-True (@($normalized.records).Count -eq 22) 'Expected 22 normalized definition records.'
-    Assert-True (@($normalized.summaries).Count -eq 11) 'Expected eleven definition summaries.'
+    Assert-True (@($normalized.records).Count -eq 20) 'Expected 20 normalized definition records.'
+    Assert-True (@($normalized.summaries).Count -eq 10) 'Expected ten definition summaries.'
 
     $buildZero = @($normalized.summaries | Where-Object method -eq 'Build_ZeroStage')[0]
     Assert-True ([Math]::Abs([double]$buildZero.meanNs - 110.0) -lt 0.001) 'Definition zero-stage center is incorrect.'
@@ -110,9 +109,10 @@ try {
 
     Assert-True ([Math]::Abs([double]$normalized.scaling.buildOneVsZeroTimeRatio - 2.0) -lt 0.001) 'Definition build 1/0 scaling is incorrect.'
     Assert-True ([Math]::Abs([double]$normalized.scaling.buildTenVsZeroTimeRatio - 3.0) -lt 0.001) 'Definition build 10/0 scaling is incorrect.'
-    Assert-True ([Math]::Abs([double]$normalized.scaling.compileFirstTenVsZeroTimeRatio - 1.25) -lt 0.001) 'Definition compile scaling is incorrect.'
-    Assert-True ([Math]::Abs([double]$normalized.scaling.startOneVsZeroTimeRatio - 1.125) -lt 0.001) 'Definition start 1/0 scaling is incorrect.'
-    Assert-True ([Math]::Abs([double]$normalized.scaling.startTenVsZeroTimeRatio - 1.25) -lt 0.001) 'Definition start 10/0 scaling is incorrect.'
+    Assert-True ([Math]::Abs([double]$normalized.scaling.buildAndStartOneVsZeroTimeRatio - 1.25) -lt 0.001) 'Definition build-and-start 1/0 scaling is incorrect.'
+    Assert-True ([Math]::Abs([double]$normalized.scaling.buildAndStartTenVsZeroTimeRatio - 1.5) -lt 0.001) 'Definition build-and-start 10/0 scaling is incorrect.'
+    Assert-True ([Math]::Abs([double]$normalized.scaling.startOneVsZeroTimeRatio - 1.1428571429) -lt 0.001) 'Definition warm start 1/0 scaling is incorrect.'
+    Assert-True ([Math]::Abs([double]$normalized.scaling.startTenVsZeroTimeRatio - 1.2857142857) -lt 0.001) 'Definition warm start 10/0 scaling is incorrect.'
 
     Assert-True ($null -eq $buildZero.PSObject.Properties['timeDeltaPercent']) 'Definition v220-only output must not contain cross-version timing delta.'
     Assert-True ($null -eq $buildZero.PSObject.Properties['allocationDeltaPercent']) 'Definition v220-only output must not contain cross-version allocation delta.'
