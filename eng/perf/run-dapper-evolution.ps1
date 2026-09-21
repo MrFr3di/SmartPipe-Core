@@ -170,4 +170,4 @@ $manifest |
 
 & $report -RunRoot $runRoot
 
-Write-Output "PERF_OPENTELEMETRY_EVOLUTION_RUN_OK runId=$runId job=$Job order=v212,v220,v220,v212"
+Write-Output "PERF_DAPPER_EVOLUTION_RUN_OK runId=$runId job=$Job order=v212,v220,v220,v212"
