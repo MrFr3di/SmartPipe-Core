@@ -37,6 +37,7 @@ on:
           - extensions-smoke
           - extensions-bench
           - extensions-focus-smoke
+          - extensions-focus-bench
           - json-smoke
           - json-bench
           - csv-smoke
@@ -68,8 +69,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]') || contains(github.event.head_commit.message, '[perf-stress]') || contains(github.event.head_commit.message, '[perf-di-smoke]') || contains(github.event.head_commit.message, '[perf-di-bench]') || contains(github.event.head_commit.message, '[perf-hosting-smoke]') || contains(github.event.head_commit.message, '[perf-hosting-bench]') || contains(github.event.head_commit.message, '[perf-health-smoke]') || contains(github.event.head_commit.message, '[perf-health-bench]') || (contains(github.event.head_commit.message, '[perf-otel-smoke]') || contains(github.event.head_commit.message, '[perf-otel-bench]')) || contains(github.event.head_commit.message, '[perf-extensions-smoke]') || contains(github.event.head_commit.message, '[perf-extensions-bench]') || contains(github.event.head_commit.message, '[perf-extensions-focus-smoke]') || contains(github.event.head_commit.message, '[perf-json-smoke]') || contains(github.event.head_commit.message, '[perf-json-bench]') || contains(github.event.head_commit.message, '[perf-csv-smoke]') || contains(github.event.head_commit.message, '[perf-csv-bench]') || contains(github.event.head_commit.message, '[perf-dapper-smoke]') || contains(github.event.head_commit.message, '[perf-dapper-bench]') || contains(github.event.head_commit.message, '[perf-ef-smoke]') || contains(github.event.head_commit.message, '[perf-ef-bench]') || contains(github.event.head_commit.message, '[perf-definition-smoke]') || contains(github.event.head_commit.message, '[perf-definition-bench]') || contains(github.event.head_commit.message, '[perf-soak-verify]') || contains(github.event.head_commit.message, '[perf-soak-30m]')) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
-  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !contains(github.event.head_commit.message, '[perf-materialize]') && !contains(github.event.head_commit.message, '[perf-bench]') && !contains(github.event.head_commit.message, '[perf-stress]') && !contains(github.event.head_commit.message, '[perf-di-smoke]') && !contains(github.event.head_commit.message, '[perf-di-bench]') && !contains(github.event.head_commit.message, '[perf-hosting-smoke]') && !contains(github.event.head_commit.message, '[perf-hosting-bench]') && !contains(github.event.head_commit.message, '[perf-health-smoke]') && !contains(github.event.head_commit.message, '[perf-health-bench]') && !(contains(github.event.head_commit.message, '[perf-otel-smoke]') || contains(github.event.head_commit.message, '[perf-otel-bench]')) && !contains(github.event.head_commit.message, '[perf-extensions-smoke]') && !contains(github.event.head_commit.message, '[perf-extensions-bench]') && !contains(github.event.head_commit.message, '[perf-extensions-focus-smoke]') && !contains(github.event.head_commit.message, '[perf-json-smoke]') && !contains(github.event.head_commit.message, '[perf-json-bench]') && !contains(github.event.head_commit.message, '[perf-csv-smoke]') && !contains(github.event.head_commit.message, '[perf-csv-bench]') && !contains(github.event.head_commit.message, '[perf-dapper-smoke]') && !contains(github.event.head_commit.message, '[perf-dapper-bench]') && !contains(github.event.head_commit.message, '[perf-ef-smoke]') && !contains(github.event.head_commit.message, '[perf-ef-bench]') && !contains(github.event.head_commit.message, '[perf-definition-smoke]') && !contains(github.event.head_commit.message, '[perf-definition-bench]') && !contains(github.event.head_commit.message, '[perf-soak-verify]') && !contains(github.event.head_commit.message, '[perf-soak-30m]')) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
+  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]') || contains(github.event.head_commit.message, '[perf-stress]') || contains(github.event.head_commit.message, '[perf-di-smoke]') || contains(github.event.head_commit.message, '[perf-di-bench]') || contains(github.event.head_commit.message, '[perf-hosting-smoke]') || contains(github.event.head_commit.message, '[perf-hosting-bench]') || contains(github.event.head_commit.message, '[perf-health-smoke]') || contains(github.event.head_commit.message, '[perf-health-bench]') || (contains(github.event.head_commit.message, '[perf-otel-smoke]') || contains(github.event.head_commit.message, '[perf-otel-bench]')) || contains(github.event.head_commit.message, '[perf-extensions-smoke]') || contains(github.event.head_commit.message, '[perf-extensions-bench]') || contains(github.event.head_commit.message, '[perf-extensions-focus-smoke]') || contains(github.event.head_commit.message, '[perf-extensions-focus-bench]') || contains(github.event.head_commit.message, '[perf-json-smoke]') || contains(github.event.head_commit.message, '[perf-json-bench]') || contains(github.event.head_commit.message, '[perf-csv-smoke]') || contains(github.event.head_commit.message, '[perf-csv-bench]') || contains(github.event.head_commit.message, '[perf-dapper-smoke]') || contains(github.event.head_commit.message, '[perf-dapper-bench]') || contains(github.event.head_commit.message, '[perf-ef-smoke]') || contains(github.event.head_commit.message, '[perf-ef-bench]') || contains(github.event.head_commit.message, '[perf-definition-smoke]') || contains(github.event.head_commit.message, '[perf-definition-bench]') || contains(github.event.head_commit.message, '[perf-soak-verify]') || contains(github.event.head_commit.message, '[perf-soak-30m]')) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
+  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !contains(github.event.head_commit.message, '[perf-materialize]') && !contains(github.event.head_commit.message, '[perf-bench]') && !contains(github.event.head_commit.message, '[perf-stress]') && !contains(github.event.head_commit.message, '[perf-di-smoke]') && !contains(github.event.head_commit.message, '[perf-di-bench]') && !contains(github.event.head_commit.message, '[perf-hosting-smoke]') && !contains(github.event.head_commit.message, '[perf-hosting-bench]') && !contains(github.event.head_commit.message, '[perf-health-smoke]') && !contains(github.event.head_commit.message, '[perf-health-bench]') && !(contains(github.event.head_commit.message, '[perf-otel-smoke]') || contains(github.event.head_commit.message, '[perf-otel-bench]')) && !contains(github.event.head_commit.message, '[perf-extensions-smoke]') && !contains(github.event.head_commit.message, '[perf-extensions-bench]') && !contains(github.event.head_commit.message, '[perf-extensions-focus-smoke]') && !contains(github.event.head_commit.message, '[perf-extensions-focus-bench]') && !contains(github.event.head_commit.message, '[perf-json-smoke]') && !contains(github.event.head_commit.message, '[perf-json-bench]') && !contains(github.event.head_commit.message, '[perf-csv-smoke]') && !contains(github.event.head_commit.message, '[perf-csv-bench]') && !contains(github.event.head_commit.message, '[perf-dapper-smoke]') && !contains(github.event.head_commit.message, '[perf-dapper-bench]') && !contains(github.event.head_commit.message, '[perf-ef-smoke]') && !contains(github.event.head_commit.message, '[perf-ef-bench]') && !contains(github.event.head_commit.message, '[perf-definition-smoke]') && !contains(github.event.head_commit.message, '[perf-definition-bench]') && !contains(github.event.head_commit.message, '[perf-soak-verify]') && !contains(github.event.head_commit.message, '[perf-soak-30m]')) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
@@ -111,6 +112,7 @@ jobs:
           ./eng/tests/perf-healthchecks-report.Tests.ps1
           ./eng/tests/perf-opentelemetry-report.Tests.ps1
           ./eng/tests/perf-extensions-report.Tests.ps1
+          ./eng/tests/perf-extensions-focus-report.Tests.ps1
           ./eng/tests/perf-json-report.Tests.ps1
           ./eng/tests/perf-csv-report.Tests.ps1
           ./eng/tests/perf-dapper-report.Tests.ps1
@@ -740,7 +742,7 @@ jobs:
 
   extensions-focus:
     name: SP220-07 focused Composite characterization
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'extensions-focus-smoke') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[perf-extensions-focus-smoke]')) }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.mode == 'extensions-focus-smoke' || inputs.mode == 'extensions-focus-bench')) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-extensions-focus-smoke]') || contains(github.event.head_commit.message, '[perf-extensions-focus-bench]'))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -758,6 +760,10 @@ jobs:
         shell: pwsh
         run: ./eng/tests/perf-scripts.Tests.ps1
 
+      - name: Test focused Composite reporting
+        shell: pwsh
+        run: ./eng/tests/perf-extensions-focus-report.Tests.ps1
+
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
@@ -765,17 +771,24 @@ jobs:
           cache: true
           cache-dependency-path: '**/packages.lock.json'
 
-      - name: Prepare focused Composite targets and run Dry
+      - name: Run focused Composite mode
         shell: pwsh
         run: |
           $candidate = "$env:PERF_CANDIDATE_SHA"
           if ([string]::IsNullOrWhiteSpace($candidate)) {
             $candidate = '61ceef6bf69aef0a4f79b25384352d238979200f'
           }
-          ./eng/perf/prepare-extensions-focus.ps1 -CandidateSha $candidate -RunDry
+          $mode = '${{ inputs.mode }}'
+          $message = '${{ github.event.head_commit.message }}'
+          if ($mode -eq 'extensions-focus-bench' -or $message.Contains('[perf-extensions-focus-bench]')) {
+            ./eng/perf/run-extensions-focus.ps1 -CandidateSha $candidate -Job Short
+          }
+          else {
+            ./eng/perf/prepare-extensions-focus.ps1 -CandidateSha $candidate -RunDry
+          }
 
       - name: Upload focused Composite smoke evidence
-        if: ${{ always() }}
+        if: ${{ always() && inputs.mode != 'extensions-focus-bench' && !contains(github.event.head_commit.message, '[perf-extensions-focus-bench]') }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: perf-extensions-focus-smoke-${{ github.sha }}
@@ -788,6 +801,21 @@ jobs:
             artifacts/perf/extensions-focus/dotnet-info.txt
           if-no-files-found: warn
           retention-days: 3
+          compression-level: 9
+
+      - name: Upload focused Composite benchmark evidence
+        if: ${{ always() && (inputs.mode == 'extensions-focus-bench' || contains(github.event.head_commit.message, '[perf-extensions-focus-bench]')) }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: perf-extensions-focus-bench-${{ github.sha }}
+          path: |
+            artifacts/perf/targets/**/target.json
+            artifacts/perf/targets/**/diagnostics/**
+            artifacts/perf/extensions-focus/**/build-provenance.json
+            artifacts/perf/extensions-focus/**/packages.lock.json
+            artifacts/perf/runs/extensions-focus/**
+          if-no-files-found: warn
+          retention-days: 7
           compression-level: 9
 
   json-strict-ab:
