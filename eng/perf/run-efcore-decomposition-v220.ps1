@@ -34,9 +34,11 @@ function Assert-BenchmarkResult {
     $expectedMethods = @(
         'RawSingle',
         'PipelineSingle',
+        'RawCompiledSingle',
         'CompiledPipelineSingle',
         'RawHundredRows',
         'PipelineHundredRows',
+        'RawCompiledHundredRows',
         'CompiledPipelineHundredRows'
     )
 
