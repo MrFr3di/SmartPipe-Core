@@ -95,7 +95,11 @@ internal sealed class OpenTelemetryTarget : IDisposable
     private static ServiceCollection CreateServices()
     {
         var services = new ServiceCollection();
-        services.AddOpenTelemetry().AddSmartPipeInstrumentation();
+        var builder = services.AddOpenTelemetry()
+            .WithMetrics(static _ => { })
+            .WithTracing(static _ => { });
+
+        builder.AddSmartPipeInstrumentation();
         return services;
     }
 
