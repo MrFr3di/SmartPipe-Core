@@ -13,6 +13,7 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/prepare-target.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-core-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-core-ab.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-core-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-core-stress.ps1')
 )
 
@@ -70,4 +71,11 @@ Assert-True ($stressSource -notmatch 'Task\.Delay') 'Deterministic Core stress m
 Assert-True ($stressSource -match 'ExpectedChecksum') 'Deterministic Core stress must enforce a checksum oracle.'
 Assert-True ($stressSource -match 'ExpectedItems') 'Deterministic Core stress must enforce an item-count oracle.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=5'
+$report = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-core-ab.ps1') -Raw
+Assert-True ($report -match 'baselineRepeatDriftPercent') 'Core A/B report must expose baseline repeat drift.'
+Assert-True ($report -match 'candidateRepeatDriftPercent') 'Core A/B report must expose candidate repeat drift.'
+Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must preserve allocation deltas.'
+Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
+Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
+
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=6'
