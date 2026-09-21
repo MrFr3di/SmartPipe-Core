@@ -24,13 +24,13 @@ function Write-SyntheticResult {
         HostEnvironmentInfo = [ordered]@{}
         Benchmarks = @(
             [ordered]@{
-                DisplayInfo = 'Synthetic DI'
+                DisplayInfo = 'Synthetic DI ResolveFactory'
                 Namespace = 'SmartPipe.Perf.DependencyInjection'
                 Type = 'DependencyInjectionEvolutionBenchmarks'
                 Method = 'ResolveFactory'
                 MethodTitle = 'ResolveFactory'
                 Parameters = ''
-                FullName = 'Synthetic DI'
+                FullName = 'Synthetic DI ResolveFactory'
                 HardwareIntrinsics = 'synthetic'
                 Statistics = [ordered]@{
                     N = 3
@@ -40,6 +40,25 @@ function Write-SyntheticResult {
                 }
                 Memory = [ordered]@{
                     BytesAllocatedPerOperation = $Allocated
+                }
+            },
+            [ordered]@{
+                DisplayInfo = 'Synthetic DI RegisterAndBuildProvider'
+                Namespace = 'SmartPipe.Perf.DependencyInjection'
+                Type = 'DependencyInjectionEvolutionBenchmarks'
+                Method = 'RegisterAndBuildProvider'
+                MethodTitle = 'RegisterAndBuildProvider'
+                Parameters = ''
+                FullName = 'Synthetic DI RegisterAndBuildProvider'
+                HardwareIntrinsics = 'synthetic'
+                Statistics = [ordered]@{
+                    N = 3
+                    Mean = ($Mean * 2.0)
+                    Median = ($Mean * 2.0)
+                    StandardDeviation = 10.0
+                }
+                Memory = [ordered]@{
+                    BytesAllocatedPerOperation = ($Allocated * 2.0)
                 }
             }
         )
@@ -86,10 +105,11 @@ try {
     $normalized = Get-Content -LiteralPath $normalizedPath -Raw | ConvertFrom-Json -Depth 64
     Assert-True ([string]$normalized.scenarioClass -ceq 'evolution') 'DI normalized class must remain evolution.'
     Assert-True ([string]$normalized.comparisonPolicy -ceq 'side-by-side-no-cross-version-ratio') 'DI comparison policy drifted.'
-    Assert-True (@($normalized.records).Count -eq 4) 'Expected four normalized DI raw records.'
-    Assert-True (@($normalized.sideBySide).Count -eq 1) 'Expected one DI side-by-side record.'
+    Assert-True (@($normalized.records).Count -eq 8) 'Expected eight normalized DI raw records.'
+    Assert-True (@($normalized.sideBySide).Count -eq 2) 'Expected two distinct DI side-by-side method groups.'
 
-    $comparison = @($normalized.sideBySide)[0]
+    $comparison = @($normalized.sideBySide | Where-Object method -eq 'ResolveFactory')[0]
+    Assert-True ($null -ne $comparison) 'ResolveFactory comparison is missing.'
     Assert-True ([Math]::Abs([double]$comparison.baselineMeanNs - 950.0) -lt 0.001) 'DI baseline center is incorrect.'
     Assert-True ([Math]::Abs([double]$comparison.candidateMeanNs - 1600.0) -lt 0.001) 'DI candidate center is incorrect.'
     Assert-True ($null -eq $comparison.PSObject.Properties['timeDeltaPercent']) 'DI evolution output must not contain timeDeltaPercent.'
@@ -99,7 +119,7 @@ try {
     Assert-True ($markdown.Contains('Cross-version percentage deltas are intentionally omitted.')) 'DI Markdown must explain omitted cross-version deltas.'
     Assert-True (-not $markdown.Contains('Time Δ')) 'DI Markdown must not render a strict timing delta column.'
 
-    Write-Output 'PERF_DI_REPORT_TESTS_OK comparisons=1'
+    Write-Output 'PERF_DI_REPORT_TESTS_OK comparisons=2'
 }
 finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
