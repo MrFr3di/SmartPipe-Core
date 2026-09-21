@@ -12,7 +12,8 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/validate-perf-lab.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-target.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-core-ab.ps1'),
-    (Join-Path $repoRoot 'eng/perf/run-core-ab.ps1')
+    (Join-Path $repoRoot 'eng/perf/run-core-ab.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-core-stress.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -58,4 +59,15 @@ Assert-True ($runner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target 
 Assert-True ($runner -match "scenarioClass = 'strict-ab'") 'Core A/B run manifest must classify the scenario as strict-ab.'
 Assert-True ($runner.Contains('authoritativeTiming = $false')) 'GitHub-compatible Core A/B timing must default to non-authoritative.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=4'
+$stressRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-core-stress.ps1') -Raw
+Assert-True ($stressRunner -match "Profile 'parallel32'") 'Core stress must run the parallel32 profile.'
+Assert-True ($stressRunner -match "Profile 'sequential1000'") 'Core stress must run the sequential1000 profile.'
+Assert-True ($stressRunner -match "scenarioClass = 'strict-ab'") 'Core stress must classify its comparison as strict-ab.'
+Assert-True ($stressRunner.Contains('authoritativeTiming = $false')) 'Hosted stress elapsed time must remain non-authoritative.'
+Assert-True ($stressRunner -match 'contentHash differs from verified Core A/B provenance') 'Stress restore must bind to verified Core A/B package content.'
+$stressSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Stress.Shared/Program.cs') -Raw
+Assert-True ($stressSource -notmatch 'Task\.Delay') 'Deterministic Core stress must not rely on Task.Delay.'
+Assert-True ($stressSource -match 'ExpectedChecksum') 'Deterministic Core stress must enforce a checksum oracle.'
+Assert-True ($stressSource -match 'ExpectedItems') 'Deterministic Core stress must enforce an item-count oracle.'
+
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=5'
