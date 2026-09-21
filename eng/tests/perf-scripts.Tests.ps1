@@ -424,6 +424,8 @@ Assert-True ($dapperRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*t
 Assert-True ($dapperRunner -match "scenarioClass = 'evolution'") 'Dapper runner must remain evolution-classified.'
 Assert-True ($dapperRunner -match "comparisonPolicy = 'side-by-side-no-cross-version-ratio'") 'Dapper runner must forbid cross-version ratio reporting.'
 Assert-True ($dapperRunner.Contains('authoritativeTiming = $false')) 'Hosted Dapper timing must remain non-authoritative.'
+Assert-True ($dapperRunner -match 'PERF_DAPPER_EVOLUTION_RUN_OK') 'Dapper runner must expose the Dapper-specific completion marker.'
+Assert-True ($dapperRunner -notmatch 'PERF_OPENTELEMETRY_EVOLUTION_RUN_OK') 'Dapper runner must not retain an OpenTelemetry completion marker.'
 Assert-True ($dapperRunner -match 'Assert-BenchmarkResult') 'Dapper Short must reject missing BenchmarkDotNet JSON evidence.'
 Assert-True ($dapperRunner -match 'produced no statistics') 'Dapper Short must reject results without statistics.'
 Assert-True ($dapperRunner -match 'produced no measurements') 'Dapper Short must reject results without measurements.'
