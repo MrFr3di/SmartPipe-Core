@@ -95,7 +95,7 @@ try {
     Write-SyntheticResult -Root $tempRoot -Slot '04-v212' -Mean 900.0 -Allocated 102.0
 
     $output = @(& $report -RunRoot $tempRoot)
-    Assert-True ($output -contains 'PERF_DI_REPORT_OK run=synthetic-di-report-test comparisons=1') 'DI report did not complete successfully.'
+    Assert-True ($output -contains 'PERF_DI_REPORT_OK run=synthetic-di-report-test comparisons=2') 'DI report did not complete successfully.'
 
     $normalizedPath = Join-Path $tempRoot 'normalized-results.json'
     $markdownPath = Join-Path $tempRoot 'comparison.md'
@@ -107,6 +107,11 @@ try {
     Assert-True ([string]$normalized.comparisonPolicy -ceq 'side-by-side-no-cross-version-ratio') 'DI comparison policy drifted.'
     Assert-True (@($normalized.records).Count -eq 8) 'Expected eight normalized DI raw records.'
     Assert-True (@($normalized.sideBySide).Count -eq 2) 'Expected two distinct DI side-by-side method groups.'
+
+    $methods = @($normalized.sideBySide | ForEach-Object { [string]$_.method } | Sort-Object)
+    Assert-True ($methods.Count -eq 2) 'Expected exactly two DI method groups.'
+    Assert-True ($methods[0] -ceq 'RegisterAndBuildProvider') 'RegisterAndBuildProvider comparison is missing.'
+    Assert-True ($methods[1] -ceq 'ResolveFactory') 'ResolveFactory comparison is missing.'
 
     $comparison = @($normalized.sideBySide | Where-Object method -eq 'ResolveFactory')[0]
     Assert-True ($null -ne $comparison) 'ResolveFactory comparison is missing.'
