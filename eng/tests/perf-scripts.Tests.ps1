@@ -27,7 +27,9 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/prepare-opentelemetry-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-opentelemetry-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-opentelemetry-evolution.ps1'),
-    (Join-Path $repoRoot 'eng/perf/prepare-extensions-strict-ab.ps1')
+    (Join-Path $repoRoot 'eng/perf/prepare-extensions-strict-ab.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-extensions-strict-ab.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-extensions-strict-ab.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -262,6 +264,25 @@ Assert-True ($extensionsV220Project -match 'SmartPipe.Extensions.Logging" Versio
 Assert-True ($extensionsV212Project -match 'Microsoft.Extensions.Logging.Abstractions" Version="10\.0\.11"') 'SP220-07 baseline must pin Logging.Abstractions 10.0.11.'
 Assert-True ($extensionsV220Project -match 'Microsoft.Extensions.Logging.Abstractions" Version="10\.0\.11"') 'SP220-07 candidate must pin Logging.Abstractions 10.0.11.'
 
+$extensionsRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-extensions-strict-ab.ps1') -Raw
+Assert-True ($extensionsRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'SP220-07 strict A/B order must remain counter-balanced A-B-B-A.'
+Assert-True ($extensionsRunner -match "scenarioClass = 'strict-ab'") 'SP220-07 runner must remain strict-ab.'
+Assert-True ($extensionsRunner -match "comparisonPolicy = 'strict-cross-version-ratio'") 'SP220-07 runner must preserve strict ratio policy.'
+Assert-True ($extensionsRunner.Contains('authoritativeTiming = $false')) 'Hosted SP220-07 timing must remain non-authoritative.'
+Assert-True ($extensionsRunner -match 'Assert-BenchmarkResult') 'SP220-07 Short must reject missing BenchmarkDotNet evidence.'
+Assert-True ($extensionsRunner -match 'produced no statistics') 'SP220-07 Short must reject results without statistics.'
+Assert-True ($extensionsRunner -match 'produced no measurements') 'SP220-07 Short must reject results without measurements.'
+Assert-True ($extensionsRunner -match 'zero measured operations') 'SP220-07 Short must reject zero-operation results.'
+
+$extensionsReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-extensions-strict-ab.ps1') -Raw
+Assert-True ($extensionsReport -match 'strict-cross-version-ratio') 'SP220-07 report must preserve strict ratio policy.'
+Assert-True ($extensionsReport -match 'timeDeltaPercent') 'SP220-07 report must emit strict timing deltas.'
+Assert-True ($extensionsReport -match 'allocationDeltaPercent') 'SP220-07 report must emit strict allocation deltas.'
+Assert-True ($extensionsReport -match 'baselineRepeatDriftPercent') 'SP220-07 report must expose baseline repeat drift.'
+Assert-True ($extensionsReport -match 'candidateRepeatDriftPercent') 'SP220-07 report must expose candidate repeat drift.'
+Assert-True ($extensionsReport -match 'records.Count -ne \(\$expectedMethods.Count \* 4\)') 'SP220-07 report must reject incomplete A-B-B-A evidence.'
+
+
 
 $hostingRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-hosting-evolution.ps1') -Raw
 Assert-True ($hostingRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'Hosting evolution order must remain counter-balanced A-B-B-A.'
@@ -304,4 +325,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=19'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=21'
