@@ -109,6 +109,8 @@ Assert-True ($diScaleSource -notmatch 'public sealed class DependencyInjectionV2
 Assert-True ($di -match "scenarioClass = 'v220-only'") 'DI scale provenance must remain v220-only.'
 Assert-True ($di -match 'v220-scale-provenance\.json') 'DI scale source/provenance must be recorded.'
 Assert-True (($di | Select-String -Pattern 'Assert-BenchmarkResult' -AllMatches).Matches.Count -ge 3) 'DI Dry must require BenchmarkDotNet result artifacts for both evolution targets and v2.2 scale.'
+Assert-True ($di -match 'produced no statistics') 'DI Dry must reject BenchmarkDotNet JSON records without statistics.'
+Assert-True ($di -match 'produced no measurements') 'DI Dry must reject BenchmarkDotNet JSON records without measurements.'
 Assert-True (($di | Select-String -Pattern "'--exporters'[\s\S]{0,80}'json'" -AllMatches).Matches.Count -ge 2) 'DI Dry and v2.2 scale Dry must explicitly export BenchmarkDotNet JSON evidence.'
 
 $diRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-di-evolution.ps1') -Raw
@@ -117,6 +119,8 @@ Assert-True ($diRunner -match "scenarioClass = 'evolution'") 'DI runner must cla
 Assert-True ($diRunner -match "comparisonPolicy = 'side-by-side-no-cross-version-ratio'") 'DI runner must forbid cross-version ratio reporting.'
 Assert-True ($diRunner.Contains('authoritativeTiming = $false')) 'Hosted DI timing must remain non-authoritative.'
 Assert-True ($diRunner -match 'Assert-BenchmarkResult') 'DI Short must fail when BenchmarkDotNet produces no result artifact.'
+Assert-True ($diRunner -match 'produced no statistics') 'DI Short must reject BenchmarkDotNet JSON records without statistics.'
+Assert-True ($diRunner -match 'produced no measurements') 'DI Short must reject BenchmarkDotNet JSON records without measurements.'
 
 $diReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-di-evolution.ps1') -Raw
 Assert-True ($diReport -match 'side-by-side-no-cross-version-ratio') 'DI report must preserve evolution comparison policy.'
@@ -134,6 +138,8 @@ Assert-True ($hosting -match 'dotnet nuget verify') 'Hosting provenance must use
 Assert-True ($hosting -match "'--locked-mode'") 'Hosting restore must verify the generated lock in locked mode.'
 Assert-True ($hosting -match "'--exporters'[\s\S]{0,80}'json'") 'Hosting Dry must explicitly export BenchmarkDotNet JSON.'
 Assert-True ($hosting -match 'Assert-BenchmarkResult') 'Hosting Dry must fail when BenchmarkDotNet produces no JSON result.'
+Assert-True ($hosting -match 'produced no statistics') 'Hosting Dry must reject BenchmarkDotNet JSON records without statistics.'
+Assert-True ($hosting -match 'produced no measurements') 'Hosting Dry must reject BenchmarkDotNet JSON records without measurements.'
 $hostingSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Hosting.Shared/HostingEvolutionBenchmarks.cs') -Raw
 Assert-True ($hostingSource -match 'BenchmarkCategory\("Evolution", "Hosting"\)') 'Hosting benchmark must remain evolution-classified.'
 Assert-True ($hostingSource -match 'SetupAsync') 'Hosting benchmark must run a correctness precheck.'
@@ -207,6 +213,8 @@ Assert-True ($hostingRunner -match "scenarioClass = 'evolution'") 'Hosting runne
 Assert-True ($hostingRunner -match "comparisonPolicy = 'side-by-side-no-cross-version-ratio'") 'Hosting runner must forbid cross-version ratio reporting.'
 Assert-True ($hostingRunner.Contains('authoritativeTiming = $false')) 'Hosted Hosting timing must remain non-authoritative.'
 Assert-True ($hostingRunner -match 'Assert-BenchmarkResult') 'Hosting runner must reject missing BenchmarkDotNet JSON evidence.'
+Assert-True ($hostingRunner -match 'produced no statistics') 'Hosting Short must reject BenchmarkDotNet JSON records without statistics.'
+Assert-True ($hostingRunner -match 'produced no measurements') 'Hosting Short must reject BenchmarkDotNet JSON records without measurements.'
 
 $hostingReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-hosting-evolution.ps1') -Raw
 Assert-True ($hostingReport -match 'side-by-side-no-cross-version-ratio') 'Hosting report must preserve evolution comparison policy.'
