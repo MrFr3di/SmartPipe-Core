@@ -128,6 +128,7 @@ try {
 
     $markdown = Get-Content -LiteralPath $markdownPath -Raw
     Assert-True ($markdown.Contains('Memory slopes are evidence-only')) 'Core soak Markdown must state evidence-only memory policy.'
+    Assert-True ($markdown.Contains('Validation-only profile')) 'Core soak verify report must label short slopes as validation-only.'
     Assert-True (-not $markdown.Contains('Time delta')) 'Core soak Markdown must not render a timing delta.'
 
     Write-Output 'PERF_CORE_SOAK_REPORT_TESTS_OK targets=2'
