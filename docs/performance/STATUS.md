@@ -26,3 +26,5 @@ Updated: 2026-09-21
 - PERF-04 DI: BenchmarkDotNet false-green validation fixed; result artifacts are now mandatory; real DI/scale Dry requested.
 
 - PERF-04 DI: JSON evidence is now mandatory for evolution and v2.2-only scale Dry; validation rerun requested.
+
+- PERF-04 DI: immutable Dry + correctness precheck + JSON evidence + v2.2-only scale are green; first valid DI evolution Short requested.
