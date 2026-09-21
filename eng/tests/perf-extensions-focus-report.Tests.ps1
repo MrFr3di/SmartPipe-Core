@@ -86,6 +86,13 @@ try {
     Assert-True ([string]$normalized.comparisonPolicy -ceq 'strict-cross-version-ratio') 'Composite focus comparison policy drifted.'
     Assert-True (@($normalized.records).Count -eq 12) 'Expected 12 Composite focus raw records.'
     Assert-True (@($normalized.comparisons).Count -eq 3) 'Expected three Composite focus comparisons.'
+    Assert-True ($null -ne $normalized.decomposition) 'Composite focus decomposition is missing.'
+    Assert-True ([Math]::Abs([double]$normalized.decomposition.baselineFixedZeroChildNs-90.0)-lt 0.001) 'Composite fixed baseline is incorrect.'
+    Assert-True ([Math]::Abs([double]$normalized.decomposition.candidateFixedZeroChildNs-130.0)-lt 0.001) 'Composite fixed candidate is incorrect.'
+    Assert-True ([Math]::Abs([double]$normalized.decomposition.baselineFirstChildIncrementNs-90.0)-lt 0.001) 'Composite first-child baseline increment is incorrect.'
+    Assert-True ([Math]::Abs([double]$normalized.decomposition.candidateFirstChildIncrementNs-130.0)-lt 0.001) 'Composite first-child candidate increment is incorrect.'
+    Assert-True ([Math]::Abs([double]$normalized.decomposition.baselineAdditionalChildIncrementNs-45.0)-lt 0.001) 'Composite additional-child baseline increment is incorrect.'
+    Assert-True ([Math]::Abs([double]$normalized.decomposition.candidateAdditionalChildIncrementNs-65.0)-lt 0.001) 'Composite additional-child candidate increment is incorrect.'
 
     $zero=@($normalized.comparisons | Where-Object method -eq 'ZeroChildren')[0]
     Assert-True ([Math]::Abs([double]$zero.baselineMeanNs-90.0)-lt 0.001) 'Composite focus baseline center is incorrect.'
@@ -95,6 +102,8 @@ try {
     $markdown=Get-Content -LiteralPath (Join-Path $tempRoot 'comparison.md') -Raw
     Assert-True ($markdown.Contains('+44.44%')) 'Composite focus Markdown must render strict timing delta.'
     Assert-True ($markdown.Contains('GitHub-hosted timing remains informational')) 'Composite focus Markdown must preserve timing authority warning.'
+    Assert-True ($markdown.Contains('Composite cost decomposition')) 'Composite focus Markdown must render the fixed/incremental decomposition.'
+    Assert-True ($markdown.Contains('descriptive finite differences')) 'Composite focus Markdown must label incremental costs as descriptive.'
 
     Write-Output 'PERF_EXTENSIONS_FOCUS_REPORT_TESTS_OK comparisons=3'
 }
