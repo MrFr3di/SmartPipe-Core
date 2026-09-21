@@ -22,10 +22,11 @@ on:
         options:
           - smoke
           - benchmark-smoke
+          - materialize
           - stress
           - soak
       candidate-sha:
-        description: Optional exact candidate SHA; required for stress/soak until SP220-12 is pinned
+        description: Exact candidate SHA override; must match the pinned SP220-01-11 target
         required: false
         type: string
         default: ''
@@ -115,3 +116,44 @@ jobs:
         shell: pwsh
         run: |
           Write-Error "The requested mode is reserved by the lab contract but its deterministic runner is not implemented yet. Do not substitute ad-hoc timing."
+
+
+  materialize:
+    name: Materialize immutable A/B targets
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'materialize' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Materialize baseline and candidate
+        shell: pwsh
+        run: |
+          $candidate = "$env:PERF_CANDIDATE_SHA"
+          if ([string]::IsNullOrWhiteSpace($candidate)) {
+            $candidate = '61ceef6bf69aef0a4f79b25384352d238979200f'
+          }
+          ./eng/perf/prepare-target.ps1 -Target all -CandidateSha $candidate
+
+      - name: Upload target provenance only
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: perf-target-provenance-${{ github.sha }}
+          path: |
+            artifacts/perf/targets/**/target.json
+            artifacts/perf/targets/**/package-manifest.json
+            artifacts/perf/targets/**/metadata-report.json
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 9
