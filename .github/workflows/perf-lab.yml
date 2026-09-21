@@ -37,8 +37,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || contains(github.event.head_commit.message, '[perf-materialize]')) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
-  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !contains(github.event.head_commit.message, '[perf-materialize]')) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
+  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || (contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]'))) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
+  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !(contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]'))) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
@@ -115,7 +115,7 @@ jobs:
 
   materialize:
     name: Materialize immutable A/B targets
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.mode == 'materialize' || inputs.mode == 'benchmark-smoke' || inputs.mode == 'bench')) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-ab-smoke]'))) }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.mode == 'materialize' || inputs.mode == 'benchmark-smoke' || inputs.mode == 'bench')) || (github.event_name == 'push' && ((contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]')) || contains(github.event.head_commit.message, '[perf-ab-smoke]'))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -144,7 +144,7 @@ jobs:
           if ($mode -eq 'benchmark-smoke' -or $message.Contains('[perf-ab-smoke]')) {
             ./eng/perf/prepare-core-ab.ps1 -CandidateSha $candidate -RunDry
           }
-          elseif ($mode -eq 'bench') {
+          elseif ($mode -eq 'bench' -or $message.Contains('[perf-bench]')) {
             ./eng/perf/run-core-ab.ps1 -CandidateSha $candidate -Job Short
           }
           else {
@@ -152,7 +152,7 @@ jobs:
           }
 
       - name: Upload target provenance and smoke evidence
-        if: ${{ always() && inputs.mode != 'bench' }}
+        if: ${{ always() && inputs.mode != 'bench' && !contains(github.event.head_commit.message, '[perf-bench]') }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: perf-target-provenance-${{ github.sha }}
@@ -170,7 +170,7 @@ jobs:
           compression-level: 9
 
       - name: Upload comparative benchmark evidence
-        if: ${{ inputs.mode == 'bench' }}
+        if: ${{ inputs.mode == 'bench' || contains(github.event.head_commit.message, '[perf-bench]') }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: perf-core-ab-${{ github.sha }}
