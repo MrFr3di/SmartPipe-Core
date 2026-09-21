@@ -400,6 +400,8 @@ Assert-True ($dapperSource -match 'SqliteCacheMode\.Shared') 'Dapper benchmark m
 Assert-True ($dapperSource -match 'Pooling = false') 'Dapper benchmark must disable SQLite pooling for deterministic per-run connections.'
 Assert-True ($dapperSource -match '5050') 'Dapper 100-row correctness oracle must verify the deterministic checksum.'
 Assert-True ($dapperSource -match 'checksum=42') 'Dapper parameterized correctness oracle must verify the selected row.'
+Assert-True ($dapperSource -match 'public readonly record struct QueryObservation') 'Dapper benchmark observation type must remain public for BenchmarkDotNet public methods.'
+
 
 $dapperV212 = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.V212/DapperEvolutionTarget.cs') -Raw
 $dapperV220 = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.V220/DapperEvolutionTarget.cs') -Raw
