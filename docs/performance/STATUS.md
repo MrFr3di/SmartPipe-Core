@@ -38,3 +38,6 @@ Updated: 2026-09-21
 - PERF-04 Hosting: Dry and reporter self-test are green; first normalized Hosting evolution Short requested.
 
 - PERF-05 HealthChecks: report self-test fixture fixed; HealthChecks Short requested after self-test fix.
+
+- PERF-05 HealthChecks: previous Dry/Short invalidated after detecting BDN JSON with null Statistics caused by benchmark-app DI 6.0.0 contamination; both apps now pin DI/Logging 10.0.11 and require complete measurements.
+- PERF-06 OpenTelemetry: evolution targets/materializer ready; first Dry uses the same explicit DI/Logging 10.0.11 host stack and a real in-memory telemetry correctness oracle.
