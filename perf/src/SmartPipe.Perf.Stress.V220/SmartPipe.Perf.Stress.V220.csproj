@@ -13,6 +13,6 @@
     <Compile Include="../SmartPipe.Perf.Stress.Shared/*.cs" Link="%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="SmartPipe.Core" Version="2.2.0-perflab.61ceef6bf69a" />
+    <PackageReference Include="SmartPipe.Core" Version="2.2.0" />
   </ItemGroup>
 </Project>
