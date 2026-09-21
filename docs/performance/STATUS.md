@@ -81,3 +81,5 @@ Updated: 2026-09-21
 - SP220-02 Definition-model: corrected public-API Dry is green; first repeated v2.2-only Short characterization requested.
 
 - PERF-08 Stress: happy-path parallel32/sequential1000 extended with deterministic cancel32 and sourcefailure1000; expanded lifecycle stress requested with terminal-state and exact-disposal hard gates.
+
+- PERF-09 Soak: deterministic verify/30m/60m/120m runner implemented; short verify profile requested to validate snapshots, trend reporting, zero-active and exact cleanup gates.
