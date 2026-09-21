@@ -29,7 +29,8 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/report-opentelemetry-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-extensions-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-extensions-strict-ab.ps1'),
-    (Join-Path $repoRoot 'eng/perf/report-extensions-strict-ab.ps1')
+    (Join-Path $repoRoot 'eng/perf/report-extensions-strict-ab.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-json-strict-ab.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -282,6 +283,35 @@ Assert-True ($extensionsReport -match 'baselineRepeatDriftPercent') 'SP220-07 re
 Assert-True ($extensionsReport -match 'candidateRepeatDriftPercent') 'SP220-07 report must expose candidate repeat drift.'
 Assert-True ($extensionsReport -match 'records.Count -ne \(\$expectedMethods.Count \* 4\)') 'SP220-07 report must reject incomplete A-B-B-A evidence.'
 
+$json = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-json-strict-ab.ps1') -Raw
+Assert-True ($json -match "scenarioClass = 'strict-ab'") 'SP220-08 JSON comparison must remain strict-ab.'
+Assert-True ($json -match "scenario = 'json'") 'SP220-08 JSON scenario id must remain canonical.'
+Assert-True (($json | Select-String -Pattern "PrimaryPackageId 'SmartPipe.Extensions.Json'" -AllMatches).Matches.Count -eq 2) 'Both JSON targets must bind to SmartPipe.Extensions.Json.'
+Assert-True ($json -match "ExpectedPrimaryVersion '2.1.2'") 'JSON baseline must bind to version 2.1.2.'
+Assert-True ($json -match "ExpectedPrimaryVersion '2.2.0'") 'JSON candidate must bind to version 2.2.0.'
+Assert-True ($json -match 'packageSourceMapping') 'JSON restore must use NuGet Package Source Mapping.'
+Assert-True ($json -match 'dotnet nuget verify') 'JSON provenance must use NuGet-native content hashes.'
+Assert-True ($json -match "'--locked-mode'") 'JSON restore must verify the generated lock in locked mode.'
+Assert-True ($json -match "'--no-http-cache'") 'JSON restore must bypass the NuGet HTTP cache.'
+Assert-True ($json -match 'Assert-BenchmarkResult') 'JSON Dry must reject missing BenchmarkDotNet JSON evidence.'
+Assert-True ($json -match 'SourceGeneratedSmallRoundTrip') 'JSON Dry must require source-generated small round-trip evidence.'
+Assert-True ($json -match 'OptionsSmallRoundTrip') 'JSON Dry must require options small round-trip evidence.'
+Assert-True ($json -match 'SourceGeneratedMediumRoundTrip') 'JSON Dry must require source-generated medium round-trip evidence.'
+Assert-True ($json -match 'OptionsMediumRoundTrip') 'JSON Dry must require options medium round-trip evidence.'
+
+$jsonSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.JsonStrictAb.Shared/JsonStrictAbBenchmarks.cs') -Raw
+Assert-True ($jsonSource -match 'BenchmarkCategory\("Comparative", "StrictAB", "SP220-08"\)') 'SP220-08 JSON benchmark must remain strict-ab classified.'
+Assert-True ($jsonSource -match 'JsonSerializable\(typeof\(SmallPayload\)\)') 'JSON benchmark must use source-generated metadata for small payloads.'
+Assert-True ($jsonSource -match 'JsonSerializable\(typeof\(MediumPayload\)\)') 'JSON benchmark must use source-generated metadata for medium payloads.'
+Assert-True ($jsonSource -match 'AssertSmall') 'JSON benchmark must preserve a small-payload correctness oracle.'
+Assert-True ($jsonSource -match 'AssertMedium') 'JSON benchmark must preserve a medium-payload correctness oracle.'
+
+$jsonV212Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.JsonStrictAb.V212/SmartPipe.Perf.JsonStrictAb.V212.csproj') -Raw
+$jsonV220Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.JsonStrictAb.V220/SmartPipe.Perf.JsonStrictAb.V220.csproj') -Raw
+Assert-True ($jsonV212Project -match 'SmartPipe.Extensions.Json" Version="2\.1\.2"') 'JSON baseline project must reference SmartPipe.Extensions.Json 2.1.2.'
+Assert-True ($jsonV220Project -match 'SmartPipe.Extensions.Json" Version="2\.2\.0"') 'JSON candidate project must reference SmartPipe.Extensions.Json 2.2.0.'
+
+
 
 
 $hostingRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-hosting-evolution.ps1') -Raw
@@ -325,4 +355,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=21'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=22'
