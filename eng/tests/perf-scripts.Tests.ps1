@@ -93,6 +93,11 @@ Assert-True ($runner.Contains('authoritativeTiming = $false')) 'GitHub-compatibl
 $stressRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-core-stress.ps1') -Raw
 Assert-True ($stressRunner -match "Profile 'parallel32'") 'Core stress must run the parallel32 profile.'
 Assert-True ($stressRunner -match "Profile 'sequential1000'") 'Core stress must run the sequential1000 profile.'
+Assert-True ($stressRunner -match "Profile 'cancel32'") 'Core stress must run the deterministic cancel32 profile.'
+Assert-True ($stressRunner -match "Profile 'sourcefailure1000'") 'Core stress must run the deterministic sourcefailure1000 profile.'
+Assert-True ($stressRunner -match 'TerminalRuns') 'Core stress runner must validate terminal run counts.'
+Assert-True ($stressRunner -match 'DisposedComponents') 'Core stress runner must validate component disposal counts.'
+Assert-True ($stressRunner -match 'LifecycleInvariantPassed') 'Core stress runner must fail closed on lifecycle invariant failure.'
 Assert-True ($stressRunner -match "scenarioClass = 'strict-ab'") 'Core stress must classify its comparison as strict-ab.'
 Assert-True ($stressRunner.Contains('authoritativeTiming = $false')) 'Hosted stress elapsed time must remain non-authoritative.'
 Assert-True ($stressRunner -match 'contentHash differs from verified Core A/B provenance') 'Stress restore must bind to verified Core A/B package content.'
@@ -102,6 +107,13 @@ $stressSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPip
 Assert-True ($stressSource -notmatch 'Task\.Delay') 'Deterministic Core stress must not rely on Task.Delay.'
 Assert-True ($stressSource -match 'ExpectedChecksum') 'Deterministic Core stress must enforce a checksum oracle.'
 Assert-True ($stressSource -match 'ExpectedItems') 'Deterministic Core stress must enforce an item-count oracle.'
+Assert-True ($stressSource -match '"cancel32"') 'Deterministic Core stress source must implement cancel32.'
+Assert-True ($stressSource -match '"sourcefailure1000"') 'Deterministic Core stress source must implement sourcefailure1000.'
+Assert-True ($stressSource -match 'PipelineRunState\.Cancelled') 'Cancellation stress must verify Cancelled terminal state.'
+Assert-True ($stressSource -match 'PipelineRunState\.Faulted') 'Failure stress must verify Faulted terminal state.'
+Assert-True ($stressSource -match 'ExpectedDisposedComponents') 'Lifecycle stress must enforce disposal-count invariants.'
+Assert-True ($stressSource -match 'WaitAsync\(TimeSpan\.FromSeconds\(10\)\)') 'Cancellation stress must use bounded coordination waits.'
+Assert-True ($stressSource -notmatch 'Thread\.Sleep') 'Deterministic Core stress must not use Thread.Sleep.'
 
 $di = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-di-evolution.ps1') -Raw
 Assert-True ($di -match "scenarioClass = 'evolution'") 'DI comparison must remain classified as evolution.'
