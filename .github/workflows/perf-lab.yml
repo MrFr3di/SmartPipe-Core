@@ -37,8 +37,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || (contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]'))) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
-  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !(contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]'))) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
+  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]') || contains(github.event.head_commit.message, '[perf-stress]')) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
+  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !contains(github.event.head_commit.message, '[perf-materialize]') && !contains(github.event.head_commit.message, '[perf-bench]') && !contains(github.event.head_commit.message, '[perf-stress]')) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
@@ -94,7 +94,7 @@ jobs:
 
   heavy-mode-contract:
     name: Validate requested heavy mode
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.mode == 'stress' || inputs.mode == 'soak') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'soak' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -110,7 +110,7 @@ jobs:
       - name: Stop until deterministic runners exist
         shell: pwsh
         run: |
-          Write-Error "The requested mode is reserved by the lab contract but its deterministic runner is not implemented yet. Do not substitute ad-hoc timing."
+          Write-Error "Soak mode is reserved by the lab contract but its deterministic runner is not implemented yet. Do not substitute ad-hoc timing."
 
 
   materialize:
@@ -180,5 +180,57 @@ jobs:
             artifacts/perf/core-ab/**/packages.lock.json
             artifacts/perf/runs/core-ab/**
           if-no-files-found: error
+          retention-days: 7
+          compression-level: 9
+
+
+  stress:
+    name: Deterministic Core A/B stress
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'stress') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[perf-stress]')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Validate target pinning
+        shell: pwsh
+        run: ./eng/perf/validate-perf-lab.ps1 -Mode stress -CandidateSha "$env:PERF_CANDIDATE_SHA"
+
+      - name: Test performance-lab scripts
+        shell: pwsh
+        run: ./eng/tests/perf-scripts.Tests.ps1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Run deterministic stress
+        shell: pwsh
+        run: |
+          $candidate = "$env:PERF_CANDIDATE_SHA"
+          if ([string]::IsNullOrWhiteSpace($candidate)) {
+            $candidate = '61ceef6bf69aef0a4f79b25384352d238979200f'
+          }
+          ./eng/perf/run-core-stress.ps1 -CandidateSha $candidate -ItemsPerRun 1000
+
+      - name: Upload stress evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: perf-core-stress-${{ github.sha }}
+          path: |
+            artifacts/perf/targets/**/target.json
+            artifacts/perf/targets/**/diagnostics/**
+            artifacts/perf/core-ab/**/build-provenance.json
+            artifacts/perf/core-stress/**
+            artifacts/perf/runs/core-stress/**
+          if-no-files-found: warn
           retention-days: 7
           compression-level: 9
