@@ -92,6 +92,13 @@ Assert-True ($diBenchmarkSource -match 'SetupAsync') 'DI evolution benchmark mus
 Assert-True ($diBenchmarkSource -match 'StartCompleteDisposeRunAsync') 'DI correctness precheck must exercise a complete run lifecycle.'
 Assert-True ($diBenchmarkSource -match 'descriptorCount <= 0') 'DI correctness precheck must validate provider registration output.'
 Assert-True ($diBenchmarkSource -match 'ResolveFactory\(\) is null') 'DI correctness precheck must validate factory resolution.'
+$diScaleSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.DependencyInjection.V220/DependencyInjectionV220ScaleBenchmarks.cs') -Raw
+Assert-True ($diScaleSource -match 'BenchmarkCategory\("V220Only"') 'DI scale benchmark must remain v2.2-only characterization.'
+Assert-True ($diScaleSource -match '\[Params\(1, 32, 256\)\]') 'DI scale benchmark must cover 1, 32, and 256 keys.'
+Assert-True ($diScaleSource -match 'RegisterAndBuildProviderManyKeys') 'DI scale benchmark must cover multi-key registration/provider build.'
+Assert-True ($diScaleSource -match 'ResolveLastKeyedFactory') 'DI scale benchmark must cover keyed factory lookup.'
+Assert-True ($di -match "scenarioClass = 'v220-only'") 'DI scale provenance must remain v220-only.'
+Assert-True ($di -match 'v220-scale-provenance\.json') 'DI scale source/provenance must be recorded.'
 
 $diRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-di-evolution.ps1') -Raw
 Assert-True ($diRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'DI evolution order must remain counter-balanced A-B-B-A.'
