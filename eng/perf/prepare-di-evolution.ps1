@@ -435,6 +435,8 @@ if ($RunDry) {
         '*DependencyInjectionV220ScaleBenchmarks*',
         '--artifacts',
         $scaleArtifacts,
+        '--exporters',
+        'json',
         '--stopOnFirstError'
     )
 
