@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "groups": [
+    { "id": "core-runtime", "epics": ["SP220-02"], "defaultClass": "strict-ab", "priority": 1 },
+    { "id": "definition-model", "epics": ["SP220-02"], "defaultClass": "v220-only", "priority": 1 },
+    { "id": "dependency-injection", "epics": ["SP220-03"], "defaultClass": "evolution", "priority": 2 },
+    { "id": "hosting", "epics": ["SP220-04"], "defaultClass": "evolution", "priority": 2 },
+    { "id": "health-checks", "epics": ["SP220-05"], "defaultClass": "evolution", "priority": 3 },
+    { "id": "opentelemetry", "epics": ["SP220-06"], "defaultClass": "evolution", "priority": 2 },
+    { "id": "channels-transforms-logging-dataannotations", "epics": ["SP220-07"], "defaultClass": "strict-ab", "priority": 2 },
+    { "id": "json", "epics": ["SP220-08"], "defaultClass": "strict-ab", "priority": 2 },
+    { "id": "csv", "epics": ["SP220-09"], "defaultClass": "strict-ab", "priority": 2 },
+    { "id": "dapper", "epics": ["SP220-10"], "defaultClass": "evolution", "priority": 2 },
+    { "id": "entity-framework-core", "epics": ["SP220-11"], "defaultClass": "evolution", "priority": 2 },
+    { "id": "mapster", "epics": ["SP220-12"], "defaultClass": "evolution", "priority": 2 },
+    { "id": "stress-lifecycle", "epics": ["SP220-02", "SP220-03", "SP220-04", "SP220-07", "SP220-08", "SP220-09", "SP220-10", "SP220-11", "SP220-12"], "defaultClass": "evolution", "priority": 1 },
+    { "id": "soak-leak", "epics": ["SP220-02", "SP220-03", "SP220-04", "SP220-08", "SP220-09", "SP220-10", "SP220-11", "SP220-12"], "defaultClass": "evolution", "priority": 1 }
+  ],
+  "classes": ["strict-ab", "evolution", "v220-only"]
+}
