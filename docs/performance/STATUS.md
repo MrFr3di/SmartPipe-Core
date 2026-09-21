@@ -11,4 +11,4 @@ Updated: 2026-09-21
 - Core A/B orchestration: counter-balanced A→B→B→A runner implemented and first Short run started.
 - Current validation: end-to-end A/B Dry is green; first counter-balanced BenchmarkDotNet Short run requested.
 
-- Deterministic Core stress: parallel32 + sequential1000 runner wired to CI; first evidence run requested.
+- Deterministic Core stress: parallel32 + sequential1000 runner wired to CI; typed-output defect fixed and evidence rerun requested.
