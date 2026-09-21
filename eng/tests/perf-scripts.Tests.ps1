@@ -26,7 +26,8 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/report-healthchecks-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-opentelemetry-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-opentelemetry-evolution.ps1'),
-    (Join-Path $repoRoot 'eng/perf/report-opentelemetry-evolution.ps1')
+    (Join-Path $repoRoot 'eng/perf/report-opentelemetry-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-extensions-strict-ab.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -229,6 +230,39 @@ Assert-True ($otelV220Project -match 'Microsoft.Extensions.DependencyInjection" 
 Assert-True ($otelV212Project -match 'Microsoft.Extensions.Logging" Version="10\.0\.11"') 'OpenTelemetry baseline app must pin logging to 10.0.11.'
 Assert-True ($otelV220Project -match 'Microsoft.Extensions.Logging" Version="10\.0\.11"') 'OpenTelemetry candidate app must pin logging to 10.0.11.'
 
+$extensions = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-extensions-strict-ab.ps1') -Raw
+Assert-True ($extensions -match "scenarioClass = 'strict-ab'") 'SP220-07 comparison must remain classified as strict-ab.'
+Assert-True ($extensions -match "scenario = 'channels-transforms-logging-dataannotations'") 'SP220-07 scenario id must remain canonical.'
+Assert-True ($extensions -match "PrimaryPackageId 'SmartPipe.Extensions'") 'SP220-07 baseline must bind to SmartPipe.Extensions 2.1.2.'
+Assert-True ($extensions -match "PrimaryPackageId 'SmartPipe.Extensions.Transforms'") 'SP220-07 candidate must bind to the split transform package.'
+Assert-True ($extensions -match 'packageSourceMapping') 'SP220-07 restore must use NuGet Package Source Mapping.'
+Assert-True ($extensions -match 'dotnet nuget verify') 'SP220-07 provenance must use NuGet-native content hashes.'
+Assert-True ($extensions -match "'--locked-mode'") 'SP220-07 restore must verify the generated lock in locked mode.'
+Assert-True ($extensions -match "'--no-http-cache'") 'SP220-07 restore must bypass the NuGet HTTP cache.'
+Assert-True ($extensions -match 'Assert-BenchmarkResult') 'SP220-07 Dry must reject missing BenchmarkDotNet JSON evidence.'
+Assert-True ($extensions -match 'produced no statistics') 'SP220-07 Dry must reject BenchmarkDotNet records without statistics.'
+Assert-True ($extensions -match 'produced no measurements') 'SP220-07 Dry must reject BenchmarkDotNet records without measurements.'
+Assert-True ($extensions -match 'PERF_EXTENSIONS_STRICT_AB_READY') 'SP220-07 materializer must expose the canonical completion marker.'
+
+$extensionsSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.ExtensionsStrictAb.Shared/ExtensionsStrictAbBenchmarks.cs') -Raw
+Assert-True ($extensionsSource -match 'BenchmarkCategory\("Comparative", "StrictAB", "SP220-07"\)') 'SP220-07 benchmark must remain strict-ab classified.'
+Assert-True ($extensionsSource -match 'DecompressBrotli') 'SP220-07 compression oracle must verify decompressed payload bytes.'
+Assert-True ($extensionsSource -match 'ExpectedChannelChecksum') 'SP220-07 channel oracle must verify deterministic count/checksum semantics.'
+Assert-True ($extensionsSource -match 'LoggerSinkLegacyDisabled') 'SP220-07 must benchmark only the legacy-compatible LoggerSink path in strict A/B.'
+Assert-True ($extensionsSource -match 'ConditionalFalsePassThrough') 'SP220-07 must cover conditional pass-through semantics.'
+Assert-True ($extensionsSource -match 'CompositeThreeTransforms') 'SP220-07 must cover initialized composite success-path semantics.'
+
+$extensionsV212Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.ExtensionsStrictAb.V212/SmartPipe.Perf.ExtensionsStrictAb.V212.csproj') -Raw
+$extensionsV220Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.ExtensionsStrictAb.V220/SmartPipe.Perf.ExtensionsStrictAb.V220.csproj') -Raw
+Assert-True ($extensionsV212Project -match 'SmartPipe.Extensions" Version="2\.1\.2"') 'SP220-07 baseline project must reference SmartPipe.Extensions 2.1.2.'
+Assert-True ($extensionsV220Project -match 'SmartPipe.Extensions.Channels" Version="2\.2\.0"') 'SP220-07 candidate must reference SmartPipe.Extensions.Channels 2.2.0.'
+Assert-True ($extensionsV220Project -match 'SmartPipe.Extensions.Transforms" Version="2\.2\.0"') 'SP220-07 candidate must reference SmartPipe.Extensions.Transforms 2.2.0.'
+Assert-True ($extensionsV220Project -match 'SmartPipe.Extensions.DataAnnotations" Version="2\.2\.0"') 'SP220-07 candidate must reference SmartPipe.Extensions.DataAnnotations 2.2.0.'
+Assert-True ($extensionsV220Project -match 'SmartPipe.Extensions.Logging" Version="2\.2\.0"') 'SP220-07 candidate must reference SmartPipe.Extensions.Logging 2.2.0.'
+Assert-True ($extensionsV212Project -match 'Microsoft.Extensions.Logging.Abstractions" Version="10\.0\.11"') 'SP220-07 baseline must pin Logging.Abstractions 10.0.11.'
+Assert-True ($extensionsV220Project -match 'Microsoft.Extensions.Logging.Abstractions" Version="10\.0\.11"') 'SP220-07 candidate must pin Logging.Abstractions 10.0.11.'
+
+
 $hostingRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-hosting-evolution.ps1') -Raw
 Assert-True ($hostingRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'Hosting evolution order must remain counter-balanced A-B-B-A.'
 Assert-True ($hostingRunner -match "scenarioClass = 'evolution'") 'Hosting runner must classify the scenario as evolution.'
@@ -270,4 +304,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=18'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=19'
