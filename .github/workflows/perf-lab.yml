@@ -22,6 +22,7 @@ on:
         options:
           - smoke
           - benchmark-smoke
+          - bench
           - materialize
           - stress
           - soak
@@ -113,9 +114,9 @@ jobs:
 
   materialize:
     name: Materialize immutable A/B targets
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.mode == 'materialize' || inputs.mode == 'benchmark-smoke') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.mode == 'materialize' || inputs.mode == 'benchmark-smoke' || inputs.mode == 'bench') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -140,11 +141,15 @@ jobs:
           if ('${{ inputs.mode }}' -eq 'benchmark-smoke') {
             ./eng/perf/prepare-core-ab.ps1 -CandidateSha $candidate -RunDry
           }
+          elseif ('${{ inputs.mode }}' -eq 'bench') {
+            ./eng/perf/run-core-ab.ps1 -CandidateSha $candidate -Job Short
+          }
           else {
             ./eng/perf/prepare-target.ps1 -Target all -CandidateSha $candidate
           }
 
       - name: Upload target provenance and smoke evidence
+        if: ${{ inputs.mode != 'bench' }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: perf-target-provenance-${{ github.sha }}
@@ -158,4 +163,18 @@ jobs:
             artifacts/perf/core-ab/dotnet-info.txt
           if-no-files-found: error
           retention-days: 3
+          compression-level: 9
+
+      - name: Upload comparative benchmark evidence
+        if: ${{ inputs.mode == 'bench' }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: perf-core-ab-${{ github.sha }}
+          path: |
+            artifacts/perf/targets/**/target.json
+            artifacts/perf/core-ab/**/build-provenance.json
+            artifacts/perf/core-ab/**/packages.lock.json
+            artifacts/perf/runs/core-ab/**
+          if-no-files-found: error
+          retention-days: 7
           compression-level: 9
