@@ -114,7 +114,7 @@ jobs:
 
   materialize:
     name: Materialize immutable A/B targets
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.mode == 'materialize' || inputs.mode == 'benchmark-smoke' || inputs.mode == 'bench') }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.mode == 'materialize' || inputs.mode == 'benchmark-smoke' || inputs.mode == 'bench')) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-ab-smoke]'))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -138,10 +138,12 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($candidate)) {
             $candidate = '61ceef6bf69aef0a4f79b25384352d238979200f'
           }
-          if ('${{ inputs.mode }}' -eq 'benchmark-smoke') {
+          $mode = '${{ inputs.mode }}'
+          $message = '${{ github.event.head_commit.message }}'
+          if ($mode -eq 'benchmark-smoke' -or $message.Contains('[perf-ab-smoke]')) {
             ./eng/perf/prepare-core-ab.ps1 -CandidateSha $candidate -RunDry
           }
-          elseif ('${{ inputs.mode }}' -eq 'bench') {
+          elseif ($mode -eq 'bench') {
             ./eng/perf/run-core-ab.ps1 -CandidateSha $candidate -Job Short
           }
           else {
