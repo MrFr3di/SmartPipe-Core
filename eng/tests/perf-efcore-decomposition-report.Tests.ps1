@@ -70,7 +70,7 @@ try {
         runId = 'synthetic-efcore-decomposition'
         scenario = 'efcore-decomposition'
         scenarioClass = 'v220-only'
-        comparisonPolicy = 'within-version-raw-vs-normal-vs-compiled'
+        comparisonPolicy = 'paired-raw-vs-pipeline-normal-and-compiled'
         authoritativeTiming = $false
         candidateSha = '61ceef6bf69aef0a4f79b25384352d238979200f'
         harnessSha = '0000000000000000000000000000000000000000'
@@ -127,7 +127,7 @@ try {
 
     $normalized = Get-Content -LiteralPath (Join-Path $tempRoot 'normalized-results.json') -Raw | ConvertFrom-Json -Depth 64
     Assert-True ([string]$normalized.scenarioClass -ceq 'v220-only') 'EF decomposition must remain v220-only.'
-    Assert-True ([string]$normalized.comparisonPolicy -ceq 'within-version-raw-vs-normal-vs-compiled') 'EF decomposition policy drifted.'
+    Assert-True ([string]$normalized.comparisonPolicy -ceq 'paired-raw-vs-pipeline-normal-and-compiled') 'EF decomposition policy drifted.'
     Assert-True (@($normalized.records).Count -eq 16) 'Expected sixteen raw EF decomposition records.'
     Assert-True (@($normalized.comparisons).Count -eq 2) 'Expected single and hundred EF comparisons.'
 
