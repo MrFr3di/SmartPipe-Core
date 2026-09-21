@@ -349,7 +349,7 @@ function Prepare-HealthChecksTarget {
         Assert-BenchmarkResult -Artifacts $bdnArtifacts -Step "BenchmarkDotNet HealthChecks Dry $TargetId"
     }
 
-    Write-Output "PERF_HOSTING_TARGET_READY target=$TargetId packages=$($smartPipeEntries.Count)"
+    Write-Output "PERF_HEALTHCHECKS_TARGET_READY target=$TargetId packages=$($smartPipeEntries.Count)"
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -390,4 +390,4 @@ Prepare-HealthChecksTarget -TargetId 'v220' -ProjectPath $candidateProject -Adap
 (& dotnet --info) |
     Set-Content -LiteralPath (Join-Path $artifactsRoot 'dotnet-info.txt') -Encoding utf8
 
-Write-Output "PERF_HOSTING_EVOLUTION_READY baseline=2.1.2 candidate=$CandidateSha sharedSourceSha256=$sharedSourceSha"
+Write-Output "PERF_HEALTHCHECKS_EVOLUTION_READY baseline=2.1.2 candidate=$CandidateSha sharedSourceSha256=$sharedSourceSha"
