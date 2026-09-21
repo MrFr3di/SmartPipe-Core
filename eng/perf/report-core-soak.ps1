@@ -166,6 +166,10 @@ $lines.Add("Run: $($manifest.runId)")
 $lines.Add('')
 $lines.Add("Profile: $($manifest.profile)")
 $lines.Add('')
+if ([string]$manifest.profile -ceq 'verify') {
+    $lines.Add('Validation-only profile: verify checks orchestration, correctness and final cleanup. Its short memory slopes are not leak evidence.')
+    $lines.Add('')
+}
 $lines.Add('This is lifecycle/trend evidence. No cross-version speed or memory-regression percentage is emitted. Memory slopes are evidence-only until stable controlled-runner history exists.')
 $lines.Add('')
 $lines.Add('| Target | Runs | Active final | Created / disposed | Managed slope MiB/min | GC heap slope MiB/min | Working-set slope MiB/min | Gen2 delta | TP pending final | Handle/fd start->end |')
