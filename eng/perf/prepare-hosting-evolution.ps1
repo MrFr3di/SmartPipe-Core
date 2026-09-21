@@ -30,6 +30,32 @@ function Assert-BenchmarkResult {
     if ($null -eq $result) {
         throw "$Step completed without a BenchmarkDotNet JSON result artifact."
     }
+
+    $document = Get-Content -LiteralPath $result.FullName -Raw | ConvertFrom-Json -Depth 100
+    $benchmarks = @($document.Benchmarks)
+    if ($benchmarks.Count -eq 0) {
+        throw "$Step produced an empty BenchmarkDotNet result set."
+    }
+
+    foreach ($benchmark in $benchmarks) {
+        $method = [string]$benchmark.Method
+        $statisticsProperty = $benchmark.PSObject.Properties['Statistics']
+        if ($null -eq $statisticsProperty -or $null -eq $statisticsProperty.Value) {
+            throw "$Step produced no statistics for '$method'. Treating BenchmarkDotNet exit code 0 as insufficient evidence."
+        }
+
+        $measurementsProperty = $benchmark.PSObject.Properties['Measurements']
+        if ($null -eq $measurementsProperty -or @($measurementsProperty.Value).Count -eq 0) {
+            throw "$Step produced no measurements for '$method'."
+        }
+
+        $memoryProperty = $benchmark.PSObject.Properties['Memory']
+        if ($null -ne $memoryProperty -and
+            $null -ne $memoryProperty.Value -and
+            [long]$memoryProperty.Value.TotalOperations -le 0) {
+            throw "$Step reported zero measured operations for '$method'."
+        }
+    }
 }
 
 function Get-NuGetContentHash {
