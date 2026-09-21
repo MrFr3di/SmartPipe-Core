@@ -7,10 +7,10 @@ The lab is deliberately separate from product implementation. Its source revisio
 ## Current state
 
 - published baseline: SmartPipe 2.1.2, Git SHA `8e79902d22de714f493582946f7c260462b0895e`;
-- current accepted Checkpoint E integration head at lab bootstrap: `61ceef6bf69aef0a4f79b25384352d238979200f` (SP220-01…11);
-- full SP220-01…12 candidate: intentionally unset until SP220-12 is accepted.
+- candidate: `61ceef6bf69aef0a4f79b25384352d238979200f` (SP220-01…11), pinned for this lab;
+- SP220-12 / Mapster: explicitly excluded from the comparison scope.
 
-Until the full candidate is pinned, the lab may run smoke and exploratory checks, but it must not publish a result labelled “2.1.2 vs full 2.2.0”.
+The lab therefore compares exactly what is implemented now. Reports must label the candidate as `2.2.0 SP220-01…11`, not as an SP220-01…12 result.
 
 ## Evidence classes
 
