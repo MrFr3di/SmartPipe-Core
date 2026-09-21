@@ -76,11 +76,11 @@ Assert-MutationFails -Name 'baseline-sha' -Mutation {
     $doc | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $path
 }
 
-Assert-MutationFails -Name 'missing-sp220-12' -Mutation {
+Assert-MutationFails -Name 'missing-sp220-11' -Mutation {
     param($root)
     $path = Join-Path $root 'perf/manifests/targets.json'
     $doc = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -Depth 32
-    $doc.fullCandidate.requiredEpics = @($doc.fullCandidate.requiredEpics | Where-Object { $_ -cne 'SP220-12' })
+    $doc.candidate.includedEpics = @($doc.candidate.includedEpics | Where-Object { $_ -cne 'SP220-11' })
     $doc | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $path
 }
 
@@ -100,11 +100,11 @@ Assert-MutationFails -Name 'premature-wall-clock-gate' -Mutation {
     $doc | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $path
 }
 
-Assert-MutationFails -Name 'pinned-without-sha' -Mutation {
+Assert-MutationFails -Name 'candidate-sha-drift' -Mutation {
     param($root)
     $path = Join-Path $root 'perf/manifests/targets.json'
     $doc = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -Depth 32
-    $doc.fullCandidate.status = 'pinned'
+    $doc.candidate.gitSha = '0000000000000000000000000000000000000000'
     $doc | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $path
 }
 
