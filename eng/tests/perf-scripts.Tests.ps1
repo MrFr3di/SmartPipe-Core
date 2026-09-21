@@ -23,7 +23,8 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/run-hosting-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-hosting-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-healthchecks-evolution.ps1'),
-    (Join-Path $repoRoot 'eng/perf/report-healthchecks-evolution.ps1')
+    (Join-Path $repoRoot 'eng/perf/report-healthchecks-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-opentelemetry-evolution.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -155,6 +156,29 @@ Assert-True ($healthSource -match 'HealthStatus\.Degraded') 'HealthChecks correc
 Assert-True ($healthSource -match 'CheckRegisteredPipelineAsync') 'HealthChecks correctness precheck must evaluate through HealthCheckService.'
 Assert-True ($healthSource -notmatch 'public sealed class HealthChecksEvolutionBenchmarks') 'BenchmarkDotNet HealthChecks type must remain unsealed.'
 
+$otel = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-opentelemetry-evolution.ps1') -Raw
+Assert-True ($otel -match "scenarioClass = 'evolution'") 'OpenTelemetry comparison must remain classified as evolution.'
+Assert-True ($otel -match "PrimaryPackageId 'SmartPipe.Core'") 'OpenTelemetry baseline must bind to SmartPipe.Core 2.1.2.'
+Assert-True ($otel -match 'SmartPipe\.Extensions\.OpenTelemetry') 'OpenTelemetry candidate must use SmartPipe.Extensions.OpenTelemetry.'
+Assert-True ($otel -match 'packageSourceMapping') 'OpenTelemetry restore must use NuGet Package Source Mapping.'
+Assert-True ($otel -match 'SmartPipe\.\*') 'OpenTelemetry SmartPipe packages must map to the local target feed.'
+Assert-True ($otel -match 'dotnet nuget verify') 'OpenTelemetry provenance must use NuGet-native content hashes.'
+Assert-True ($otel -match "'--locked-mode'") 'OpenTelemetry restore must verify the generated lock in locked mode.'
+Assert-True ($otel -match "'--exporters'[\s\S]{0,80}'json'") 'OpenTelemetry Dry must explicitly export BenchmarkDotNet JSON.'
+Assert-True ($otel -match 'Assert-BenchmarkResult') 'OpenTelemetry Dry must fail when BenchmarkDotNet produces no JSON result.'
+Assert-True ($otel -match 'PERF_OPENTELEMETRY_EVOLUTION_READY') 'OpenTelemetry materializer must expose the correct completion marker.'
+$otelSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.OpenTelemetry.Shared/OpenTelemetryEvolutionBenchmarks.cs') -Raw
+Assert-True ($otelSource -match 'BenchmarkCategory\("Evolution", "OpenTelemetry"\)') 'OpenTelemetry benchmark must remain evolution-classified.'
+Assert-True ($otelSource -match 'ValidateRegistration') 'OpenTelemetry benchmark must run a telemetry-registration correctness oracle.'
+Assert-True ($otelSource -match 'BuildResolveDisposeProviders') 'OpenTelemetry benchmark must cover provider construction and resolution.'
+$otelV220 = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.OpenTelemetry.V220/OpenTelemetryTarget.cs') -Raw
+Assert-True ($otelV220 -match 'AddSmartPipeInstrumentation') 'OpenTelemetry candidate must exercise the SmartPipe instrumentation helper.'
+Assert-True ($otelV220 -match 'ReferenceEquals') 'OpenTelemetry candidate precheck must enforce exact builder identity.'
+Assert-True ($otelV220 -match 'countAfterFirstRegistration') 'OpenTelemetry candidate precheck must enforce idempotent registration.'
+Assert-True ($otelV220 -match 'AddInMemoryExporter') 'OpenTelemetry correctness oracle must verify exported telemetry.'
+Assert-True ($otelV220 -match 'counter.Enabled') 'OpenTelemetry correctness oracle must verify metric listener activation.'
+Assert-True ($otelV220 -match 'activitySource.HasListeners') 'OpenTelemetry correctness oracle must verify trace listener activation.'
+
 $hostingRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-hosting-evolution.ps1') -Raw
 Assert-True ($hostingRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'Hosting evolution order must remain counter-balanced A-B-B-A.'
 Assert-True ($hostingRunner -match "scenarioClass = 'evolution'") 'Hosting runner must classify the scenario as evolution.'
@@ -192,4 +216,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=15'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=16'
