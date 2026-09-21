@@ -32,7 +32,8 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/report-extensions-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-json-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-json-strict-ab.ps1'),
-    (Join-Path $repoRoot 'eng/perf/report-json-strict-ab.ps1')
+    (Join-Path $repoRoot 'eng/perf/report-json-strict-ab.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-csv-strict-ab.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -330,6 +331,33 @@ Assert-True ($jsonReport -match 'baselineRepeatDriftPercent') 'JSON report must 
 Assert-True ($jsonReport -match 'candidateRepeatDriftPercent') 'JSON report must expose candidate repeat drift.'
 Assert-True ($jsonReport -match 'records.Count -ne \(\$expectedMethods.Count \* 4\)') 'JSON report must reject incomplete A-B-B-A evidence.'
 
+$csv = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-csv-strict-ab.ps1') -Raw
+Assert-True ($csv -match "scenarioClass = 'strict-ab'") 'SP220-09 CSV comparison must remain strict-ab.'
+Assert-True ($csv -match "scenario = 'csv'") 'SP220-09 CSV scenario id must remain canonical.'
+Assert-True ($csv -match "PrimaryPackageId 'SmartPipe.Extensions'") 'CSV baseline must bind to SmartPipe.Extensions 2.1.2.'
+Assert-True ($csv -match "PrimaryPackageId 'SmartPipe.Extensions.Csv'") 'CSV candidate must bind to SmartPipe.Extensions.Csv 2.2.0.'
+Assert-True ($csv -match "ExpectedPrimaryVersion '2.1.2'") 'CSV baseline version must remain 2.1.2.'
+Assert-True ($csv -match "ExpectedPrimaryVersion '2.2.0'") 'CSV candidate version must remain 2.2.0.'
+Assert-True ($csv -match 'packageSourceMapping') 'CSV restore must use NuGet Package Source Mapping.'
+Assert-True ($csv -match 'dotnet nuget verify') 'CSV provenance must use NuGet-native content hashes.'
+Assert-True ($csv -match "'--locked-mode'") 'CSV restore must verify the generated lock in locked mode.'
+Assert-True ($csv -match "'--no-http-cache'") 'CSV restore must bypass the NuGet HTTP cache.'
+Assert-True ($csv -match 'Assert-BenchmarkResult') 'CSV Dry must reject missing BenchmarkDotNet JSON evidence.'
+Assert-True ($csv -match 'SmallRoundTrip') 'CSV Dry must require small round-trip evidence.'
+Assert-True ($csv -match 'MediumRoundTrip') 'CSV Dry must require medium round-trip evidence.'
+
+$csvSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.CsvStrictAb.Shared/CsvStrictAbBenchmarks.cs') -Raw
+Assert-True ($csvSource -match 'BenchmarkCategory\("Comparative", "StrictAB", "SP220-09"\)') 'SP220-09 CSV benchmark must remain strict-ab classified.'
+Assert-True ($csvSource -match 'AssertSmall') 'CSV benchmark must preserve the small-record correctness oracle.'
+Assert-True ($csvSource -match 'AssertMedium') 'CSV benchmark must preserve the medium-record correctness oracle.'
+Assert-True ($csvSource -notmatch 'CsvFileSource|CsvFileSink') 'CSV strict timing must remain CPU-only and exclude filesystem IO.'
+
+$csvV212Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.CsvStrictAb.V212/SmartPipe.Perf.CsvStrictAb.V212.csproj') -Raw
+$csvV220Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.CsvStrictAb.V220/SmartPipe.Perf.CsvStrictAb.V220.csproj') -Raw
+Assert-True ($csvV212Project -match 'SmartPipe.Extensions" Version="2\.1\.2"') 'CSV baseline project must reference SmartPipe.Extensions 2.1.2.'
+Assert-True ($csvV220Project -match 'SmartPipe.Extensions.Csv" Version="2\.2\.0"') 'CSV candidate project must reference SmartPipe.Extensions.Csv 2.2.0.'
+
+
 
 
 
@@ -375,4 +403,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=24'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=25'
