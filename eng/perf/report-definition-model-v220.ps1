@@ -10,10 +10,9 @@ $expectedMethods = @(
     'Build_ZeroStage',
     'Build_OneStage',
     'Build_TenStages',
-    'Compile_First_ZeroStage',
-    'Compile_First_TenStages',
-    'Compile_Cached_ZeroStage',
-    'Compile_Cached_TenStages',
+    'BuildAndStart_ZeroStage',
+    'BuildAndStart_OneStage',
+    'BuildAndStart_TenStages',
     'StartAndComplete_ZeroStage',
     'StartAndComplete_OneStage',
     'StartAndComplete_TenStages',
@@ -172,8 +171,9 @@ function Get-Summary {
 $buildZero = Get-Summary 'Build_ZeroStage'
 $buildOne = Get-Summary 'Build_OneStage'
 $buildTen = Get-Summary 'Build_TenStages'
-$compileFirstZero = Get-Summary 'Compile_First_ZeroStage'
-$compileFirstTen = Get-Summary 'Compile_First_TenStages'
+$buildAndStartZero = Get-Summary 'BuildAndStart_ZeroStage'
+$buildAndStartOne = Get-Summary 'BuildAndStart_OneStage'
+$buildAndStartTen = Get-Summary 'BuildAndStart_TenStages'
 $startZero = Get-Summary 'StartAndComplete_ZeroStage'
 $startOne = Get-Summary 'StartAndComplete_OneStage'
 $startTen = Get-Summary 'StartAndComplete_TenStages'
@@ -182,7 +182,9 @@ $scaling = [ordered]@{
     buildOneVsZeroTimeRatio = Get-Ratio -Numerator $buildOne.meanNs -Denominator $buildZero.meanNs
     buildTenVsZeroTimeRatio = Get-Ratio -Numerator $buildTen.meanNs -Denominator $buildZero.meanNs
     buildTenVsZeroAllocationRatio = Get-Ratio -Numerator $buildTen.allocatedBytes -Denominator $buildZero.allocatedBytes
-    compileFirstTenVsZeroTimeRatio = Get-Ratio -Numerator $compileFirstTen.meanNs -Denominator $compileFirstZero.meanNs
+    buildAndStartOneVsZeroTimeRatio = Get-Ratio -Numerator $buildAndStartOne.meanNs -Denominator $buildAndStartZero.meanNs
+    buildAndStartTenVsZeroTimeRatio = Get-Ratio -Numerator $buildAndStartTen.meanNs -Denominator $buildAndStartZero.meanNs
+    buildAndStartTenVsZeroAllocationRatio = Get-Ratio -Numerator $buildAndStartTen.allocatedBytes -Denominator $buildAndStartZero.allocatedBytes
     startOneVsZeroTimeRatio = Get-Ratio -Numerator $startOne.meanNs -Denominator $startZero.meanNs
     startTenVsZeroTimeRatio = Get-Ratio -Numerator $startTen.meanNs -Denominator $startZero.meanNs
     startTenVsZeroAllocationRatio = Get-Ratio -Numerator $startTen.allocatedBytes -Denominator $startZero.allocatedBytes
