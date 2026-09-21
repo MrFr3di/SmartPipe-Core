@@ -42,7 +42,7 @@ $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Dept
 if ([string]$manifest.scenarioClass -cne 'v220-only') {
     throw 'EF Core decomposition report expects scenarioClass=v220-only.'
 }
-if ([string]$manifest.comparisonPolicy -cne 'within-version-raw-vs-normal-vs-compiled') {
+if ([string]$manifest.comparisonPolicy -cne 'paired-raw-vs-pipeline-normal-and-compiled') {
     throw "Unexpected EF Core decomposition comparison policy '$($manifest.comparisonPolicy)'."
 }
 
@@ -139,6 +139,7 @@ function New-Comparison {
         compiledPipelineMeanNs = [double]$compiled.meanNs
         compiledOverRawCompiledRatio = if ([double]$rawCompiled.meanNs -eq 0) { $null } else { [double]$compiled.meanNs / [double]$rawCompiled.meanNs }
         rawCompiledOverRawRatio = if ([double]$raw.meanNs -eq 0) { $null } else { [double]$rawCompiled.meanNs / [double]$raw.meanNs }
+        compiledOverNormalRatio = if ([double]$normal.meanNs -eq 0) { $null } else { [double]$compiled.meanNs / [double]$normal.meanNs }
         compiledTimeDeltaNs = [double]$compiled.meanNs - [double]$rawCompiled.meanNs
         rawAllocatedBytes = [double]$raw.allocatedBytes
         normalAllocatedBytes = [double]$normal.allocatedBytes
@@ -182,7 +183,7 @@ $normalized = [ordered]@{
     runId = [string]$manifest.runId
     scenario = 'efcore-decomposition'
     scenarioClass = 'v220-only'
-    comparisonPolicy = 'within-version-raw-vs-normal-vs-compiled'
+    comparisonPolicy = 'paired-raw-vs-pipeline-normal-and-compiled'
     authoritativeTiming = [bool]$manifest.authoritativeTiming
     candidateSha = [string]$manifest.candidateSha
     harnessSha = [string]$manifest.harnessSha
