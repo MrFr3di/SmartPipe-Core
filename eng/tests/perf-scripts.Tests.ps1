@@ -102,6 +102,7 @@ Assert-True ($diScaleSource -notmatch 'public sealed class DependencyInjectionV2
 Assert-True ($di -match "scenarioClass = 'v220-only'") 'DI scale provenance must remain v220-only.'
 Assert-True ($di -match 'v220-scale-provenance\.json') 'DI scale source/provenance must be recorded.'
 Assert-True (($di | Select-String -Pattern 'Assert-BenchmarkResult' -AllMatches).Matches.Count -ge 3) 'DI Dry must require BenchmarkDotNet result artifacts for both evolution targets and v2.2 scale.'
+Assert-True (($di | Select-String -Pattern "'--exporters'[\s\S]{0,80}'json'" -AllMatches).Matches.Count -ge 2) 'DI Dry and v2.2 scale Dry must explicitly export BenchmarkDotNet JSON evidence.'
 
 $diRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-di-evolution.ps1') -Raw
 Assert-True ($diRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'DI evolution order must remain counter-balanced A-B-B-A.'
