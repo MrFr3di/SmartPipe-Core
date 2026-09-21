@@ -119,6 +119,9 @@ foreach ($slotDirectory in $slotDirectories) {
         gcHeapStartBytes = [long]$first.GcHeapSizeBytes
         gcHeapEndBytes = [long]$last.GcHeapSizeBytes
         gcHeapSlopeBytesPerMinute = Get-SlopePerMinute -Snapshots $snapshots -Property 'GcHeapSizeBytes'
+        gcFragmentedStartBytes = [long]$first.GcFragmentedBytes
+        gcFragmentedEndBytes = [long]$last.GcFragmentedBytes
+        gcFragmentedSlopeBytesPerMinute = Get-SlopePerMinute -Snapshots $snapshots -Property 'GcFragmentedBytes'
         workingSetStartBytes = [long]$first.WorkingSetBytes
         workingSetEndBytes = [long]$last.WorkingSetBytes
         workingSetSlopeBytesPerMinute = Get-SlopePerMinute -Snapshots $snapshots -Property 'WorkingSetBytes'
@@ -129,6 +132,13 @@ foreach ($slotDirectory in $slotDirectories) {
         threadPoolThreadCountStart = [int]$first.ThreadPoolThreadCount
         threadPoolThreadCountEnd = [int]$last.ThreadPoolThreadCount
         threadPoolPendingWorkItemsFinal = [long]$last.ThreadPoolPendingWorkItems
+        hardGatePassed = (
+            [long]$final.Errors -eq 0 -and
+            [long]$final.ActiveRuns -eq 0 -and
+            [long]$final.CreatedComponents -eq [long]$final.DisposedComponents -and
+            [bool]$final.LifecycleInvariantPassed -and
+            [long]$last.ThreadPoolPendingWorkItems -eq 0)
+        automaticLeakVerdict = 'not-issued'
         handleOrFdStart = [int]$first.HandleOrFdCount
         handleOrFdEnd = [int]$last.HandleOrFdCount
         handleOrFdSlopePerMinute = $handleSlope
@@ -148,6 +158,8 @@ $normalized = [ordered]@{
     comparisonPolicy = 'side-by-side-no-cross-version-ratio'
     profile = [string]$manifest.profile
     authoritativeTiming = [bool]$manifest.authoritativeTiming
+    trendPolicy = 'evidence-only-no-automatic-leak-verdict'
+    trendWarmupFraction = 0.2
     baselineSha = [string]$manifest.baselineSha
     candidateSha = [string]$manifest.candidateSha
     harnessSha = [string]$manifest.harnessSha
@@ -170,10 +182,10 @@ if ([string]$manifest.profile -ceq 'verify') {
     $lines.Add('Validation-only profile: verify checks orchestration, correctness and final cleanup. Its short memory slopes are not leak evidence.')
     $lines.Add('')
 }
-$lines.Add('This is lifecycle/trend evidence. No cross-version speed or memory-regression percentage is emitted. Memory slopes are evidence-only until stable controlled-runner history exists.')
+$lines.Add('This is lifecycle/trend evidence. No cross-version speed or memory-regression percentage is emitted. Memory, fragmentation, working-set and handle/fd slopes are evidence-only; this report never issues an automatic leak/no-leak verdict.')
 $lines.Add('')
-$lines.Add('| Target | Runs | Active final | Created / disposed | Managed slope MiB/min | GC heap slope MiB/min | Working-set slope MiB/min | Gen2 delta | TP pending final | Handle/fd start->end |')
-$lines.Add('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |')
+$lines.Add('| Target | Runs | Hard gate | Active final | Created / disposed | Managed slope MiB/min | GC heap slope MiB/min | Fragmentation slope MiB/min | Working-set slope MiB/min | Gen2 delta | TP pending final | Handle/fd start->end |')
+$lines.Add('| --- | ---: | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |')
 
 foreach ($summary in $targetSummaries) {
     $managed = if ($null -eq $summary.managedMemorySlopeBytesPerMinute) {
@@ -190,6 +202,13 @@ foreach ($summary in $targetSummaries) {
         ([double]$summary.gcHeapSlopeBytesPerMinute / 1MB).ToString('F3', $culture)
     }
 
+    $fragmentation = if ($null -eq $summary.gcFragmentedSlopeBytesPerMinute) {
+        'n/a'
+    }
+    else {
+        ([double]$summary.gcFragmentedSlopeBytesPerMinute / 1MB).ToString('F3', $culture)
+    }
+
     $working = if ($null -eq $summary.workingSetSlopeBytesPerMinute) {
         'n/a'
     }
@@ -198,8 +217,9 @@ foreach ($summary in $targetSummaries) {
     }
 
     $handles = "$($summary.handleOrFdStart)->$($summary.handleOrFdEnd)"
+    $hardGate = if ([bool]$summary.hardGatePassed) { 'PASS' } else { 'FAIL' }
 
-    $lines.Add("| $($summary.target) | $($summary.completedRuns) | $($summary.activeRunsFinal) | $($summary.createdComponents) / $($summary.disposedComponents) | $managed | $heap | $working | $($summary.gen2Delta) | $($summary.threadPoolPendingWorkItemsFinal) | $handles |")
+    $lines.Add("| $($summary.target) | $($summary.completedRuns) | $hardGate | $($summary.activeRunsFinal) | $($summary.createdComponents) / $($summary.disposedComponents) | $managed | $heap | $fragmentation | $working | $($summary.gen2Delta) | $($summary.threadPoolPendingWorkItemsFinal) | $handles |")
 }
 
 $lines |
