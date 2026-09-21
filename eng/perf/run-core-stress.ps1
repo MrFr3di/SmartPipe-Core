@@ -81,7 +81,7 @@ function Prepare-StressTarget {
         '--verbosity', 'minimal'
     )
 
-    & dotnet @restoreArgs 2>&1 | Tee-Object -FilePath $restoreLog
+    & dotnet @restoreArgs 2>&1 | Tee-Object -FilePath $restoreLog | Out-Host
     Assert-ExitCode "Generate stress lock for $TargetId"
 
     $entry = Get-SmartPipeCoreLockEntry -LockPath $lockFile
@@ -103,7 +103,7 @@ function Prepare-StressTarget {
         '--verbosity', 'minimal'
     )
 
-    & dotnet @lockedArgs 2>&1 | Tee-Object -FilePath $restoreLog -Append
+    & dotnet @lockedArgs 2>&1 | Tee-Object -FilePath $restoreLog -Append | Out-Host
     Assert-ExitCode "Locked stress restore for $TargetId"
 
     $buildArgs = @(
@@ -113,7 +113,7 @@ function Prepare-StressTarget {
         '-warnaserror'
     )
 
-    & dotnet @buildArgs 2>&1 | Tee-Object -FilePath $buildLog
+    & dotnet @buildArgs 2>&1 | Tee-Object -FilePath $buildLog | Out-Host
     Assert-ExitCode "Build stress target $TargetId"
 
     return [ordered]@{
