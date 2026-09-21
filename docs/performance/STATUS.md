@@ -91,3 +91,5 @@ Updated: 2026-09-21
 - SP220-07 Reproducibility: second independent strict A/B Short requested to confirm Composite/Validation/Conditional signals before any regression conclusion.
 
 - PERF-09 Soak: verify profile is green; first full 30-minute immutable A/B soak requested with leak/bounded-memory cleanup gates.
+
+- PERF-09 Soak: first deliberate 30-minute profile requested after verify-profile plumbing passed.
