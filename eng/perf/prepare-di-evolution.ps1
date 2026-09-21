@@ -18,6 +18,20 @@ function Assert-ExitCode {
     }
 }
 
+function Assert-BenchmarkResult {
+    param(
+        [string]$Artifacts,
+        [string]$Step
+    )
+
+    $result = Get-ChildItem -LiteralPath $Artifacts -File -Recurse -Filter '*-report-full-compressed.json' -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+
+    if ($null -eq $result) {
+        throw "$Step completed without a BenchmarkDotNet JSON result artifact."
+    }
+}
+
 function Get-NuGetContentHash {
     param([string]$PackagePath)
 
@@ -347,6 +361,7 @@ function Prepare-DiTarget {
 
         & dotnet @benchmarkArgs
         Assert-ExitCode "BenchmarkDotNet DI Dry $TargetId"
+        Assert-BenchmarkResult -Artifacts $bdnArtifacts -Step "BenchmarkDotNet DI Dry $TargetId"
     }
 
     Write-Output "PERF_DI_TARGET_READY target=$TargetId packages=$($smartPipeEntries.Count)"
@@ -423,6 +438,7 @@ if ($RunDry) {
 
     & dotnet @scaleArgs
     Assert-ExitCode 'BenchmarkDotNet DI v2.2 scale Dry'
+    Assert-BenchmarkResult -Artifacts $scaleArtifacts -Step 'BenchmarkDotNet DI v2.2 scale Dry'
 }
 
 (& dotnet --info) |
