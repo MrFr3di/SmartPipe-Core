@@ -85,3 +85,5 @@ Updated: 2026-09-21
 - PERF-09 Soak: deterministic verify/30m/60m/120m runner implemented; short verify profile requested to validate snapshots, trend reporting, zero-active and exact cleanup gates.
 
 - SP220-01 Package footprint: immutable nupkg/nuspec closure reporter implemented and contract-tested; materialize run requested for actual package count/size/dependency evidence.
+
+- SP220-01 Package footprint: first materialize proved package graph but reporter aggregation failed on PowerShell OrderedDictionary property adapter; typed aggregation fixed and rerun requested.
