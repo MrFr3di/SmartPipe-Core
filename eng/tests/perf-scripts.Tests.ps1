@@ -47,6 +47,6 @@ Assert-True ($coreAb -match 'sharedSourceSha256') 'Core A/B provenance must reco
 $runner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-core-ab.ps1') -Raw
 Assert-True ($runner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'Core A/B order must remain counter-balanced A-B-B-A.'
 Assert-True ($runner -match "scenarioClass = 'strict-ab'") 'Core A/B run manifest must classify the scenario as strict-ab.'
-Assert-True ($runner -match "authoritativeTiming = \$false") 'GitHub-compatible Core A/B timing must default to non-authoritative.'
+Assert-True ($runner.Contains('authoritativeTiming = $false')) 'GitHub-compatible Core A/B timing must default to non-authoritative.'
 
 Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=4'
