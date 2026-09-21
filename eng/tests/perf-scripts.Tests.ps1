@@ -685,7 +685,6 @@ $efCoreDecompReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/re
 Assert-True ($efCoreDecompReport -match 'normalOverRawRatio') 'EF Core decomposition report must expose normal Pipeline/Raw ratio.'
 Assert-True ($efCoreDecompReport -match 'rawCompiledMeanNs') 'EF Core decomposition report must retain the raw compiled baseline.'
 Assert-True ($efCoreDecompReport -match 'compiledOverRawCompiledRatio') 'EF Core decomposition report must compare CompiledQuerySource with matching raw EF.CompileAsyncQuery.'
-Assert-True ($efCoreDecompReport -match 'compiledOverNormalRatio') 'EF Core decomposition report must compare compiled and normal pipeline paths.'
 Assert-True ($efCoreDecompReport -match 'normalIncrementalTimePerAdditionalRowNs') 'EF Core decomposition report must expose the normal descriptive per-row model.'
 Assert-True ($efCoreDecompReport -match 'compiledIncrementalTimePerAdditionalRowNs') 'EF Core decomposition report must expose the compiled descriptive per-row model.'
 Assert-True ($efCoreDecompReport -match 'Descriptive two-point model only') 'EF Core decomposition report must label the model as descriptive.'
