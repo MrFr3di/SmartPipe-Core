@@ -9,4 +9,4 @@ Updated: 2026-09-21
 - PERF-01: immutable baseline/candidate materializer implemented.
 - PERF-02: first shared strict A/B Core workload and isolated target projects implemented.
 - Core A/B orchestration: counter-balanced A→B→B→A runner implemented.
-- Current validation: detached candidate repo-root provenance fixed; end-to-end materialization + BDN Dry requested.
+- Current validation: failure diagnostics retention added; end-to-end materialization + BDN Dry diagnostic rerun requested.
