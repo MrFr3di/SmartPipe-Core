@@ -129,7 +129,7 @@ function Prepare-StressTarget {
 
 function Invoke-StressProfile {
     param(
-        [hashtable]$Target,
+        [System.Collections.IDictionary]$Target,
         [string]$Profile,
         [int]$Slot
     )
