@@ -74,7 +74,7 @@ internal static class Program
 
         var final = new SoakResult(
             Kind: "final",
-            SchemaVersion: 1,
+            SchemaVersion: 2,
             Profile: options.Profile,
             DurationSeconds: finalElapsed.TotalSeconds,
             SnapshotIntervalSeconds: options.SnapshotInterval.TotalSeconds,
@@ -86,11 +86,14 @@ internal static class Program
             CreatedComponents: created,
             DisposedComponents: disposed,
             SnapshotCount: snapshots.Count,
+            ThreadPoolPendingWorkItems: finalSnapshot.ThreadPoolPendingWorkItems,
+            HandleOrFdCount: finalSnapshot.HandleOrFdCount,
             LifecycleInvariantPassed:
                 completedRuns > 0 &&
                 errors == 0 &&
                 activeRuns == 0 &&
-                created == disposed);
+                created == disposed &&
+                finalSnapshot.ThreadPoolPendingWorkItems == 0);
 
         Console.WriteLine(JsonSerializer.Serialize(final));
 
@@ -406,5 +409,7 @@ internal static class Program
         long CreatedComponents,
         long DisposedComponents,
         int SnapshotCount,
+        long ThreadPoolPendingWorkItems,
+        int HandleOrFdCount,
         bool LifecycleInvariantPassed);
 }
