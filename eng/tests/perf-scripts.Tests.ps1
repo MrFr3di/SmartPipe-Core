@@ -17,7 +17,8 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/run-core-stress.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-di-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-di-evolution.ps1'),
-    (Join-Path $repoRoot 'eng/perf/report-di-evolution.ps1')
+    (Join-Path $repoRoot 'eng/perf/report-di-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-hosting-evolution.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -118,6 +119,21 @@ Assert-True ($diReport -notmatch 'allocationDeltaPercent') 'DI report must not e
 Assert-True ($diReport -match 'baselineRepeatDriftPercent') 'DI report must expose baseline repeat drift.'
 Assert-True ($diReport -match 'candidateRepeatDriftPercent') 'DI report must expose candidate repeat drift.'
 
+$hosting = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-hosting-evolution.ps1') -Raw
+Assert-True ($hosting -match "scenarioClass = 'evolution'") 'Hosting comparison must remain classified as evolution.'
+Assert-True ($hosting -match 'SmartPipe\.Extensions\.Hosting') 'Hosting candidate must use SmartPipe.Extensions.Hosting.'
+Assert-True ($hosting -match 'packageSourceMapping') 'Hosting restore must use NuGet Package Source Mapping.'
+Assert-True ($hosting -match 'SmartPipe\.\*') 'Hosting SmartPipe packages must map to the local target feed.'
+Assert-True ($hosting -match 'dotnet nuget verify') 'Hosting provenance must use NuGet-native content hashes.'
+Assert-True ($hosting -match "'--locked-mode'") 'Hosting restore must verify the generated lock in locked mode.'
+Assert-True ($hosting -match "'--exporters'[\s\S]{0,80}'json'") 'Hosting Dry must explicitly export BenchmarkDotNet JSON.'
+Assert-True ($hosting -match 'Assert-BenchmarkResult') 'Hosting Dry must fail when BenchmarkDotNet produces no JSON result.'
+$hostingSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Hosting.Shared/HostingEvolutionBenchmarks.cs') -Raw
+Assert-True ($hostingSource -match 'BenchmarkCategory\("Evolution", "Hosting"\)') 'Hosting benchmark must remain evolution-classified.'
+Assert-True ($hostingSource -match 'SetupAsync') 'Hosting benchmark must run a correctness precheck.'
+Assert-True ($hostingSource -match 'StartStopFreshAsync') 'Hosting correctness precheck must exercise start/stop lifecycle.'
+Assert-True ($hostingSource -notmatch 'public sealed class HostingEvolutionBenchmarks') 'BenchmarkDotNet Hosting type must remain unsealed.'
+
 $report = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-core-ab.ps1') -Raw
 Assert-True ($report -match 'baselineRepeatDriftPercent') 'Core A/B report must expose baseline repeat drift.'
 Assert-True ($report -match 'candidateRepeatDriftPercent') 'Core A/B report must expose candidate repeat drift.'
@@ -125,4 +141,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=9'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=10'
