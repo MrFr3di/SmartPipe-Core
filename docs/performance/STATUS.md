@@ -57,3 +57,5 @@ Updated: 2026-09-21
 - SP220-08 JSON: strict source-generated/options workload implemented; SP220-08 JSON strict A/B Dry requested.
 
 - SP220-08 JSON: strict A/B Dry and reporter self-test are green; JSON strict A/B Short requested.
+
+- SP220-09 CSV: CPU-only legacy-compatible strict workload implemented; CSV strict A/B Dry requested.
