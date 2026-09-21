@@ -166,6 +166,31 @@ foreach ($method in $expectedMethods) {
     })
 }
 
+
+$zero = @($comparisons | Where-Object method -eq 'ZeroChildren')[0]
+$one = @($comparisons | Where-Object method -eq 'OneChild')[0]
+$three = @($comparisons | Where-Object method -eq 'ThreeChildren')[0]
+
+$baselineFirstChildNs = [double]$one.baselineMeanNs - [double]$zero.baselineMeanNs
+$candidateFirstChildNs = [double]$one.candidateMeanNs - [double]$zero.candidateMeanNs
+$baselineAdditionalChildNs = ([double]$three.baselineMeanNs - [double]$one.baselineMeanNs) / 2.0
+$candidateAdditionalChildNs = ([double]$three.candidateMeanNs - [double]$one.candidateMeanNs) / 2.0
+
+$compositeDecomposition = [ordered]@{
+    baselineFixedZeroChildNs = [double]$zero.baselineMeanNs
+    candidateFixedZeroChildNs = [double]$zero.candidateMeanNs
+    fixedDeltaNs = [double]$zero.candidateMeanNs - [double]$zero.baselineMeanNs
+    fixedDeltaPercent = Get-DeltaPercent -Baseline ([double]$zero.baselineMeanNs) -Candidate ([double]$zero.candidateMeanNs)
+    baselineFirstChildIncrementNs = $baselineFirstChildNs
+    candidateFirstChildIncrementNs = $candidateFirstChildNs
+    firstChildIncrementDeltaNs = $candidateFirstChildNs - $baselineFirstChildNs
+    firstChildIncrementDeltaPercent = Get-DeltaPercent -Baseline $baselineFirstChildNs -Candidate $candidateFirstChildNs
+    baselineAdditionalChildIncrementNs = $baselineAdditionalChildNs
+    candidateAdditionalChildIncrementNs = $candidateAdditionalChildNs
+    additionalChildIncrementDeltaNs = $candidateAdditionalChildNs - $baselineAdditionalChildNs
+    additionalChildIncrementDeltaPercent = Get-DeltaPercent -Baseline $baselineAdditionalChildNs -Candidate $candidateAdditionalChildNs
+}
+
 $normalized = [ordered]@{
     schemaVersion = 1
     runId = [string]$runManifest.runId
@@ -178,6 +203,7 @@ $normalized = [ordered]@{
     harnessSha = [string]$runManifest.harnessSha
     records = @($records)
     comparisons = @($comparisons)
+    decomposition = $compositeDecomposition
 }
 
 $normalizedPath = Join-Path $resolvedRunRoot 'normalized-results.json'
@@ -232,6 +258,18 @@ foreach ($comparison in $comparisons) {
 
     $lines.Add("| $($comparison.method) | $baselineMean | $candidateMean | $timeDelta | $baselineKiB | $candidateKiB | $allocationDelta | $baselineDrift | $candidateDrift |")
 }
+
+
+$lines.Add('')
+$lines.Add('## Composite cost decomposition')
+$lines.Add('')
+$lines.Add('| Component | 2.1.2 ns | 2.2.0 ns | Delta |')
+$lines.Add('| --- | ---: | ---: | ---: |')
+$lines.Add("| Fixed zero-child wrapper | $($compositeDecomposition.baselineFixedZeroChildNs.ToString('F2', $culture)) | $($compositeDecomposition.candidateFixedZeroChildNs.ToString('F2', $culture)) | $($compositeDecomposition.fixedDeltaPercent.ToString('+0.00;-0.00;0.00', $culture))% |")
+$lines.Add("| First child incremental | $($compositeDecomposition.baselineFirstChildIncrementNs.ToString('F2', $culture)) | $($compositeDecomposition.candidateFirstChildIncrementNs.ToString('F2', $culture)) | $($compositeDecomposition.firstChildIncrementDeltaPercent.ToString('+0.00;-0.00;0.00', $culture))% |")
+$lines.Add("| Additional child incremental | $($compositeDecomposition.baselineAdditionalChildIncrementNs.ToString('F2', $culture)) | $($compositeDecomposition.candidateAdditionalChildIncrementNs.ToString('F2', $culture)) | $($compositeDecomposition.additionalChildIncrementDeltaPercent.ToString('+0.00;-0.00;0.00', $culture))% |")
+$lines.Add('')
+$lines.Add('The incremental values are descriptive finite differences of the measured 0/1/3-child workloads; they are not independent benchmarks.')
 
 $reportPath = Join-Path $resolvedRunRoot 'comparison.md'
 $lines | Set-Content -LiteralPath $reportPath -Encoding utf8
