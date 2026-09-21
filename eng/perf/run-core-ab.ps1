@@ -18,7 +18,6 @@ function Assert-ExitCode {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $prepare = Join-Path $repoRoot 'eng/perf/prepare-core-ab.ps1'
 & $prepare -CandidateSha $CandidateSha
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $baselineProject = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Benchmarks.V212/SmartPipe.Perf.Benchmarks.V212.csproj'
 $candidateProject = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Benchmarks.V220/SmartPipe.Perf.Benchmarks.V220.csproj'
