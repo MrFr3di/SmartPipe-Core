@@ -75,3 +75,5 @@ Updated: 2026-09-21
 - SP220-11 EF Core: SQLite-backed Dry and reporter self-test are green; first EF Core evolution Short requested.
 
 - SP220-02 Definition-model: immutable v2.2-only target/materializer implemented; 11-method Dry requested.
+
+- SP220-02 Definition-model: first Dry exposed internal-only GetExecutionPlan usage in the harness; workload corrected to public Build / BuildAndStart / warm Start semantics; corrected public-API definition-model Dry requested.
