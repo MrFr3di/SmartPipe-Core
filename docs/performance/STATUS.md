@@ -45,3 +45,5 @@ Updated: 2026-09-21
 - PERF-06 OpenTelemetry: first Dry rejected before measurement because BDN 0.15.8 forbids sealed benchmark types; benchmark type made inheritable and guarded by contract test.
 
 - PERF-05 HealthChecks: corrected Dry is green with complete BDN statistics/measurements on both targets; normalized Short rerun requested.
+
+- PERF-06 OpenTelemetry: second Dry proved the helper correctly does not create providers; candidate benchmark now composes app-owned WithMetrics/WithTracing before AddSmartPipeInstrumentation, matching the package contract.
