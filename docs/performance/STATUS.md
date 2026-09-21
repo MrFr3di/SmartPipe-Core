@@ -69,3 +69,5 @@ Updated: 2026-09-21
 - SP220-10 Dapper: corrected Dry requested after fixing SQLite setup transaction typing.
 
 - SP220-10 Dapper: corrected SQLite-backed Dry is green; first Dapper evolution Short requested after runner identity fix.
+
+- SP220-11 EF Core: benchmark provider aligned to SQLite in-memory / EF Core 10.0.11 on both targets; SQLite-backed evolution Dry requested.
