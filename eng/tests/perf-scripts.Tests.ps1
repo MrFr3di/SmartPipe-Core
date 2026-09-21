@@ -87,6 +87,11 @@ Assert-True ($di.Contains("Where-Object { `$_.Name -like 'SmartPipe.*' }")) 'DI 
 Assert-True ($di -match "'--locked-mode'") 'DI restore must verify the generated lock in locked mode.'
 Assert-True ($di -match "'--no-http-cache'") 'DI restore must bypass the NuGet HTTP cache.'
 Assert-True ($di -match 'adapterSourceSha256') 'DI provenance must record target-specific adapter source hashes.'
+$diBenchmarkSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.DependencyInjection.Shared/DependencyInjectionEvolutionBenchmarks.cs') -Raw
+Assert-True ($diBenchmarkSource -match 'SetupAsync') 'DI evolution benchmark must run an async correctness precheck.'
+Assert-True ($diBenchmarkSource -match 'StartCompleteDisposeRunAsync') 'DI correctness precheck must exercise a complete run lifecycle.'
+Assert-True ($diBenchmarkSource -match 'descriptorCount <= 0') 'DI correctness precheck must validate provider registration output.'
+Assert-True ($diBenchmarkSource -match 'ResolveFactory\(\) is null') 'DI correctness precheck must validate factory resolution.'
 
 $diRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-di-evolution.ps1') -Raw
 Assert-True ($diRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'DI evolution order must remain counter-balanced A-B-B-A.'
