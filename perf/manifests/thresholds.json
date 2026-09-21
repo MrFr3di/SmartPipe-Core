@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "phase": "evidence-only",
+  "hardGates": {
+    "correctness": true,
+    "resourceLifecycle": true,
+    "boundedMemoryContract": true,
+    "wallClockRegression": false,
+    "throughputRegression": false,
+    "allocationRegression": false
+  },
+  "policy": {
+    "githubHostedTiming": "informational-only",
+    "strictAbRatioRequiresControlledEnvironment": true,
+    "minimumStableReferenceRunsBeforeNumericGate": 5,
+    "singleGlobalPercentThresholdForbidden": true,
+    "scenarioSpecificThresholdsRequired": true
+  }
+}
