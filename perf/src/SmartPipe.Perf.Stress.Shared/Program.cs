@@ -219,7 +219,7 @@ internal static class Program
         {
             var counter = new LifecycleCounters();
 
-            await using var run = PipelineBuilder
+            await using (var run = PipelineBuilder
                 .From(new DeterministicFailureSource(counter))
                 .Transform(new PassthroughTransformer(counter))
                 .WithRuntimeOptions(new PipelineRuntimeOptions
@@ -227,26 +227,26 @@ internal static class Program
                     MaxConcurrency = 1,
                     OutputPolicy = PipelineOutputPolicy.SuppressAllWhenSinkAttached,
                 })
-                .To(new LifecycleSink(counter));
-
-            try
+                .To(new LifecycleSink(counter)))
             {
-                await run.Completion.ConfigureAwait(false);
-                errors++;
-            }
-            catch (OperationCanceledException)
-            {
-                errors++;
-            }
-            catch
-            {
-                if (run.State == PipelineRunState.Faulted)
-                    terminalRuns++;
-                else
+                try
+                {
+                    await run.Completion.ConfigureAwait(false);
                     errors++;
+                }
+                catch (OperationCanceledException)
+                {
+                    errors++;
+                }
+                catch
+                {
+                    if (run.State == PipelineRunState.Faulted)
+                        terminalRuns++;
+                    else
+                        errors++;
+                }
             }
 
-            await run.DisposeAsync().ConfigureAwait(false);
             disposed += counter.DisposedComponents;
         }
 
