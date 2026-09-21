@@ -16,3 +16,5 @@ Updated: 2026-09-21
 - Reproducibility: second normalized Short A/B run queued after deterministic stress.
 
 - Reproducibility: third Short A/B run requested after executable report self-test passed.
+
+- PERF-04 DI: immutable evolution materializer implemented; first DI evolution Dry requested.
