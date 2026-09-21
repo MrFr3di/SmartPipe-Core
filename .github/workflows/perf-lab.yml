@@ -152,7 +152,7 @@ jobs:
           }
 
       - name: Upload target provenance and smoke evidence
-        if: ${{ inputs.mode != 'bench' }}
+        if: ${{ always() && inputs.mode != 'bench' }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: perf-target-provenance-${{ github.sha }}
@@ -164,7 +164,8 @@ jobs:
             artifacts/perf/core-ab/**/packages.lock.json
             artifacts/perf/core-ab/**/BenchmarkDotNet.Artifacts/**
             artifacts/perf/core-ab/dotnet-info.txt
-          if-no-files-found: error
+            artifacts/perf/targets/**/diagnostics/**
+          if-no-files-found: warn
           retention-days: 3
           compression-level: 9
 
