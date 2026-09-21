@@ -157,7 +157,9 @@ function Prepare-Candidate {
 
         $candidateSolution = Join-Path $worktreeRoot 'SmartPipe.Core.slnx'
         $candidateChecks = Join-Path $worktreeRoot 'eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj'
-        $candidateManifest = Join-Path $packagesDir 'manifest.json'
+        $workPackagesDir = Join-Path $worktreeRoot 'artifacts/perf-packages'
+        $candidateManifest = Join-Path $workPackagesDir 'manifest.json'
+        $workMetadataReport = Join-Path $workPackagesDir 'metadata-report.json'
         $metadataReport = Join-Path $targetRoot 'metadata-report.json'
 
         Invoke-DotNet -Arguments @(
@@ -185,10 +187,11 @@ function Prepare-Candidate {
             '--configuration', $Configuration,
             '--no-build', '--',
             'pack-packages',
+            '--repo-root', $worktreeRoot,
             '--mode', 'current',
             '--configuration', $Configuration,
             '--package-version', $packageVersion,
-            '--output', $packagesDir,
+            '--output', $workPackagesDir,
             '--manifest', $candidateManifest
         ) -Step 'Pack candidate packages'
 
@@ -197,8 +200,9 @@ function Prepare-Candidate {
             '--configuration', $Configuration,
             '--no-build', '--',
             'verify-package-graph',
+            '--repo-root', $worktreeRoot,
             '--mode', 'current',
-            '--packages', $packagesDir
+            '--packages', $workPackagesDir
         ) -Step 'Verify candidate package graph'
 
         Invoke-DotNet -Arguments @(
@@ -206,10 +210,17 @@ function Prepare-Candidate {
             '--configuration', $Configuration,
             '--no-build', '--',
             'verify-package-metadata',
-            '--package-directory', $packagesDir,
+            '--repo-root', $worktreeRoot,
+            '--package-directory', $workPackagesDir,
             '--mode', 'current',
-            '--report', $metadataReport
+            '--report', $workMetadataReport
         ) -Step 'Verify candidate package metadata'
+
+        Get-ChildItem -LiteralPath $workPackagesDir -File |
+            Where-Object { $_.Extension -in @('.nupkg', '.snupkg') } |
+            Copy-Item -Destination $packagesDir
+        Copy-Item -LiteralPath $candidateManifest -Destination (Join-Path $packagesDir 'manifest.json')
+        Copy-Item -LiteralPath $workMetadataReport -Destination $metadataReport
 
         $hashes = @(
             Get-ChildItem -LiteralPath $packagesDir -File -Recurse |
