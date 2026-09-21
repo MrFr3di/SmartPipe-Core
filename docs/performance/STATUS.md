@@ -87,3 +87,5 @@ Updated: 2026-09-21
 - SP220-01 Package footprint: immutable nupkg/nuspec closure reporter implemented and contract-tested; materialize run requested for actual package count/size/dependency evidence.
 
 - SP220-01 Package footprint: first materialize proved package graph but reporter aggregation failed on PowerShell OrderedDictionary property adapter; typed aggregation fixed and rerun requested.
+
+- SP220-07 Reproducibility: second independent strict A/B Short requested to confirm Composite/Validation/Conditional signals before any regression conclusion.
