@@ -16,6 +16,20 @@ function Assert-ExitCode {
     }
 }
 
+function Assert-BenchmarkResult {
+    param(
+        [string]$Artifacts,
+        [string]$Step
+    )
+
+    $result = Get-ChildItem -LiteralPath $Artifacts -File -Recurse -Filter '*-report-full-compressed.json' -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+
+    if ($null -eq $result) {
+        throw "$Step completed without a BenchmarkDotNet JSON result artifact."
+    }
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $prepare = Join-Path $repoRoot 'eng/perf/prepare-di-evolution.ps1'
 $report = Join-Path $repoRoot 'eng/perf/report-di-evolution.ps1'
@@ -90,6 +104,8 @@ foreach ($entry in $order) {
     if ($exitCode -ne 0) {
         throw "DI evolution slot $slot ($target) failed with exit code $exitCode."
     }
+
+    Assert-BenchmarkResult -Artifacts $artifactDir -Step "DI evolution slot $slot ($target)"
 }
 
 $manifest = [ordered]@{
