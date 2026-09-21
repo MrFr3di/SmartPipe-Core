@@ -86,7 +86,7 @@ if ($records.Count -eq 0) {
 }
 
 $comparisons = [Collections.Generic.List[object]]::new()
-$groups = $records | Group-Object method
+$groups = $records | Group-Object { [string]$_.method }
 
 foreach ($group in $groups) {
     $baseline = @($group.Group | Where-Object { $_.target -ceq 'v212' } | Sort-Object slot)
