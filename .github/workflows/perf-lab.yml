@@ -8,6 +8,7 @@ on:
       - 'benchmarks/SmartPipe.Benchmarks/**'
       - 'docs/performance/**'
       - 'eng/perf/**'
+      - 'eng/tests/perf-*.Tests.ps1'
       - 'perf/**'
       - 'global.json'
       - 'Directory.Packages.props'
