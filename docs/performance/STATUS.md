@@ -79,3 +79,5 @@ Updated: 2026-09-21
 - SP220-02 Definition-model: first Dry exposed internal-only GetExecutionPlan usage in the harness; workload corrected to public Build / BuildAndStart / warm Start semantics; corrected public-API definition-model Dry requested.
 
 - SP220-02 Definition-model: corrected public-API Dry is green; first repeated v2.2-only Short characterization requested.
+
+- PERF-08 Stress: happy-path parallel32/sequential1000 extended with deterministic cancel32 and sourcefailure1000; expanded lifecycle stress requested with terminal-state and exact-disposal hard gates.
