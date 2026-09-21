@@ -35,6 +35,7 @@ on:
           - otel-smoke
           - otel-bench
           - extensions-smoke
+          - extensions-bench
           - soak
       candidate-sha:
         description: Exact candidate SHA override; must match the pinned SP220-01-11 target
@@ -46,8 +47,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]') || contains(github.event.head_commit.message, '[perf-stress]') || contains(github.event.head_commit.message, '[perf-di-smoke]') || contains(github.event.head_commit.message, '[perf-di-bench]') || contains(github.event.head_commit.message, '[perf-hosting-smoke]') || contains(github.event.head_commit.message, '[perf-hosting-bench]') || contains(github.event.head_commit.message, '[perf-health-smoke]') || contains(github.event.head_commit.message, '[perf-health-bench]') || (contains(github.event.head_commit.message, '[perf-otel-smoke]') || contains(github.event.head_commit.message, '[perf-otel-bench]')) || contains(github.event.head_commit.message, '[perf-extensions-smoke]')) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
-  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !contains(github.event.head_commit.message, '[perf-materialize]') && !contains(github.event.head_commit.message, '[perf-bench]') && !contains(github.event.head_commit.message, '[perf-stress]') && !contains(github.event.head_commit.message, '[perf-di-smoke]') && !contains(github.event.head_commit.message, '[perf-di-bench]') && !contains(github.event.head_commit.message, '[perf-hosting-smoke]') && !contains(github.event.head_commit.message, '[perf-hosting-bench]') && !contains(github.event.head_commit.message, '[perf-health-smoke]') && !contains(github.event.head_commit.message, '[perf-health-bench]') && !(contains(github.event.head_commit.message, '[perf-otel-smoke]') || contains(github.event.head_commit.message, '[perf-otel-bench]')) && !contains(github.event.head_commit.message, '[perf-extensions-smoke]')) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
+  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]') || contains(github.event.head_commit.message, '[perf-stress]') || contains(github.event.head_commit.message, '[perf-di-smoke]') || contains(github.event.head_commit.message, '[perf-di-bench]') || contains(github.event.head_commit.message, '[perf-hosting-smoke]') || contains(github.event.head_commit.message, '[perf-hosting-bench]') || contains(github.event.head_commit.message, '[perf-health-smoke]') || contains(github.event.head_commit.message, '[perf-health-bench]') || (contains(github.event.head_commit.message, '[perf-otel-smoke]') || contains(github.event.head_commit.message, '[perf-otel-bench]')) || contains(github.event.head_commit.message, '[perf-extensions-smoke]') || contains(github.event.head_commit.message, '[perf-extensions-bench]')) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
+  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !contains(github.event.head_commit.message, '[perf-materialize]') && !contains(github.event.head_commit.message, '[perf-bench]') && !contains(github.event.head_commit.message, '[perf-stress]') && !contains(github.event.head_commit.message, '[perf-di-smoke]') && !contains(github.event.head_commit.message, '[perf-di-bench]') && !contains(github.event.head_commit.message, '[perf-hosting-smoke]') && !contains(github.event.head_commit.message, '[perf-hosting-bench]') && !contains(github.event.head_commit.message, '[perf-health-smoke]') && !contains(github.event.head_commit.message, '[perf-health-bench]') && !(contains(github.event.head_commit.message, '[perf-otel-smoke]') || contains(github.event.head_commit.message, '[perf-otel-bench]')) && !contains(github.event.head_commit.message, '[perf-extensions-smoke]') && !contains(github.event.head_commit.message, '[perf-extensions-bench]')) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
@@ -88,6 +89,7 @@ jobs:
           ./eng/tests/perf-hosting-report.Tests.ps1
           ./eng/tests/perf-healthchecks-report.Tests.ps1
           ./eng/tests/perf-opentelemetry-report.Tests.ps1
+          ./eng/tests/perf-extensions-report.Tests.ps1
 
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -570,8 +572,8 @@ jobs:
           compression-level: 9
 
   extensions-strict-ab:
-    name: SP220-07 strict A/B smoke
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'extensions-smoke') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[perf-extensions-smoke]')) }}
+    name: SP220-07 strict A/B lab
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.mode == 'extensions-smoke' || inputs.mode == 'extensions-bench')) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-extensions-smoke]') || contains(github.event.head_commit.message, '[perf-extensions-bench]'))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -589,6 +591,10 @@ jobs:
         shell: pwsh
         run: ./eng/tests/perf-scripts.Tests.ps1
 
+      - name: Test SP220-07 reporting
+        shell: pwsh
+        run: ./eng/tests/perf-extensions-report.Tests.ps1
+
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
@@ -596,17 +602,24 @@ jobs:
           cache: true
           cache-dependency-path: '**/packages.lock.json'
 
-      - name: Prepare SP220-07 strict A/B targets and run Dry
+      - name: Run SP220-07 strict A/B mode
         shell: pwsh
         run: |
           $candidate = "$env:PERF_CANDIDATE_SHA"
           if ([string]::IsNullOrWhiteSpace($candidate)) {
             $candidate = '61ceef6bf69aef0a4f79b25384352d238979200f'
           }
-          ./eng/perf/prepare-extensions-strict-ab.ps1 -CandidateSha $candidate -RunDry
+          $mode = '${{ inputs.mode }}'
+          $message = '${{ github.event.head_commit.message }}'
+          if ($mode -eq 'extensions-bench' -or $message.Contains('[perf-extensions-bench]')) {
+            ./eng/perf/run-extensions-strict-ab.ps1 -CandidateSha $candidate -Job Short
+          }
+          else {
+            ./eng/perf/prepare-extensions-strict-ab.ps1 -CandidateSha $candidate -RunDry
+          }
 
       - name: Upload SP220-07 smoke evidence
-        if: ${{ always() }}
+        if: ${{ always() && inputs.mode != 'extensions-bench' && !contains(github.event.head_commit.message, '[perf-extensions-bench]') }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: perf-extensions-strict-ab-smoke-${{ github.sha }}
@@ -621,3 +634,17 @@ jobs:
           retention-days: 3
           compression-level: 9
 
+      - name: Upload SP220-07 benchmark evidence
+        if: ${{ always() && (inputs.mode == 'extensions-bench' || contains(github.event.head_commit.message, '[perf-extensions-bench]')) }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: perf-extensions-strict-ab-bench-${{ github.sha }}
+          path: |
+            artifacts/perf/targets/**/target.json
+            artifacts/perf/targets/**/diagnostics/**
+            artifacts/perf/extensions-strict-ab/**/build-provenance.json
+            artifacts/perf/extensions-strict-ab/**/packages.lock.json
+            artifacts/perf/runs/extensions-strict-ab/**
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 9
