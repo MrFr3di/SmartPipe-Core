@@ -43,3 +43,5 @@ Updated: 2026-09-21
 - PERF-06 OpenTelemetry: evolution targets/materializer ready; first Dry uses the same explicit DI/Logging 10.0.11 host stack and a real in-memory telemetry correctness oracle.
 
 - PERF-06 OpenTelemetry: first Dry rejected before measurement because BDN 0.15.8 forbids sealed benchmark types; benchmark type made inheritable and guarded by contract test.
+
+- PERF-05 HealthChecks: corrected Dry is green with complete BDN statistics/measurements on both targets; normalized Short rerun requested.
