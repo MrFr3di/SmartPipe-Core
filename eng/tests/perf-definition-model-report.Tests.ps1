@@ -122,7 +122,7 @@ try {
     Assert-True ($markdown.Contains('buildTenVsZeroTimeRatio')) 'Definition Markdown must render intra-version scaling.'
     Assert-True (-not $markdown.Contains('Time delta')) 'Definition Markdown must not render cross-version delta.'
 
-    Write-Output 'PERF_DEFINITION_REPORT_TESTS_OK methods=11'
+    Write-Output 'PERF_DEFINITION_REPORT_TESTS_OK methods=10'
 }
 finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
