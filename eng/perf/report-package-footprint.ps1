@@ -187,11 +187,19 @@ function Get-TargetSummary {
     )
 
     $packages = @($Map.Values | Sort-Object { [string]$_.id })
+    [long]$compressedBytes = 0
+    [long]$uncompressedBytes = 0
+
+    foreach ($package in $packages) {
+        $compressedBytes += [long]$package.compressedBytes
+        $uncompressedBytes += [long]$package.uncompressedBytes
+    }
+
     return [ordered]@{
         target = $TargetId
         packageCount = $packages.Count
-        compressedBytes = [long](($packages | Measure-Object -Property compressedBytes -Sum).Sum)
-        uncompressedBytes = [long](($packages | Measure-Object -Property uncompressedBytes -Sum).Sum)
+        compressedBytes = $compressedBytes
+        uncompressedBytes = $uncompressedBytes
         packages = @(
             $packages | ForEach-Object {
                 [ordered]@{
