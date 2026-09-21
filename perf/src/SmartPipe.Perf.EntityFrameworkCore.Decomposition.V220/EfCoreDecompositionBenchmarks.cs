@@ -65,9 +65,11 @@ public class EfCoreDecompositionBenchmarks
 
         AssertObservation(await RawSingle().ConfigureAwait(false), 1, 42, nameof(RawSingle));
         AssertObservation(await PipelineSingle().ConfigureAwait(false), 1, 42, nameof(PipelineSingle));
+        AssertObservation(await RawCompiledSingle().ConfigureAwait(false), 1, 42, nameof(RawCompiledSingle));
         AssertObservation(await CompiledPipelineSingle().ConfigureAwait(false), 1, 42, nameof(CompiledPipelineSingle));
         AssertObservation(await RawHundredRows().ConfigureAwait(false), 100, 5050, nameof(RawHundredRows));
         AssertObservation(await PipelineHundredRows().ConfigureAwait(false), 100, 5050, nameof(PipelineHundredRows));
+        AssertObservation(await RawCompiledHundredRows().ConfigureAwait(false), 100, 5050, nameof(RawCompiledHundredRows));
         AssertObservation(await CompiledPipelineHundredRows().ConfigureAwait(false), 100, 5050, nameof(CompiledPipelineHundredRows));
     }
 
@@ -93,6 +95,10 @@ public class EfCoreDecompositionBenchmarks
         RunPipelineAsync(NormalSingleDefinition);
 
     [Benchmark]
+    public Task<EfObservation> RawCompiledSingle() =>
+        RawCompiledQueryAsync(static context => CompiledById(context, 42));
+
+    [Benchmark]
     public Task<EfObservation> CompiledPipelineSingle() =>
         RunPipelineAsync(CompiledSingleDefinition);
 
@@ -103,6 +109,10 @@ public class EfCoreDecompositionBenchmarks
     [Benchmark]
     public Task<EfObservation> PipelineHundredRows() =>
         RunPipelineAsync(NormalAllDefinition);
+
+    [Benchmark]
+    public Task<EfObservation> RawCompiledHundredRows() =>
+        RawCompiledQueryAsync(static context => CompiledFromId(context, 1));
 
     [Benchmark]
     public Task<EfObservation> CompiledPipelineHundredRows() =>
@@ -163,6 +173,23 @@ public class EfCoreDecompositionBenchmarks
         long checksum = 0;
 
         await foreach (EfBenchmarkRow row in query.AsAsyncEnumerable().ConfigureAwait(false))
+        {
+            count++;
+            checksum += row.Id;
+        }
+
+        return new EfObservation(count, checksum);
+    }
+
+    private async Task<EfObservation> RawCompiledQueryAsync(
+        Func<EfBenchmarkContext, IAsyncEnumerable<EfBenchmarkRow>> queryFactory)
+    {
+        await using EfBenchmarkContext context = Database.CreateContext();
+
+        int count = 0;
+        long checksum = 0;
+
+        await foreach (EfBenchmarkRow row in queryFactory(context).ConfigureAwait(false))
         {
             count++;
             checksum += row.Id;
