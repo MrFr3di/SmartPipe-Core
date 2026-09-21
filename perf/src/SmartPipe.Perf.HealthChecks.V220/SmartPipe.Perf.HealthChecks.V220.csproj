@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>SmartPipe.Perf.HealthChecks.V220</AssemblyName>
+    <RootNamespace>SmartPipe.Perf.HealthChecks</RootNamespace>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../SmartPipe.Perf.HealthChecks.Shared/*.cs" Link="%(Filename)%(Extension)" />
+    <Compile Include="HealthChecksTarget.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.11" />
+    <PackageReference Include="SmartPipe.Extensions.DependencyInjection" Version="2.2.0" />
+    <PackageReference Include="SmartPipe.Extensions.HealthChecks" Version="2.2.0" />
+  </ItemGroup>
+</Project>
