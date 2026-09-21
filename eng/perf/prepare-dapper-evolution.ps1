@@ -414,9 +414,9 @@ $artifactsRoot = Join-Path $repoRoot 'artifacts/perf/dapper'
 New-Item -ItemType Directory -Path $artifactsRoot -Force | Out-Null
 
 $baselineProject = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.V212/SmartPipe.Perf.Dapper.V212.csproj'
-$baselineAdapter = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.V212/DapperTarget.cs'
+$baselineAdapter = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.V212/DapperEvolutionTarget.cs'
 $candidateProject = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.V220/SmartPipe.Perf.Dapper.V220.csproj'
-$candidateAdapter = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.V220/DapperTarget.cs'
+$candidateAdapter = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.V220/DapperEvolutionTarget.cs'
 
 Prepare-DapperTarget -TargetId 'v212' -ProjectPath $baselineProject -AdapterSource $baselineAdapter -TargetRoot $baselineRoot -PrimaryPackageId 'SmartPipe.Extensions' -ExpectedPrimaryVersion '2.1.2'
 Prepare-DapperTarget -TargetId 'v220' -ProjectPath $candidateProject -AdapterSource $candidateAdapter -TargetRoot $candidateRoot -PrimaryPackageId 'SmartPipe.Extensions.Dapper' -ExpectedPrimaryVersion '2.2.0'
