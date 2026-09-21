@@ -41,7 +41,8 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/report-dapper-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-entity-framework-core-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-entity-framework-core-evolution.ps1'),
-    (Join-Path $repoRoot 'eng/perf/report-entity-framework-core-evolution.ps1')
+    (Join-Path $repoRoot 'eng/perf/report-entity-framework-core-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-definition-model-v220.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -502,6 +503,37 @@ Assert-True ($efCoreReport -match 'baselineRepeatDriftPercent') 'EF Core report 
 Assert-True ($efCoreReport -match 'candidateRepeatDriftPercent') 'EF Core report must expose candidate repeat drift.'
 Assert-True ($efCoreReport -match 'PERF_EFCORE_REPORT_OK') 'EF Core reporter must expose the EF-specific completion marker.'
 
+$definitionModel = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-definition-model-v220.ps1') -Raw
+Assert-True ($definitionModel -match "scenarioClass = 'v220-only'") 'Definition-model characterization must remain v220-only.'
+Assert-True ($definitionModel -match "scenario = 'definition-model'") 'Definition-model scenario id must remain canonical.'
+Assert-True ($definitionModel -match "-Target candidate") 'Definition-model materializer must request only the immutable candidate target.'
+Assert-True ($definitionModel -match "primaryPackageId = 'SmartPipe.Core'") 'Definition-model provenance must bind to SmartPipe.Core.'
+Assert-True ($definitionModel -match "primaryPackageVersion = '2.2.0'") 'Definition-model provenance must bind to SmartPipe.Core 2.2.0.'
+Assert-True ($definitionModel -match 'packageSourceMapping') 'Definition-model restore must use NuGet Package Source Mapping.'
+Assert-True ($definitionModel -match 'dotnet nuget verify') 'Definition-model provenance must use NuGet-native content hashes.'
+Assert-True ($definitionModel -match "'--locked-mode'") 'Definition-model restore must verify the generated lock in locked mode.'
+Assert-True ($definitionModel -match "'--no-http-cache'") 'Definition-model restore must bypass the NuGet HTTP cache.'
+Assert-True ($definitionModel -match 'Assert-BenchmarkResult') 'Definition-model Dry must reject missing BenchmarkDotNet JSON evidence.'
+Assert-True ($definitionModel -match 'Build_ZeroStage') 'Definition-model Dry must require zero-stage build evidence.'
+Assert-True ($definitionModel -match 'Build_TenStages') 'Definition-model Dry must require ten-stage build evidence.'
+Assert-True ($definitionModel -match 'Compile_First_TenStages') 'Definition-model Dry must require first-compile scaling evidence.'
+Assert-True ($definitionModel -match 'Compile_Cached_TenStages') 'Definition-model Dry must require cached-plan evidence.'
+Assert-True ($definitionModel -match 'StartAndComplete_TenStages') 'Definition-model Dry must require ten-stage run evidence.'
+Assert-True ($definitionModel -match 'LegacyBuilder_StartAndComplete_OneStage') 'Definition-model Dry must retain the same-version legacy compatibility characterization.'
+Assert-True ($definitionModel -match 'PERF_DEFINITION_MODEL_V220_READY') 'Definition-model materializer must expose its candidate-only completion marker.'
+
+$definitionSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.DefinitionModel.V220/DefinitionModelBenchmarks.cs') -Raw
+Assert-True ($definitionSource -match 'BenchmarkCategory\("V220Only", "DefinitionModel", "SP220-02"\)') 'Definition-model benchmark must remain v220-only classified.'
+Assert-True ($definitionSource -match 'ReferenceEquals') 'Definition-model correctness oracle must verify execution-plan cache identity.'
+Assert-True ($definitionSource -match 'CreateDefinition\(10\)') 'Definition-model benchmark must preserve ten-stage scaling.'
+Assert-True ($definitionSource -match 'LegacyBuilder_StartAndComplete_OneStage') 'Definition-model benchmark must preserve the same-version legacy builder characterization.'
+Assert-True ($definitionSource -match 'result != 42') 'Definition-model benchmark must preserve output correctness checks.'
+
+$definitionProject = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.DefinitionModel.V220/SmartPipe.Perf.DefinitionModel.V220.csproj') -Raw
+Assert-True ($definitionProject -match 'SmartPipe.Core" Version="2\.2\.0"') 'Definition-model project must reference SmartPipe.Core 2.2.0.'
+Assert-True ($definitionProject -notmatch '2\.1\.2') 'Definition-model v220-only project must not reference the baseline version.'
+
+
 
 
 
@@ -553,4 +585,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=33'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=34'
