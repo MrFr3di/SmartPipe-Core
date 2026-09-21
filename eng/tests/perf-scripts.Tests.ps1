@@ -14,7 +14,8 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/prepare-core-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-core-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-core-ab.ps1'),
-    (Join-Path $repoRoot 'eng/perf/run-core-stress.ps1')
+    (Join-Path $repoRoot 'eng/perf/run-core-stress.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-di-evolution.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -73,6 +74,18 @@ Assert-True ($stressSource -notmatch 'Task\.Delay') 'Deterministic Core stress m
 Assert-True ($stressSource -match 'ExpectedChecksum') 'Deterministic Core stress must enforce a checksum oracle.'
 Assert-True ($stressSource -match 'ExpectedItems') 'Deterministic Core stress must enforce an item-count oracle.'
 
+$di = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-di-evolution.ps1') -Raw
+Assert-True ($di -match "scenarioClass = 'evolution'") 'DI comparison must remain classified as evolution.'
+Assert-True ($di -match 'SmartPipe\.Extensions') 'DI baseline must use SmartPipe.Extensions.'
+Assert-True ($di -match 'SmartPipe\.Extensions\.DependencyInjection') 'DI candidate must use SmartPipe.Extensions.DependencyInjection.'
+Assert-True ($di -match 'packageSourceMapping') 'DI restore must use NuGet Package Source Mapping.'
+Assert-True ($di -match 'SmartPipe\.\*') 'All SmartPipe packages must be mapped to the local target feed.'
+Assert-True ($di -match 'dotnet nuget verify') 'DI provenance must use NuGet-native package content hashes.'
+Assert-True ($di -match "Where-Object \{ \$_\.Name -like 'SmartPipe\.\*' \}") 'DI provenance must verify every resolved SmartPipe package.'
+Assert-True ($di -match "'--locked-mode'") 'DI restore must verify the generated lock in locked mode.'
+Assert-True ($di -match "'--no-http-cache'") 'DI restore must bypass the NuGet HTTP cache.'
+Assert-True ($di -match 'adapterSourceSha256') 'DI provenance must record target-specific adapter source hashes.'
+
 $report = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-core-ab.ps1') -Raw
 Assert-True ($report -match 'baselineRepeatDriftPercent') 'Core A/B report must expose baseline repeat drift.'
 Assert-True ($report -match 'candidateRepeatDriftPercent') 'Core A/B report must expose candidate repeat drift.'
@@ -80,4 +93,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=6'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=7'
