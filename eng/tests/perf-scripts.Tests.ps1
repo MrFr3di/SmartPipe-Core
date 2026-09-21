@@ -44,7 +44,9 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/report-entity-framework-core-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-definition-model-v220.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-definition-model-v220.ps1'),
-    (Join-Path $repoRoot 'eng/perf/report-definition-model-v220.ps1')
+    (Join-Path $repoRoot 'eng/perf/report-definition-model-v220.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-core-soak.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-core-soak.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -114,6 +116,41 @@ Assert-True ($stressSource -match 'PipelineRunState\.Faulted') 'Failure stress m
 Assert-True ($stressSource -match 'ExpectedDisposedComponents') 'Lifecycle stress must enforce disposal-count invariants.'
 Assert-True ($stressSource -match 'WaitAsync\(TimeSpan\.FromSeconds\(10\)\)') 'Cancellation stress must use bounded coordination waits.'
 Assert-True ($stressSource -notmatch 'Thread\.Sleep') 'Deterministic Core stress must not use Thread.Sleep.'
+
+$soakRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-core-soak.ps1') -Raw
+Assert-True ($soakRunner -match "ValidateSet\('verify', '30m', '60m', '120m'\)") 'Core soak runner must expose verify/30m/60m/120m profiles.'
+Assert-True ($soakRunner -match 'contentHash differs from verified Core A/B provenance') 'Core soak restore must bind to verified Core A/B package content.'
+Assert-True ($soakRunner -match "scenario = 'soak-leak'") 'Core soak manifest must use the canonical soak-leak scenario.'
+Assert-True ($soakRunner -match "scenarioClass = 'evolution'") 'Core soak must remain evolution-classified.'
+Assert-True ($soakRunner -match "comparisonPolicy = 'side-by-side-no-cross-version-ratio'") 'Core soak must forbid cross-version ratio reporting.'
+Assert-True ($soakRunner.Contains('authoritativeTiming = $false')) 'Hosted soak timing must remain non-authoritative.'
+Assert-True ($soakRunner -match 'ActiveRuns') 'Core soak runner must gate on final active runs.'
+Assert-True ($soakRunner -match 'CreatedComponents') 'Core soak runner must record created resources.'
+Assert-True ($soakRunner -match 'DisposedComponents') 'Core soak runner must gate on exact resource disposal.'
+Assert-True ($soakRunner -match 'LifecycleInvariantPassed') 'Core soak runner must fail closed on lifecycle invariant failure.'
+Assert-True ($soakRunner -match 'stdout\.jsonl') 'Core soak runner must retain raw JSONL snapshots.'
+
+$soakSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Soak.Shared/Program.cs') -Raw
+Assert-True ($soakSource -match 'ConcurrentRunsPerBatch = 16') 'Core soak must exercise concurrent run churn.'
+Assert-True ($soakSource -match 'TimeSpan\.FromMinutes\(30\)') 'Core soak must include the 30-minute profile.'
+Assert-True ($soakSource -match 'TimeSpan\.FromMinutes\(60\)') 'Core soak must include the 60-minute profile.'
+Assert-True ($soakSource -match 'TimeSpan\.FromMinutes\(120\)') 'Core soak must include the 120-minute profile.'
+Assert-True ($soakSource -match 'GC\.GetTotalMemory') 'Core soak snapshots must collect managed memory.'
+Assert-True ($soakSource -match 'GC\.GetGCMemoryInfo') 'Core soak snapshots must collect GC heap information.'
+Assert-True ($soakSource -match 'GC\.GetTotalAllocatedBytes') 'Core soak snapshots must collect allocation totals.'
+Assert-True ($soakSource -match 'ThreadPool\.PendingWorkItemCount') 'Core soak snapshots must collect ThreadPool queue depth.'
+Assert-True ($soakSource -match '/proc/self/fd') 'Core soak must collect Linux fd count where available.'
+Assert-True ($soakSource -match 'created == disposed') 'Core soak hard gate must require exact component cleanup.'
+
+$soakReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-core-soak.ps1') -Raw
+Assert-True ($soakReport -match 'Get-SlopePerMinute') 'Core soak report must calculate trend slopes.'
+Assert-True ($soakReport -match 'Select-Object -Skip \$skip') 'Core soak trend must exclude the warmup prefix.'
+Assert-True ($soakReport -match 'managedMemorySlopeBytesPerMinute') 'Core soak report must expose managed-memory slope.'
+Assert-True ($soakReport -match 'gcHeapSlopeBytesPerMinute') 'Core soak report must expose GC-heap slope.'
+Assert-True ($soakReport -match 'workingSetSlopeBytesPerMinute') 'Core soak report must expose working-set slope.'
+Assert-True ($soakReport -notmatch 'timeDeltaPercent') 'Core soak report must not emit timing regression percentages.'
+Assert-True ($soakReport -notmatch 'memoryDeltaPercent') 'Core soak report must not emit uncalibrated memory regression percentages.'
+
 
 $di = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-di-evolution.ps1') -Raw
 Assert-True ($di -match "scenarioClass = 'evolution'") 'DI comparison must remain classified as evolution.'
@@ -620,4 +657,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=36'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=38'
