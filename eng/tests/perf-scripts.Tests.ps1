@@ -30,6 +30,7 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/prepare-extensions-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-extensions-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-extensions-strict-ab.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-extensions-focus.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-json-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-json-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-json-strict-ab.ps1'),
@@ -367,6 +368,30 @@ Assert-True ($extensionsReport -match 'baselineRepeatDriftPercent') 'SP220-07 re
 Assert-True ($extensionsReport -match 'candidateRepeatDriftPercent') 'SP220-07 report must expose candidate repeat drift.'
 Assert-True ($extensionsReport -match 'records.Count -ne \(\$expectedMethods.Count \* 4\)') 'SP220-07 report must reject incomplete A-B-B-A evidence.'
 
+$extensionsFocus = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-extensions-focus.ps1') -Raw
+Assert-True ($extensionsFocus -match "scenarioClass = 'strict-ab'") 'SP220-07 focused Composite comparison must remain strict-ab.'
+Assert-True ($extensionsFocus -match "scenario = 'extensions-focus'") 'SP220-07 focused scenario id must remain isolated from the main strict workload.'
+Assert-True ($extensionsFocus -match 'ZeroChildren') 'Composite focus must measure zero-child fixed overhead.'
+Assert-True ($extensionsFocus -match 'OneChild') 'Composite focus must measure one-child overhead.'
+Assert-True ($extensionsFocus -match 'ThreeChildren') 'Composite focus must retain the three-child comparison point.'
+Assert-True ($extensionsFocus -match 'CompositeFocusBenchmarks') 'Composite focus Dry must target only the focused Composite class.'
+Assert-True ($extensionsFocus -match "PrimaryPackageId 'SmartPipe.Extensions'") 'Composite focus baseline must bind to SmartPipe.Extensions 2.1.2.'
+Assert-True ($extensionsFocus -match "PrimaryPackageId 'SmartPipe.Extensions.Transforms'") 'Composite focus candidate must bind to SmartPipe.Extensions.Transforms 2.2.0.'
+Assert-True ($extensionsFocus -match 'PERF_EXTENSIONS_FOCUS_READY') 'Composite focus materializer must expose its completion marker.'
+
+$extensionsFocusSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.ExtensionsFocus.Shared/CompositeFocusBenchmarks.cs') -Raw
+Assert-True ($extensionsFocusSource -match 'BenchmarkCategory\("Comparative", "StrictAB", "SP220-07-Focus"\)') 'Composite focus benchmark must remain strict A/B.'
+Assert-True ($extensionsFocusSource -match 'new CompositeTransform<int>\(\)') 'Composite focus must include a zero-child composite.'
+Assert-True ($extensionsFocusSource -match 'ZeroChildren') 'Composite focus must keep the zero-child benchmark.'
+Assert-True ($extensionsFocusSource -match 'OneChild') 'Composite focus must keep the one-child benchmark.'
+Assert-True ($extensionsFocusSource -match 'ThreeChildren') 'Composite focus must keep the three-child benchmark.'
+
+$channelFocusSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.ExtensionsFocus.V220/ChannelMergeFocusBenchmarks.cs') -Raw
+Assert-True ($channelFocusSource -match 'BenchmarkCategory\("V220Only", "SP220-07-Focus", "ChannelMerge"\)') 'Channel focus must remain candidate-only characterization.'
+Assert-True ($channelFocusSource -match 'CompatibilityTwoReader') 'Channel focus must retain the compatibility overload.'
+Assert-True ($channelFocusSource -match 'MergeManyTwoReader') 'Channel focus must retain the generalized two-reader path.'
+
+
 $json = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-json-strict-ab.ps1') -Raw
 Assert-True ($json -match "scenarioClass = 'strict-ab'") 'SP220-08 JSON comparison must remain strict-ab.'
 Assert-True ($json -match "scenario = 'json'") 'SP220-08 JSON scenario id must remain canonical.'
@@ -678,4 +703,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=39'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=40'
