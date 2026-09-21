@@ -38,7 +38,8 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/report-csv-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-dapper-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-dapper-evolution.ps1'),
-    (Join-Path $repoRoot 'eng/perf/report-dapper-evolution.ps1')
+    (Join-Path $repoRoot 'eng/perf/report-dapper-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-entity-framework-core-evolution.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -437,6 +438,51 @@ Assert-True ($dapperReport -notmatch 'allocationDeltaPercent') 'Dapper report mu
 Assert-True ($dapperReport -match 'baselineRepeatDriftPercent') 'Dapper report must expose baseline repeat drift.'
 Assert-True ($dapperReport -match 'candidateRepeatDriftPercent') 'Dapper report must expose candidate repeat drift.'
 
+$efCore = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-entity-framework-core-evolution.ps1') -Raw
+Assert-True ($efCore -match "scenarioClass = 'evolution'") 'SP220-11 EF Core comparison must remain evolution-classified.'
+Assert-True ($efCore -match "scenario = 'entity-framework-core'") 'SP220-11 EF Core scenario id must remain canonical.'
+Assert-True ($efCore -match "PrimaryPackageId 'SmartPipe.Extensions'") 'EF Core baseline must bind to SmartPipe.Extensions 2.1.2.'
+Assert-True ($efCore -match "PrimaryPackageId 'SmartPipe.Extensions.EntityFrameworkCore'") 'EF Core candidate must bind to SmartPipe.Extensions.EntityFrameworkCore 2.2.0.'
+Assert-True ($efCore -match 'packageSourceMapping') 'EF Core restore must use NuGet Package Source Mapping.'
+Assert-True ($efCore -match 'dotnet nuget verify') 'EF Core provenance must use NuGet-native content hashes.'
+Assert-True ($efCore -match "'--locked-mode'") 'EF Core restore must verify the generated lock in locked mode.'
+Assert-True ($efCore -match "'--no-http-cache'") 'EF Core restore must bypass the NuGet HTTP cache.'
+Assert-True ($efCore -match 'Assert-BenchmarkResult') 'EF Core Dry must reject missing BenchmarkDotNet JSON evidence.'
+Assert-True ($efCore -match 'ReadHundredRows') 'EF Core Dry must require the 100-row workload.'
+Assert-True ($efCore -match 'ReadSingleFiltered') 'EF Core Dry must require the filtered single-row workload.'
+Assert-True ($efCore -match 'EntityFrameworkCoreEvolutionTarget\.cs') 'EF Core materializer must hash target-specific adapters.'
+
+$efCoreSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.EntityFrameworkCore.Shared/EntityFrameworkCoreEvolutionBenchmarks.cs') -Raw
+Assert-True ($efCoreSource -match 'BenchmarkCategory\("Evolution", "EntityFrameworkCore"\)') 'EF Core benchmark must remain evolution-classified.'
+Assert-True ($efCoreSource -match 'SqliteConnection') 'EF Core benchmark must use SQLite rather than the EF InMemory provider.'
+Assert-True ($efCoreSource -match 'Data Source=:memory:') 'EF Core benchmark must use an in-memory SQLite database.'
+Assert-True ($efCoreSource -match 'connection\.OpenAsync') 'EF Core benchmark must keep the SQLite in-memory connection explicitly open.'
+Assert-True ($efCoreSource -match 'UseSqlite\(_connection\)') 'EF Core contexts must use the shared SQLite connection.'
+Assert-True ($efCoreSource -match 'EnsureCreatedAsync') 'EF Core benchmark must create the relational schema before measurement.'
+Assert-True ($efCoreSource -notmatch 'UseInMemoryDatabase') 'EF Core benchmark must not use the discouraged EF InMemory provider.'
+Assert-True ($efCoreSource -match '5050') 'EF Core 100-row correctness oracle must verify the deterministic checksum.'
+Assert-True ($efCoreSource -match 'checksum=42') 'EF Core filtered correctness oracle must verify the selected row.'
+Assert-True ($efCoreSource -match 'public readonly record struct EfQueryObservation') 'EF Core benchmark observation type must remain public for BenchmarkDotNet public methods.'
+
+$efCoreV212 = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.EntityFrameworkCore.V212/EntityFrameworkCoreEvolutionTarget.cs') -Raw
+$efCoreV220 = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.EntityFrameworkCore.V220/EntityFrameworkCoreEvolutionTarget.cs') -Raw
+Assert-True ($efCoreV212 -match 'EfCoreSelector') 'EF Core baseline must exercise the legacy selector path.'
+Assert-True ($efCoreV212 -match 'WithTracking\(false\)') 'EF Core baseline must use no-tracking query semantics.'
+Assert-True ($efCoreV220 -match 'EfCorePipelineComponents\.QuerySource') 'EF Core candidate must exercise the new query-source component.'
+Assert-True ($efCoreV220 -match 'EfCoreQueryTrackingMode\.NoTracking') 'EF Core candidate must use no-tracking query semantics.'
+Assert-True ($efCoreV220 -match 'definition\.StartAsync') 'EF Core candidate must execute through the public Core run lifecycle.'
+Assert-True ($efCoreV220 -match 'ReadResultsAsync') 'EF Core candidate must consume results through PipelineRun.'
+
+$efCoreV212Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.EntityFrameworkCore.V212/SmartPipe.Perf.EntityFrameworkCore.V212.csproj') -Raw
+$efCoreV220Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.EntityFrameworkCore.V220/SmartPipe.Perf.EntityFrameworkCore.V220.csproj') -Raw
+Assert-True ($efCoreV212Project -match 'SmartPipe.Extensions" Version="2\.1\.2"') 'EF Core baseline project must reference SmartPipe.Extensions 2.1.2.'
+Assert-True ($efCoreV220Project -match 'SmartPipe.Extensions.EntityFrameworkCore" Version="2\.2\.0"') 'EF Core candidate project must reference SmartPipe.Extensions.EntityFrameworkCore 2.2.0.'
+Assert-True ($efCoreV212Project -match 'Microsoft.EntityFrameworkCore.Sqlite" Version="10\.0\.11"') 'EF Core baseline must pin the SQLite provider to 10.0.11.'
+Assert-True ($efCoreV220Project -match 'Microsoft.EntityFrameworkCore.Sqlite" Version="10\.0\.11"') 'EF Core candidate must pin the SQLite provider to 10.0.11.'
+Assert-True ($efCoreV212Project -notmatch 'Microsoft.EntityFrameworkCore.InMemory') 'EF Core baseline must not reference the InMemory provider.'
+Assert-True ($efCoreV220Project -notmatch 'Microsoft.EntityFrameworkCore.InMemory') 'EF Core candidate must not reference the InMemory provider.'
+
+
 
 
 
@@ -486,4 +532,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=30'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=31'
