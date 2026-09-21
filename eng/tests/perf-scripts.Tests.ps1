@@ -48,6 +48,9 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/prepare-entity-framework-core-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-entity-framework-core-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-entity-framework-core-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-efcore-decomposition-v220.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-efcore-decomposition-v220.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-efcore-decomposition-v220.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-definition-model-v220.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-definition-model-v220.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-definition-model-v220.ps1'),
@@ -643,6 +646,46 @@ Assert-True ($efCoreV220Project -match 'Microsoft.EntityFrameworkCore.Sqlite" Ve
 Assert-True ($efCoreV212Project -notmatch 'Microsoft.EntityFrameworkCore.InMemory') 'EF Core baseline must not reference the InMemory provider.'
 Assert-True ($efCoreV220Project -notmatch 'Microsoft.EntityFrameworkCore.InMemory') 'EF Core candidate must not reference the InMemory provider.'
 
+$efCoreDecomp = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-efcore-decomposition-v220.ps1') -Raw
+Assert-True ($efCoreDecomp -match "scenario = 'efcore-decomposition'") 'EF Core decomposition scenario id must remain canonical.'
+Assert-True ($efCoreDecomp -match "scenarioClass = 'v220-only'") 'EF Core decomposition must remain v220-only.'
+Assert-True ($efCoreDecomp -match 'SmartPipe.Extensions.EntityFrameworkCore 2.2.0') 'EF Core decomposition must bind to SmartPipe.Extensions.EntityFrameworkCore 2.2.0.'
+Assert-True ($efCoreDecomp -match 'packageSourceMapping') 'EF Core decomposition restore must use NuGet Package Source Mapping.'
+Assert-True ($efCoreDecomp -match 'dotnet nuget verify') 'EF Core decomposition provenance must use NuGet-native content hashes.'
+Assert-True ($efCoreDecomp -match "'--locked-mode'") 'EF Core decomposition restore must verify the generated lock in locked mode.'
+Assert-True ($efCoreDecomp -match 'Assert-BenchmarkResult') 'EF Core decomposition Dry must reject incomplete BenchmarkDotNet evidence.'
+Assert-True ($efCoreDecomp -match 'CompiledPipelineSingle') 'EF Core decomposition Dry must require the compiled single-row path.'
+Assert-True ($efCoreDecomp -match 'CompiledPipelineHundredRows') 'EF Core decomposition Dry must require the compiled 100-row path.'
+
+$efCoreDecompSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.EntityFrameworkCore.Decomposition.V220/EfCoreDecompositionBenchmarks.cs') -Raw
+Assert-True ($efCoreDecompSource -match 'BenchmarkCategory\("V220Only", "EntityFrameworkCore", "Decomposition"\)') 'EF Core decomposition benchmark must remain candidate-only.'
+Assert-True ($efCoreDecompSource -match 'EF\.CompileAsyncQuery') 'EF Core decomposition must exercise EF compiled queries.'
+Assert-True ($efCoreDecompSource -match 'EfCorePipelineComponents\.QuerySource') 'EF Core decomposition must exercise normal QuerySource.'
+Assert-True ($efCoreDecompSource -match 'EfCorePipelineComponents\.CompiledQuerySource') 'EF Core decomposition must exercise CompiledQuerySource.'
+Assert-True ($efCoreDecompSource -match 'AsNoTracking') 'EF Core raw/compiled workload must preserve no-tracking semantics.'
+Assert-True ($efCoreDecompSource -match 'Data Source=:memory:') 'EF Core decomposition must use in-memory SQLite.'
+Assert-True ($efCoreDecompSource -notmatch 'UseInMemoryDatabase') 'EF Core decomposition must not use the EF InMemory provider.'
+Assert-True ($efCoreDecompSource -notmatch 'SmartPipe\.Extensions\.EntityFrameworkCore\.Runtime') 'EF Core decomposition must not use internal runtime APIs.'
+
+$efCoreDecompProject = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.EntityFrameworkCore.Decomposition.V220/SmartPipe.Perf.EntityFrameworkCore.Decomposition.V220.csproj') -Raw
+Assert-True ($efCoreDecompProject -match 'Microsoft.EntityFrameworkCore.Sqlite" Version="10\.0\.11"') 'EF Core decomposition must pin SQLite provider 10.0.11.'
+Assert-True ($efCoreDecompProject -match 'SmartPipe.Extensions.EntityFrameworkCore" Version="2\.2\.0"') 'EF Core decomposition must pin SmartPipe.Extensions.EntityFrameworkCore 2.2.0.'
+
+$efCoreDecompRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-efcore-decomposition-v220.ps1') -Raw
+Assert-True ($efCoreDecompRunner -match "scenarioClass = 'v220-only'") 'EF Core decomposition runner must remain v220-only.'
+Assert-True ($efCoreDecompRunner -match "comparisonPolicy = 'within-version-raw-vs-normal-vs-compiled'") 'EF Core decomposition runner must preserve within-version policy.'
+Assert-True ($efCoreDecompRunner.Contains('authoritativeTiming = $false')) 'Hosted EF Core decomposition timing must remain non-authoritative.'
+Assert-True ($efCoreDecompRunner -match 'foreach \(\$slot in 1\.\.2\)') 'EF Core decomposition must repeat twice on the same runner.'
+
+$efCoreDecompReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-efcore-decomposition-v220.ps1') -Raw
+Assert-True ($efCoreDecompReport -match 'normalOverRawRatio') 'EF Core decomposition report must expose normal Pipeline/Raw ratio.'
+Assert-True ($efCoreDecompReport -match 'compiledOverRawRatio') 'EF Core decomposition report must expose compiled Pipeline/Raw ratio.'
+Assert-True ($efCoreDecompReport -match 'compiledOverNormalRatio') 'EF Core decomposition report must compare compiled and normal pipeline paths.'
+Assert-True ($efCoreDecompReport -match 'normalIncrementalTimePerAdditionalRowNs') 'EF Core decomposition report must expose the normal descriptive per-row model.'
+Assert-True ($efCoreDecompReport -match 'compiledIncrementalTimePerAdditionalRowNs') 'EF Core decomposition report must expose the compiled descriptive per-row model.'
+Assert-True ($efCoreDecompReport -match 'Descriptive two-point model only') 'EF Core decomposition report must label the model as descriptive.'
+
+
 $efCoreRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-entity-framework-core-evolution.ps1') -Raw
 Assert-True ($efCoreRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'EF Core evolution order must remain counter-balanced A-B-B-A.'
 Assert-True ($efCoreRunner -match "scenarioClass = 'evolution'") 'EF Core runner must remain evolution-classified.'
@@ -764,4 +807,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=43'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=46'
