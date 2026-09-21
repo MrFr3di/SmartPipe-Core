@@ -480,12 +480,12 @@ function Assert-RestoredPackageSource {
     }
 
     $expectedPath = [IO.Path]::GetFullPath($ExpectedFeed).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-    $actualPath = if ([Uri]::TryCreate($source, [UriKind]::Absolute, [ref]$null)) {
-        $uri = [Uri]$source
-        if (-not $uri.IsFile) {
+    $parsedUri = $null
+    $actualPath = if ([Uri]::TryCreate($source, [UriKind]::Absolute, [ref]$parsedUri)) {
+        if (-not $parsedUri.IsFile) {
             throw "Package '$PackageId/$PackageVersion' came from non-file source '$source'; expected '$expectedPath'."
         }
-        [IO.Path]::GetFullPath($uri.LocalPath)
+        [IO.Path]::GetFullPath($parsedUri.LocalPath)
     }
     else {
         [IO.Path]::GetFullPath($source)
