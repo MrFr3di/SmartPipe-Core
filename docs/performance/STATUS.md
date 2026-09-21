@@ -14,3 +14,5 @@ Updated: 2026-09-21
 - Deterministic Core stress: parallel32 + sequential1000 runner wired to CI; typed-output defect fixed and evidence rerun requested.
 
 - Reproducibility: second normalized Short A/B run queued after deterministic stress.
+
+- Reproducibility: third Short A/B run requested after executable report self-test passed.
