@@ -33,7 +33,9 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/prepare-json-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-json-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-json-strict-ab.ps1'),
-    (Join-Path $repoRoot 'eng/perf/prepare-csv-strict-ab.ps1')
+    (Join-Path $repoRoot 'eng/perf/prepare-csv-strict-ab.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-csv-strict-ab.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-csv-strict-ab.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -357,6 +359,24 @@ $csvV220Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartP
 Assert-True ($csvV212Project -match 'SmartPipe.Extensions" Version="2\.1\.2"') 'CSV baseline project must reference SmartPipe.Extensions 2.1.2.'
 Assert-True ($csvV220Project -match 'SmartPipe.Extensions.Csv" Version="2\.2\.0"') 'CSV candidate project must reference SmartPipe.Extensions.Csv 2.2.0.'
 
+$csvRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-csv-strict-ab.ps1') -Raw
+Assert-True ($csvRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'CSV strict A/B order must remain counter-balanced A-B-B-A.'
+Assert-True ($csvRunner -match "scenarioClass = 'strict-ab'") 'CSV runner must remain strict-ab.'
+Assert-True ($csvRunner -match "comparisonPolicy = 'strict-cross-version-ratio'") 'CSV runner must preserve strict ratio policy.'
+Assert-True ($csvRunner.Contains('authoritativeTiming = $false')) 'Hosted CSV timing must remain non-authoritative.'
+Assert-True ($csvRunner -match 'Assert-BenchmarkResult') 'CSV Short must reject missing BenchmarkDotNet evidence.'
+Assert-True ($csvRunner -match 'produced no statistics') 'CSV Short must reject results without statistics.'
+Assert-True ($csvRunner -match 'produced no measurements') 'CSV Short must reject results without measurements.'
+
+$csvReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-csv-strict-ab.ps1') -Raw
+Assert-True ($csvReport -match 'strict-cross-version-ratio') 'CSV report must preserve strict ratio policy.'
+Assert-True ($csvReport -match 'timeDeltaPercent') 'CSV report must emit strict timing deltas.'
+Assert-True ($csvReport -match 'allocationDeltaPercent') 'CSV report must emit strict allocation deltas.'
+Assert-True ($csvReport -match 'baselineRepeatDriftPercent') 'CSV report must expose baseline repeat drift.'
+Assert-True ($csvReport -match 'candidateRepeatDriftPercent') 'CSV report must expose candidate repeat drift.'
+Assert-True ($csvReport -match 'records.Count -ne \(\$expectedMethods.Count \* 4\)') 'CSV report must reject incomplete A-B-B-A evidence.'
+
+
 
 
 
@@ -403,4 +423,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=25'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=27'
