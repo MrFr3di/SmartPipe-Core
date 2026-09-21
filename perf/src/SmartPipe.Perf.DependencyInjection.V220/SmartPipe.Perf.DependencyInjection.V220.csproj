@@ -13,6 +13,7 @@
   <ItemGroup>
     <Compile Include="../SmartPipe.Perf.DependencyInjection.Shared/*.cs" Link="%(Filename)%(Extension)" />
     <Compile Include="DependencyInjectionTarget.cs" />
+    <Compile Include="DependencyInjectionV220ScaleBenchmarks.cs" />
   </ItemGroup>
 
   <ItemGroup>
