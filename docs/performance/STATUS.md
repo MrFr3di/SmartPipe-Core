@@ -30,3 +30,5 @@ Updated: 2026-09-21
 - PERF-04 DI: immutable Dry + correctness precheck + JSON evidence + v2.2-only scale are green; first valid DI evolution Short requested.
 
 - PERF-04 DI: multi-method reporter regression fixed and self-test passed; normalized DI Short rerun requested.
+
+- PERF-04 Hosting: immutable evolution Dry harness implemented; first Hosting lifecycle/provider Dry requested.
