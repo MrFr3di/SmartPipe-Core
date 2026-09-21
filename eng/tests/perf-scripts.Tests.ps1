@@ -34,7 +34,7 @@ Assert-True ($materializer -match "'--locked-mode'") 'Target restores must use l
 Assert-True ($materializer -match 'verify-baseline') 'Baseline must be verified through RepositoryChecks.'
 Assert-True ($materializer -match 'verify-package-graph') 'Candidate package graph must be verified.'
 Assert-True ($materializer -match 'verify-package-metadata') 'Candidate package metadata must be verified.'
-Assert-True ($materializer -match "\$candidateManifest\s*=\s*Join-Path\s+\$packagesDir\s+'manifest\.json'") 'Pack manifest must live directly inside the package output directory.'
+Assert-True ($materializer.Contains('$candidateManifest = Join-Path $packagesDir ''manifest.json''')) 'Pack manifest must live directly inside the package output directory.'
 Assert-True ($materializer -match 'Get-FileHash.+SHA256') 'Target package provenance must include SHA-256 hashes.'
 Assert-True ($materializer -match '61ceef6bf69aef0a4f79b25384352d238979200f') 'Materializer default candidate SHA must remain pinned.'
 Assert-True ($materializer -notmatch '(?m)git\s+-C\s+\$repoRoot\s+(checkout|reset)') 'Materializer must not checkout/reset the harness working tree.'
