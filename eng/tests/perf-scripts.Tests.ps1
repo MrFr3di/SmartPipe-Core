@@ -177,6 +177,7 @@ $otelSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.
 Assert-True ($otelSource -match 'BenchmarkCategory\("Evolution", "OpenTelemetry"\)') 'OpenTelemetry benchmark must remain evolution-classified.'
 Assert-True ($otelSource -match 'ValidateRegistration') 'OpenTelemetry benchmark must run a telemetry-registration correctness oracle.'
 Assert-True ($otelSource -match 'BuildResolveDisposeProviders') 'OpenTelemetry benchmark must cover provider construction and resolution.'
+Assert-True ($otelSource -notmatch 'public sealed class OpenTelemetryEvolutionBenchmarks') 'BenchmarkDotNet OpenTelemetry type must remain unsealed.'
 $otelV220 = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.OpenTelemetry.V220/OpenTelemetryTarget.cs') -Raw
 Assert-True ($otelV220 -match 'AddSmartPipeInstrumentation') 'OpenTelemetry candidate must exercise the SmartPipe instrumentation helper.'
 Assert-True ($otelV220 -match 'ReferenceEquals') 'OpenTelemetry candidate precheck must enforce exact builder identity.'
