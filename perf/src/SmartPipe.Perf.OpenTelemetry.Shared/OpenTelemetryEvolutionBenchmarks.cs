@@ -11,7 +11,7 @@ public static class Program
 
 [MemoryDiagnoser]
 [BenchmarkCategory("Evolution", "OpenTelemetry")]
-public sealed class OpenTelemetryEvolutionBenchmarks
+public class OpenTelemetryEvolutionBenchmarks
 {
     private OpenTelemetryTarget? _target;
 
