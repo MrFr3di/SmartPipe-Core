@@ -89,3 +89,5 @@ Updated: 2026-09-21
 - SP220-01 Package footprint: first materialize proved package graph but reporter aggregation failed on PowerShell OrderedDictionary property adapter; typed aggregation fixed and rerun requested.
 
 - SP220-07 Reproducibility: second independent strict A/B Short requested to confirm Composite/Validation/Conditional signals before any regression conclusion.
+
+- PERF-09 Soak: verify profile is green; first full 30-minute immutable A/B soak requested with leak/bounded-memory cleanup gates.
