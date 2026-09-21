@@ -408,7 +408,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $baselineRoot 'target.json')) -or
 $harnessSha = (& git -C $repoRoot rev-parse HEAD).Trim()
 Assert-ExitCode 'Resolve harness SHA'
 
-$sharedSource = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.ExtensionsFocus.Shared/ExtensionsFocusBenchmarks.cs'
+$sharedSource = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.ExtensionsFocus.Shared/CompositeFocusBenchmarks.cs'
 $sharedSourceSha = (Get-FileHash -LiteralPath $sharedSource -Algorithm SHA256).Hash.ToLowerInvariant()
 $artifactsRoot = Join-Path $repoRoot 'artifacts/perf/extensions-focus'
 
