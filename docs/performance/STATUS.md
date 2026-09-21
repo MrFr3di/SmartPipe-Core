@@ -83,3 +83,5 @@ Updated: 2026-09-21
 - PERF-08 Stress: happy-path parallel32/sequential1000 extended with deterministic cancel32 and sourcefailure1000; expanded lifecycle stress requested with terminal-state and exact-disposal hard gates.
 
 - PERF-09 Soak: deterministic verify/30m/60m/120m runner implemented; short verify profile requested to validate snapshots, trend reporting, zero-active and exact cleanup gates.
+
+- SP220-01 Package footprint: immutable nupkg/nuspec closure reporter implemented and contract-tested; materialize run requested for actual package count/size/dependency evidence.
