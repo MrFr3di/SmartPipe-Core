@@ -149,6 +149,9 @@ Assert-True ($health -match 'dotnet nuget verify') 'HealthChecks provenance must
 Assert-True ($health -match "'--locked-mode'") 'HealthChecks restore must verify the generated lock in locked mode.'
 Assert-True ($health -match "'--exporters'[\s\S]{0,80}'json'") 'HealthChecks Dry must explicitly export BenchmarkDotNet JSON.'
 Assert-True ($health -match 'Assert-BenchmarkResult') 'HealthChecks Dry must fail when BenchmarkDotNet produces no JSON result.'
+Assert-True ($health -match 'produced no statistics') 'HealthChecks Dry must reject BenchmarkDotNet JSON records without statistics.'
+Assert-True ($health -match 'produced no measurements') 'HealthChecks Dry must reject BenchmarkDotNet JSON records without measurements.'
+Assert-True ($health -match 'zero measured operations') 'HealthChecks Dry must reject zero-operation BenchmarkDotNet records.'
 Assert-True ($health -match 'PERF_HEALTHCHECKS_EVOLUTION_READY') 'HealthChecks materializer must expose the correct completion marker.'
 $healthSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.HealthChecks.Shared/HealthChecksEvolutionBenchmarks.cs') -Raw
 Assert-True ($healthSource -match 'BenchmarkCategory\("Evolution", "HealthChecks"\)') 'HealthChecks benchmark must remain evolution-classified.'
@@ -166,6 +169,9 @@ Assert-True ($otel -match 'dotnet nuget verify') 'OpenTelemetry provenance must 
 Assert-True ($otel -match "'--locked-mode'") 'OpenTelemetry restore must verify the generated lock in locked mode.'
 Assert-True ($otel -match "'--exporters'[\s\S]{0,80}'json'") 'OpenTelemetry Dry must explicitly export BenchmarkDotNet JSON.'
 Assert-True ($otel -match 'Assert-BenchmarkResult') 'OpenTelemetry Dry must fail when BenchmarkDotNet produces no JSON result.'
+Assert-True ($otel -match 'produced no statistics') 'OpenTelemetry Dry must reject BenchmarkDotNet JSON records without statistics.'
+Assert-True ($otel -match 'produced no measurements') 'OpenTelemetry Dry must reject BenchmarkDotNet JSON records without measurements.'
+Assert-True ($otel -match 'zero measured operations') 'OpenTelemetry Dry must reject zero-operation BenchmarkDotNet records.'
 Assert-True ($otel -match 'PERF_OPENTELEMETRY_EVOLUTION_READY') 'OpenTelemetry materializer must expose the correct completion marker.'
 $otelSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.OpenTelemetry.Shared/OpenTelemetryEvolutionBenchmarks.cs') -Raw
 Assert-True ($otelSource -match 'BenchmarkCategory\("Evolution", "OpenTelemetry"\)') 'OpenTelemetry benchmark must remain evolution-classified.'
@@ -178,6 +184,21 @@ Assert-True ($otelV220 -match 'countAfterFirstRegistration') 'OpenTelemetry cand
 Assert-True ($otelV220 -match 'AddInMemoryExporter') 'OpenTelemetry correctness oracle must verify exported telemetry.'
 Assert-True ($otelV220 -match 'counter.Enabled') 'OpenTelemetry correctness oracle must verify metric listener activation.'
 Assert-True ($otelV220 -match 'activitySource.HasListeners') 'OpenTelemetry correctness oracle must verify trace listener activation.'
+
+
+$healthV212Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.HealthChecks.V212/SmartPipe.Perf.HealthChecks.V212.csproj') -Raw
+$healthV220Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.HealthChecks.V220/SmartPipe.Perf.HealthChecks.V220.csproj') -Raw
+Assert-True ($healthV212Project -match 'Microsoft.Extensions.DependencyInjection" Version="10\.0\.11"') 'HealthChecks baseline app must pin the full DI runtime to 10.0.11.'
+Assert-True ($healthV220Project -match 'Microsoft.Extensions.DependencyInjection" Version="10\.0\.11"') 'HealthChecks candidate app must pin the full DI runtime to 10.0.11.'
+Assert-True ($healthV212Project -match 'Microsoft.Extensions.Logging" Version="10\.0\.11"') 'HealthChecks baseline app must pin logging to 10.0.11.'
+Assert-True ($healthV220Project -match 'Microsoft.Extensions.Logging" Version="10\.0\.11"') 'HealthChecks candidate app must pin logging to 10.0.11.'
+
+$otelV212Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.OpenTelemetry.V212/SmartPipe.Perf.OpenTelemetry.V212.csproj') -Raw
+$otelV220Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.OpenTelemetry.V220/SmartPipe.Perf.OpenTelemetry.V220.csproj') -Raw
+Assert-True ($otelV212Project -match 'Microsoft.Extensions.DependencyInjection" Version="10\.0\.11"') 'OpenTelemetry baseline app must pin the full DI runtime to 10.0.11.'
+Assert-True ($otelV220Project -match 'Microsoft.Extensions.DependencyInjection" Version="10\.0\.11"') 'OpenTelemetry candidate app must pin the full DI runtime to 10.0.11.'
+Assert-True ($otelV212Project -match 'Microsoft.Extensions.Logging" Version="10\.0\.11"') 'OpenTelemetry baseline app must pin logging to 10.0.11.'
+Assert-True ($otelV220Project -match 'Microsoft.Extensions.Logging" Version="10\.0\.11"') 'OpenTelemetry candidate app must pin logging to 10.0.11.'
 
 $hostingRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-hosting-evolution.ps1') -Raw
 Assert-True ($hostingRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'Hosting evolution order must remain counter-balanced A-B-B-A.'
@@ -200,6 +221,8 @@ Assert-True ($healthRunner -match "scenarioClass = 'evolution'") 'HealthChecks r
 Assert-True ($healthRunner -match "comparisonPolicy = 'side-by-side-no-cross-version-ratio'") 'HealthChecks runner must forbid cross-version ratio reporting.'
 Assert-True ($healthRunner.Contains('authoritativeTiming = $false')) 'Hosted HealthChecks timing must remain non-authoritative.'
 Assert-True ($healthRunner -match 'Assert-BenchmarkResult') 'HealthChecks runner must reject missing BenchmarkDotNet JSON evidence.'
+Assert-True ($healthRunner -match 'produced no statistics') 'HealthChecks Short must reject BenchmarkDotNet JSON records without statistics.'
+Assert-True ($healthRunner -match 'produced no measurements') 'HealthChecks Short must reject BenchmarkDotNet JSON records without measurements.'
 
 $healthReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-healthchecks-evolution.ps1') -Raw
 Assert-True ($healthReport -match 'side-by-side-no-cross-version-ratio') 'HealthChecks report must preserve evolution comparison policy.'
