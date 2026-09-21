@@ -17,6 +17,7 @@ function Assert-ExitCode {
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $prepare = Join-Path $repoRoot 'eng/perf/prepare-core-ab.ps1'
+$report = Join-Path $repoRoot 'eng/perf/report-core-ab.ps1'
 & $prepare -CandidateSha $CandidateSha
 
 $baselineProject = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Benchmarks.V212/SmartPipe.Perf.Benchmarks.V212.csproj'
@@ -109,5 +110,6 @@ $manifest = [ordered]@{
 
 $manifest | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath (Join-Path $runRoot 'run-manifest.json') -Encoding utf8
 (& dotnet --info) | Set-Content -LiteralPath (Join-Path $runRoot 'dotnet-info.txt') -Encoding utf8
+& $report -RunRoot $runRoot
 
 Write-Output "PERF_CORE_AB_RUN_OK runId=$runId job=$Job order=v212,v220,v220,v212"
