@@ -416,6 +416,10 @@ Assert-True ($extensionsFocusReport -match 'timeDeltaPercent') 'Composite focus 
 Assert-True ($extensionsFocusReport -match 'allocationDeltaPercent') 'Composite focus report must emit allocation deltas.'
 Assert-True ($extensionsFocusReport -match 'records.Count -ne \(\$expectedMethods.Count \* 4\)') 'Composite focus report must reject incomplete A-B-B-A evidence.'
 Assert-True ($extensionsFocusReport -match 'PERF_EXTENSIONS_FOCUS_REPORT_OK') 'Composite focus report must expose its completion marker.'
+Assert-True ($extensionsFocusReport -match 'baselineFixedZeroChildNs') 'Composite focus report must expose fixed zero-child cost.'
+Assert-True ($extensionsFocusReport -match 'firstChildIncrementDeltaPercent') 'Composite focus report must expose first-child incremental delta.'
+Assert-True ($extensionsFocusReport -match 'additionalChildIncrementDeltaPercent') 'Composite focus report must expose additional-child incremental delta.'
+Assert-True ($extensionsFocusReport -match 'descriptive finite differences') 'Composite focus report must label finite-difference decomposition as descriptive.'
 
 
 
