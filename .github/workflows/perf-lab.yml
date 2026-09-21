@@ -170,7 +170,7 @@ jobs:
           compression-level: 9
 
       - name: Upload comparative benchmark evidence
-        if: ${{ inputs.mode == 'bench' || contains(github.event.head_commit.message, '[perf-bench]') }}
+        if: ${{ always() && (inputs.mode == 'bench' || contains(github.event.head_commit.message, '[perf-bench]')) }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: perf-core-ab-${{ github.sha }}
