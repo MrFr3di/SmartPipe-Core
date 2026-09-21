@@ -77,3 +77,5 @@ Updated: 2026-09-21
 - SP220-02 Definition-model: immutable v2.2-only target/materializer implemented; 11-method Dry requested.
 
 - SP220-02 Definition-model: first Dry exposed internal-only GetExecutionPlan usage in the harness; workload corrected to public Build / BuildAndStart / warm Start semantics; corrected public-API definition-model Dry requested.
+
+- SP220-02 Definition-model: corrected public-API Dry is green; first repeated v2.2-only Short characterization requested.
