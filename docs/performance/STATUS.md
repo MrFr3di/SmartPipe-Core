@@ -47,3 +47,5 @@ Updated: 2026-09-21
 - PERF-05 HealthChecks: corrected Dry is green with complete BDN statistics/measurements on both targets; normalized Short rerun requested.
 
 - PERF-06 OpenTelemetry: second Dry proved the helper correctly does not create providers; candidate benchmark now composes app-owned WithMetrics/WithTracing before AddSmartPipeInstrumentation, matching the package contract.
+
+- SP220-06 OpenTelemetry: corrected Dry is green; counter-balanced side-by-side Short requested after reporter self-test wiring.
