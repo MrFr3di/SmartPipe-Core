@@ -387,7 +387,45 @@ $candidateAdapter = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.DependencyInjec
 Prepare-DiTarget -TargetId 'v212' -ProjectPath $baselineProject -AdapterSource $baselineAdapter -TargetRoot $baselineRoot -PrimaryPackageId 'SmartPipe.Extensions' -ExpectedPrimaryVersion '2.1.2'
 Prepare-DiTarget -TargetId 'v220' -ProjectPath $candidateProject -AdapterSource $candidateAdapter -TargetRoot $candidateRoot -PrimaryPackageId 'SmartPipe.Extensions.DependencyInjection' -ExpectedPrimaryVersion '2.2.0'
 
+$scaleSource = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.DependencyInjection.V220/DependencyInjectionV220ScaleBenchmarks.cs'
+$scaleSourceSha = (Get-FileHash -LiteralPath $scaleSource -Algorithm SHA256).Hash.ToLowerInvariant()
+$scaleProvenance = [ordered]@{
+    schemaVersion = 1
+    scenario = 'dependency-injection-scale'
+    scenarioClass = 'v220-only'
+    candidateSha = $CandidateSha
+    harnessSha = $harnessSha
+    sourceSha256 = $scaleSourceSha
+    keyCounts = @(1, 32, 256)
+}
+$scaleProvenance |
+    ConvertTo-Json -Depth 16 |
+    Set-Content -LiteralPath (Join-Path $artifactsRoot 'v220-scale-provenance.json') -Encoding utf8
+
+if ($RunDry) {
+    $scaleArtifacts = Join-Path $artifactsRoot 'v220-scale-BenchmarkDotNet.Artifacts'
+    $scaleArgs = @(
+        'run',
+        '--project',
+        $candidateProject,
+        '--configuration',
+        $Configuration,
+        '--no-build',
+        '--',
+        '--job',
+        'Dry',
+        '--filter',
+        '*DependencyInjectionV220ScaleBenchmarks*',
+        '--artifacts',
+        $scaleArtifacts,
+        '--stopOnFirstError'
+    )
+
+    & dotnet @scaleArgs
+    Assert-ExitCode 'BenchmarkDotNet DI v2.2 scale Dry'
+}
+
 (& dotnet --info) |
     Set-Content -LiteralPath (Join-Path $artifactsRoot 'dotnet-info.txt') -Encoding utf8
 
-Write-Output "PERF_DI_EVOLUTION_READY baseline=2.1.2 candidate=$CandidateSha sharedSourceSha256=$sharedSourceSha"
+Write-Output "PERF_DI_EVOLUTION_READY baseline=2.1.2 candidate=$CandidateSha sharedSourceSha256=$sharedSourceSha scaleSourceSha256=$scaleSourceSha"
