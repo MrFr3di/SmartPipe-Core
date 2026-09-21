@@ -49,3 +49,5 @@ Updated: 2026-09-21
 - PERF-06 OpenTelemetry: second Dry proved the helper correctly does not create providers; candidate benchmark now composes app-owned WithMetrics/WithTracing before AddSmartPipeInstrumentation, matching the package contract.
 
 - SP220-06 OpenTelemetry: corrected Dry is green; counter-balanced side-by-side Short requested after reporter self-test wiring.
+
+- SP220-07 channels/transforms/dataannotations/logging: strict A/B Dry requested for the shared semantic-equivalence workload.
