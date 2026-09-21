@@ -387,6 +387,9 @@ Assert-True ($extensionsFocus -match "PrimaryPackageId 'SmartPipe.Extensions'") 
 Assert-True ($extensionsFocus -match "PrimaryPackageId 'SmartPipe.Extensions.Transforms'") 'Composite focus candidate must bind to SmartPipe.Extensions.Transforms 2.2.0.'
 Assert-True ($extensionsFocus -match 'PERF_EXTENSIONS_FOCUS_READY') 'Composite focus materializer must expose its completion marker.'
 
+Assert-True ($extensionsFocus -match 'CompositeFocusBenchmarks\.cs') 'Focused extensions provenance must hash the actual shared Composite source.'
+Assert-True ($extensionsFocus -notmatch 'ExtensionsFocusBenchmarks\.cs') 'Focused extensions provenance must not reference a nonexistent shared source.'
+
 $extensionsFocusSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.ExtensionsFocus.Shared/CompositeFocusBenchmarks.cs') -Raw
 Assert-True ($extensionsFocusSource -match 'BenchmarkCategory\("Comparative", "StrictAB", "SP220-07-Focus"\)') 'Composite focus benchmark must remain strict A/B.'
 Assert-True ($extensionsFocusSource -match 'new CompositeTransform<int>\(\)') 'Composite focus must include a zero-child composite.'
