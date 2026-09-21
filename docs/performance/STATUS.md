@@ -8,5 +8,7 @@ Updated: 2026-09-21
 - PERF-00: contracts, schemas, CI smoke, mutation tests implemented.
 - PERF-01: immutable baseline/candidate materializer implemented.
 - PERF-02: first shared strict A/B Core workload and isolated target projects implemented.
-- Core A/B orchestration: counter-balanced A→B→B→A runner implemented.
+- Core A/B orchestration: counter-balanced A→B→B→A runner implemented and first Short run started.
 - Current validation: end-to-end A/B Dry is green; first counter-balanced BenchmarkDotNet Short run requested.
+
+- Deterministic Core stress: parallel32 + sequential1000 runner wired to CI; first evidence run requested.
