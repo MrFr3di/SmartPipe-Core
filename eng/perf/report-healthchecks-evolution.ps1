@@ -67,14 +67,26 @@ foreach ($slotDirectory in $slotDirectories) {
 
     $document = Get-Content -LiteralPath $resultFile.FullName -Raw | ConvertFrom-Json -Depth 100
     foreach ($benchmark in @($document.Benchmarks)) {
+        $method = [string]$benchmark.Method
+        $statisticsProperty = $benchmark.PSObject.Properties['Statistics']
+        if ($null -eq $statisticsProperty -or $null -eq $statisticsProperty.Value) {
+            throw "Incomplete HealthChecks BenchmarkDotNet evidence in slot $slot ($target), method '$method': Statistics is missing."
+        }
+
+        $measurementsProperty = $benchmark.PSObject.Properties['Measurements']
+        if ($null -eq $measurementsProperty -or @($measurementsProperty.Value).Count -eq 0) {
+            throw "Incomplete HealthChecks BenchmarkDotNet evidence in slot $slot ($target), method '$method': Measurements are missing."
+        }
+
+        $statistics = $statisticsProperty.Value
         $records.Add([ordered]@{
             slot = $slot
             target = $target
-            method = [string]$benchmark.Method
-            sampleCount = [int]$benchmark.Statistics.N
-            meanNs = [double]$benchmark.Statistics.Mean
-            medianNs = [double]$benchmark.Statistics.Median
-            standardDeviationNs = [double]$benchmark.Statistics.StandardDeviation
+            method = $method
+            sampleCount = [int]$statistics.N
+            meanNs = [double]$statistics.Mean
+            medianNs = [double]$statistics.Median
+            standardDeviationNs = [double]$statistics.StandardDeviation
             allocatedBytes = [double]$benchmark.Memory.BytesAllocatedPerOperation
             resultFile = [IO.Path]::GetRelativePath($resolvedRunRoot, $resultFile.FullName).Replace('\', '/')
         })
