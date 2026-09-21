@@ -48,6 +48,14 @@ function New-NuGetConfig {
     <add key="smartpipe-target" value="$escapedFeed" />
     <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
   </packageSources>
+  <packageSourceMapping>
+    <packageSource key="smartpipe-target">
+      <package pattern="SmartPipe.*" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
 </configuration>
 "@
     Set-Content -LiteralPath $Path -Value $xml -Encoding utf8
@@ -106,6 +114,11 @@ function Prepare-BenchmarkTarget {
     $buildLog = Join-Path $runRoot 'build.txt'
 
     New-NuGetConfig -Path $nugetConfig -LocalFeed $packagesDir
+
+    if (-not [string]::IsNullOrWhiteSpace($env:NUGET_PACKAGES)) {
+        $cachedSmartPipeCore = Join-Path $env:NUGET_PACKAGES ("smartpipe.core/" + $ExpectedPackageVersion.ToLowerInvariant())
+        Remove-Item -LiteralPath $cachedSmartPipeCore -Recurse -Force -ErrorAction SilentlyContinue
+    }
 
     $restoreArgs = @(
         'restore', $ProjectPath,
@@ -211,7 +224,7 @@ New-Item -ItemType Directory -Path $artifactsRoot -Force | Out-Null
 
 $baselineProject = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Benchmarks.V212/SmartPipe.Perf.Benchmarks.V212.csproj'
 $candidateProject = Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Benchmarks.V220/SmartPipe.Perf.Benchmarks.V220.csproj'
-$candidatePackageVersion = "2.2.0-perflab.$shortSha"
+$candidatePackageVersion = '2.2.0'
 
 Prepare-BenchmarkTarget -TargetId 'v212' -ProjectPath $baselineProject -TargetRoot $baselineRoot -ExpectedPackageVersion '2.1.2'
 Prepare-BenchmarkTarget -TargetId 'v220' -ProjectPath $candidateProject -TargetRoot $candidateRoot -ExpectedPackageVersion $candidatePackageVersion
