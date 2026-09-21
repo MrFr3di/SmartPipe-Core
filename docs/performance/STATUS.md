@@ -63,3 +63,5 @@ Updated: 2026-09-21
 - SP220-09 CSV: strict A/B Dry and reporter self-test are green; CSV strict A/B Short requested.
 
 - SP220-10 Dapper: SQLite-backed evolution workload implemented; Dapper evolution Dry requested.
+
+- SP220-10 Dapper: corrected Dry requested after fixing public BenchmarkDotNet observation type.
