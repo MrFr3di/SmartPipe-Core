@@ -168,6 +168,8 @@ Assert-True ($packageFootprint -match 'These are package-closure engineering met
 Assert-True ($packageFootprint -match 'compressedBytes') 'Package footprint must report compressed package bytes.'
 Assert-True ($packageFootprint -match 'uncompressedBytes') 'Package footprint must report uncompressed package bytes.'
 Assert-True ($packageFootprint -match 'externalDependencyCount') 'Package footprint must report external dependency closure.'
+Assert-True ($packageFootprint -match '\$compressedBytes \+= \[long\]\$package\.compressedBytes') 'Package footprint totals must use explicit typed aggregation.'
+Assert-True ($packageFootprint -notmatch 'Measure-Object -Property compressedBytes') 'Package footprint must not rely on PowerShell property adapters for ordered-dictionary aggregation.'
 
 
 
