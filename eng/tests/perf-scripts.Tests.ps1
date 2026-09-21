@@ -31,6 +31,8 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/run-extensions-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-extensions-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-extensions-focus.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-extensions-focus.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-extensions-focus.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-json-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-json-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-json-strict-ab.ps1'),
@@ -393,6 +395,22 @@ $channelFocusSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/Sm
 Assert-True ($channelFocusSource -match 'BenchmarkCategory\("V220Only", "SP220-07-Focus", "ChannelMerge"\)') 'Channel focus must remain candidate-only characterization.'
 Assert-True ($channelFocusSource -match 'CompatibilityTwoReader') 'Channel focus must retain the compatibility overload.'
 Assert-True ($channelFocusSource -match 'MergeManyTwoReader') 'Channel focus must retain the generalized two-reader path.'
+
+$extensionsFocusRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-extensions-focus.ps1') -Raw
+Assert-True ($extensionsFocusRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'Composite focus order must remain counter-balanced A-B-B-A.'
+Assert-True ($extensionsFocusRunner -match "scenarioClass = 'strict-ab'") 'Composite focus runner must remain strict-ab.'
+Assert-True ($extensionsFocusRunner -match "comparisonPolicy = 'strict-cross-version-ratio'") 'Composite focus runner must preserve strict ratio policy.'
+Assert-True ($extensionsFocusRunner.Contains('authoritativeTiming = $false')) 'Hosted Composite focus timing must remain non-authoritative.'
+Assert-True ($extensionsFocusRunner -match 'CompositeFocusBenchmarks') 'Composite focus runner must target only the Composite focus class.'
+Assert-True ($extensionsFocusRunner -match 'PERF_EXTENSIONS_FOCUS_RUN_OK') 'Composite focus runner must expose its completion marker.'
+
+$extensionsFocusReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-extensions-focus.ps1') -Raw
+Assert-True ($extensionsFocusReport -match 'strict-cross-version-ratio') 'Composite focus report must preserve strict ratio policy.'
+Assert-True ($extensionsFocusReport -match 'timeDeltaPercent') 'Composite focus report must emit timing deltas.'
+Assert-True ($extensionsFocusReport -match 'allocationDeltaPercent') 'Composite focus report must emit allocation deltas.'
+Assert-True ($extensionsFocusReport -match 'records.Count -ne \(\$expectedMethods.Count \* 4\)') 'Composite focus report must reject incomplete A-B-B-A evidence.'
+Assert-True ($extensionsFocusReport -match 'PERF_EXTENSIONS_FOCUS_REPORT_OK') 'Composite focus report must expose its completion marker.'
+
 
 
 $json = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-json-strict-ab.ps1') -Raw
