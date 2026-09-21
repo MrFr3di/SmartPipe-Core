@@ -254,6 +254,27 @@ function Prepare-Candidate {
 
         Write-Output "PERF_TARGET_READY target=candidate sha=$CandidateSha path=$targetRoot"
     }
+    catch {
+        $diagnosticsDir = Join-Path $targetRoot 'diagnostics'
+        New-Item -ItemType Directory -Path $diagnosticsDir -Force | Out-Null
+
+        $workPackagesDir = Join-Path $worktreeRoot 'artifacts/perf-packages'
+        if (Test-Path -LiteralPath $workPackagesDir) {
+            Copy-Item -LiteralPath $workPackagesDir -Destination (Join-Path $diagnosticsDir 'perf-packages') -Recurse -Force
+        }
+
+        $failure = [ordered]@{
+            schemaVersion = 1
+            candidateSha = $CandidateSha
+            harnessSha = $harnessSha
+            exceptionType = $_.Exception.GetType().FullName
+            message = $_.Exception.Message
+            timestampUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        }
+        Write-JsonFile -Path (Join-Path $diagnosticsDir 'failure.json') -Value $failure
+
+        throw
+    }
     finally {
         & git -C $repoRoot worktree remove --force $worktreeRoot 2>$null
         & git -C $repoRoot worktree prune 2>$null
