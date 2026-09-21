@@ -356,6 +356,8 @@ function Prepare-DiTarget {
             '*DependencyInjectionEvolutionBenchmarks*',
             '--artifacts',
             $bdnArtifacts,
+            '--exporters',
+            'json',
             '--stopOnFirstError'
         )
 
