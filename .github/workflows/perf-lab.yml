@@ -32,6 +32,7 @@ on:
           - hosting-bench
           - health-smoke
           - health-bench
+          - otel-smoke
           - soak
       candidate-sha:
         description: Exact candidate SHA override; must match the pinned SP220-01-11 target
@@ -43,8 +44,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]') || contains(github.event.head_commit.message, '[perf-stress]') || contains(github.event.head_commit.message, '[perf-di-smoke]') || contains(github.event.head_commit.message, '[perf-di-bench]') || contains(github.event.head_commit.message, '[perf-hosting-smoke]') || contains(github.event.head_commit.message, '[perf-hosting-bench]') || contains(github.event.head_commit.message, '[perf-health-smoke]') || contains(github.event.head_commit.message, '[perf-health-bench]')) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
-  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !contains(github.event.head_commit.message, '[perf-materialize]') && !contains(github.event.head_commit.message, '[perf-bench]') && !contains(github.event.head_commit.message, '[perf-stress]') && !contains(github.event.head_commit.message, '[perf-di-smoke]') && !contains(github.event.head_commit.message, '[perf-di-bench]') && !contains(github.event.head_commit.message, '[perf-hosting-smoke]') && !contains(github.event.head_commit.message, '[perf-hosting-bench]') && !contains(github.event.head_commit.message, '[perf-health-smoke]') && !contains(github.event.head_commit.message, '[perf-health-bench]')) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
+  group: perf-lab-${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[perf-ab-smoke]') || contains(github.event.head_commit.message, '[perf-materialize]') || contains(github.event.head_commit.message, '[perf-bench]') || contains(github.event.head_commit.message, '[perf-stress]') || contains(github.event.head_commit.message, '[perf-di-smoke]') || contains(github.event.head_commit.message, '[perf-di-bench]') || contains(github.event.head_commit.message, '[perf-hosting-smoke]') || contains(github.event.head_commit.message, '[perf-hosting-bench]') || contains(github.event.head_commit.message, '[perf-health-smoke]') || contains(github.event.head_commit.message, '[perf-health-bench]') || contains(github.event.head_commit.message, '[perf-otel-smoke]')) && 'explicit') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && 'explicit') || 'smoke' }}
+  cancel-in-progress: ${{ (github.event_name == 'push' && !contains(github.event.head_commit.message, '[perf-ab-smoke]') && !contains(github.event.head_commit.message, '[perf-materialize]') && !contains(github.event.head_commit.message, '[perf-bench]') && !contains(github.event.head_commit.message, '[perf-stress]') && !contains(github.event.head_commit.message, '[perf-di-smoke]') && !contains(github.event.head_commit.message, '[perf-di-bench]') && !contains(github.event.head_commit.message, '[perf-hosting-smoke]') && !contains(github.event.head_commit.message, '[perf-hosting-bench]') && !contains(github.event.head_commit.message, '[perf-health-smoke]') && !contains(github.event.head_commit.message, '[perf-health-bench]') && !contains(github.event.head_commit.message, '[perf-otel-smoke]')) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') }}
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
@@ -484,4 +485,57 @@ jobs:
             artifacts/perf/runs/health-checks/**
           if-no-files-found: warn
           retention-days: 7
+          compression-level: 9
+
+
+  opentelemetry-evolution:
+    name: OpenTelemetry evolution lab
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'otel-smoke') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[perf-otel-smoke]')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Validate lab contracts
+        shell: pwsh
+        run: ./eng/perf/validate-perf-lab.ps1 -Mode smoke -CandidateSha "$env:PERF_CANDIDATE_SHA"
+
+      - name: Test performance-lab scripts
+        shell: pwsh
+        run: ./eng/tests/perf-scripts.Tests.ps1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Prepare OpenTelemetry evolution targets and run Dry
+        shell: pwsh
+        run: |
+          $candidate = "$env:PERF_CANDIDATE_SHA"
+          if ([string]::IsNullOrWhiteSpace($candidate)) {
+            $candidate = '61ceef6bf69aef0a4f79b25384352d238979200f'
+          }
+          ./eng/perf/prepare-opentelemetry-evolution.ps1 -CandidateSha $candidate -RunDry
+
+      - name: Upload OpenTelemetry smoke evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: perf-opentelemetry-evolution-smoke-${{ github.sha }}
+          path: |
+            artifacts/perf/targets/**/target.json
+            artifacts/perf/targets/**/diagnostics/**
+            artifacts/perf/opentelemetry/**/build-provenance.json
+            artifacts/perf/opentelemetry/**/packages.lock.json
+            artifacts/perf/opentelemetry/**/BenchmarkDotNet.Artifacts/**
+            artifacts/perf/opentelemetry/dotnet-info.txt
+          if-no-files-found: warn
+          retention-days: 3
           compression-level: 9
