@@ -53,3 +53,5 @@ Updated: 2026-09-21
 - SP220-07 channels/transforms/dataannotations/logging: strict A/B Dry requested for the shared semantic-equivalence workload.
 
 - SP220-07 channels/transforms/dataannotations/logging: Dry and reporter self-test are green; SP220-07 strict A/B Short requested.
+
+- SP220-08 JSON: strict source-generated/options workload implemented; SP220-08 JSON strict A/B Dry requested.
