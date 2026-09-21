@@ -47,6 +47,7 @@ Assert-True ($targets.candidate.id -ceq 'smartpipe-2.2.0-sp220-01-11') 'Candidat
 Assert-True ($targets.candidate.version -ceq '2.2.0') 'Candidate version must remain 2.2.0.'
 Assert-True ($targets.candidate.status -ceq 'pinned') 'Candidate must be pinned.'
 Assert-Sha ([string]$targets.candidate.gitSha) 'candidate.gitSha'
+Assert-True ($targets.candidate.gitSha -ceq '61ceef6bf69aef0a4f79b25384352d238979200f') 'Candidate Git SHA drifted from the pinned SP220-01 through SP220-11 target.'
 
 $expectedEpics = 1..11 | ForEach-Object { 'SP220-{0:D2}' -f $_ }
 $includedEpics = @($targets.candidate.includedEpics)
