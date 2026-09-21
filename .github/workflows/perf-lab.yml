@@ -1,0 +1,113 @@
+name: Performance lab
+
+on:
+  push:
+    branches: [ perf/2.2.0-comparative-lab ]
+    paths:
+      - '.github/workflows/perf-lab.yml'
+      - 'benchmarks/SmartPipe.Benchmarks/**'
+      - 'docs/performance/**'
+      - 'eng/perf/**'
+      - 'perf/**'
+      - 'global.json'
+      - 'Directory.Packages.props'
+      - '**/packages.lock.json'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Lab validation mode
+        required: true
+        type: choice
+        default: smoke
+        options:
+          - smoke
+          - benchmark-smoke
+          - stress
+          - soak
+      candidate-sha:
+        description: Optional exact candidate SHA; required for stress/soak until SP220-12 is pinned
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-lab-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' || inputs.mode == 'smoke' || inputs.mode == 'benchmark-smoke' }}
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  PERF_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'smoke' }}
+  PERF_CANDIDATE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate-sha || '' }}
+
+jobs:
+  smoke:
+    name: Perf lab contract and benchmark smoke
+    if: ${{ github.event_name == 'push' || inputs.mode == 'smoke' || inputs.mode == 'benchmark-smoke' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Validate performance-lab contracts
+        shell: pwsh
+        run: ./eng/perf/validate-perf-lab.ps1 -Mode "$env:PERF_MODE" -CandidateSha "$env:PERF_CANDIDATE_SHA"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore benchmark project
+        run: dotnet restore benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true
+
+      - name: Build benchmark project
+        run: dotnet build benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj --configuration Release --no-restore -warnaserror
+
+      - name: BenchmarkDotNet dry smoke
+        if: ${{ github.event_name == 'push' || inputs.mode == 'benchmark-smoke' }}
+        run: >
+          dotnet run --project benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj
+          --configuration Release --no-build --
+          --job Dry
+          --filter '*PipelineDefinitionBenchmarks*'
+          --artifacts artifacts/perf/benchmark-smoke
+
+      - name: Upload manual smoke evidence
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.mode == 'benchmark-smoke' }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: perf-lab-smoke-${{ github.sha }}
+          path: artifacts/perf/benchmark-smoke
+          if-no-files-found: warn
+          retention-days: 3
+          compression-level: 9
+
+  heavy-mode-contract:
+    name: Validate requested heavy mode
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.mode == 'stress' || inputs.mode == 'soak') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Validate target pinning
+        shell: pwsh
+        run: ./eng/perf/validate-perf-lab.ps1 -Mode "$env:PERF_MODE" -CandidateSha "$env:PERF_CANDIDATE_SHA"
+
+      - name: Stop until deterministic runners exist
+        shell: pwsh
+        run: |
+          Write-Error "The requested mode is reserved by the lab contract but its deterministic runner is not implemented yet. Do not substitute ad-hoc timing."
