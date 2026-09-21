@@ -46,7 +46,8 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/run-definition-model-v220.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-definition-model-v220.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-core-soak.ps1'),
-    (Join-Path $repoRoot 'eng/perf/report-core-soak.ps1')
+    (Join-Path $repoRoot 'eng/perf/report-core-soak.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-package-footprint.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -150,6 +151,24 @@ Assert-True ($soakReport -match 'gcHeapSlopeBytesPerMinute') 'Core soak report m
 Assert-True ($soakReport -match 'workingSetSlopeBytesPerMinute') 'Core soak report must expose working-set slope.'
 Assert-True ($soakReport -notmatch 'timeDeltaPercent') 'Core soak report must not emit timing regression percentages.'
 Assert-True ($soakReport -notmatch 'memoryDeltaPercent') 'Core soak report must not emit uncalibrated memory regression percentages.'
+
+$packageFootprint = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-package-footprint.ps1') -Raw
+Assert-True ($packageFootprint -match '\[IO\.Compression\.ZipFile\]::OpenRead') 'Package footprint must inspect the actual nupkg archive.'
+Assert-True ($packageFootprint -match "\*\.nuspec") 'Package footprint must derive dependencies from nuspec metadata.'
+Assert-True ($packageFootprint -match "scenario = 'package-infrastructure'") 'Package footprint must use the package-infrastructure scenario.'
+Assert-True ($packageFootprint -match "scenarioClass = 'evolution'") 'Package footprint must remain evolution-classified.'
+Assert-True ($packageFootprint -match "comparisonPolicy = 'package-closure-engineering-metrics'") 'Package footprint must remain engineering-metrics evidence.'
+Assert-True ($packageFootprint.Contains('authoritativeTiming = $false')) 'Package footprint must not claim authoritative timing.'
+Assert-True ($packageFootprint -match "baseline = 'SmartPipe.Extensions'") 'Split capability comparisons must use the 2.1.2 broad Extensions package as baseline.'
+Assert-True ($packageFootprint -match "candidate = 'SmartPipe.Extensions.DependencyInjection'") 'Package footprint must include the DI split package.'
+Assert-True ($packageFootprint -match "candidate = 'SmartPipe.Extensions.EntityFrameworkCore'") 'Package footprint must include the EF Core split package.'
+Assert-True ($packageFootprint -match "candidate = 'SmartPipe.Extensions.Csv'") 'Package footprint must include the CSV split package.'
+Assert-True ($packageFootprint -notmatch 'SmartPipe\.Extensions\.Mapster') 'SP220-12 Mapster must remain excluded from the SP220-01..11 footprint report.'
+Assert-True ($packageFootprint -match 'These are package-closure engineering metrics, not runtime performance claims') 'Package footprint report must forbid runtime-speed interpretation.'
+Assert-True ($packageFootprint -match 'compressedBytes') 'Package footprint must report compressed package bytes.'
+Assert-True ($packageFootprint -match 'uncompressedBytes') 'Package footprint must report uncompressed package bytes.'
+Assert-True ($packageFootprint -match 'externalDependencyCount') 'Package footprint must report external dependency closure.'
+
 
 
 $di = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-di-evolution.ps1') -Raw
@@ -657,4 +676,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=38'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=39'
