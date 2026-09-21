@@ -48,7 +48,7 @@ jobs:
   smoke:
     name: Perf lab contract and benchmark smoke
     if: ${{ github.event_name == 'push' || inputs.mode == 'smoke' || inputs.mode == 'benchmark-smoke' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -95,7 +95,7 @@ jobs:
   heavy-mode-contract:
     name: Validate requested heavy mode
     if: ${{ github.event_name == 'workflow_dispatch' && (inputs.mode == 'stress' || inputs.mode == 'soak') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:
