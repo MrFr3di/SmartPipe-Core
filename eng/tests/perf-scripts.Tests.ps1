@@ -81,7 +81,7 @@ Assert-True ($di -match 'SmartPipe\.Extensions\.DependencyInjection') 'DI candid
 Assert-True ($di -match 'packageSourceMapping') 'DI restore must use NuGet Package Source Mapping.'
 Assert-True ($di -match 'SmartPipe\.\*') 'All SmartPipe packages must be mapped to the local target feed.'
 Assert-True ($di -match 'dotnet nuget verify') 'DI provenance must use NuGet-native package content hashes.'
-Assert-True ($di -match "Where-Object \{ \$_\.Name -like 'SmartPipe\.\*' \}") 'DI provenance must verify every resolved SmartPipe package.'
+Assert-True ($di.Contains("Where-Object { `$_.Name -like 'SmartPipe.*' }")) 'DI provenance must verify every resolved SmartPipe package.'
 Assert-True ($di -match "'--locked-mode'") 'DI restore must verify the generated lock in locked mode.'
 Assert-True ($di -match "'--no-http-cache'") 'DI restore must bypass the NuGet HTTP cache.'
 Assert-True ($di -match 'adapterSourceSha256') 'DI provenance must record target-specific adapter source hashes.'
