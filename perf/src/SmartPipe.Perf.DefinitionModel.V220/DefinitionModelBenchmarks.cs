@@ -15,8 +15,6 @@ public static class Program
 [BenchmarkCategory("V220Only", "DefinitionModel", "SP220-02")]
 public class DefinitionModelBenchmarks
 {
-    private PipelineDefinition<int, int> _firstZeroStage = null!;
-    private PipelineDefinition<int, int> _firstTenStages = null!;
     private PipelineDefinition<int, int> _cachedZeroStage = null!;
     private PipelineDefinition<int, int> _cachedOneStage = null!;
     private PipelineDefinition<int, int> _cachedTenStages = null!;
@@ -27,17 +25,6 @@ public class DefinitionModelBenchmarks
         _cachedZeroStage = CreateDefinition(0);
         _cachedOneStage = CreateDefinition(1);
         _cachedTenStages = CreateDefinition(10);
-
-        object zeroPlan = _cachedZeroStage.GetExecutionPlan();
-        object onePlan = _cachedOneStage.GetExecutionPlan();
-        object tenPlan = _cachedTenStages.GetExecutionPlan();
-
-        if (!ReferenceEquals(zeroPlan, _cachedZeroStage.GetExecutionPlan()) ||
-            !ReferenceEquals(onePlan, _cachedOneStage.GetExecutionPlan()) ||
-            !ReferenceEquals(tenPlan, _cachedTenStages.GetExecutionPlan()))
-        {
-            throw new InvalidOperationException("Definition execution-plan cache is not stable.");
-        }
 
         foreach (PipelineDefinition<int, int> definition in
                  new[] { _cachedZeroStage, _cachedOneStage, _cachedTenStages })
@@ -54,12 +41,6 @@ public class DefinitionModelBenchmarks
                 $"Legacy-builder benchmark expected 42, but received {legacy}.");
     }
 
-    [IterationSetup(Target = nameof(Compile_First_ZeroStage))]
-    public void PrepareFirstZeroStage() => _firstZeroStage = CreateDefinition(0);
-
-    [IterationSetup(Target = nameof(Compile_First_TenStages))]
-    public void PrepareFirstTenStages() => _firstTenStages = CreateDefinition(10);
-
     [Benchmark]
     public PipelineDefinition<int, int> Build_ZeroStage() => CreateDefinition(0);
 
@@ -70,16 +51,13 @@ public class DefinitionModelBenchmarks
     public PipelineDefinition<int, int> Build_TenStages() => CreateDefinition(10);
 
     [Benchmark]
-    public object Compile_First_ZeroStage() => _firstZeroStage.GetExecutionPlan();
+    public Task<int> BuildAndStart_ZeroStage() => StartAndConsumeAsync(CreateDefinition(0));
 
     [Benchmark]
-    public object Compile_First_TenStages() => _firstTenStages.GetExecutionPlan();
+    public Task<int> BuildAndStart_OneStage() => StartAndConsumeAsync(CreateDefinition(1));
 
     [Benchmark]
-    public object Compile_Cached_ZeroStage() => _cachedZeroStage.GetExecutionPlan();
-
-    [Benchmark]
-    public object Compile_Cached_TenStages() => _cachedTenStages.GetExecutionPlan();
+    public Task<int> BuildAndStart_TenStages() => StartAndConsumeAsync(CreateDefinition(10));
 
     [Benchmark]
     public Task<int> StartAndComplete_ZeroStage() => StartAndConsumeAsync(_cachedZeroStage);
