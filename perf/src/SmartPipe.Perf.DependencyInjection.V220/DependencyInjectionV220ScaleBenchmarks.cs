@@ -8,7 +8,7 @@ namespace SmartPipe.Perf.DependencyInjection;
 
 [MemoryDiagnoser]
 [BenchmarkCategory("V220Only", "DependencyInjection", "Scale")]
-public sealed class DependencyInjectionV220ScaleBenchmarks
+public class DependencyInjectionV220ScaleBenchmarks
 {
     private ServiceProvider? _provider;
     private string? _lastKey;
