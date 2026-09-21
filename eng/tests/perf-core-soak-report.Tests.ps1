@@ -37,7 +37,7 @@ function Write-TargetEvidence {
             DisposedComponents = [long](300 + $elapsed * 3)
             ManagedMemoryBytes = [long](1000 + $ManagedSlopePerSecond * $elapsed)
             GcHeapSizeBytes = [long](2000 + $HeapSlopePerSecond * $elapsed)
-            GcFragmentedBytes = 100
+            GcFragmentedBytes = [long](100 + 2 * $elapsed)
             TotalAllocatedBytes = [long](5000 + 1000 * $elapsed)
             Gen0Collections = [int]($elapsed / 10)
             Gen1Collections = [int]($elapsed / 20)
@@ -116,6 +116,7 @@ try {
 
     Assert-True ([Math]::Abs([double]$baseline.managedMemorySlopeBytesPerMinute - 600.0) -lt 0.001) 'Baseline managed-memory slope is incorrect.'
     Assert-True ([Math]::Abs([double]$baseline.gcHeapSlopeBytesPerMinute - 1200.0) -lt 0.001) 'Baseline GC-heap slope is incorrect.'
+    Assert-True ([Math]::Abs([double]$baseline.gcFragmentedSlopeBytesPerMinute - 120.0) -lt 0.001) 'Baseline GC-fragmentation slope is incorrect.'
     Assert-True ([Math]::Abs([double]$baseline.workingSetSlopeBytesPerMinute - 1800.0) -lt 0.001) 'Baseline working-set slope is incorrect.'
     Assert-True ([Math]::Abs([double]$baseline.handleOrFdSlopePerMinute - 6.0) -lt 0.001) 'Baseline handle/fd slope is incorrect.'
 
@@ -125,9 +126,14 @@ try {
 
     Assert-True ($null -eq $baseline.PSObject.Properties['timeDeltaPercent']) 'Core soak output must not contain a timing percentage.'
     Assert-True ($null -eq $baseline.PSObject.Properties['memoryDeltaPercent']) 'Core soak output must not contain a memory-regression percentage.'
+    Assert-True ([bool]$baseline.hardGatePassed) 'Baseline synthetic soak must pass hard lifecycle/ThreadPool gates.'
+    Assert-True ([string]$baseline.automaticLeakVerdict -ceq 'not-issued') 'Soak report must not auto-classify leak/no-leak.'
+    Assert-True ([string]$normalized.trendPolicy -ceq 'evidence-only-no-automatic-leak-verdict') 'Soak trend policy must remain evidence-only.'
+    Assert-True ([Math]::Abs([double]$normalized.trendWarmupFraction - 0.2) -lt 0.0001) 'Soak trend warm-up fraction drifted.'
 
     $markdown = Get-Content -LiteralPath $markdownPath -Raw
-    Assert-True ($markdown.Contains('Memory slopes are evidence-only')) 'Core soak Markdown must state evidence-only memory policy.'
+    Assert-True ($markdown.Contains('never issues an automatic leak/no-leak verdict')) 'Core soak Markdown must forbid automatic leak verdicts.'
+    Assert-True ($markdown.Contains('Fragmentation slope MiB/min')) 'Core soak Markdown must expose GC fragmentation separately.'
     Assert-True ($markdown.Contains('Validation-only profile')) 'Core soak verify report must label short slopes as validation-only.'
     Assert-True (-not $markdown.Contains('Time delta')) 'Core soak Markdown must not render a timing delta.'
 
