@@ -10,6 +10,16 @@ runtime, so strict CSV mapping entry points expose the applicable trimming and
 dynamic-code diagnostics. No hidden reflection fallback or blanket warning
 suppression is provided.
 
+`SmartPipe.Extensions.Mapster` makes no blanket trimming or NativeAOT claim either. Its runtime mapping
+entry points — `MapsterPipelineComponents.Transform<TInput,TOutput>` and both `MapWithMapster` builder
+overloads — carry `RequiresUnreferencedCode` and `RequiresDynamicCode`, because Mapster builds expression
+trees and compiles them at runtime. Two measured facts bound the claim: a trimmed publish reports the
+aggregate `IL2104` for the `Mapster` and `Mapster.Core` assemblies, and executing composition under
+`TrimMode=link` fails inside `Mapster.TypeAdapterConfig.GetMapFunction`. The trimming-safe route is a
+hand-written or source-generated mapper passed to `PipelineTransformer.FromFunc`; the
+`mapster-trim-diagnostic` consumer publishes and runs that route under `TrimMode=link`. The forwarded
+legacy `MapsterTransform<TInput,TOutput>` keeps its shipped annotations.
+
 Use source-generated JSON metadata as the primary path for JSON file and
 dead-letter helpers:
 

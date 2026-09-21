@@ -76,7 +76,10 @@
         "entity-framework-core-di-composition",
         "entity-framework-core-facade-source",
         "entity-framework-core-facade-binary-2.1.2",
-        "entity-framework-core-trim-diagnostic"
+        "entity-framework-core-trim-diagnostic",
+        "mapster-direct",
+        "mapster-facade-binary-2.1.2",
+        "mapster-trim-diagnostic"
       ]
     },
     {
@@ -358,9 +361,9 @@
     {
       "id": "SmartPipe.Extensions.Mapster",
       "projectPath": "src/SmartPipe.Extensions.Mapster/SmartPipe.Extensions.Mapster.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-12",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 9,
       "baselineVersion": null,
       "aotContract": "unsupported-blanket",
@@ -390,7 +393,8 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "mapster-direct"
+        "mapster-direct",
+        "mapster-trim-diagnostic"
       ]
     },
     {
@@ -796,13 +800,15 @@
           "SmartPipe.Extensions.Json",
           "SmartPipe.Extensions.Csv",
           "SmartPipe.Extensions.Dapper",
-          "SmartPipe.Extensions.EntityFrameworkCore"
+          "SmartPipe.Extensions.EntityFrameworkCore",
+          "SmartPipe.Extensions.Mapster"
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
           "Microsoft.Extensions.Logging.Abstractions",
           "CsvHelper",
           "Dapper",
+          "Mapster",
           "Microsoft.EntityFrameworkCore"
         ],
         "forbiddenPackagePatterns": []
@@ -837,18 +843,12 @@
           "Microsoft.Extensions.Logging.Abstractions",
           "CsvHelper",
           "Dapper",
+          "Mapster",
           "Microsoft.EntityFrameworkCore"
         ],
         "forbiddenPackagePatterns": []
       },
       "temporaryAllowances": [
-        {
-          "dependency": "Mapster",
-          "reason": "Mapster implementation remains embedded until extraction",
-          "ownerEpic": "SP220-12",
-          "expiresBeforeRelease": true,
-          "evidence": "SmartPipe.Extensions current PackageReference"
-        },
         {
           "dependency": "Microsoft.Extensions.Http",
           "reason": "Legacy HTTP implementation remains embedded",
@@ -905,6 +905,7 @@
         "dapper-facade-binary-2.1.2",
         "entity-framework-core-facade-source",
         "entity-framework-core-facade-binary-2.1.2",
+        "mapster-facade-binary-2.1.2",
         "opentelemetry-facade"
       ]
     }
