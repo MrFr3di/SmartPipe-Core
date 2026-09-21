@@ -42,7 +42,9 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/prepare-entity-framework-core-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-entity-framework-core-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-entity-framework-core-evolution.ps1'),
-    (Join-Path $repoRoot 'eng/perf/prepare-definition-model-v220.ps1')
+    (Join-Path $repoRoot 'eng/perf/prepare-definition-model-v220.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-definition-model-v220.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-definition-model-v220.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -535,6 +537,25 @@ $definitionProject = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/Sma
 Assert-True ($definitionProject -match 'SmartPipe.Core" Version="2\.2\.0"') 'Definition-model project must reference SmartPipe.Core 2.2.0.'
 Assert-True ($definitionProject -notmatch '2\.1\.2') 'Definition-model v220-only project must not reference the baseline version.'
 
+$definitionRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-definition-model-v220.ps1') -Raw
+Assert-True ($definitionRunner -match "scenarioClass = 'v220-only'") 'Definition-model runner must remain v220-only.'
+Assert-True ($definitionRunner -match "comparisonPolicy = 'absolute-and-intraversion-scaling'") 'Definition-model runner must preserve candidate-only scaling policy.'
+Assert-True ($definitionRunner -match 'foreach \(\$slot in 1\.\.2\)') 'Definition-model runner must execute two independent v2.2 repeats.'
+Assert-True ($definitionRunner.Contains('authoritativeTiming = $false')) 'Hosted definition-model timing must remain non-authoritative.'
+Assert-True ($definitionRunner -match 'PERF_DEFINITION_MODEL_V220_RUN_OK') 'Definition-model runner must expose its candidate-only completion marker.'
+Assert-True ($definitionRunner -match 'Assert-BenchmarkResult') 'Definition-model Short must reject missing BenchmarkDotNet evidence.'
+Assert-True ($definitionRunner -notmatch 'v212') 'Definition-model v220-only runner must not introduce a baseline target.'
+
+$definitionReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-definition-model-v220.ps1') -Raw
+Assert-True ($definitionReport -match 'absolute-and-intraversion-scaling') 'Definition-model report must preserve candidate-only scaling policy.'
+Assert-True ($definitionReport -notmatch 'timeDeltaPercent') 'Definition-model report must not emit cross-version timing deltas.'
+Assert-True ($definitionReport -notmatch 'allocationDeltaPercent') 'Definition-model report must not emit cross-version allocation deltas.'
+Assert-True ($definitionReport -match 'repeatDriftPercent') 'Definition-model report must expose repeat drift.'
+Assert-True ($definitionReport -match 'buildAndStartTenVsZeroTimeRatio') 'Definition-model report must expose public cold-start scaling.'
+Assert-True ($definitionReport -match 'startTenVsZeroTimeRatio') 'Definition-model report must expose warm-start scaling.'
+Assert-True ($definitionReport -match 'PERF_DEFINITION_MODEL_V220_REPORT_OK') 'Definition-model reporter must expose its completion marker.'
+
+
 
 
 
@@ -587,4 +608,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=34'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=36'
