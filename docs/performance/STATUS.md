@@ -73,3 +73,5 @@ Updated: 2026-09-21
 - SP220-11 EF Core: benchmark provider aligned to SQLite in-memory / EF Core 10.0.11 on both targets; SQLite-backed evolution Dry requested.
 
 - SP220-11 EF Core: SQLite-backed Dry and reporter self-test are green; first EF Core evolution Short requested.
+
+- SP220-02 Definition-model: immutable v2.2-only target/materializer implemented; 11-method Dry requested.
