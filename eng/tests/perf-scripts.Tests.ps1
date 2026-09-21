@@ -24,7 +24,9 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/report-hosting-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-healthchecks-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-healthchecks-evolution.ps1'),
-    (Join-Path $repoRoot 'eng/perf/prepare-opentelemetry-evolution.ps1')
+    (Join-Path $repoRoot 'eng/perf/prepare-opentelemetry-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-opentelemetry-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-opentelemetry-evolution.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -194,6 +196,24 @@ Assert-True ($otelV220 -match 'AddInMemoryExporter') 'OpenTelemetry correctness 
 Assert-True ($otelV220 -match 'counter.Enabled') 'OpenTelemetry correctness oracle must verify metric listener activation.'
 Assert-True ($otelV220 -match 'activitySource.HasListeners') 'OpenTelemetry correctness oracle must verify trace listener activation.'
 
+$otelRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-opentelemetry-evolution.ps1') -Raw
+Assert-True ($otelRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'OpenTelemetry evolution order must remain counter-balanced A-B-B-A.'
+Assert-True ($otelRunner -match "scenarioClass = 'evolution'") 'OpenTelemetry runner must classify the scenario as evolution.'
+Assert-True ($otelRunner -match "comparisonPolicy = 'side-by-side-no-cross-version-ratio'") 'OpenTelemetry runner must forbid cross-version ratio reporting.'
+Assert-True ($otelRunner.Contains('authoritativeTiming = $false')) 'Hosted OpenTelemetry timing must remain non-authoritative.'
+Assert-True ($otelRunner -match 'Assert-BenchmarkResult') 'OpenTelemetry runner must reject missing BenchmarkDotNet JSON evidence.'
+Assert-True ($otelRunner -match 'produced no statistics') 'OpenTelemetry Short must reject BenchmarkDotNet JSON records without statistics.'
+Assert-True ($otelRunner -match 'produced no measurements') 'OpenTelemetry Short must reject BenchmarkDotNet JSON records without measurements.'
+
+$otelReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-opentelemetry-evolution.ps1') -Raw
+Assert-True ($otelReport -match 'side-by-side-no-cross-version-ratio') 'OpenTelemetry report must preserve evolution comparison policy.'
+Assert-True ($otelReport -notmatch 'timeDeltaPercent') 'OpenTelemetry report must not emit a strict A/B timing percentage.'
+Assert-True ($otelReport -notmatch 'allocationDeltaPercent') 'OpenTelemetry report must not emit a strict A/B allocation percentage.'
+Assert-True ($otelReport -match 'Group-Object \{ \[string\]\$_\.method \}') 'OpenTelemetry reporter must group normalized records by method value.'
+Assert-True ($otelReport -match 'baselineRepeatDriftPercent') 'OpenTelemetry report must expose baseline repeat drift.'
+Assert-True ($otelReport -match 'candidateRepeatDriftPercent') 'OpenTelemetry report must expose candidate repeat drift.'
+
+
 
 $healthV212Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.HealthChecks.V212/SmartPipe.Perf.HealthChecks.V212.csproj') -Raw
 $healthV220Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.HealthChecks.V220/SmartPipe.Perf.HealthChecks.V220.csproj') -Raw
@@ -250,4 +270,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=16'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=18'
