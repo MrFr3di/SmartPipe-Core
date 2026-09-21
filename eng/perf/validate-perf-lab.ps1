@@ -88,16 +88,7 @@ Assert-True (-not [bool]$thresholds.hardGates.throughputRegression) 'Throughput 
 Assert-True ($thresholds.policy.githubHostedTiming -ceq 'informational-only') 'GitHub-hosted timing must remain informational-only.'
 
 if (-not [string]::IsNullOrWhiteSpace($CandidateSha)) {
-    Assert-True ($CandidateSha -cmatch '^[0-9a-f]{40}
-if ($Mode -in @('stress', 'soak')) {
-    $hasExplicitCandidate = -not [string]::IsNullOrWhiteSpace($CandidateSha)
-    $hasPinnedFullCandidate = $null -ne $targets.fullCandidate.gitSha
-    Assert-True ($hasExplicitCandidate -or $hasPinnedFullCandidate) "$Mode requires an explicit candidate SHA until the full SP220-01 through SP220-12 candidate is pinned."
-}
-
-$fullCandidateLabel = if ($null -eq $targets.fullCandidate.gitSha) { 'UNPINNED' } else { $targets.fullCandidate.gitSha }
-Write-Output "PERF_LAB_CONTRACT_OK mode=$Mode groups=$($scenarios.groups.Count) baseline=$($targets.baseline.gitSha) fullCandidate=$fullCandidateLabel"
-) 'candidate-sha must be exactly 40 lowercase hexadecimal characters.'
+    Assert-True ($CandidateSha -cmatch '^[0-9a-f]{40}$') 'candidate-sha must be exactly 40 lowercase hexadecimal characters.'
 }
 
 if ($Mode -in @('stress', 'soak')) {
