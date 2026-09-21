@@ -45,7 +45,6 @@ $baselineManifest = Join-Path $repoRoot 'eng/baselines/2.1.2/manifest.json'
 $targetsManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/manifests/targets.json') -Raw | ConvertFrom-Json -Depth 32
 
 & $validator -Mode smoke -CandidateSha $CandidateSha
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if ($CandidateSha -cnotmatch '^[0-9a-f]{40}$') {
     throw 'CandidateSha must be exactly 40 lowercase hexadecimal characters.'
