@@ -15,7 +15,9 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/run-core-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-core-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-core-stress.ps1'),
-    (Join-Path $repoRoot 'eng/perf/prepare-di-evolution.ps1')
+    (Join-Path $repoRoot 'eng/perf/prepare-di-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-di-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-di-evolution.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -86,6 +88,19 @@ Assert-True ($di -match "'--locked-mode'") 'DI restore must verify the generated
 Assert-True ($di -match "'--no-http-cache'") 'DI restore must bypass the NuGet HTTP cache.'
 Assert-True ($di -match 'adapterSourceSha256') 'DI provenance must record target-specific adapter source hashes.'
 
+$diRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-di-evolution.ps1') -Raw
+Assert-True ($diRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'DI evolution order must remain counter-balanced A-B-B-A.'
+Assert-True ($diRunner -match "scenarioClass = 'evolution'") 'DI runner must classify the scenario as evolution.'
+Assert-True ($diRunner -match "comparisonPolicy = 'side-by-side-no-cross-version-ratio'") 'DI runner must forbid cross-version ratio reporting.'
+Assert-True ($diRunner.Contains('authoritativeTiming = $false')) 'Hosted DI timing must remain non-authoritative.'
+
+$diReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-di-evolution.ps1') -Raw
+Assert-True ($diReport -match 'side-by-side-no-cross-version-ratio') 'DI report must preserve evolution comparison policy.'
+Assert-True ($diReport -notmatch 'timeDeltaPercent') 'DI report must not emit a strict A/B timing percentage.'
+Assert-True ($diReport -notmatch 'allocationDeltaPercent') 'DI report must not emit a strict A/B allocation percentage.'
+Assert-True ($diReport -match 'baselineRepeatDriftPercent') 'DI report must expose baseline repeat drift.'
+Assert-True ($diReport -match 'candidateRepeatDriftPercent') 'DI report must expose candidate repeat drift.'
+
 $report = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-core-ab.ps1') -Raw
 Assert-True ($report -match 'baselineRepeatDriftPercent') 'Core A/B report must expose baseline repeat drift.'
 Assert-True ($report -match 'candidateRepeatDriftPercent') 'Core A/B report must expose candidate repeat drift.'
@@ -93,4 +108,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=7'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=9'
