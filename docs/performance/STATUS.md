@@ -51,3 +51,5 @@ Updated: 2026-09-21
 - SP220-06 OpenTelemetry: corrected Dry is green; counter-balanced side-by-side Short requested after reporter self-test wiring.
 
 - SP220-07 channels/transforms/dataannotations/logging: strict A/B Dry requested for the shared semantic-equivalence workload.
+
+- SP220-07 channels/transforms/dataannotations/logging: Dry and reporter self-test are green; SP220-07 strict A/B Short requested.
