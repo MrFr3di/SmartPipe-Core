@@ -155,22 +155,30 @@ $lines.Add('')
 $lines.Add('| Items | Concurrency | 2.1.2 Mean ms | 2.2.0 Mean ms | Time Δ | 2.1.2 KiB/op | 2.2.0 KiB/op | Alloc Δ | Repeat drift 2.1.2 | Repeat drift 2.2.0 |')
 $lines.Add('| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |')
 
-foreach ($comparison in $comparisons) {
-    $baselineDrift = if ($null -eq $comparison.baselineRepeatDriftPercent) { 'n/a' } else { '{0:F2}%' -f $comparison.baselineRepeatDriftPercent }
-    $candidateDrift = if ($null -eq $comparison.candidateRepeatDriftPercent) { 'n/a' } else { '{0:F2}%' -f $comparison.candidateRepeatDriftPercent }
+$culture = [Globalization.CultureInfo]::InvariantCulture
 
-    $lines.Add(
-        '| {0} | {1} | {2:F3} | {3:F3} | {4:+0.00;-0.00;0.00}% | {5:F2} | {6:F2} | {7:+0.00;-0.00;0.00}% | {8} | {9} |' -f
-        $comparison.itemCount,
-        $comparison.maxConcurrency,
-        ($comparison.baselineMeanNs / 1000000.0),
-        ($comparison.candidateMeanNs / 1000000.0),
-        $comparison.timeDeltaPercent,
-        ($comparison.baselineAllocatedBytes / 1024.0),
-        ($comparison.candidateAllocatedBytes / 1024.0),
-        $comparison.allocationDeltaPercent,
-        $baselineDrift,
-        $candidateDrift)
+foreach ($comparison in $comparisons) {
+    $baselineDrift = if ($null -eq $comparison.baselineRepeatDriftPercent) {
+        'n/a'
+    }
+    else {
+        $comparison.baselineRepeatDriftPercent.ToString('F2', $culture) + '%'
+    }
+    $candidateDrift = if ($null -eq $comparison.candidateRepeatDriftPercent) {
+        'n/a'
+    }
+    else {
+        $comparison.candidateRepeatDriftPercent.ToString('F2', $culture) + '%'
+    }
+
+    $baselineMeanMs = ($comparison.baselineMeanNs / 1000000.0).ToString('F3', $culture)
+    $candidateMeanMs = ($comparison.candidateMeanNs / 1000000.0).ToString('F3', $culture)
+    $timeDelta = $comparison.timeDeltaPercent.ToString('+0.00;-0.00;0.00', $culture) + '%'
+    $baselineKiB = ($comparison.baselineAllocatedBytes / 1024.0).ToString('F2', $culture)
+    $candidateKiB = ($comparison.candidateAllocatedBytes / 1024.0).ToString('F2', $culture)
+    $allocationDelta = $comparison.allocationDeltaPercent.ToString('+0.00;-0.00;0.00', $culture) + '%'
+
+    $lines.Add("| $($comparison.itemCount) | $($comparison.maxConcurrency) | $baselineMeanMs | $candidateMeanMs | $timeDelta | $baselineKiB | $candidateKiB | $allocationDelta | $baselineDrift | $candidateDrift |")
 }
 
 $reportPath = Join-Path $resolvedRunRoot 'comparison.md'
