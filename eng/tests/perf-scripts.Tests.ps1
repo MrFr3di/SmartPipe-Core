@@ -186,6 +186,8 @@ Assert-True ($otelSource -match 'BuildResolveDisposeProviders') 'OpenTelemetry b
 Assert-True ($otelSource -notmatch 'public sealed class OpenTelemetryEvolutionBenchmarks') 'BenchmarkDotNet OpenTelemetry type must remain unsealed.'
 $otelV220 = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.OpenTelemetry.V220/OpenTelemetryTarget.cs') -Raw
 Assert-True ($otelV220 -match 'AddSmartPipeInstrumentation') 'OpenTelemetry candidate must exercise the SmartPipe instrumentation helper.'
+Assert-True ($otelV220 -match 'WithMetrics') 'OpenTelemetry candidate benchmark app must own MeterProvider composition.'
+Assert-True ($otelV220 -match 'WithTracing') 'OpenTelemetry candidate benchmark app must own TracerProvider composition.'
 Assert-True ($otelV220 -match 'ReferenceEquals') 'OpenTelemetry candidate precheck must enforce exact builder identity.'
 Assert-True ($otelV220 -match 'countAfterFirstRegistration') 'OpenTelemetry candidate precheck must enforce idempotent registration.'
 Assert-True ($otelV220 -match 'AddInMemoryExporter') 'OpenTelemetry correctness oracle must verify exported telemetry.'
