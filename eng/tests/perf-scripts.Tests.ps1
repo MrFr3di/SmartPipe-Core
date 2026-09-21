@@ -35,7 +35,8 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/report-json-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/prepare-csv-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-csv-strict-ab.ps1'),
-    (Join-Path $repoRoot 'eng/perf/report-csv-strict-ab.ps1')
+    (Join-Path $repoRoot 'eng/perf/report-csv-strict-ab.ps1'),
+    (Join-Path $repoRoot 'eng/perf/prepare-dapper-evolution.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -376,6 +377,45 @@ Assert-True ($csvReport -match 'baselineRepeatDriftPercent') 'CSV report must ex
 Assert-True ($csvReport -match 'candidateRepeatDriftPercent') 'CSV report must expose candidate repeat drift.'
 Assert-True ($csvReport -match 'records.Count -ne \(\$expectedMethods.Count \* 4\)') 'CSV report must reject incomplete A-B-B-A evidence.'
 
+$dapper = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/prepare-dapper-evolution.ps1') -Raw
+Assert-True ($dapper -match "scenarioClass = 'evolution'") 'SP220-10 Dapper comparison must remain evolution-classified.'
+Assert-True ($dapper -match "scenario = 'dapper'") 'SP220-10 Dapper scenario id must remain canonical.'
+Assert-True ($dapper -match "PrimaryPackageId 'SmartPipe.Extensions'") 'Dapper baseline must bind to SmartPipe.Extensions 2.1.2.'
+Assert-True ($dapper -match "PrimaryPackageId 'SmartPipe.Extensions.Dapper'") 'Dapper candidate must bind to SmartPipe.Extensions.Dapper 2.2.0.'
+Assert-True ($dapper -match 'packageSourceMapping') 'Dapper restore must use NuGet Package Source Mapping.'
+Assert-True ($dapper -match 'dotnet nuget verify') 'Dapper provenance must use NuGet-native content hashes.'
+Assert-True ($dapper -match "'--locked-mode'") 'Dapper restore must verify the generated lock in locked mode.'
+Assert-True ($dapper -match "'--no-http-cache'") 'Dapper restore must bypass the NuGet HTTP cache.'
+Assert-True ($dapper -match 'Assert-BenchmarkResult') 'Dapper Dry must reject missing BenchmarkDotNet JSON evidence.'
+Assert-True ($dapper -match 'ReadHundredRows') 'Dapper Dry must require the 100-row workload.'
+Assert-True ($dapper -match 'ReadSingleParameterized') 'Dapper Dry must require the parameterized workload.'
+Assert-True ($dapper -match 'DapperEvolutionTarget\.cs') 'Dapper materializer must hash the target-specific evolution adapters.'
+
+$dapperSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.Shared/DapperEvolutionBenchmarks.cs') -Raw
+Assert-True ($dapperSource -match 'BenchmarkCategory\("Evolution", "Dapper"\)') 'Dapper benchmark must remain evolution-classified.'
+Assert-True ($dapperSource -match 'SqliteOpenMode\.Memory') 'Dapper benchmark must use an in-memory SQLite database.'
+Assert-True ($dapperSource -match 'SqliteCacheMode\.Shared') 'Dapper benchmark must use a named shared in-memory SQLite database.'
+Assert-True ($dapperSource -match 'Pooling = false') 'Dapper benchmark must disable SQLite pooling for deterministic per-run connections.'
+Assert-True ($dapperSource -match '5050') 'Dapper 100-row correctness oracle must verify the deterministic checksum.'
+Assert-True ($dapperSource -match 'checksum=42') 'Dapper parameterized correctness oracle must verify the selected row.'
+
+$dapperV212 = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.V212/DapperEvolutionTarget.cs') -Raw
+$dapperV220 = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.V220/DapperEvolutionTarget.cs') -Raw
+Assert-True ($dapperV212 -match 'DapperSelector') 'Dapper baseline must exercise the legacy selector path.'
+Assert-True ($dapperV212 -match 'leaveOpen: false') 'Dapper baseline must own and dispose each per-run connection.'
+Assert-True ($dapperV220 -match 'DapperPipelineComponents\.QuerySource') 'Dapper candidate must exercise the new query-source component.'
+Assert-True ($dapperV220 -match 'PipelineDefinitionBuilder') 'Dapper candidate must compose a public pipeline definition.'
+Assert-True ($dapperV220 -match 'definition\.StartAsync') 'Dapper candidate must execute through the public Core run lifecycle.'
+Assert-True ($dapperV220 -match 'ReadResultsAsync') 'Dapper candidate must consume results through PipelineRun.'
+
+$dapperV212Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.V212/SmartPipe.Perf.Dapper.V212.csproj') -Raw
+$dapperV220Project = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.Dapper.V220/SmartPipe.Perf.Dapper.V220.csproj') -Raw
+Assert-True ($dapperV212Project -match 'SmartPipe.Extensions" Version="2\.1\.2"') 'Dapper baseline project must reference SmartPipe.Extensions 2.1.2.'
+Assert-True ($dapperV220Project -match 'SmartPipe.Extensions.Dapper" Version="2\.2\.0"') 'Dapper candidate project must reference SmartPipe.Extensions.Dapper 2.2.0.'
+Assert-True ($dapperV212Project -match 'Microsoft.Data.Sqlite" Version="10\.0\.11"') 'Dapper baseline must pin Microsoft.Data.Sqlite 10.0.11.'
+Assert-True ($dapperV220Project -match 'Microsoft.Data.Sqlite" Version="10\.0\.11"') 'Dapper candidate must pin Microsoft.Data.Sqlite 10.0.11.'
+
+
 
 
 
@@ -423,4 +463,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=27'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=28'
