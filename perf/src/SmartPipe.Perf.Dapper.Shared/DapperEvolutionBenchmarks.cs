@@ -56,7 +56,7 @@ public class DapperEvolutionBenchmarks
         _target ?? throw new InvalidOperationException("Dapper benchmark target is not initialized.");
 }
 
-internal readonly record struct QueryObservation(int Count, long Checksum);
+public readonly record struct QueryObservation(int Count, long Checksum);
 
 internal sealed class DapperRow
 {
