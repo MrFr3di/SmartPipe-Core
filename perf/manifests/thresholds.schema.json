@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://smartpipe.dev/schemas/perf-thresholds-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "phase", "hardGates", "policy"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "phase": { "enum": ["evidence-only", "controlled-gates"] },
+    "hardGates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["correctness", "resourceLifecycle", "boundedMemoryContract", "wallClockRegression", "throughputRegression", "allocationRegression"],
+      "properties": {
+        "correctness": { "type": "boolean" },
+        "resourceLifecycle": { "type": "boolean" },
+        "boundedMemoryContract": { "type": "boolean" },
+        "wallClockRegression": { "type": "boolean" },
+        "throughputRegression": { "type": "boolean" },
+        "allocationRegression": { "type": "boolean" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["githubHostedTiming", "strictAbRatioRequiresControlledEnvironment", "minimumStableReferenceRunsBeforeNumericGate", "singleGlobalPercentThresholdForbidden", "scenarioSpecificThresholdsRequired"],
+      "properties": {
+        "githubHostedTiming": { "const": "informational-only" },
+        "strictAbRatioRequiresControlledEnvironment": { "type": "boolean" },
+        "minimumStableReferenceRunsBeforeNumericGate": { "type": "integer", "minimum": 3 },
+        "singleGlobalPercentThresholdForbidden": { "type": "boolean" },
+        "scenarioSpecificThresholdsRequired": { "type": "boolean" }
+      }
+    }
+  }
+}
