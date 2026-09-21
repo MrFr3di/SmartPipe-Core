@@ -36,3 +36,5 @@ Updated: 2026-09-21
 - PERF-04 HealthChecks: evolution targets/materializer/contracts implemented; first immutable registered/not-started Dry requested.
 
 - PERF-04 Hosting: Dry and reporter self-test are green; first normalized Hosting evolution Short requested.
+
+- PERF-05 HealthChecks: report self-test fixture fixed; HealthChecks Short requested after self-test fix.
