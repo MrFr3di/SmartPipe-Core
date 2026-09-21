@@ -11,7 +11,7 @@ public static class Program
 
 [MemoryDiagnoser]
 [BenchmarkCategory("Evolution", "DependencyInjection")]
-public sealed class DependencyInjectionEvolutionBenchmarks
+public class DependencyInjectionEvolutionBenchmarks
 {
     private DependencyInjectionTarget? _target;
 
