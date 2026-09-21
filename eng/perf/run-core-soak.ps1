@@ -195,6 +195,9 @@ function Invoke-SoakTarget {
     if ([long]$final.CreatedComponents -ne [long]$final.DisposedComponents) {
         throw "Soak profile '$Profile' for '$targetId' leaked components: created=$($final.CreatedComponents), disposed=$($final.DisposedComponents)."
     }
+    if ([long]$final.ThreadPoolPendingWorkItems -ne 0) {
+        throw "Soak profile '$Profile' for '$targetId' ended with $($final.ThreadPoolPendingWorkItems) pending ThreadPool work items."
+    }
     if (-not [bool]$final.LifecycleInvariantPassed) {
         throw "Soak profile '$Profile' for '$targetId' failed its lifecycle invariant."
     }
@@ -212,6 +215,8 @@ function Invoke-SoakTarget {
         createdComponents = [long]$final.CreatedComponents
         disposedComponents = [long]$final.DisposedComponents
         snapshotCount = [int]$final.SnapshotCount
+        threadPoolPendingWorkItems = [long]$final.ThreadPoolPendingWorkItems
+        handleOrFdCount = [int]$final.HandleOrFdCount
         lifecycleInvariantPassed = [bool]$final.LifecycleInvariantPassed
         artifacts = [IO.Path]::GetRelativePath($repoRoot, $artifactDir).Replace('\', '/')
     }
