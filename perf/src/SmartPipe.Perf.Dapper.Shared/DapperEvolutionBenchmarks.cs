@@ -98,7 +98,8 @@ internal sealed class SqliteBenchmarkDatabase : IAsyncDisposable
                 "create table Rows (Id integer primary key, Name text not null);";
             await create.ExecuteNonQueryAsync().ConfigureAwait(false);
 
-            await using var transaction = await anchor.BeginTransactionAsync().ConfigureAwait(false);
+            await using var transaction =
+                (SqliteTransaction)await anchor.BeginTransactionAsync().ConfigureAwait(false);
             for (int id = 1; id <= 100; id++)
             {
                 await using var insert = anchor.CreateCommand();
