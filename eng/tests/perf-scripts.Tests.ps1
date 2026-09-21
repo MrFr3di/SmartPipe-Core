@@ -654,12 +654,16 @@ Assert-True ($efCoreDecomp -match 'packageSourceMapping') 'EF Core decomposition
 Assert-True ($efCoreDecomp -match 'dotnet nuget verify') 'EF Core decomposition provenance must use NuGet-native content hashes.'
 Assert-True ($efCoreDecomp -match "'--locked-mode'") 'EF Core decomposition restore must verify the generated lock in locked mode.'
 Assert-True ($efCoreDecomp -match 'Assert-BenchmarkResult') 'EF Core decomposition Dry must reject incomplete BenchmarkDotNet evidence.'
-Assert-True ($efCoreDecomp -match 'CompiledPipelineSingle') 'EF Core decomposition Dry must require the compiled single-row path.'
-Assert-True ($efCoreDecomp -match 'CompiledPipelineHundredRows') 'EF Core decomposition Dry must require the compiled 100-row path.'
+Assert-True ($efCoreDecomp -match 'RawCompiledSingle') 'EF Core decomposition Dry must require the raw compiled single-row baseline.'
+Assert-True ($efCoreDecomp -match 'CompiledPipelineSingle') 'EF Core decomposition Dry must require the compiled single-row pipeline path.'
+Assert-True ($efCoreDecomp -match 'RawCompiledHundredRows') 'EF Core decomposition Dry must require the raw compiled 100-row baseline.'
+Assert-True ($efCoreDecomp -match 'CompiledPipelineHundredRows') 'EF Core decomposition Dry must require the compiled 100-row pipeline path.'
 
 $efCoreDecompSource = Get-Content -LiteralPath (Join-Path $repoRoot 'perf/src/SmartPipe.Perf.EntityFrameworkCore.Decomposition.V220/EfCoreDecompositionBenchmarks.cs') -Raw
 Assert-True ($efCoreDecompSource -match 'BenchmarkCategory\("V220Only", "EntityFrameworkCore", "Decomposition"\)') 'EF Core decomposition benchmark must remain candidate-only.'
 Assert-True ($efCoreDecompSource -match 'EF\.CompileAsyncQuery') 'EF Core decomposition must exercise EF compiled queries.'
+Assert-True ($efCoreDecompSource -match 'RawCompiledSingle') 'EF Core decomposition must pair the compiled pipeline with a raw compiled single-row baseline.'
+Assert-True ($efCoreDecompSource -match 'RawCompiledHundredRows') 'EF Core decomposition must pair the compiled pipeline with a raw compiled 100-row baseline.'
 Assert-True ($efCoreDecompSource -match 'EfCorePipelineComponents\.QuerySource') 'EF Core decomposition must exercise normal QuerySource.'
 Assert-True ($efCoreDecompSource -match 'EfCorePipelineComponents\.CompiledQuerySource') 'EF Core decomposition must exercise CompiledQuerySource.'
 Assert-True ($efCoreDecompSource -match 'AsNoTracking') 'EF Core raw/compiled workload must preserve no-tracking semantics.'
@@ -673,17 +677,20 @@ Assert-True ($efCoreDecompProject -match 'SmartPipe.Extensions.EntityFrameworkCo
 
 $efCoreDecompRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-efcore-decomposition-v220.ps1') -Raw
 Assert-True ($efCoreDecompRunner -match "scenarioClass = 'v220-only'") 'EF Core decomposition runner must remain v220-only.'
-Assert-True ($efCoreDecompRunner -match "comparisonPolicy = 'within-version-raw-vs-normal-vs-compiled'") 'EF Core decomposition runner must preserve within-version policy.'
+Assert-True ($efCoreDecompRunner -match "comparisonPolicy = 'paired-raw-vs-pipeline-normal-and-compiled'") 'EF Core decomposition runner must preserve paired raw/pipeline policy.'
 Assert-True ($efCoreDecompRunner.Contains('authoritativeTiming = $false')) 'Hosted EF Core decomposition timing must remain non-authoritative.'
 Assert-True ($efCoreDecompRunner -match 'foreach \(\$slot in 1\.\.2\)') 'EF Core decomposition must repeat twice on the same runner.'
 
 $efCoreDecompReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-efcore-decomposition-v220.ps1') -Raw
 Assert-True ($efCoreDecompReport -match 'normalOverRawRatio') 'EF Core decomposition report must expose normal Pipeline/Raw ratio.'
-Assert-True ($efCoreDecompReport -match 'compiledOverRawRatio') 'EF Core decomposition report must expose compiled Pipeline/Raw ratio.'
+Assert-True ($efCoreDecompReport -match 'rawCompiledMeanNs') 'EF Core decomposition report must retain the raw compiled baseline.'
+Assert-True ($efCoreDecompReport -match 'compiledOverRawCompiledRatio') 'EF Core decomposition report must compare CompiledQuerySource with matching raw EF.CompileAsyncQuery.'
 Assert-True ($efCoreDecompReport -match 'compiledOverNormalRatio') 'EF Core decomposition report must compare compiled and normal pipeline paths.'
 Assert-True ($efCoreDecompReport -match 'normalIncrementalTimePerAdditionalRowNs') 'EF Core decomposition report must expose the normal descriptive per-row model.'
 Assert-True ($efCoreDecompReport -match 'compiledIncrementalTimePerAdditionalRowNs') 'EF Core decomposition report must expose the compiled descriptive per-row model.'
 Assert-True ($efCoreDecompReport -match 'Descriptive two-point model only') 'EF Core decomposition report must label the model as descriptive.'
+Assert-True ($efCoreDecompReport -match 'paired-raw-vs-pipeline-normal-and-compiled') 'EF Core decomposition report must declare paired baselines.'
+Assert-True ($efCoreDecompReport -match 'RawCompiledMethod') 'EF Core decomposition report must compute compiled overhead from the matching raw compiled method.'
 
 
 $efCoreRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-entity-framework-core-evolution.ps1') -Raw
