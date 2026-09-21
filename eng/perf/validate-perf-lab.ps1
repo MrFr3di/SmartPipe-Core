@@ -27,15 +27,23 @@ function Assert-ShaOrNull {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $targetsPath = Join-Path $repoRoot 'perf/manifests/targets.json'
 $scenariosPath = Join-Path $repoRoot 'perf/manifests/scenarios.json'
+$thresholdsPath = Join-Path $repoRoot 'perf/manifests/thresholds.json'
 
 Assert-True (Test-Path -LiteralPath $targetsPath -PathType Leaf) 'perf/manifests/targets.json is missing.'
 Assert-True (Test-Path -LiteralPath $scenariosPath -PathType Leaf) 'perf/manifests/scenarios.json is missing.'
+Assert-True (Test-Path -LiteralPath $thresholdsPath -PathType Leaf) 'perf/manifests/thresholds.json is missing.'
+
+foreach ($schema in @('targets.schema.json', 'scenarios.schema.json', 'thresholds.schema.json')) {
+    Assert-True (Test-Path -LiteralPath (Join-Path $repoRoot "perf/manifests/$schema") -PathType Leaf) "perf/manifests/$schema is missing."
+}
 
 $targets = Get-Content -LiteralPath $targetsPath -Raw | ConvertFrom-Json -Depth 32
 $scenarios = Get-Content -LiteralPath $scenariosPath -Raw | ConvertFrom-Json -Depth 32
+$thresholds = Get-Content -LiteralPath $thresholdsPath -Raw | ConvertFrom-Json -Depth 32
 
 Assert-True ($targets.schemaVersion -eq 1) 'Unsupported targets manifest schemaVersion.'
 Assert-True ($scenarios.schemaVersion -eq 1) 'Unsupported scenarios manifest schemaVersion.'
+Assert-True ($thresholds.schemaVersion -eq 1) 'Unsupported thresholds manifest schemaVersion.'
 
 Assert-True ($targets.baseline.version -ceq '2.1.2') 'Baseline version must remain 2.1.2.'
 Assert-True ($targets.baseline.gitSha -ceq '8e79902d22de714f493582946f7c260462b0895e') 'Baseline Git SHA drifted from the published 2.1.2 baseline.'
@@ -71,8 +79,25 @@ foreach ($group in @($scenarios.groups)) {
     }
 }
 
+Assert-True ($thresholds.phase -ceq 'evidence-only') 'Bootstrap regression policy must remain evidence-only.'
+Assert-True ([bool]$thresholds.hardGates.correctness) 'Correctness must remain a hard gate.'
+Assert-True ([bool]$thresholds.hardGates.resourceLifecycle) 'Resource lifecycle must remain a hard gate.'
+Assert-True ([bool]$thresholds.hardGates.boundedMemoryContract) 'Bounded-memory contracts must remain hard gates.'
+Assert-True (-not [bool]$thresholds.hardGates.wallClockRegression) 'Wall-clock regression cannot become a hard gate during evidence-only phase.'
+Assert-True (-not [bool]$thresholds.hardGates.throughputRegression) 'Throughput regression cannot become a hard gate during evidence-only phase.'
+Assert-True ($thresholds.policy.githubHostedTiming -ceq 'informational-only') 'GitHub-hosted timing must remain informational-only.'
+
 if (-not [string]::IsNullOrWhiteSpace($CandidateSha)) {
-    Assert-True ($CandidateSha -cmatch '^[0-9a-f]{40}$') 'candidate-sha must be exactly 40 lowercase hexadecimal characters.'
+    Assert-True ($CandidateSha -cmatch '^[0-9a-f]{40}
+if ($Mode -in @('stress', 'soak')) {
+    $hasExplicitCandidate = -not [string]::IsNullOrWhiteSpace($CandidateSha)
+    $hasPinnedFullCandidate = $null -ne $targets.fullCandidate.gitSha
+    Assert-True ($hasExplicitCandidate -or $hasPinnedFullCandidate) "$Mode requires an explicit candidate SHA until the full SP220-01 through SP220-12 candidate is pinned."
+}
+
+$fullCandidateLabel = if ($null -eq $targets.fullCandidate.gitSha) { 'UNPINNED' } else { $targets.fullCandidate.gitSha }
+Write-Output "PERF_LAB_CONTRACT_OK mode=$Mode groups=$($scenarios.groups.Count) baseline=$($targets.baseline.gitSha) fullCandidate=$fullCandidateLabel"
+) 'candidate-sha must be exactly 40 lowercase hexadecimal characters.'
 }
 
 if ($Mode -in @('stress', 'soak')) {
