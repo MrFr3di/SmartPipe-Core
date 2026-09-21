@@ -39,7 +39,9 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/prepare-dapper-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-dapper-evolution.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-dapper-evolution.ps1'),
-    (Join-Path $repoRoot 'eng/perf/prepare-entity-framework-core-evolution.ps1')
+    (Join-Path $repoRoot 'eng/perf/prepare-entity-framework-core-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-entity-framework-core-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-entity-framework-core-evolution.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -482,6 +484,25 @@ Assert-True ($efCoreV220Project -match 'Microsoft.EntityFrameworkCore.Sqlite" Ve
 Assert-True ($efCoreV212Project -notmatch 'Microsoft.EntityFrameworkCore.InMemory') 'EF Core baseline must not reference the InMemory provider.'
 Assert-True ($efCoreV220Project -notmatch 'Microsoft.EntityFrameworkCore.InMemory') 'EF Core candidate must not reference the InMemory provider.'
 
+$efCoreRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-entity-framework-core-evolution.ps1') -Raw
+Assert-True ($efCoreRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'EF Core evolution order must remain counter-balanced A-B-B-A.'
+Assert-True ($efCoreRunner -match "scenarioClass = 'evolution'") 'EF Core runner must remain evolution-classified.'
+Assert-True ($efCoreRunner -match "comparisonPolicy = 'side-by-side-no-cross-version-ratio'") 'EF Core runner must forbid cross-version ratio reporting.'
+Assert-True ($efCoreRunner.Contains('authoritativeTiming = $false')) 'Hosted EF Core timing must remain non-authoritative.'
+Assert-True ($efCoreRunner -match 'PERF_EFCORE_EVOLUTION_RUN_OK') 'EF Core runner must expose the EF-specific completion marker.'
+Assert-True ($efCoreRunner -match 'Assert-BenchmarkResult') 'EF Core Short must reject missing BenchmarkDotNet JSON evidence.'
+Assert-True ($efCoreRunner -match 'produced no statistics') 'EF Core Short must reject results without statistics.'
+Assert-True ($efCoreRunner -match 'produced no measurements') 'EF Core Short must reject results without measurements.'
+
+$efCoreReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-entity-framework-core-evolution.ps1') -Raw
+Assert-True ($efCoreReport -match 'side-by-side-no-cross-version-ratio') 'EF Core report must preserve evolution comparison policy.'
+Assert-True ($efCoreReport -notmatch 'timeDeltaPercent') 'EF Core report must not emit a strict A/B timing percentage.'
+Assert-True ($efCoreReport -notmatch 'allocationDeltaPercent') 'EF Core report must not emit a strict A/B allocation percentage.'
+Assert-True ($efCoreReport -match 'baselineRepeatDriftPercent') 'EF Core report must expose baseline repeat drift.'
+Assert-True ($efCoreReport -match 'candidateRepeatDriftPercent') 'EF Core report must expose candidate repeat drift.'
+Assert-True ($efCoreReport -match 'PERF_EFCORE_REPORT_OK') 'EF Core reporter must expose the EF-specific completion marker.'
+
+
 
 
 
@@ -532,4 +553,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=31'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=33'
