@@ -36,7 +36,9 @@ $scripts = @(
     (Join-Path $repoRoot 'eng/perf/prepare-csv-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/run-csv-strict-ab.ps1'),
     (Join-Path $repoRoot 'eng/perf/report-csv-strict-ab.ps1'),
-    (Join-Path $repoRoot 'eng/perf/prepare-dapper-evolution.ps1')
+    (Join-Path $repoRoot 'eng/perf/prepare-dapper-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/run-dapper-evolution.ps1'),
+    (Join-Path $repoRoot 'eng/perf/report-dapper-evolution.ps1')
 )
 
 foreach ($script in $scripts) {
@@ -415,6 +417,23 @@ Assert-True ($dapperV220Project -match 'SmartPipe.Extensions.Dapper" Version="2\
 Assert-True ($dapperV212Project -match 'Microsoft.Data.Sqlite" Version="10\.0\.11"') 'Dapper baseline must pin Microsoft.Data.Sqlite 10.0.11.'
 Assert-True ($dapperV220Project -match 'Microsoft.Data.Sqlite" Version="10\.0\.11"') 'Dapper candidate must pin Microsoft.Data.Sqlite 10.0.11.'
 
+$dapperRunner = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/run-dapper-evolution.ps1') -Raw
+Assert-True ($dapperRunner -match "target = 'v212'[\s\S]*target = 'v220'[\s\S]*target = 'v220'[\s\S]*target = 'v212'") 'Dapper evolution order must remain counter-balanced A-B-B-A.'
+Assert-True ($dapperRunner -match "scenarioClass = 'evolution'") 'Dapper runner must remain evolution-classified.'
+Assert-True ($dapperRunner -match "comparisonPolicy = 'side-by-side-no-cross-version-ratio'") 'Dapper runner must forbid cross-version ratio reporting.'
+Assert-True ($dapperRunner.Contains('authoritativeTiming = $false')) 'Hosted Dapper timing must remain non-authoritative.'
+Assert-True ($dapperRunner -match 'Assert-BenchmarkResult') 'Dapper Short must reject missing BenchmarkDotNet JSON evidence.'
+Assert-True ($dapperRunner -match 'produced no statistics') 'Dapper Short must reject results without statistics.'
+Assert-True ($dapperRunner -match 'produced no measurements') 'Dapper Short must reject results without measurements.'
+
+$dapperReport = Get-Content -LiteralPath (Join-Path $repoRoot 'eng/perf/report-dapper-evolution.ps1') -Raw
+Assert-True ($dapperReport -match 'side-by-side-no-cross-version-ratio') 'Dapper report must preserve evolution comparison policy.'
+Assert-True ($dapperReport -notmatch 'timeDeltaPercent') 'Dapper report must not emit a strict A/B timing percentage.'
+Assert-True ($dapperReport -notmatch 'allocationDeltaPercent') 'Dapper report must not emit a strict A/B allocation percentage.'
+Assert-True ($dapperReport -match 'baselineRepeatDriftPercent') 'Dapper report must expose baseline repeat drift.'
+Assert-True ($dapperReport -match 'candidateRepeatDriftPercent') 'Dapper report must expose candidate repeat drift.'
+
+
 
 
 
@@ -463,4 +482,4 @@ Assert-True ($report -match 'allocationDeltaPercent') 'Core A/B report must pres
 Assert-True ($report -match 'authoritativeTiming') 'Core A/B report must preserve timing authority metadata.'
 Assert-True ($report -match 'full-compressed\.json') 'Core A/B report must normalize BenchmarkDotNet raw JSON.'
 
-Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=28'
+Write-Output 'PERF_SCRIPT_CONTRACT_TESTS_OK scripts=30'
