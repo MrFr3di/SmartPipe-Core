@@ -48,7 +48,7 @@ env:
 jobs:
   smoke:
     name: Perf lab contract and benchmark smoke
-    if: ${{ github.event_name == 'push' || inputs.mode == 'smoke' || inputs.mode == 'benchmark-smoke' }}
+    if: ${{ github.event_name == 'push' || inputs.mode == 'smoke' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -83,23 +83,12 @@ jobs:
         run: dotnet build benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj --configuration Release --no-restore -warnaserror
 
       - name: BenchmarkDotNet dry smoke
-        if: ${{ github.event_name == 'push' || inputs.mode == 'benchmark-smoke' }}
         run: >
           dotnet run --project benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj
           --configuration Release --no-build --
           --job Dry
           --filter '*PipelineDefinitionBenchmarks*'
           --artifacts artifacts/perf/benchmark-smoke
-
-      - name: Upload manual smoke evidence
-        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.mode == 'benchmark-smoke' }}
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        with:
-          name: perf-lab-smoke-${{ github.sha }}
-          path: artifacts/perf/benchmark-smoke
-          if-no-files-found: warn
-          retention-days: 3
-          compression-level: 9
 
   heavy-mode-contract:
     name: Validate requested heavy mode
@@ -124,7 +113,7 @@ jobs:
 
   materialize:
     name: Materialize immutable A/B targets
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'materialize' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.mode == 'materialize' || inputs.mode == 'benchmark-smoke') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
@@ -148,9 +137,14 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($candidate)) {
             $candidate = '61ceef6bf69aef0a4f79b25384352d238979200f'
           }
-          ./eng/perf/prepare-target.ps1 -Target all -CandidateSha $candidate
+          if ('${{ inputs.mode }}' -eq 'benchmark-smoke') {
+            ./eng/perf/prepare-core-ab.ps1 -CandidateSha $candidate -RunDry
+          }
+          else {
+            ./eng/perf/prepare-target.ps1 -Target all -CandidateSha $candidate
+          }
 
-      - name: Upload target provenance only
+      - name: Upload target provenance and smoke evidence
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: perf-target-provenance-${{ github.sha }}
@@ -158,6 +152,10 @@ jobs:
             artifacts/perf/targets/**/target.json
             artifacts/perf/targets/**/package-manifest.json
             artifacts/perf/targets/**/metadata-report.json
+            artifacts/perf/core-ab/**/build-provenance.json
+            artifacts/perf/core-ab/**/packages.lock.json
+            artifacts/perf/core-ab/**/BenchmarkDotNet.Artifacts/**
+            artifacts/perf/core-ab/dotnet-info.txt
           if-no-files-found: error
           retention-days: 3
           compression-level: 9
