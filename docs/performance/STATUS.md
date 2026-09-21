@@ -93,3 +93,5 @@ Updated: 2026-09-21
 - PERF-09 Soak: verify profile is green; first full 30-minute immutable A/B soak requested with leak/bounded-memory cleanup gates.
 
 - PERF-09 Soak: first deliberate 30-minute profile requested after verify-profile plumbing passed.
+
+- Dapper decomposition: candidate-only Raw Dapper vs PipelineRun workload is wired; immutable v2.2-only Dry requested after the 30-minute soak.
