@@ -2,6 +2,8 @@ using System.Diagnostics.CodeAnalysis;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Mapster;
 
+namespace SmartPipe.ConsumerScenarios;
+
 internal static class Program
 {
     // The annotated Mapster composition path is compiled and analyzed here, but never executed: this

@@ -1,3 +1,4 @@
+using SmartPipe.ConsumerScenarios;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Mapster;
 
@@ -73,15 +74,18 @@ static async Task<List<PersonDto>> RunAsync(PipelineDefinition<Person, PersonDto
     return results;
 }
 
-internal sealed record Person(string Name, Address Address);
-
-internal sealed record Address(string City);
-
-internal sealed record TaggedPerson(Person Person, string Tag);
-
-internal sealed record PersonDto
+namespace SmartPipe.ConsumerScenarios
 {
-    public string Label { get; init; } = string.Empty;
+    internal sealed record Person(string Name, Address Address);
 
-    public string City { get; init; } = string.Empty;
+    internal sealed record Address(string City);
+
+    internal sealed record TaggedPerson(Person Person, string Tag);
+
+    internal sealed record PersonDto
+    {
+        public string Label { get; init; } = string.Empty;
+
+        public string City { get; init; } = string.Empty;
+    }
 }

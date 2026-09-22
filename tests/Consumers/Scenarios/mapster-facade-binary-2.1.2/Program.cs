@@ -1,4 +1,5 @@
 using Mapster;
+using SmartPipe.ConsumerScenarios;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Transforms;
 
@@ -24,14 +25,17 @@ if (!defaultResult.IsSuccess || defaultResult.Value?.Name != "Grace")
 Console.WriteLine("CONSUMER_OK mapster-facade-binary-2.1.2");
 return 0;
 
-internal sealed class Person
+namespace SmartPipe.ConsumerScenarios
 {
-    public string Name { get; set; } = string.Empty;
-}
+    internal sealed class Person
+    {
+        public string Name { get; set; } = string.Empty;
+    }
 
-internal sealed class PersonDto
-{
-    public string Name { get; set; } = string.Empty;
+    internal sealed class PersonDto
+    {
+        public string Name { get; set; } = string.Empty;
 
-    public string Label { get; set; } = string.Empty;
+        public string Label { get; set; } = string.Empty;
+    }
 }
