@@ -11,7 +11,7 @@ Mapster object-mapping transforms for `SmartPipe.Core` with composition-time con
 - `MapsterPipelineDefinitionBuilderExtensions.MapWithMapster<TPipelineInput,TCurrent,TOutput>` — attaches
   the same stage after an existing stage while preserving the original pipeline input type.
 
-The package depends on `Mapster` only. It never references `SmartPipe.Extensions`, dependency injection,
+The package depends only on `SmartPipe.Core` and `Mapster`. It never references `SmartPipe.Extensions`, dependency injection,
 Entity Framework Core, Dapper, HTTP, Polly, `Mapster.DependencyInjection`, `Mapster.EFCore`,
 `Mapster.Async`, `Mapster.Tool`, or `FastExpressionCompiler`. The composition entry points above take a
 configuration callback: there is no overload accepting a caller-owned mutable `TypeAdapterConfig` and no
@@ -53,6 +53,9 @@ NativeAOT therefore use a hand-written or source-generated mapper through Core's
 route under `TrimMode=link`.
 
 ## Usage
+
+In the example below, `sourceComponent` is an existing `PipelineComponent<IPipelineSource<Order>>`
+supplied by the application.
 
 ```csharp
 var definition = PipelineDefinitionBuilder
