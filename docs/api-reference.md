@@ -90,6 +90,12 @@ Important selector and streaming contracts:
   entities. New code uses `EfCorePipelineComponents.QuerySource`/`CompiledQuerySource` or the typed
   `FromQuery`/`FromCompiledQuery` builders, which own exactly one context per run and select the
   tracking mode through `EfCoreQueryOptions.TrackingMode`.
+- `MapsterTransform<TInput,TOutput>` (forwarded from `SmartPipe.Extensions.Mapster`) keeps its shipped
+  behaviour: it adapts with the supplied `TypeAdapterConfig` and converts mapping failures into a
+  `Permanent` stage failure. New code uses `MapsterPipelineComponents.Transform<TInput,TOutput>` or the
+  `MapWithMapster` builder extensions from `SmartPipe.Extensions.Mapster`, where a callback configures a
+  fresh working configuration that is cloned once and compiled once at composition, and where mapping
+  exceptions reach Core unchanged.
 - `DapperSelector<T>` uses asynchronous `DbConnection` open/read operations and
   leaves externally supplied connections open by default. Use the explicit
   ownership overload with `leaveOpen: false` when the selector should dispose

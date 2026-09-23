@@ -378,13 +378,13 @@
     {
       "typePattern": "SmartPipe.Extensions.Transforms.MapsterTransform*",
       "baselineAssembly": "SmartPipe.Extensions",
-      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Mapster",
       "targetImplementationAssembly": "SmartPipe.Extensions.Mapster",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "type-forward",
       "migrationEpic": "SP220-12",
       "namespacePreserved": true,
-      "evidence": "SP220 Mapster extraction"
+      "evidence": "facade ExportedType forwarder and Mapster leaf implementation"
     },
     {
       "typePattern": "SmartPipe.Extensions.Transforms.PollyResilienceTransform*",

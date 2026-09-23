@@ -273,9 +273,10 @@ default, and enforce configurable depth and framed-record limits.
 JSON file, transform, and JSON dead-letter integrations live in
 `SmartPipe.Extensions.Json`; the CSV and Dapper leaves own their file and
 explicit-SQL integrations, and the Channels, Transforms, DataAnnotations, and
-Logging leaves are reachable through the bundle. HTTP, Mapster, and Polly
-still live in `SmartPipe.Extensions` until their own leaf packages land; the Entity Framework Core
-leaf is active and its legacy identity is forwarded from the bundle.
+Logging leaves are reachable through the bundle. The Entity Framework Core and
+Mapster leaves are active and their legacy identities are forwarded from the
+bundle; HTTP and Polly still live in `SmartPipe.Extensions` until their own leaf
+packages land.
 Some non-JSON integrations may not be AOT-friendly.
 
 ## Extensions Package Surface

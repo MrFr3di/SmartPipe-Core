@@ -179,11 +179,11 @@ SmartPipe.Extensions.Transforms.FilterTransform<T>.Not() -> SmartPipe.Extensions
 SmartPipe.Extensions.Transforms.FilterTransform<T>.Or(SmartPipe.Extensions.Transforms.FilterTransform<T>! other) -> SmartPipe.Extensions.Transforms.FilterTransform<T>! (forwarded, contained in SmartPipe.Extensions.Transforms)
 SmartPipe.Extensions.Transforms.FilterTransform<T>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<T>> (forwarded, contained in SmartPipe.Extensions.Transforms)
 SmartPipe.Extensions.Transforms.FilterValidationExtensions (forwarded, contained in SmartPipe.Extensions.DataAnnotations)
-SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>
-SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.MapsterTransform(Mapster.TypeAdapterConfig? config = null) -> void
-SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<TInput>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<TOutput>>
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput> (forwarded, contained in SmartPipe.Extensions.Mapster)
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.DisposeAsync() -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Mapster)
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Mapster)
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.MapsterTransform(Mapster.TypeAdapterConfig? config = null) -> void (forwarded, contained in SmartPipe.Extensions.Mapster)
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<TInput>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<TOutput>> (forwarded, contained in SmartPipe.Extensions.Mapster)
 SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>
 SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
 SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask

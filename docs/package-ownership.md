@@ -15,6 +15,7 @@ The machine-readable authority is `eng/package-ownership.json`.
 | CSV file source, sink, transform, and strict definitions | `SmartPipe.Extensions.Csv` | `SmartPipe.Extensions` | legacy type forwarding plus new strict 2.2 API |
 | Dapper selector and DB sink plus explicit-SQL definitions | `SmartPipe.Extensions.Dapper` | `SmartPipe.Extensions` | legacy type forwarding plus new explicit-SQL 2.2 API |
 | Entity Framework Core query sources | `SmartPipe.Extensions.EntityFrameworkCore` | `SmartPipe.Extensions` | legacy type forwarding plus new provider-neutral 2.2 query sources |
+| Mapster composition transform | `SmartPipe.Extensions.Mapster` | `SmartPipe.Extensions` | legacy type forwarding plus new composition-time isolation API |
 
 The HealthChecks leaf depends only on Core, DependencyInjection, DI abstractions, Diagnostics.HealthChecks, and Options. It does not depend on Hosting, ASP.NET Core, or the broad facade.
 
@@ -36,3 +37,8 @@ no dependency on the facade, DI, Hosting, JSON, CSV, or HTTP packages.
 Logging.Abstractions. The broad facade keeps its direct Entity Framework Core dependency while the
 `EfCoreSelector<T>` forwarder exists. The leaf has no dependency on the facade, DI, Hosting, JSON,
 CSV, Dapper, or HTTP packages, and no dependency on any Entity Framework Core provider.
+
+`SmartPipe.Extensions.Mapster` depends only on Core and `Mapster`. The broad facade keeps its direct
+Mapster dependency while the `MapsterTransform<TInput,TOutput>` forwarder exists, and the Mapster leaf has
+no dependency on the facade, DI, Hosting, JSON, CSV, Dapper, Entity Framework Core, or HTTP packages. It
+takes no logging dependency: composition and mapping are silent, and Core owns result classification.

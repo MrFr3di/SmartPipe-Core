@@ -181,6 +181,9 @@ jobs:
     - name: EntityFrameworkCore Extensions tests
       run: dotnet test --project tests/SmartPipe.Extensions.EntityFrameworkCore.Tests/SmartPipe.Extensions.EntityFrameworkCore.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
 
+    - name: Mapster Extensions tests
+      run: dotnet test --project tests/SmartPipe.Extensions.Mapster.Tests/SmartPipe.Extensions.Mapster.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
     - name: SP220-07 leaf tests
       shell: pwsh
       run: |

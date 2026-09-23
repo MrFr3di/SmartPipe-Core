@@ -9,12 +9,12 @@ namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 public sealed class ConsumerScenarioSchemaTests
 {
     [Fact]
-    public async Task CurrentManifest_HasExactlyFiftyStrictScenarios()
+    public async Task CurrentManifest_HasExactlyFiftyThreeStrictScenarios()
     {
         var root = RepositoryRoot();
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var document = await new ConsumerScenarioLoader().LoadAsync(root, "eng/consumer-scenarios.json", graph, TestContext.Current.CancellationToken);
-        Assert.Equal(50, document.Scenarios.Count);
+        Assert.Equal(53, document.Scenarios.Count);
         Assert.Equal(
             [
                 "csv-direct",
@@ -67,6 +67,9 @@ public sealed class ConsumerScenarioSchemaTests
                 "entity-framework-core-facade-source",
                 "entity-framework-core-facade-binary-2.1.2",
                 "entity-framework-core-trim-diagnostic",
+                "mapster-direct",
+                "mapster-facade-binary-2.1.2",
+                "mapster-trim-diagnostic",
             ],
             document.Scenarios.Select(x => x.Id));
         Assert.All(

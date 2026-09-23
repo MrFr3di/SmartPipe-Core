@@ -137,7 +137,8 @@ is planned for removal in SmartPipe 3.0.
   - `HttpSelector` / `HttpSink` → Polly (via Microsoft.Extensions.Resilience)
   - `EfCoreSelector` → Entity Framework Core (forwarded; the leaf owns the implementation)
   - `DapperSelector` / `DbSink` → Dapper
-  - `MapsterTransform` → Mapster
+  - `MapsterTransform` → Mapster (forwarded; the `SmartPipe.Extensions.Mapster` leaf owns the
+    implementation and the new composition API)
   - `CsvFileSource` / `CsvFileSink` / `CsvTransform` → CsvHelper
   - `PollyResilienceTransform` → Polly.Core
   - `SmartPipeHostedService` / `SmartPipeHealthCheck` → Microsoft.Extensions.Hosting / HealthChecks
@@ -149,6 +150,8 @@ is planned for removal in SmartPipe 3.0.
 expression compilation. It is supported for normal runtime consumers, but is not
 trim- or NativeAOT-safe. For trimmed or NativeAOT applications, prefer a
 hand-written mapper, a source-generated mapper, or `PipelineTransformer.FromFunc`.
+The type is forwarded from `SmartPipe.Extensions.Mapster`, which also exposes
+`MapsterPipelineComponents.Transform<TIn,TOut>` and the `MapWithMapster` builder extensions for new code.
 
 
 ## License

@@ -52,8 +52,8 @@
       },
       "Mapster.Core": {
         "type": "Transitive",
-        "resolved": "10.0.10",
-        "contentHash": "EsBABlsVcE/25SJQx4pi+6LB6jwih3mTpedWD9X8aybvunpDIRS5tQErdJLY7tfpDTA2xTmnCre/qwcAxNcbmw=="
+        "resolved": "10.0.12",
+        "contentHash": "iLPB0xAzxMWKhbBjWb4ZdQMV/TNEuZafDOoONhtDjBD4bEmf6BwcZt2v0MHhS7xbjwi1JUR266XMarfEs9BUIw=="
       },
       "Microsoft.ApplicationInsights": {
         "type": "Transitive",
@@ -369,7 +369,7 @@
         "dependencies": {
           "CsvHelper": "[33.1.0, )",
           "Dapper": "[2.1.86, )",
-          "Mapster": "[10.0.10, )",
+          "Mapster": "[10.0.12, )",
           "Microsoft.EntityFrameworkCore": "[10.0.11, )",
           "Microsoft.Extensions.Diagnostics.HealthChecks": "[10.0.11, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.11, )",
@@ -387,6 +387,7 @@
           "SmartPipe.Extensions.Hosting": "[2.2.0, )",
           "SmartPipe.Extensions.Json": "[2.2.0, )",
           "SmartPipe.Extensions.Logging": "[2.2.0, )",
+          "SmartPipe.Extensions.Mapster": "[2.2.0, )",
           "SmartPipe.Extensions.Transforms": "[2.2.0, )"
         }
       },
@@ -458,6 +459,13 @@
           "SmartPipe.Core": "[2.2.0, )"
         }
       },
+      "smartpipe.extensions.mapster": {
+        "type": "Project",
+        "dependencies": {
+          "Mapster": "[10.0.12, )",
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
       "smartpipe.extensions.transforms": {
         "type": "Project",
         "dependencies": {
@@ -472,11 +480,11 @@
       },
       "Mapster": {
         "type": "CentralTransitive",
-        "requested": "[10.0.10, )",
-        "resolved": "10.0.10",
-        "contentHash": "kAMFaMKi13GxNXmpd9JiTYXjZD5B1+UN5eCke3E4hrCZLwNPyMCOF7CGyZvuiEJHfq2/ZWsXnqUR9PIZ1viB1A==",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "ap0sVf4YxqYVSj2wafyrknuj2hWkWhpSm+SXTvrOQlc2vLG7u51dJ8GazaSHLLG6saHN5uPCBeP+YIqXS0a1vg==",
         "dependencies": {
-          "Mapster.Core": "10.0.10"
+          "Mapster.Core": "10.0.12"
         }
       },
       "Microsoft.EntityFrameworkCore": {
