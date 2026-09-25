@@ -48,3 +48,8 @@ AGENTS.md
 .opencode
 opencode.jsonc
 .codex
+
+# Local workflow handoff documents
+/agent_docs/project_progress.md
+/agent_docs/project_diary.md
+/agent_docs/latest_session_work.md
