@@ -7,7 +7,6 @@ Ready-to-use integrations for SmartPipe.Core: file, HTTP, database, mapping, val
 
 | Selector | Library | Description |
 |----------|---------|-------------|
-| `HttpSelector<T>` | HttpClient + Polly | Fetch data from REST APIs |
 | `EfCoreSelector<T>` | Entity Framework Core (forwarded to `SmartPipe.Extensions.EntityFrameworkCore`) | Stream entities from database |
 | `DapperSelector<T>` | Dapper | High-performance SQL queries |
 | `CsvFileSource<T>` | CsvHelper | Read CSV files |
@@ -45,30 +44,25 @@ connection.
 |------|---------|-------------|
 | `LoggerSink<T>` | ILogger | Structured logging |
 | `DeadLetterSink<T>` | SmartPipe.Extensions.Json / System.Text.Json | Persist failed items to JSON |
-| `HttpSink<T>` | HttpClient + Polly | Send data to REST APIs |
 | `DbSink<T>` | Dapper | Insert into any database |
 | `CsvFileSink<T>` | CsvHelper | Write CSV files |
 | `JsonFileSink<T>` | SmartPipe.Extensions.Json / System.Text.Json | Write JSON files |
 
 ## HTTP Integrations
 
-Use `HttpClientFactorySelector<T>` and `HttpClientFactorySink<T>` in DI-based
-applications so clients come from `IHttpClientFactory` named or default client
-configuration. Low-level `HttpSelector<T>` and `HttpSink<T>` remain available
-for callers that already own an `HttpClient`.
+`HttpSelector<T>`, `HttpClientFactorySelector<T>`, `HttpSink<T>`,
+`HttpClientFactorySink<T>`, and `HttpSelectorStreamingMode` were removed in 2.2.0 by
+[ADR-0004](../../docs/adr/0004-smartpipe-2.2-breaking-migration.md), with no
+wrappers or type forwarders. This bundle references
+`SmartPipe.Extensions.Http` (streaming transport) and
+`SmartPipe.Extensions.Http.Json` (bounded source-generated JSON codecs); use
+`HttpPipelineComponents`, `FromHttp`/`ToHttp`, and the HTTP JSON readers and
+request content from those packages, then recompile.
 
-HTTP JSON components accept source-generated `JsonTypeInfo<T>` /
-`JsonTypeInfo<List<T>>` overloads for NativeAOT and trimming-sensitive apps.
-`HttpSelector<T>` can read either buffered JSON arrays or streaming responses
-using `HttpSelectorStreamingMode.JsonArray` and
-`HttpSelectorStreamingMode.Ndjson`; the factory-backed selector exposes the
-same streaming modes.
-`HttpSink<T>` can send the envelope `TraceId` as an `Idempotency-Key` header for
-idempotent endpoints.
-
-Avoid configuring retry in both SmartPipe stage policies and HTTP/Polly client
-pipelines for the same operation unless that layered retry budget is
-intentional.
+The HTTP adapters never retry. Avoid configuring retry in several of the
+following for the same operation unless that layered retry budget is
+intentional: SmartPipe stage policies, `HttpClient` handlers, and the
+SP220-14 Polly decorator.
 
 ## Health Checks
 

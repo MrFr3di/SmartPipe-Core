@@ -275,8 +275,10 @@ JSON file, transform, and JSON dead-letter integrations live in
 explicit-SQL integrations, and the Channels, Transforms, DataAnnotations, and
 Logging leaves are reachable through the bundle. The Entity Framework Core and
 Mapster leaves are active and their legacy identities are forwarded from the
-bundle; HTTP and Polly still live in `SmartPipe.Extensions` until their own leaf
-packages land.
+bundle. HTTP lives in the `SmartPipe.Extensions.Http` transport and
+`SmartPipe.Extensions.Http.Json` codec leaves; the 2.1.2 HTTP selector and sink
+types were removed by ADR-0004 and consumers recompile against those leaves.
+Polly still lives in `SmartPipe.Extensions` until its own leaf package lands.
 Some non-JSON integrations may not be AOT-friendly.
 
 ## Extensions Package Surface

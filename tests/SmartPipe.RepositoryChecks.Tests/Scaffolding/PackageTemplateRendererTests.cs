@@ -13,7 +13,6 @@ public sealed class PackageTemplateRendererTests
     [Theory]
     [InlineData("SmartPipe.Extensions.Channels", "CoreLeaf", "1bc7c64f427265aa7849c734b3a8f9eceba03b6adb6d37d7e12cad08d0ad8a69")]
     [InlineData("SmartPipe.Extensions.Polly", "FrameworkIntegration", "3bd047882ae2594673838fd2f67ebf295d5fe9cbb145d79b2eb8709a69a1db7f")]
-    [InlineData("SmartPipe.Extensions.Http.Json", "ComposedIntegration", "4b28a61c212a2815d0b7830c846ba1b5e14daad2ffe1678ac528c482fae758d0")]
     [InlineData("SmartPipe.Testing", "Testing", "7312db365c704bd43f5d0f2f8a364a5ca067a055a143be9ce1743f26283289e3")]
     public async Task Render_AllKindsAreDeterministicLfOnlySnapshots(string id, string kind, string expectedSnapshot)
     {

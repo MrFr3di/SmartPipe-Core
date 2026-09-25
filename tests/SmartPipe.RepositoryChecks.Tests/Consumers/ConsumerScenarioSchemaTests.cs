@@ -1,3 +1,4 @@
+using System.Text.Json;
 using SmartPipe.RepositoryChecks.Consumers;
 using SmartPipe.RepositoryChecks.PackageGraph;
 using SmartPipe.RepositoryChecks.Tests.Repository;
@@ -9,14 +10,75 @@ namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 public sealed class ConsumerScenarioSchemaTests
 {
     [Fact]
-    public async Task CurrentManifest_HasExactlyFiftyThreeStrictScenarios()
+    public async Task Loader_AcceptsManifestWithMoreThanFiftyThreeScenarios()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        var ids = Enumerable.Range(0, 54).Select(index => $"scenario-{index:D2}").ToArray();
+        fixture.Write("eng/consumer-scenarios.json", ManifestJson(ids));
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+
+        var document = await new ConsumerScenarioLoader().LoadAsync(
+            fixture.Path,
+            "eng/consumer-scenarios.json",
+            FixtureGraphWithScenarios(graph, ids),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ids, document.Scenarios.Select(scenario => scenario.Id));
+        using var schema = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "eng/consumer-scenarios.schema.json")));
+        var scenariosSchema = schema.RootElement.GetProperty("properties").GetProperty("scenarios");
+        Assert.True(
+            !scenariosSchema.TryGetProperty("maxItems", out var maximum) || maximum.GetInt32() >= ids.Length,
+            "The consumer scenario schema must allow at least 54 scenarios.");
+    }
+
+    [Fact]
+    public async Task Loader_RejectsDuplicateIdsInExpandedManifest()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        var ids = Enumerable.Range(0, 54).Select(index => $"scenario-{index:D2}").ToArray();
+        ids[^1] = ids[0];
+        fixture.Write("eng/consumer-scenarios.json", ManifestJson(ids));
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() => new ConsumerScenarioLoader().LoadAsync(
+            fixture.Path,
+            "eng/consumer-scenarios.json",
+            FixtureGraphWithScenarios(graph, ids.Distinct(StringComparer.Ordinal).ToArray()),
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal("SPCONS003", error.Code);
+    }
+
+    [Fact]
+    public async Task Loader_RejectsExpandedManifestWithMissingGraphMembership()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        var ids = Enumerable.Range(0, 54).Select(index => $"scenario-{index:D2}").ToArray();
+        fixture.Write("eng/consumer-scenarios.json", ManifestJson(ids));
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() => new ConsumerScenarioLoader().LoadAsync(
+            fixture.Path,
+            "eng/consumer-scenarios.json",
+            FixtureGraphWithScenarios(graph, ids[..^1]),
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal("SPCONS009", error.Code);
+        Assert.Contains(ids[^1], error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CurrentManifest_HasExpectedStrictScenarios()
     {
         var root = RepositoryRoot();
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var document = await new ConsumerScenarioLoader().LoadAsync(root, "eng/consumer-scenarios.json", graph, TestContext.Current.CancellationToken);
-        Assert.Equal(53, document.Scenarios.Count);
-        Assert.Equal(
-            [
+        var expectedIds = new HashSet<string>(StringComparer.Ordinal)
+        {
                 "csv-direct",
                 "csv-di-composition",
                 "csv-facade-source",
@@ -70,8 +132,16 @@ public sealed class ConsumerScenarioSchemaTests
                 "mapster-direct",
                 "mapster-facade-binary-2.1.2",
                 "mapster-trim-diagnostic",
-            ],
-            document.Scenarios.Select(x => x.Id));
+                "http-direct",
+                "http-trim",
+                "http-nativeaot",
+                "http-json-direct",
+                "http-json-trim",
+                "http-json-nativeaot",
+        };
+        var actualIds = document.Scenarios.Select(scenario => scenario.Id).ToArray();
+        Assert.Equal(actualIds.Length, actualIds.Distinct(StringComparer.Ordinal).Count());
+        Assert.Subset(expectedIds, actualIds.ToHashSet(StringComparer.Ordinal));
         Assert.All(
             document.Scenarios.Where(scenario => scenario.Id.StartsWith("hosting-", StringComparison.Ordinal)),
             scenario => Assert.Equal("hosting", scenario.Category));
@@ -254,7 +324,16 @@ public sealed class ConsumerScenarioSchemaTests
         }).ToArray(),
     };
 
+    private static PackageGraphDocument FixtureGraphWithScenarios(PackageGraphDocument graph, IReadOnlyList<string> ids) => graph with
+    {
+        Packages = graph.Packages.Select(package => package with
+        {
+            ConsumerScenarios = package.Id == "SmartPipe.Core" ? ids : [],
+        }).ToArray(),
+    };
+
     private static string ValidJson() => "{\n  \"schemaVersion\": 1,\n  \"requiredAtRelease\": [],\n  \"scenarios\": [\n" + Scenario("fixture") + "\n  ]\n}\n";
+    private static string ManifestJson(IEnumerable<string> ids) => "{\n  \"schemaVersion\": 1,\n  \"requiredAtRelease\": [],\n  \"scenarios\": [\n" + string.Join(",\n", ids.Select(Scenario)) + "\n  ]\n}\n";
     private static string Scenario(string id) => $$"""
         {
           "id": "{{id}}",

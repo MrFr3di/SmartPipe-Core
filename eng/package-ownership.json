@@ -79,17 +79,6 @@
       "evidence": "2.1.2 Json assembly implementation"
     },
     {
-      "typePattern": "SmartPipe.Extensions.JsonFile*",
-      "baselineAssembly": "SmartPipe.Extensions.Json",
-      "currentImplementationAssembly": "SmartPipe.Extensions.Json",
-      "targetImplementationAssembly": "SmartPipe.Extensions.Json",
-      "compatibilityAssembly": null,
-      "strategy": "stay",
-      "migrationEpic": "existing",
-      "namespacePreserved": true,
-      "evidence": "2.1.2 Json assembly implementation"
-    },
-    {
       "typePattern": "SmartPipe.Extensions.Json.JsonPipeline*",
       "baselineAssembly": "SmartPipe.Extensions.Json",
       "currentImplementationAssembly": "SmartPipe.Extensions.Json",
@@ -99,6 +88,17 @@
       "migrationEpic": "SP220-08",
       "namespacePreserved": true,
       "evidence": "Canonical source-generated JSON definition adapters introduced by SP220-08"
+    },
+    {
+      "typePattern": "SmartPipe.Extensions.JsonFile*",
+      "baselineAssembly": "SmartPipe.Extensions.Json",
+      "currentImplementationAssembly": "SmartPipe.Extensions.Json",
+      "targetImplementationAssembly": "SmartPipe.Extensions.Json",
+      "compatibilityAssembly": null,
+      "strategy": "stay",
+      "migrationEpic": "existing",
+      "namespacePreserved": true,
+      "evidence": "2.1.2 Json assembly implementation"
     },
     {
       "typePattern": "SmartPipe.Extensions.Selectors.CsvFileSource*",
@@ -145,15 +145,37 @@
       "evidence": "SP220 EF extraction"
     },
     {
-      "typePattern": "SmartPipe.Extensions.Selectors.Http*",
+      "typePattern": "SmartPipe.Extensions.Selectors.HttpClientFactorySelector\u00601",
       "baselineAssembly": "SmartPipe.Extensions",
       "currentImplementationAssembly": "SmartPipe.Extensions",
       "targetImplementationAssembly": "SmartPipe.Extensions",
-      "compatibilityAssembly": "SmartPipe.Extensions",
-      "strategy": "obsolete-wrapper",
+      "compatibilityAssembly": null,
+      "strategy": "removed",
       "migrationEpic": "SP220-13",
       "namespacePreserved": true,
-      "evidence": "legacy HTTP signatures expose JSON/Polly and remain wrappers"
+      "evidence": "ADR-0004 removal without wrapper or forwarder; replacement SmartPipe.Extensions.Http.HttpPipelineComponents.Source/FromHttp with SmartPipe.Extensions.Http.Json.HttpJsonResponseReaders"
+    },
+    {
+      "typePattern": "SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode",
+      "baselineAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "targetImplementationAssembly": "SmartPipe.Extensions",
+      "compatibilityAssembly": null,
+      "strategy": "removed",
+      "migrationEpic": "SP220-13",
+      "namespacePreserved": true,
+      "evidence": "ADR-0004 removal without wrapper or forwarder; replacement SmartPipe.Extensions.Http.Json.HttpJsonResponseReaders.JsonArray/Ndjson"
+    },
+    {
+      "typePattern": "SmartPipe.Extensions.Selectors.HttpSelector\u00601",
+      "baselineAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "targetImplementationAssembly": "SmartPipe.Extensions",
+      "compatibilityAssembly": null,
+      "strategy": "removed",
+      "migrationEpic": "SP220-13",
+      "namespacePreserved": true,
+      "evidence": "ADR-0004 removal without wrapper or forwarder; replacement SmartPipe.Extensions.Http.HttpPipelineComponents.Source/FromHttp with SmartPipe.Extensions.Http.Json.HttpJsonResponseReaders"
     },
     {
       "typePattern": "SmartPipe.Extensions.Selectors.JsonFileSource*",
@@ -200,15 +222,26 @@
       "evidence": "facade ExportedType forwarder and Json implementation"
     },
     {
-      "typePattern": "SmartPipe.Extensions.Sinks.Http*",
+      "typePattern": "SmartPipe.Extensions.Sinks.HttpClientFactorySink\u00601",
       "baselineAssembly": "SmartPipe.Extensions",
       "currentImplementationAssembly": "SmartPipe.Extensions",
       "targetImplementationAssembly": "SmartPipe.Extensions",
-      "compatibilityAssembly": "SmartPipe.Extensions",
-      "strategy": "obsolete-wrapper",
+      "compatibilityAssembly": null,
+      "strategy": "removed",
       "migrationEpic": "SP220-13",
       "namespacePreserved": true,
-      "evidence": "legacy HTTP signatures expose JSON/Polly and remain wrappers"
+      "evidence": "ADR-0004 removal without wrapper or forwarder; replacement SmartPipe.Extensions.Http.HttpPipelineComponents.Sink/ToHttp with SmartPipe.Extensions.Http.Json.HttpJsonRequestContent"
+    },
+    {
+      "typePattern": "SmartPipe.Extensions.Sinks.HttpSink\u00601",
+      "baselineAssembly": "SmartPipe.Extensions",
+      "currentImplementationAssembly": "SmartPipe.Extensions",
+      "targetImplementationAssembly": "SmartPipe.Extensions",
+      "compatibilityAssembly": null,
+      "strategy": "removed",
+      "migrationEpic": "SP220-13",
+      "namespacePreserved": true,
+      "evidence": "ADR-0004 removal without wrapper or forwarder; replacement SmartPipe.Extensions.Http.HttpPipelineComponents.Sink/ToHttp with SmartPipe.Extensions.Http.Json.HttpJsonRequestContent"
     },
     {
       "typePattern": "SmartPipe.Extensions.Sinks.JsonFileSink*",

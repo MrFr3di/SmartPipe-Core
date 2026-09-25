@@ -20,6 +20,14 @@ hand-written or source-generated mapper passed to `PipelineTransformer.FromFunc`
 `mapster-trim-diagnostic` consumer publishes and runs that route under `TrimMode=link`. The forwarded
 legacy `MapsterTransform<TInput,TOutput>` keeps its shipped annotations.
 
+`SmartPipe.Extensions.Http` declares the `transport-full` contract: the transport is trimming- and
+NativeAOT-compatible, proven by the `http-trim` and `http-nativeaot` consumers that publish and run a
+direct-client source and a factory-client sink. Application request factories, response readers, and
+handlers stay outside the claim. `SmartPipe.Extensions.Http.Json` declares `full-json-type-info`: its
+array and NDJSON readers and JSON request content accept only source-generated `JsonTypeInfo<T>`, and the
+`http-json-trim` and `http-json-nativeaot` consumers publish and run that path with reflection
+serialization disabled.
+
 Use source-generated JSON metadata as the primary path for JSON file and
 dead-letter helpers:
 

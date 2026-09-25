@@ -79,7 +79,13 @@
         "entity-framework-core-trim-diagnostic",
         "mapster-direct",
         "mapster-facade-binary-2.1.2",
-        "mapster-trim-diagnostic"
+        "mapster-trim-diagnostic",
+        "http-direct",
+        "http-trim",
+        "http-nativeaot",
+        "http-json-direct",
+        "http-json-trim",
+        "http-json-nativeaot"
       ]
     },
     {
@@ -438,9 +444,9 @@
     {
       "id": "SmartPipe.Extensions.Http",
       "projectPath": "src/SmartPipe.Extensions.Http/SmartPipe.Extensions.Http.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-13",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 11,
       "baselineVersion": null,
       "aotContract": "transport-full",
@@ -450,7 +456,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Http"
+          "Microsoft.Extensions.Http",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions",
@@ -463,7 +470,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Http"
+          "Microsoft.Extensions.Http",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions",
@@ -472,7 +480,12 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "http-direct"
+        "http-direct",
+        "http-trim",
+        "http-nativeaot",
+        "http-json-direct",
+        "http-json-trim",
+        "http-json-nativeaot"
       ]
     },
     {
@@ -512,9 +525,9 @@
     {
       "id": "SmartPipe.Extensions.Http.Json",
       "projectPath": "src/SmartPipe.Extensions.Http.Json/SmartPipe.Extensions.Http.Json.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-13",
-      "scaffoldKind": "composed-integration",
+      "scaffoldKind": null,
       "publishOrder": 13,
       "baselineVersion": null,
       "aotContract": "full-json-type-info",
@@ -544,7 +557,9 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "http-json-direct"
+        "http-json-direct",
+        "http-json-trim",
+        "http-json-nativeaot"
       ]
     },
     {
@@ -801,7 +816,9 @@
           "SmartPipe.Extensions.Csv",
           "SmartPipe.Extensions.Dapper",
           "SmartPipe.Extensions.EntityFrameworkCore",
-          "SmartPipe.Extensions.Mapster"
+          "SmartPipe.Extensions.Mapster",
+          "SmartPipe.Extensions.Http",
+          "SmartPipe.Extensions.Http.Json"
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
@@ -850,18 +867,11 @@
       },
       "temporaryAllowances": [
         {
-          "dependency": "Microsoft.Extensions.Http",
-          "reason": "Legacy HTTP implementation remains embedded",
-          "ownerEpic": "SP220-13",
-          "expiresBeforeRelease": false,
-          "evidence": "legacy HTTP public surface"
-        },
-        {
           "dependency": "Microsoft.Extensions.Resilience",
           "reason": "Legacy resilience signatures remain embedded",
-          "ownerEpic": "SP220-13/SP220-14",
+          "ownerEpic": "SP220-14",
           "expiresBeforeRelease": false,
-          "evidence": "legacy HTTP and Polly public surface"
+          "evidence": "legacy PollyResilienceTransform public surface"
         },
         {
           "dependency": "Microsoft.Extensions.Logging.Abstractions",

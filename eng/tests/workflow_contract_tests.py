@@ -94,6 +94,14 @@ MAPSTER_TEST_PROJECT = (
     "tests/SmartPipe.Extensions.Mapster.Tests/"
     "SmartPipe.Extensions.Mapster.Tests.csproj"
 )
+HTTP_TEST_PROJECT = (
+    "tests/SmartPipe.Extensions.Http.Tests/"
+    "SmartPipe.Extensions.Http.Tests.csproj"
+)
+HTTP_JSON_TEST_PROJECT = (
+    "tests/SmartPipe.Extensions.Http.Json.Tests/"
+    "SmartPipe.Extensions.Http.Json.Tests.csproj"
+)
 LYCHEE_URL = (
     "https://github.com/lycheeverse/lychee/releases/download/"
     "lychee-v0.21.0/lychee-x86_64-windows.exe"
@@ -654,8 +662,9 @@ def assert_consumer_schema_contract(schema: dict | None = None) -> None:
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
     properties = schema.get("properties", {})
     scenarios = properties.get("scenarios", {})
-    require(scenarios.get("minItems") == 53 and scenarios.get("maxItems") == 53,
-            "Consumer scenario schema must require exactly fifty-three scenarios.")
+    maximum = scenarios.get("maxItems")
+    require(maximum is None or maximum >= 54,
+            "Consumer scenario schema must allow at least fifty-four scenarios.")
     required_pattern = properties.get("requiredAtRelease", {}).get("items", {}).get("pattern")
     require(required_pattern == SCENARIO_ID_PATTERN,
             "Consumer scenario schema must use the safe dotted ID grammar.")
@@ -682,6 +691,8 @@ def assert_consumer_contract(document: dict | None = None) -> None:
         "entity-framework-core-facade-source", "entity-framework-core-facade-binary-2.1.2",
         "entity-framework-core-trim-diagnostic",
         "mapster-direct", "mapster-facade-binary-2.1.2", "mapster-trim-diagnostic",
+        "http-direct", "http-trim", "http-nativeaot",
+        "http-json-direct", "http-json-trim", "http-json-nativeaot",
         "core-direct", "json-direct", "extensions-meta", "legacy-binary-2.1.2",
         "core-trim", "core-nativeaot", "json-nativeaot", "json-trim",
         "json-dependency-injection-direct",
@@ -698,23 +709,30 @@ def assert_consumer_contract(document: dict | None = None) -> None:
         "channels-direct", "transforms-direct", "logging-direct", "data-annotations-direct",
         "data-annotations-runtime",
     }
-    require(len(current) == 53 and {scenario["id"] for scenario in current} == expected,
-            "Current consumer set must contain the exact fifty-three scenarios.")
+    current_ids = [scenario["id"] for scenario in current]
+    require(len(current_ids) == len(set(current_ids)),
+            "Current consumer scenario IDs must be unique.")
+    current_id_set = set(current_ids)
+    require(expected <= current_id_set,
+            "Current consumer set must retain all established scenarios.")
     hosting = [scenario for scenario in current if scenario.get("category") == "hosting"]
-    require({scenario["id"] for scenario in hosting} == {
+    require({
         "hosting-direct", "hosting-facade-source", "hosting-facade-binary-2.1.2",
         "hosting-trim", "hosting-nativeaot",
-    }, "Hosting consumer category must contain the exact five Hosting scenarios.")
+    } <= {scenario["id"] for scenario in hosting},
+            "Hosting consumer category must retain its established scenarios.")
     health_checks = [scenario for scenario in current if scenario.get("category") == "health-checks"]
-    require({scenario["id"] for scenario in health_checks} == {
+    require({
         "health-checks-direct", "health-checks-aspnet", "health-checks-trim",
         "health-checks-nativeaot",
-    }, "HealthChecks consumer category must contain the exact four HealthChecks scenarios.")
+    } <= {scenario["id"] for scenario in health_checks},
+            "HealthChecks consumer category must retain its established scenarios.")
     opentelemetry = [scenario for scenario in current if scenario.get("category") == "opentelemetry"]
-    require({scenario["id"] for scenario in opentelemetry} == {
+    require({
         "opentelemetry-direct", "opentelemetry-otlp", "opentelemetry-facade",
         "opentelemetry-trim", "opentelemetry-nativeaot",
-    }, "OpenTelemetry consumer category must contain the exact five OpenTelemetry scenarios.")
+    } <= {scenario["id"] for scenario in opentelemetry},
+            "OpenTelemetry consumer category must retain its established scenarios.")
     meta = next(scenario for scenario in current if scenario["id"] == "extensions-meta")
     require(meta["packageIds"] == ["SmartPipe.Extensions"],
             "extensions-meta must directly reference only the facade package.")
@@ -806,6 +824,22 @@ def assert_csv_integration_contract(ci: dict, reusable: dict) -> None:
         f"dotnet test --project {MAPSTER_TEST_PROJECT} --configuration Release --no-build "
         "--minimum-expected-tests 1"
     ), "Reusable validation must run the complete Mapster test project with a non-empty gate.")
+    http_step = named_step(reusable_steps, "HTTP Extensions tests")
+    require(" ".join(str(http_step.get("run", "")).split()) == (
+        f"dotnet test --project {HTTP_TEST_PROJECT} --configuration Release --no-build "
+        "--minimum-expected-tests 1"
+    ), "Reusable validation must run the complete HTTP test project with a non-empty gate.")
+    http_json_step = named_step(reusable_steps, "HTTP JSON Extensions tests")
+    require(" ".join(str(http_json_step.get("run", "")).split()) == (
+        f"dotnet test --project {HTTP_JSON_TEST_PROJECT} --configuration Release --no-build "
+        "--minimum-expected-tests 1"
+    ), "Reusable validation must run the complete HTTP JSON test project with a non-empty gate.")
+    correctness = str(named_step(reusable_steps, "Extensions correctness regressions").get("run", ""))
+    require("HttpSelectorTests" not in correctness
+            and f"--project {HTTP_TEST_PROJECT} --no-build -c Release "
+            "--filter-class SmartPipe.Extensions.Http.Tests.HttpPipelineComponentsTests "
+            "--minimum-expected-tests 1" in correctness,
+            "Extensions correctness regressions must target the HTTP leaf tests, not removed legacy HTTP tests.")
 
 
 def validate(documents: dict[str, dict]) -> None:
@@ -1230,8 +1264,15 @@ def _remove_csv_scenario(document: dict) -> None:
     ]
 
 
-def _relax_schema_scenario_count(schema: dict) -> None:
-    schema["properties"]["scenarios"]["maxItems"] = 49
+def _reintroduce_schema_scenario_cap(schema: dict) -> None:
+    schema["properties"]["scenarios"]["maxItems"] = 53
+
+
+def _duplicate_current_scenario(document: dict) -> None:
+    duplicate = copy.deepcopy(next(
+        scenario for scenario in document["scenarios"] if scenario["id"] == "csv-direct"
+    ))
+    document["scenarios"].append(duplicate)
 
 
 def _relax_schema_scenario_id_pattern(schema: dict) -> None:
@@ -1717,11 +1758,16 @@ def main() -> int:
     manifest = json.loads((ROOT / "eng" / "consumer-scenarios.json").read_text(encoding="utf-8"))
     schema = json.loads((ROOT / "eng" / "consumer-scenarios.schema.json").read_text(encoding="utf-8"))
     assert_document_mutation_rejected(
-        manifest, _remove_csv_scenario, assert_consumer_contract, "exact fifty-three scenarios"
+        manifest, _remove_csv_scenario, assert_consumer_contract,
+        "retain all established scenarios",
     )
     assert_document_mutation_rejected(
-        schema, _relax_schema_scenario_count, assert_consumer_schema_contract,
-        "exactly fifty-three scenarios",
+        manifest, _duplicate_current_scenario, assert_consumer_contract,
+        "Current consumer scenario IDs must be unique",
+    )
+    assert_document_mutation_rejected(
+        schema, _reintroduce_schema_scenario_cap, assert_consumer_schema_contract,
+        "allow at least fifty-four scenarios",
     )
     assert_document_mutation_rejected(
         schema, _relax_schema_scenario_id_pattern, assert_consumer_schema_contract,

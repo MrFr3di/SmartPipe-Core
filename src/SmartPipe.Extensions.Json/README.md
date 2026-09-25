@@ -41,6 +41,13 @@ knows only about LF/CRLF boundaries, BOM bytes, and the configured record-size
 limit. JSON validation, path diagnostics, and invalid-record policy remain in
 this package; the framer is not a public API or a separate package.
 
+The framer, the internal source-generated metadata snapshot, and the
+unframed-input limit stream live under `src/Shared` as compile-linked internal
+source. `SmartPipe.Extensions.Http.Json` links the same files, so the HTTP
+NDJSON and array readers enforce the same framing and limits. The package gains
+no public helper and no friend-assembly coupling from this. Physical CSV/RFC
+framing stays separate.
+
 ## Trimming and NativeAOT
 
 Reflection-based constructors are annotated for trimming and NativeAOT risk.
