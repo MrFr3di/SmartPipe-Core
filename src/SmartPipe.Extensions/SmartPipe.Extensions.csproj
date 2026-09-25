@@ -38,7 +38,7 @@
 
   <ItemGroup>
     <PackageReference Include="CsvHelper" Version="33.1.0" />
-    <PackageReference Include="Dapper" Version="2.1.79" />
+    <PackageReference Include="Dapper" Version="2.1.89" />
     <PackageReference Include="Mapster" Version="10.0.10" />
     <PackageReference
       Include="Microsoft.CodeAnalysis.PublicApiAnalyzers"
