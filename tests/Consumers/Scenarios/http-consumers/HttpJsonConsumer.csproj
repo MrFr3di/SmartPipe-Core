@@ -6,10 +6,17 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="HttpJsonProgram.cs" />
+    <Compile Include="LoopbackHttpServer.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="SmartPipe.Core" />
     <PackageReference Include="SmartPipe.Extensions.Http" />
+    <PackageReference Include="SmartPipe.Extensions.Http.Json" />
   </ItemGroup>
 </Project>
