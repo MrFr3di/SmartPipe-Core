@@ -191,7 +191,7 @@ public class JsonFileSource<T> : IPipelineSource<T>
                 yield break;
             }
 
-            using var limitedStream = new JsonUnframedInputLimitStream(
+            using var limitedStream = JsonUnframedInputLimit.Create(
                 stream,
                 _options.MaxUnframedInputSizeBytes,
                 _path);
@@ -233,7 +233,7 @@ public class JsonFileSource<T> : IPipelineSource<T>
             yield break;
         }
 
-        using var limitedItemStream = new JsonUnframedInputLimitStream(stream, _options.MaxUnframedInputSizeBytes, _path);
+        using var limitedItemStream = JsonUnframedInputLimit.Create(stream, _options.MaxUnframedInputSizeBytes, _path);
         Stream itemStream = limitedItemStream;
         var itemIndex = 0L;
         await foreach (var item in _deserializeItems(itemStream, topLevelValues, ct).ConfigureAwait(false))

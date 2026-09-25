@@ -44,7 +44,7 @@ internal sealed class OwnershipLoader
             foreach (var id in new[] { item.BaselineAssembly, item.CurrentImplementationAssembly, item.TargetImplementationAssembly }.Append(item.CompatibilityAssembly).Where(x => x is not null))
                 if (!packages.ContainsKey(id!)) throw new OwnershipException("SPOWN014", $"Ownership assignment {item.TypePattern} references unknown package {id}.");
             if (item.TypePattern.StartsWith("SmartPipe.Core.", StringComparison.Ordinal) && item.TargetImplementationAssembly.StartsWith("SmartPipe.Extensions", StringComparison.Ordinal)) throw new OwnershipException("SPOWN015", "Core type cannot target Extensions.");
-            if ((item.TypePattern.StartsWith("SmartPipe.Extensions.Selectors.Http", StringComparison.Ordinal) || item.TypePattern.StartsWith("SmartPipe.Extensions.Sinks.Http", StringComparison.Ordinal)) && item.TargetImplementationAssembly != "SmartPipe.Extensions") throw new OwnershipException("SPOWN016", "Legacy HTTP APIs must remain facade wrappers.");
+            if ((item.TypePattern.StartsWith("SmartPipe.Extensions.Selectors.Http", StringComparison.Ordinal) || item.TypePattern.StartsWith("SmartPipe.Extensions.Sinks.Http", StringComparison.Ordinal)) && item.TargetImplementationAssembly != "SmartPipe.Extensions") throw new OwnershipException("SPOWN016", "Legacy HTTP identities must be recorded against the facade.");
             var target = packages[item.TargetImplementationAssembly];
             if (target.Lifecycle == PackageLifecycle.Planned && !item.MigrationEpic.Equals(target.ActivationEpic, StringComparison.Ordinal)) throw new OwnershipException("SPOWN017", $"Migration epic for {item.TypePattern} must match {target.ActivationEpic}.");
         }

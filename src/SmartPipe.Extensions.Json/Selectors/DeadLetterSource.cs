@@ -228,7 +228,7 @@ public class DeadLetterSource<T> : IPipelineSource<T>
         }
 
         var topLevelValues = legacyProbe.FirstSignificantByte != (byte)'[';
-        using var limitedLegacyStream = new JsonUnframedInputLimitStream(
+        using var limitedLegacyStream = JsonUnframedInputLimit.Create(
             legacyStream,
             _sourceOptions.MaxUnframedInputSizeBytes,
             _path);
@@ -249,12 +249,12 @@ public class DeadLetterSource<T> : IPipelineSource<T>
         [EnumeratorCancellation] CancellationToken ct)
     {
         var start = stream.Position;
-        using (var validationStream = new JsonUnframedInputLimitStream(
+        using (var validationStream = JsonUnframedInputLimit.Create(
             stream, _sourceOptions.MaxUnframedInputSizeBytes, _path))
             await JsonDocumentValidator.ValidateAsync(
                 validationStream, _sourceOptions.MaxDepth, _path, ct);
         stream.Position = start;
-        using var limitedStream = new JsonUnframedInputLimitStream(
+        using var limitedStream = JsonUnframedInputLimit.Create(
             stream,
             _sourceOptions.MaxUnframedInputSizeBytes,
             _path);

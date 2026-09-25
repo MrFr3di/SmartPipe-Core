@@ -31,32 +31,6 @@ SmartPipe.Extensions.Selectors.EfCoreSelector<T>.InitializeAsync(System.Threadin
 SmartPipe.Extensions.Selectors.EfCoreSelector<T>.ReadEnvelopesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingEnvelope<T!>!>! (forwarded, contained in SmartPipe.Extensions.EntityFrameworkCore)
 SmartPipe.Extensions.Selectors.EfCoreSelector<T>.WithQuery(System.Func<Microsoft.EntityFrameworkCore.DbSet<T!>!, System.Linq.IQueryable<T!>!>! configure) -> SmartPipe.Extensions.Selectors.EfCoreSelector<T!>! (forwarded, contained in SmartPipe.Extensions.EntityFrameworkCore)
 SmartPipe.Extensions.Selectors.EfCoreSelector<T>.WithTracking(bool enabled = true) -> SmartPipe.Extensions.Selectors.EfCoreSelector<T!>! (forwarded, contained in SmartPipe.Extensions.EntityFrameworkCore)
-SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>
-SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.HttpClientFactorySelector(System.Net.Http.IHttpClientFactory! httpClientFactory, string! requestUri, string! clientName, Polly.ResiliencePipeline? pipeline, System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Generic.List<T>!>? listTypeInfo, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.HttpSelector<T>!>? logger) -> void
-SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.HttpClientFactorySelector(System.Net.Http.IHttpClientFactory! httpClientFactory, string! requestUri, string! clientName, Polly.ResiliencePipeline? pipeline, System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Generic.List<T>!>? listTypeInfo) -> void
-SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.HttpClientFactorySelector(System.Net.Http.IHttpClientFactory! httpClientFactory, string! requestUri, string! clientName, Polly.ResiliencePipeline? pipeline) -> void
-SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.HttpClientFactorySelector(System.Net.Http.IHttpClientFactory! httpClientFactory, string! requestUri, string! clientName) -> void
-SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.HttpClientFactorySelector(System.Net.Http.IHttpClientFactory! httpClientFactory, string! requestUri, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! itemTypeInfo, SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode streamingMode, string! clientName, Polly.ResiliencePipeline? pipeline, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.HttpSelector<T>!>? logger) -> void
-SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.HttpClientFactorySelector(System.Net.Http.IHttpClientFactory! httpClientFactory, string! requestUri, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! itemTypeInfo, SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode streamingMode) -> void
-SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.HttpClientFactorySelector(System.Net.Http.IHttpClientFactory! httpClientFactory, string! requestUri) -> void
-SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Selectors.HttpClientFactorySelector<T>.ReadEnvelopesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingEnvelope<T>!>!
-SmartPipe.Extensions.Selectors.HttpSelector<T>
-SmartPipe.Extensions.Selectors.HttpSelector<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Selectors.HttpSelector<T>.HttpSelector(System.Net.Http.HttpClient! httpClient, string! requestUri, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.HttpSelector<T>!>! logger) -> void
-SmartPipe.Extensions.Selectors.HttpSelector<T>.HttpSelector(System.Net.Http.HttpClient! httpClient, string! requestUri, Polly.ResiliencePipeline! pipeline) -> void
-SmartPipe.Extensions.Selectors.HttpSelector<T>.HttpSelector(System.Net.Http.HttpClient! httpClient, string! requestUri, Polly.ResiliencePipeline? pipeline, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.HttpSelector<T>!>? logger) -> void
-SmartPipe.Extensions.Selectors.HttpSelector<T>.HttpSelector(System.Net.Http.HttpClient! httpClient, string! requestUri, System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Generic.List<T>!>! listTypeInfo, Polly.ResiliencePipeline? pipeline, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.HttpSelector<T>!>? logger) -> void
-SmartPipe.Extensions.Selectors.HttpSelector<T>.HttpSelector(System.Net.Http.HttpClient! httpClient, string! requestUri, System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Generic.List<T>!>! listTypeInfo) -> void
-SmartPipe.Extensions.Selectors.HttpSelector<T>.HttpSelector(System.Net.Http.HttpClient! httpClient, string! requestUri, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! itemTypeInfo, SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode streamingMode, Polly.ResiliencePipeline? pipeline, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Selectors.HttpSelector<T>!>? logger) -> void
-SmartPipe.Extensions.Selectors.HttpSelector<T>.HttpSelector(System.Net.Http.HttpClient! httpClient, string! requestUri, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! itemTypeInfo, SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode streamingMode) -> void
-SmartPipe.Extensions.Selectors.HttpSelector<T>.HttpSelector(System.Net.Http.HttpClient! httpClient, string! requestUri) -> void
-SmartPipe.Extensions.Selectors.HttpSelector<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Selectors.HttpSelector<T>.ReadEnvelopesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingEnvelope<T>!>!
-SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode
-SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode.JsonArray = 0 -> SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode
-SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode.Ndjson = 1 -> SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode
 SmartPipe.Extensions.Sinks.CsvFileSink<T> (forwarded, contained in SmartPipe.Extensions.Csv)
 SmartPipe.Extensions.Sinks.CsvFileSink<T>.CsvFileSink(string! path, string! delimiter = ",", System.Globalization.CultureInfo? culture = null) -> void (forwarded, contained in SmartPipe.Extensions.Csv)
 SmartPipe.Extensions.Sinks.CsvFileSink<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Csv)
@@ -67,20 +41,6 @@ SmartPipe.Extensions.Sinks.DbSink<T>.DbSink(System.Data.IDbConnection! connectio
 SmartPipe.Extensions.Sinks.DbSink<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Dapper)
 SmartPipe.Extensions.Sinks.DbSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Dapper)
 SmartPipe.Extensions.Sinks.DbSink<T>.WriteAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Dapper)
-SmartPipe.Extensions.Sinks.HttpClientFactorySink<T>
-SmartPipe.Extensions.Sinks.HttpClientFactorySink<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Sinks.HttpClientFactorySink<T>.HttpClientFactorySink(System.Net.Http.IHttpClientFactory! httpClientFactory, string! url, string! clientName = "", Polly.ResiliencePipeline? resilience = null, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>? jsonTypeInfo = null, bool useTraceIdIdempotencyKey = false) -> void
-SmartPipe.Extensions.Sinks.HttpClientFactorySink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Sinks.HttpClientFactorySink<T>.WriteAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Sinks.HttpSink<T>
-SmartPipe.Extensions.Sinks.HttpSink<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Sinks.HttpSink<T>.HttpSink(System.Net.Http.HttpClient! http, string! url, Polly.ResiliencePipeline? resilience, bool useTraceIdIdempotencyKey) -> void
-SmartPipe.Extensions.Sinks.HttpSink<T>.HttpSink(System.Net.Http.HttpClient! http, string! url, Polly.ResiliencePipeline? resilience) -> void
-SmartPipe.Extensions.Sinks.HttpSink<T>.HttpSink(System.Net.Http.HttpClient! http, string! url, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! jsonTypeInfo, Polly.ResiliencePipeline? resilience, bool useTraceIdIdempotencyKey) -> void
-SmartPipe.Extensions.Sinks.HttpSink<T>.HttpSink(System.Net.Http.HttpClient! http, string! url, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! jsonTypeInfo) -> void
-SmartPipe.Extensions.Sinks.HttpSink<T>.HttpSink(System.Net.Http.HttpClient! http, string! url) -> void
-SmartPipe.Extensions.Sinks.HttpSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Sinks.HttpSink<T>.WriteAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
 SmartPipe.Extensions.Sinks.LoggerSink<T> (forwarded, contained in SmartPipe.Extensions.Logging)
 SmartPipe.Extensions.Sinks.LoggerSink<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Logging)
 SmartPipe.Extensions.Sinks.LoggerSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Logging)

@@ -108,12 +108,19 @@ remain sequential; cross-envelope output order is not guaranteed.
 
 ### SmartPipe.Extensions
 
-- selectors: `HttpSelector<T>`, `CsvFileSource<T>`, `EfCoreSelector<T>`,
+- selectors: `CsvFileSource<T>`, `EfCoreSelector<T>`,
   `DapperSelector<T>`;
 - transforms: `CsvTransform<TInput,TOutput>`, `MapsterTransform<TInput,TOutput>`,
   `FilterTransform<T>`, `ValidationTransform<T>`,
   `PollyResilienceTransform<T>`;
-- sinks: `LoggerSink<T>`, `HttpSink<T>`, `CsvFileSink<T>`, `DbSink<T>`.
+- sinks: `LoggerSink<T>`, `CsvFileSink<T>`, `DbSink<T>`.
+
+The 2.1.2 `HttpSelector<T>`, `HttpClientFactorySelector<T>`, `HttpSink<T>`, and
+`HttpClientFactorySink<T>` were removed in 2.2.0. Use `SmartPipe.Extensions.Http`
+(`HttpPipelineComponents`, `FromHttp`/`ToHttp`) for the transport and
+`SmartPipe.Extensions.Http.Json` (`HttpJsonResponseReaders`,
+`HttpJsonRequestContent`, `FromHttpNdjson`/`FromHttpJsonArray`/`ToHttpJson`) for
+source-generated JSON bodies.
 
 `EfCoreSelector<T>` is forwarded from `SmartPipe.Extensions.EntityFrameworkCore`; new code uses
 `EfCorePipelineComponents.QuerySource`/`CompiledQuerySource` or the typed `FromQuery`/`FromCompiledQuery`

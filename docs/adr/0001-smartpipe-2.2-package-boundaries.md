@@ -1,6 +1,6 @@
 # ADR-0001: SmartPipe 2.2 package boundaries and integration model
 
-- Status: Accepted for implementation; compatibility ownership partially superseded by [ADR-0002](0002-smartpipe-2.2-legacy-compatibility-quarantine.md)
+- Status: Accepted for implementation; compatibility ownership partially superseded by [ADR-0002](0002-smartpipe-2.2-legacy-compatibility-quarantine.md) and [ADR-0004](0004-smartpipe-2.2-breaking-migration.md)
 - Date: 2026-07-15
 - Decision owners: SmartPipe maintainers
 - Target release: 2.2.0
@@ -80,7 +80,7 @@ One `AsyncServiceScope` is created per run by default and disposed only after Co
 
 ## Compatibility/type forwarding
 
-Published namespaces and full type names remain stable. A moved public type is implemented in its destination package and exposed from the facade through type forwarding where binary identity permits it. Thin obsolete wrappers are allowed only when a composite legacy type cannot be safely forwarded. Each move requires source and binary consumer validation, including consumers compiled against 2.1.2 and ambiguous `null/default` call sites. Public API analyzer baselines are updated per packable project.
+Published namespaces and full type names remain stable for moved types unless an accepted ADR explicitly removes an identity. A moved public type is implemented in its destination package and exposed from the facade through type forwarding where binary identity permits it. Thin obsolete wrappers are allowed only when a composite legacy type cannot be safely forwarded. The four composite HTTP identities named in ADR-0004 are removed in 2.2.0 without wrappers or forwarders; affected consumers recompile. Other moves require source and binary consumer validation, including consumers compiled against 2.1.2 and ambiguous `null/default` call sites. Public API analyzer baselines are updated per packable project.
 
 ## AOT and trimming policy
 
@@ -88,7 +88,7 @@ AOT/trimming is a per-package, evidence-based contract, not an ecosystem-wide cl
 
 ## Role of SmartPipe.Extensions
 
-`SmartPipe.Extensions` references the official integration set as a convenience bundle, forwards moved public types, and retains only necessary obsolete compatibility wrappers, aliases, and migration diagnostics. It receives no new feature implementations, reflection scanning, registry, or dependencies not represented by a dedicated package. New applications should reference only the specific packages they use.
+`SmartPipe.Extensions` references the official integration set as a convenience bundle, forwards moved public types, and retains only necessary obsolete compatibility wrappers, aliases, and migration diagnostics, subject to the HTTP removals in ADR-0004. It receives no new feature implementations, reflection scanning, registry, or dependencies not represented by a dedicated package. New applications should reference only the specific packages they use.
 
 ## Alternatives rejected
 

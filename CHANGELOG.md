@@ -7,6 +7,15 @@
   forwarding.
 - Added NativeAOT-safe channel, rule-transform, and safe logging paths; annotated
   the reflection-based DataAnnotations invocation boundary for trimming.
+- Added `SmartPipe.Extensions.Http`, a streaming transport with explicit
+  client, request, and response ownership, an optional body timeout, bounded
+  opt-in error previews, and no hidden retry. Added
+  `SmartPipe.Extensions.Http.Json`, which adds bounded source-generated JSON
+  array and NDJSON readers and JSON request content.
+- **Breaking:** removed `HttpSelector<T>`, `HttpClientFactorySelector<T>`,
+  `HttpSink<T>`, `HttpClientFactorySink<T>`, and `HttpSelectorStreamingMode` from
+  `SmartPipe.Extensions` per ADR-0004. There are no wrappers or forwarders;
+  migrate to the HTTP leaves and recompile.
 
 ## [2.2.0] — Development
 

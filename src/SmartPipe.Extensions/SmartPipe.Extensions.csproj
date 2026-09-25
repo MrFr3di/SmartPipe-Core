@@ -30,6 +30,8 @@
     <ProjectReference Include="..\SmartPipe.Extensions.Dapper\SmartPipe.Extensions.Dapper.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.EntityFrameworkCore\SmartPipe.Extensions.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Mapster\SmartPipe.Extensions.Mapster.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.Http\SmartPipe.Extensions.Http.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.Http.Json\SmartPipe.Extensions.Http.Json.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -43,7 +45,6 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
-    <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="Microsoft.Extensions.Resilience" />

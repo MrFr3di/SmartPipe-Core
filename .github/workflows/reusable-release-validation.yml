@@ -142,7 +142,7 @@ jobs:
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests --minimum-expected-tests 1
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sources.HttpSelectorTests --minimum-expected-tests 1
+        dotnet test --project tests/SmartPipe.Extensions.Http.Tests/SmartPipe.Extensions.Http.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Http.Tests.HttpPipelineComponentsTests --minimum-expected-tests 1
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: PR concurrency regression repeat
@@ -183,6 +183,12 @@ jobs:
 
     - name: Mapster Extensions tests
       run: dotnet test --project tests/SmartPipe.Extensions.Mapster.Tests/SmartPipe.Extensions.Mapster.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
+    - name: HTTP Extensions tests
+      run: dotnet test --project tests/SmartPipe.Extensions.Http.Tests/SmartPipe.Extensions.Http.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
+    - name: HTTP JSON Extensions tests
+      run: dotnet test --project tests/SmartPipe.Extensions.Http.Json.Tests/SmartPipe.Extensions.Http.Json.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
 
     - name: SP220-07 leaf tests
       shell: pwsh

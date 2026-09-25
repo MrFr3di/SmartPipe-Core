@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- https://learn.microsoft.com/dotnet/fundamentals/package-validation/diagnostic-ids -->
+<Suppressions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Suppression>
+    <DiagnosticId>CP0001</DiagnosticId>
+    <Target>T:SmartPipe.Extensions.Selectors.HttpClientFactorySelector`1</Target>
+    <Left>lib/net10.0/SmartPipe.Extensions.dll</Left>
+    <Right>lib/net10.0/SmartPipe.Extensions.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0001</DiagnosticId>
+    <Target>T:SmartPipe.Extensions.Selectors.HttpSelector`1</Target>
+    <Left>lib/net10.0/SmartPipe.Extensions.dll</Left>
+    <Right>lib/net10.0/SmartPipe.Extensions.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0001</DiagnosticId>
+    <Target>T:SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode</Target>
+    <Left>lib/net10.0/SmartPipe.Extensions.dll</Left>
+    <Right>lib/net10.0/SmartPipe.Extensions.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0001</DiagnosticId>
+    <Target>T:SmartPipe.Extensions.Sinks.HttpClientFactorySink`1</Target>
+    <Left>lib/net10.0/SmartPipe.Extensions.dll</Left>
+    <Right>lib/net10.0/SmartPipe.Extensions.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0001</DiagnosticId>
+    <Target>T:SmartPipe.Extensions.Sinks.HttpSink`1</Target>
+    <Left>lib/net10.0/SmartPipe.Extensions.dll</Left>
+    <Right>lib/net10.0/SmartPipe.Extensions.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+</Suppressions>
