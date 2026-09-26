@@ -856,7 +856,7 @@ def validate(documents: dict[str, dict]) -> None:
         ("dependency-review.yml", dependency_review),
     ):
         branches = workflow.get("on", {}).get("pull_request", {}).get("branches", [])
-        for checkpoint in ("c", "d", "e"):
+        for checkpoint in ("c", "d", "e", "f"):
             require(f"sp220/checkpoint-{checkpoint}" in branches,
                     f"{workflow_name} pull_request must include sp220/checkpoint-{checkpoint}.")
 
@@ -866,8 +866,9 @@ def validate(documents: dict[str, dict]) -> None:
                 f"CI {event} must include release/2.2.0.")
     for workflow_name in ("ci.yml", "codeql.yml"):
         branches = documents[workflow_name].get("on", {}).get("push", {}).get("branches", [])
-        require("sp220/checkpoint-e" in branches,
-                f"{workflow_name} push must include sp220/checkpoint-e.")
+        for checkpoint in ("e", "f"):
+            require(f"sp220/checkpoint-{checkpoint}" in branches,
+                    f"{workflow_name} push must include sp220/checkpoint-{checkpoint}.")
     assert_diagnostic_contract(ci)
 
     expected_triggers = {
@@ -894,18 +895,18 @@ def validate(documents: dict[str, dict]) -> None:
                     },
                 },
             },
-            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e"]},
+            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e", "sp220/checkpoint-f"]},
             "pull_request": {
-                "branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e"]
+                "branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f"]
             },
         },
         "codeql.yml": {
-            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e"]},
-            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e"]},
+            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e", "sp220/checkpoint-f"]},
+            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f"]},
             "schedule": [{"cron": "27 3 * * 1"}],
         },
         "dependency-review.yml": {
-            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e"]},
+            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f"]},
         },
     }
     for workflow_name, expected in expected_triggers.items():
@@ -1305,6 +1306,26 @@ def _remove_codeql_checkpoint_e_branch(documents: dict[str, dict]) -> None:
 
 def _remove_dependency_review_checkpoint_e_branch(documents: dict[str, dict]) -> None:
     documents["dependency-review.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-e")
+
+
+def _remove_ci_checkpoint_f_push_branch(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["on"]["push"]["branches"].remove("sp220/checkpoint-f")
+
+
+def _remove_ci_checkpoint_f_branch(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-f")
+
+
+def _remove_codeql_checkpoint_f_push_branch(documents: dict[str, dict]) -> None:
+    documents["codeql.yml"]["on"]["push"]["branches"].remove("sp220/checkpoint-f")
+
+
+def _remove_codeql_checkpoint_f_branch(documents: dict[str, dict]) -> None:
+    documents["codeql.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-f")
+
+
+def _remove_dependency_review_checkpoint_f_branch(documents: dict[str, dict]) -> None:
+    documents["dependency-review.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-f")
 
 
 def _remove_csv_integration_job(documents: dict[str, dict]) -> None:
@@ -1783,6 +1804,12 @@ def main() -> int:
         (_remove_codeql_checkpoint_e_branch, "codeql.yml pull_request must include sp220/checkpoint-e"),
         (_remove_dependency_review_checkpoint_e_branch,
          "dependency-review.yml pull_request must include sp220/checkpoint-e"),
+        (_remove_ci_checkpoint_f_push_branch, "ci.yml push must include sp220/checkpoint-f"),
+        (_remove_ci_checkpoint_f_branch, "ci.yml pull_request must include sp220/checkpoint-f"),
+        (_remove_codeql_checkpoint_f_push_branch, "codeql.yml push must include sp220/checkpoint-f"),
+        (_remove_codeql_checkpoint_f_branch, "codeql.yml pull_request must include sp220/checkpoint-f"),
+        (_remove_dependency_review_checkpoint_f_branch,
+         "dependency-review.yml pull_request must include sp220/checkpoint-f"),
     ):
         assert_mutation_rejected(documents, mutate, expected)
     for mutate, expected in (
