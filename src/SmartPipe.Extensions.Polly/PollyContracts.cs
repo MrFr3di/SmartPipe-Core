@@ -85,14 +85,11 @@ internal sealed class PollyTransformDecoratorSettings
                 parameterName);
         }
 
-        foreach (var character in operationKey)
+        if (operationKey.Any(static character => char.IsWhiteSpace(character) || char.IsControl(character)))
         {
-            if (char.IsWhiteSpace(character) || char.IsControl(character))
-            {
-                throw new ArgumentException(
-                    "OperationKey must not contain whitespace or control characters.",
-                    parameterName);
-            }
+            throw new ArgumentException(
+                "OperationKey must not contain whitespace or control characters.",
+                parameterName);
         }
     }
 }
