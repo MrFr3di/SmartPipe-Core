@@ -144,11 +144,6 @@ SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.DisposeAsync()
 SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.Mapster)
 SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.MapsterTransform(Mapster.TypeAdapterConfig? config = null) -> void (forwarded, contained in SmartPipe.Extensions.Mapster)
 SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<TInput>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<TOutput>> (forwarded, contained in SmartPipe.Extensions.Mapster)
-SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>
-SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>.PollyResilienceTransform(Polly.ResiliencePipeline! pipeline, Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>!>? logger = null) -> void
-SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<T>>
 SmartPipe.Extensions.Transforms.ValidationTransform<T> (forwarded, contained in SmartPipe.Extensions.DataAnnotations)
 SmartPipe.Extensions.Transforms.ValidationTransform<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.DataAnnotations)
 SmartPipe.Extensions.Transforms.ValidationTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask (forwarded, contained in SmartPipe.Extensions.DataAnnotations)

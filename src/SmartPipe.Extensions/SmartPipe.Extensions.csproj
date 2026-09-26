@@ -5,7 +5,7 @@
   <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
   <PropertyGroup>
     <PackageId>SmartPipe.Extensions</PackageId>
-    <Description>Integrations for SmartPipe.Core including HTTP, EF Core, Dapper, CSV, Mapster, resilience, hosting, and health checks. The 2.2.0 line retains compatibility forwarding for JSON integrations moved to SmartPipe.Extensions.Json.</Description>
+    <Description>Integrations for SmartPipe.Core including HTTP, EF Core, Dapper, CSV, Mapster, Polly resilience, hosting, and health checks. The 2.2.0 line retains compatibility forwarding for JSON integrations moved to SmartPipe.Extensions.Json.</Description>
     <PackageTags>etl;pipeline;polly;efcore;dapper;mapster;csvhelper;json;compression</PackageTags>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
     <PackageValidationBaselineVersion>2.1.2</PackageValidationBaselineVersion>
@@ -32,6 +32,7 @@
     <ProjectReference Include="..\SmartPipe.Extensions.Mapster\SmartPipe.Extensions.Mapster.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Http\SmartPipe.Extensions.Http.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Http.Json\SmartPipe.Extensions.Http.Json.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.Polly\SmartPipe.Extensions.Polly.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -47,7 +48,6 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
-    <PackageReference Include="Microsoft.Extensions.Resilience" />
   </ItemGroup>
 
 </Project>

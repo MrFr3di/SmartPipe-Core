@@ -190,6 +190,9 @@ jobs:
     - name: HTTP JSON Extensions tests
       run: dotnet test --project tests/SmartPipe.Extensions.Http.Json.Tests/SmartPipe.Extensions.Http.Json.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
 
+    - name: Polly Extensions tests
+      run: dotnet test --project tests/SmartPipe.Extensions.Polly.Tests/SmartPipe.Extensions.Polly.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
     - name: SP220-07 leaf tests
       shell: pwsh
       run: |
