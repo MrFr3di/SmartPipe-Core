@@ -68,6 +68,10 @@ coverage in the top-level `requiredAtRelease` list; release validation fails if
 one of those IDs has no scenario. Scenario workspaces restore from an isolated
 NuGet configuration that maps `SmartPipe.*` to the local package directory and
 maps each external package ID explicitly to nuget.org.
+When `templatePath` names a `.csproj`, that exact top-level project is run;
+`.cs` templates still use the sole top-level project in their directory. A
+shared template directory may contain multiple projects when each project
+explicitly lists the source files it compiles.
 
 ## Verification
 

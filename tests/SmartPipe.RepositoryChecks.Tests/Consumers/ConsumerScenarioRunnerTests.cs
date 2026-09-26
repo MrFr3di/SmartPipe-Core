@@ -402,6 +402,33 @@ public sealed class ConsumerScenarioRunnerTests
     }
 
     [Fact]
+    public void TemplateCopy_SelectsDeclaredProjectAmongMultipleProjectsAndKeepsSourceTemplates()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("templates/shared/HttpConsumer.csproj", "<Project />");
+        fixture.Write("templates/shared/HttpJsonConsumer.csproj", "<Project />");
+        fixture.Write("templates/shared/Program.cs", "// shared fixture");
+        var sharedDestination = Path.Combine(fixture.Path, "shared-copy");
+        Directory.CreateDirectory(sharedDestination);
+
+        var selected = ConsumerScenarioRunner.CopyTemplateDirectory(
+            fixture.Path, "templates/shared/HttpJsonConsumer.csproj", sharedDestination);
+
+        Assert.Equal(Path.Combine(sharedDestination, "HttpJsonConsumer.csproj"), selected);
+        Assert.True(File.Exists(Path.Combine(sharedDestination, "HttpConsumer.csproj")));
+        Assert.True(File.Exists(Path.Combine(sharedDestination, "Program.cs")));
+
+        fixture.Write("templates/source/Consumer.csproj", "<Project />");
+        fixture.Write("templates/source/Program.cs", "// source fixture");
+        var sourceDestination = Path.Combine(fixture.Path, "source-copy");
+        Directory.CreateDirectory(sourceDestination);
+        Assert.Equal(
+            Path.Combine(sourceDestination, "Consumer.csproj"),
+            ConsumerScenarioRunner.CopyTemplateDirectory(
+                fixture.Path, "templates/source/Program.cs", sourceDestination));
+    }
+
+    [Fact]
     public void BinaryPhaseEvidence_ProvesSingleBuildThenDeploymentMetadataAndHashReplacement()
     {
         var now = DateTimeOffset.UtcNow;
@@ -487,7 +514,8 @@ public sealed class ConsumerScenarioRunnerTests
             ["SmartPipe.Core", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Csv", "SmartPipe.Extensions.Dapper", "SmartPipe.Extensions.Transforms",
              "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection",
              "SmartPipe.Extensions.EntityFrameworkCore",
-             "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Json",
+             "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Http", "SmartPipe.Extensions.Json",
+             "SmartPipe.Extensions.Http.Json",
              "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.Mapster", "SmartPipe.Extensions"],
             closure);
     }

@@ -77,8 +77,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         var source = Path.Combine(workspace, "source");
         var logs = Path.Combine(workspace, "logs");
         Directory.CreateDirectory(source); Directory.CreateDirectory(logs);
-        CopyTemplateDirectory(options.RepositoryRoot, scenario.TemplatePath, source);
-        var project = Directory.EnumerateFiles(source, "*.csproj", SearchOption.TopDirectoryOnly).Single();
+        var project = CopyTemplateDirectory(options.RepositoryRoot, scenario.TemplatePath, source);
         var events = new List<ConsumerCommandEvent>();
         var feed = options.PackageDirectory;
         var version = options.PackageVersion;
@@ -577,7 +576,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         }
     }
 
-    internal static void CopyTemplateDirectory(string root, string templatePath, string destination)
+    internal static string CopyTemplateDirectory(string root, string templatePath, string destination)
     {
         var template = ConsumerScenarioLoader.ResolveContained(root, templatePath, "templatePath");
         var directory = Path.GetDirectoryName(template)!;
@@ -595,6 +594,10 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(file, target);
             }
         }
+
+        return Path.GetExtension(template).Equals(".csproj", StringComparison.OrdinalIgnoreCase)
+            ? Path.Combine(destination, Path.GetFileName(template))
+            : Directory.EnumerateFiles(destination, "*.csproj", SearchOption.TopDirectoryOnly).Single();
     }
 
     private static string RuntimeIdentifier() => OperatingSystem.IsWindows() ? "win-x64" : OperatingSystem.IsLinux() ? "linux-x64" : OperatingSystem.IsMacOS() ? "osx-x64" : throw new ConsumerScenarioException("SPCONS018", "NativeAOT/trim scenario is unsupported on this OS.");

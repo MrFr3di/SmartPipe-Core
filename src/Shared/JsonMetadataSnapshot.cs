@@ -24,13 +24,13 @@ internal static class JsonMetadataSnapshot
         return (Resolve<T>(options), Resolve<List<T>>(options));
     }
 
-    public static JsonTypeInfo<T> ForValue<T>(JsonTypeInfo<T>? typeInfo)
+    public static JsonTypeInfo<T> ForValue<T>(JsonTypeInfo<T>? typeInfo, int? maxDepth = null)
     {
         ArgumentNullException.ThrowIfNull(typeInfo);
         if (typeInfo.Type != typeof(T))
             throw new ArgumentException("JSON type metadata does not match the requested value type.");
 
-        return Resolve<T>(CloneOptions(typeInfo.Options, maxDepth: null));
+        return Resolve<T>(CloneOptions(typeInfo.Options, maxDepth));
     }
 
     public static JsonTypeInfo<DeadLetterEnvelope<T>> ForDeadLetterEnvelope<T>(

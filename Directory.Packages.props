@@ -48,6 +48,8 @@
     <PackageVersion Include="SmartPipe.Extensions.Dapper" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.EntityFrameworkCore" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.Mapster" Version="2.2.0" />
+    <PackageVersion Include="SmartPipe.Extensions.Http" Version="2.2.0" />
+    <PackageVersion Include="SmartPipe.Extensions.Http.Json" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.Json" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.OpenTelemetry" Version="2.2.0" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />

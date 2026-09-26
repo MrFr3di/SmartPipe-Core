@@ -80,11 +80,16 @@ closure. See [Channels](channels.md), [Transforms](transforms.md),
 
 Important selector and streaming contracts:
 
-- `HttpSelector<T>` logs request URIs without userinfo, query strings, or
-  fragments. Malformed absolute URIs are logged as `[unparseable-uri]`.
-  Reflection JSON constructors are annotated for trimming and NativeAOT risk;
-  prefer the `JsonTypeInfo<List<T>>` buffered overload or `JsonTypeInfo<T>`
-  streaming overload in trimmed or NativeAOT applications.
+- `SmartPipe.Extensions.Http` sources and sinks (`HttpPipelineComponents`,
+  `FromHttp`, `ToHttp`) borrow a direct `HttpClient` and own factory-created
+  clients, requests, and responses for exactly one operation. They stream with
+  `ResponseHeadersRead`, never retry implicitly, report non-success status
+  without reading the body unless a bounded preview is opted in, and log no
+  request URIs, headers, or bodies. `SmartPipe.Extensions.Http.Json` supplies
+  bounded root-array and NDJSON readers and JSON request content over
+  source-generated `JsonTypeInfo<T>`. These replace the removed 2.1.2
+  `HttpSelector<T>`, `HttpClientFactorySelector<T>`, `HttpSink<T>`, and
+  `HttpClientFactorySink<T>`.
 - `EfCoreSelector<T>` (forwarded from `SmartPipe.Extensions.EntityFrameworkCore`) reads with
   `AsNoTracking()` by default. Use `.WithTracking()` to opt into EF Core change tracking for returned
   entities. New code uses `EfCorePipelineComponents.QuerySource`/`CompiledQuerySource` or the typed

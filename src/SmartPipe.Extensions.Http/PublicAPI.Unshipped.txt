@@ -1,0 +1,65 @@
+#nullable enable
+override SmartPipe.Extensions.Http.HttpResponsePolicy.Equals(object? obj) -> bool
+override SmartPipe.Extensions.Http.HttpResponsePolicy.GetHashCode() -> int
+override SmartPipe.Extensions.Http.HttpResponsePolicy.ToString() -> string!
+override SmartPipe.Extensions.Http.HttpSinkOptions.Equals(object? obj) -> bool
+override SmartPipe.Extensions.Http.HttpSinkOptions.GetHashCode() -> int
+override SmartPipe.Extensions.Http.HttpSinkOptions.ToString() -> string!
+override SmartPipe.Extensions.Http.HttpSourceOptions.Equals(object? obj) -> bool
+override SmartPipe.Extensions.Http.HttpSourceOptions.GetHashCode() -> int
+override SmartPipe.Extensions.Http.HttpSourceOptions.ToString() -> string!
+SmartPipe.Extensions.Http.HttpPipelineComponents
+SmartPipe.Extensions.Http.HttpPipelineDefinitionBuilderExtensions
+SmartPipe.Extensions.Http.HttpRequestFactory<T>
+SmartPipe.Extensions.Http.HttpResponsePolicy
+SmartPipe.Extensions.Http.HttpResponsePolicy.<Clone>$() -> SmartPipe.Extensions.Http.HttpResponsePolicy!
+SmartPipe.Extensions.Http.HttpResponsePolicy.Equals(SmartPipe.Extensions.Http.HttpResponsePolicy? other) -> bool
+SmartPipe.Extensions.Http.HttpResponsePolicy.HttpResponsePolicy() -> void
+SmartPipe.Extensions.Http.HttpResponsePolicy.IncludeErrorBodyPreview.get -> bool
+SmartPipe.Extensions.Http.HttpResponsePolicy.IncludeErrorBodyPreview.init -> void
+SmartPipe.Extensions.Http.HttpResponsePolicy.MaxErrorBodyBytes.get -> int
+SmartPipe.Extensions.Http.HttpResponsePolicy.MaxErrorBodyBytes.init -> void
+SmartPipe.Extensions.Http.HttpResponseReader<T>
+SmartPipe.Extensions.Http.HttpResponseStatusException
+SmartPipe.Extensions.Http.HttpResponseStatusException.ErrorBodyPreview.get -> string?
+SmartPipe.Extensions.Http.HttpResponseStatusException.ErrorBodyPreviewTruncated.get -> bool
+SmartPipe.Extensions.Http.HttpSinkOptions
+SmartPipe.Extensions.Http.HttpSinkOptions.<Clone>$() -> SmartPipe.Extensions.Http.HttpSinkOptions!
+SmartPipe.Extensions.Http.HttpSinkOptions.BodyTimeout.get -> System.TimeSpan?
+SmartPipe.Extensions.Http.HttpSinkOptions.BodyTimeout.init -> void
+SmartPipe.Extensions.Http.HttpSinkOptions.Equals(SmartPipe.Extensions.Http.HttpSinkOptions? other) -> bool
+SmartPipe.Extensions.Http.HttpSinkOptions.HttpSinkOptions() -> void
+SmartPipe.Extensions.Http.HttpSinkOptions.IdempotencyHeaderName.get -> string!
+SmartPipe.Extensions.Http.HttpSinkOptions.IdempotencyHeaderName.init -> void
+SmartPipe.Extensions.Http.HttpSinkOptions.OperationName.get -> string!
+SmartPipe.Extensions.Http.HttpSinkOptions.OperationName.init -> void
+SmartPipe.Extensions.Http.HttpSinkOptions.ResponsePolicy.get -> SmartPipe.Extensions.Http.HttpResponsePolicy!
+SmartPipe.Extensions.Http.HttpSinkOptions.ResponsePolicy.init -> void
+SmartPipe.Extensions.Http.HttpSourceOptions
+SmartPipe.Extensions.Http.HttpSourceOptions.<Clone>$() -> SmartPipe.Extensions.Http.HttpSourceOptions!
+SmartPipe.Extensions.Http.HttpSourceOptions.BodyTimeout.get -> System.TimeSpan?
+SmartPipe.Extensions.Http.HttpSourceOptions.BodyTimeout.init -> void
+SmartPipe.Extensions.Http.HttpSourceOptions.Equals(SmartPipe.Extensions.Http.HttpSourceOptions? other) -> bool
+SmartPipe.Extensions.Http.HttpSourceOptions.HttpSourceOptions() -> void
+SmartPipe.Extensions.Http.HttpSourceOptions.OperationName.get -> string!
+SmartPipe.Extensions.Http.HttpSourceOptions.OperationName.init -> void
+SmartPipe.Extensions.Http.HttpSourceOptions.ResponsePolicy.get -> SmartPipe.Extensions.Http.HttpResponsePolicy!
+SmartPipe.Extensions.Http.HttpSourceOptions.ResponsePolicy.init -> void
+static SmartPipe.Extensions.Http.HttpPipelineComponents.Sink<T>(System.Net.Http.HttpClient! client, SmartPipe.Extensions.Http.HttpRequestFactory<T>! requestFactory, System.Func<SmartPipe.Core.ProcessingEnvelope<T>!, string?>? idempotencyKeySelector = null, SmartPipe.Extensions.Http.HttpSinkOptions? options = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSink<T>!>!
+static SmartPipe.Extensions.Http.HttpPipelineComponents.Sink<T>(System.Net.Http.IHttpClientFactory! clientFactory, string! clientName, SmartPipe.Extensions.Http.HttpRequestFactory<T>! requestFactory, System.Func<SmartPipe.Core.ProcessingEnvelope<T>!, string?>? idempotencyKeySelector = null, SmartPipe.Extensions.Http.HttpSinkOptions? options = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSink<T>!>!
+static SmartPipe.Extensions.Http.HttpPipelineComponents.Source<T>(System.Net.Http.HttpClient! client, System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Net.Http.HttpRequestMessage!>>! requestFactory, SmartPipe.Extensions.Http.HttpResponseReader<T>! responseReader, SmartPipe.Extensions.Http.HttpSourceOptions? options = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSource<T>!>!
+static SmartPipe.Extensions.Http.HttpPipelineComponents.Source<T>(System.Net.Http.IHttpClientFactory! clientFactory, string! clientName, System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Net.Http.HttpRequestMessage!>>! requestFactory, SmartPipe.Extensions.Http.HttpResponseReader<T>! responseReader, SmartPipe.Extensions.Http.HttpSourceOptions? options = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSource<T>!>!
+static SmartPipe.Extensions.Http.HttpPipelineDefinitionBuilderExtensions.FromHttp<T>(SmartPipe.Core.PipelineKey pipelineKey, System.Net.Http.HttpClient! client, System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Net.Http.HttpRequestMessage!>>! requestFactory, SmartPipe.Extensions.Http.HttpResponseReader<T>! responseReader, SmartPipe.Extensions.Http.HttpSourceOptions? options = null) -> SmartPipe.Core.PipelineDefinitionBuilder<T>!
+static SmartPipe.Extensions.Http.HttpPipelineDefinitionBuilderExtensions.FromHttp<T>(SmartPipe.Core.PipelineKey pipelineKey, System.Net.Http.IHttpClientFactory! clientFactory, string! clientName, System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Net.Http.HttpRequestMessage!>>! requestFactory, SmartPipe.Extensions.Http.HttpResponseReader<T>! responseReader, SmartPipe.Extensions.Http.HttpSourceOptions? options = null) -> SmartPipe.Core.PipelineDefinitionBuilder<T>!
+static SmartPipe.Extensions.Http.HttpPipelineDefinitionBuilderExtensions.ToHttp<T>(this SmartPipe.Core.PipelineDefinitionBuilder<T>! builder, System.Net.Http.HttpClient! client, SmartPipe.Extensions.Http.HttpRequestFactory<T>! requestFactory, System.Func<SmartPipe.Core.ProcessingEnvelope<T>!, string?>? idempotencyKeySelector = null, SmartPipe.Extensions.Http.HttpSinkOptions? options = null) -> SmartPipe.Core.PipelineDefinition<T, T>!
+static SmartPipe.Extensions.Http.HttpPipelineDefinitionBuilderExtensions.ToHttp<T>(this SmartPipe.Core.PipelineDefinitionBuilder<T>! builder, System.Net.Http.IHttpClientFactory! clientFactory, string! clientName, SmartPipe.Extensions.Http.HttpRequestFactory<T>! requestFactory, System.Func<SmartPipe.Core.ProcessingEnvelope<T>!, string?>? idempotencyKeySelector = null, SmartPipe.Extensions.Http.HttpSinkOptions? options = null) -> SmartPipe.Core.PipelineDefinition<T, T>!
+static SmartPipe.Extensions.Http.HttpPipelineDefinitionBuilderExtensions.ToHttp<TPipelineInput, TCurrent>(this SmartPipe.Core.PipelineDefinitionBuilder<TPipelineInput, TCurrent>! builder, System.Net.Http.HttpClient! client, SmartPipe.Extensions.Http.HttpRequestFactory<TCurrent>! requestFactory, System.Func<SmartPipe.Core.ProcessingEnvelope<TCurrent>!, string?>? idempotencyKeySelector = null, SmartPipe.Extensions.Http.HttpSinkOptions? options = null) -> SmartPipe.Core.PipelineDefinition<TPipelineInput, TCurrent>!
+static SmartPipe.Extensions.Http.HttpPipelineDefinitionBuilderExtensions.ToHttp<TPipelineInput, TCurrent>(this SmartPipe.Core.PipelineDefinitionBuilder<TPipelineInput, TCurrent>! builder, System.Net.Http.IHttpClientFactory! clientFactory, string! clientName, SmartPipe.Extensions.Http.HttpRequestFactory<TCurrent>! requestFactory, System.Func<SmartPipe.Core.ProcessingEnvelope<TCurrent>!, string?>? idempotencyKeySelector = null, SmartPipe.Extensions.Http.HttpSinkOptions? options = null) -> SmartPipe.Core.PipelineDefinition<TPipelineInput, TCurrent>!
+static SmartPipe.Extensions.Http.HttpResponsePolicy.operator !=(SmartPipe.Extensions.Http.HttpResponsePolicy? left, SmartPipe.Extensions.Http.HttpResponsePolicy? right) -> bool
+static SmartPipe.Extensions.Http.HttpResponsePolicy.operator ==(SmartPipe.Extensions.Http.HttpResponsePolicy? left, SmartPipe.Extensions.Http.HttpResponsePolicy? right) -> bool
+static SmartPipe.Extensions.Http.HttpSinkOptions.operator !=(SmartPipe.Extensions.Http.HttpSinkOptions? left, SmartPipe.Extensions.Http.HttpSinkOptions? right) -> bool
+static SmartPipe.Extensions.Http.HttpSinkOptions.operator ==(SmartPipe.Extensions.Http.HttpSinkOptions? left, SmartPipe.Extensions.Http.HttpSinkOptions? right) -> bool
+static SmartPipe.Extensions.Http.HttpSourceOptions.operator !=(SmartPipe.Extensions.Http.HttpSourceOptions? left, SmartPipe.Extensions.Http.HttpSourceOptions? right) -> bool
+static SmartPipe.Extensions.Http.HttpSourceOptions.operator ==(SmartPipe.Extensions.Http.HttpSourceOptions? left, SmartPipe.Extensions.Http.HttpSourceOptions? right) -> bool
+virtual SmartPipe.Extensions.Http.HttpRequestFactory<T>.Invoke(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<System.Net.Http.HttpRequestMessage!>
+virtual SmartPipe.Extensions.Http.HttpResponseReader<T>.Invoke(System.Net.Http.HttpResponseMessage! response, System.Threading.CancellationToken cancellationToken) -> System.Collections.Generic.IAsyncEnumerable<T>!
