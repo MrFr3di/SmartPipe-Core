@@ -3,6 +3,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
+namespace SmartPipe.Consumers.Http;
+
 sealed record LoopbackRequest(string Method, string Path, IReadOnlyDictionary<string, string> Headers, string Body);
 
 sealed record LoopbackResponse(int StatusCode, string Body, string ContentType = "text/plain; charset=utf-8");
@@ -93,7 +95,7 @@ sealed class LoopbackHttpServer : IAsyncDisposable
                     break;
                 }
 
-                chunks.Write(await reader.ReadExactAsync(size).ConfigureAwait(false));
+                await chunks.WriteAsync(await reader.ReadExactAsync(size).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
                 await reader.ReadLineAsync().ConfigureAwait(false);
             }
 
@@ -118,7 +120,7 @@ sealed class LoopbackHttpServer : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        _stop.Cancel();
+        await _stop.CancelAsync().ConfigureAwait(false);
         _listener.Stop();
         await _acceptLoop.ConfigureAwait(false);
         _stop.Dispose();

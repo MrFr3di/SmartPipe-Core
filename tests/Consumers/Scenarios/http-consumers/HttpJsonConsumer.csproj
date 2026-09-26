@@ -12,6 +12,8 @@
   <ItemGroup>
     <Compile Include="HttpJsonProgram.cs" />
     <Compile Include="LoopbackHttpServer.cs" />
+    <Compile Include="ConsumerHttpSupport.cs" />
+    <Compile Include="HttpJsonConsumerTypes.cs" />
   </ItemGroup>
 
   <ItemGroup>

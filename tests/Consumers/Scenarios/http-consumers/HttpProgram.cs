@@ -1,15 +1,18 @@
 using System.Globalization;
-using System.Net;
 using System.Runtime.CompilerServices;
+using SmartPipe.Consumers.Http;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Http;
+
+const string SourcePath = "/source";
+const string SinkPath = "/sink";
 
 // A real loopback HTTP server drives the socket transport, so trimmed and NativeAOT
 // publishes exercise SocketsHttpHandler rather than an in-process handler.
 await using var server = new LoopbackHttpServer(request => request switch
 {
-    { Method: "GET", Path: "/source" } => new LoopbackResponse(200, "37"),
-    { Method: "POST", Path: "/sink" } => new LoopbackResponse(202, ""),
+    { Method: "GET", Path: SourcePath } => new LoopbackResponse(200, "37"),
+    { Method: "POST", Path: SinkPath } => new LoopbackResponse(202, ""),
     _ => new LoopbackResponse(404, ""),
 });
 
@@ -17,7 +20,7 @@ var sourceHandler = new CountingHandler(new SocketsHttpHandler());
 var sourceClient = new HttpClient(sourceHandler) { BaseAddress = server.BaseAddress };
 
 var sinkHandler = new CountingHandler(new SocketsHttpHandler());
-var clientFactory = new SingleClientFactory("consumer-sink", sinkHandler, server.BaseAddress);
+var clientFactory = new NamedClientFactory("consumer-sink", sinkHandler, server.BaseAddress, disposeHandler: true);
 var sourceRequestFactoryCalls = 0;
 var sinkRequestFactoryCalls = 0;
 
@@ -27,7 +30,7 @@ var definition = HttpPipelineDefinitionBuilderExtensions.FromHttp(
         (_, _) =>
         {
             sourceRequestFactoryCalls++;
-            return ValueTask.FromResult(new HttpRequestMessage(HttpMethod.Get, "/source"));
+            return ValueTask.FromResult(new HttpRequestMessage(HttpMethod.Get, SourcePath));
         },
         ReadIntegerAsync)
     .ToHttp(
@@ -36,54 +39,29 @@ var definition = HttpPipelineDefinitionBuilderExtensions.FromHttp(
         (envelope, _) =>
         {
             sinkRequestFactoryCalls++;
-            return ValueTask.FromResult(new HttpRequestMessage(HttpMethod.Post, "/sink")
+            return ValueTask.FromResult(new HttpRequestMessage(HttpMethod.Post, SinkPath)
             {
                 Content = new StringContent(envelope.Payload.ToString(CultureInfo.InvariantCulture)),
             });
         });
 
-await using (var run = await definition.StartAsync().ConfigureAwait(false))
-{
-    // Sink-backed runs publish only failures by default; successful items are observed at the sink.
-    await foreach (var output in run.Outputs.ReadAllAsync().ConfigureAwait(false))
-    {
-        if (!output.Result.IsSuccess)
-            throw new InvalidOperationException("The direct HTTP pipeline emitted a failed result.");
-    }
+await ConsumerPipeline.RunToCompletionAsync(definition, "The direct HTTP pipeline emitted a failed result.")
+    .ConfigureAwait(false);
 
-    await run.Completion.ConfigureAwait(false);
-}
-
-var requests = server.Requests;
-if (requests.Count != 2 || requests[0].Path != "/source" || requests[1].Path != "/sink" || requests[1].Body != "37")
-    throw new InvalidOperationException("The loopback server did not observe the expected requests.");
-if (sourceHandler.SendCount != 1 || sourceHandler.DisposeCount != 0)
-    throw new InvalidOperationException("The source must send once and leave its application-owned handler alive.");
-if (clientFactory.CreateCount != 1 || sinkHandler.SendCount != 1 || sinkHandler.DisposeCount != 1)
-    throw new InvalidOperationException("The factory sink must create and dispose one client after one send.");
-if (sourceRequestFactoryCalls != 1 || sinkRequestFactoryCalls != 1)
-    throw new InvalidOperationException("The HTTP request factories were not called exactly once.");
+HttpConsumerChecks.VerifyRequests(server.Requests, SourcePath, SinkPath);
+HttpConsumerChecks.VerifyAdapterOwnership(sourceHandler, sinkHandler, clientFactory);
+ConsumerCheck.Require(
+    sourceRequestFactoryCalls == 1 && sinkRequestFactoryCalls == 1,
+    "The HTTP request factories were not called exactly once.");
 
 // A direct client remains usable after the adapter finishes; the adapter owns factory clients.
-using (var borrowedResponse = await sourceClient.GetAsync("/source").ConfigureAwait(false))
-{
-    if (borrowedResponse.StatusCode != HttpStatusCode.OK || sourceHandler.SendCount != 2)
-        throw new InvalidOperationException("The source adapter disposed the borrowed HttpClient.");
-}
-
-try
-{
-    await clientFactory.CreatedClient!.GetAsync("/after-dispose").ConfigureAwait(false);
-    throw new InvalidOperationException("The sink adapter did not dispose its factory-created HttpClient.");
-}
-catch (ObjectDisposedException)
-{
-    // Expected: the factory-created client is owned by the sink adapter.
-}
+await HttpConsumerChecks.VerifyBorrowedClientAliveAsync(sourceClient, sourceHandler, SourcePath).ConfigureAwait(false);
+await HttpConsumerChecks.VerifyFactoryClientDisposedAsync(clientFactory).ConfigureAwait(false);
 
 sourceClient.Dispose();
-if (sourceHandler.DisposeCount != 1)
-    throw new InvalidOperationException("The application-owned source client did not dispose its handler.");
+ConsumerCheck.Require(
+    sourceHandler.DisposeCount == 1,
+    "The application-owned source client did not dispose its handler.");
 
 Console.WriteLine("CONSUMER_OK http-direct");
 return 0;
@@ -94,41 +72,4 @@ static async IAsyncEnumerable<int> ReadIntegerAsync(
 {
     var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
     yield return int.Parse(body, CultureInfo.InvariantCulture);
-}
-
-sealed class CountingHandler(HttpMessageHandler inner) : DelegatingHandler(inner)
-{
-    public int SendCount { get; private set; }
-    public int DisposeCount { get; private set; }
-
-    protected override Task<HttpResponseMessage> SendAsync(
-        HttpRequestMessage request,
-        CancellationToken cancellationToken)
-    {
-        SendCount++;
-        return base.SendAsync(request, cancellationToken);
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing)
-            DisposeCount++;
-        base.Dispose(disposing);
-    }
-}
-
-sealed class SingleClientFactory(string expectedName, HttpMessageHandler handler, Uri baseAddress) : IHttpClientFactory
-{
-    public int CreateCount { get; private set; }
-    public HttpClient? CreatedClient { get; private set; }
-
-    public HttpClient CreateClient(string name)
-    {
-        if (name != expectedName)
-            throw new InvalidOperationException($"Unexpected HTTP client name: {name}");
-
-        CreateCount++;
-        CreatedClient = new HttpClient(handler) { BaseAddress = baseAddress };
-        return CreatedClient;
-    }
 }

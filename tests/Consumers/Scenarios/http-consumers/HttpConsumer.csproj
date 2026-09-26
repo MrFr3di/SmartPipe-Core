@@ -12,6 +12,8 @@
   <ItemGroup>
     <Compile Include="HttpProgram.cs" />
     <Compile Include="LoopbackHttpServer.cs" />
+    <Compile Include="ConsumerHttpSupport.cs" />
+    <Compile Include="HttpConsumerChecks.cs" />
   </ItemGroup>
 
   <ItemGroup>
