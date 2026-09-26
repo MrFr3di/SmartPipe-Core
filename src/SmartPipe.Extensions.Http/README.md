@@ -16,6 +16,8 @@ the `SmartPipe.Extensions` bundle.
 
 - `HttpPipelineComponents.Source<T>` creates a runtime-owned
   `IPipelineSource<T>` from a request factory and an `HttpResponseReader<T>`.
+  The reader delegate is covariant (`HttpResponseReader<out T>`), so a reader of
+  a derived type can be passed where a reader of its base type is expected.
 - `HttpPipelineComponents.Sink<T>` creates a runtime-owned `IPipelineSink<T>`
   from an `HttpRequestFactory<T>` and an optional idempotency-key selector.
 - `HttpPipelineDefinitionBuilderExtensions.FromHttp` starts a definition with a

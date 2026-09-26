@@ -101,11 +101,8 @@ internal static class HttpRequestValidation
         if (key.Length is < 1 or > 255)
             throw new InvalidOperationException("An idempotency key must contain between 1 and 255 printable ASCII characters.");
 
-        foreach (var character in key)
-        {
-            if (character < 0x21 || character > 0x7e)
-                throw new InvalidOperationException("An idempotency key must contain only printable ASCII characters without whitespace.");
-        }
+        if (key.AsSpan().ContainsAnyExceptInRange('!', '~'))
+            throw new InvalidOperationException("An idempotency key must contain only printable ASCII characters without whitespace.");
     }
 }
 
@@ -258,7 +255,7 @@ internal static class HttpResponseErrorPreview
 
             var retainedCount = (int)Math.Min(read, (long)maxBytes - consumed);
             if (retainedCount > 0)
-                retained.Write(buffer, 0, retainedCount);
+                await retained.WriteAsync(buffer.AsMemory(0, retainedCount), cancellationToken).ConfigureAwait(false);
 
             consumed += read;
             if (consumed > maxBytes)

@@ -78,6 +78,16 @@ internal sealed class UnframedInputLimitStream : Stream
         Memory<byte> buffer,
         CancellationToken cancellationToken = default) => ReadMemoryAsync(buffer, cancellationToken);
 
+    public override Task<int> ReadAsync(
+        byte[] buffer,
+        int offset,
+        int count,
+        CancellationToken cancellationToken)
+    {
+        ValidateBuffer(buffer, offset, count);
+        return ReadLegacyAsync(buffer, offset, count, cancellationToken);
+    }
+
     private async ValueTask<int> ReadMemoryAsync(Memory<byte> buffer, CancellationToken cancellationToken)
     {
         var permitted = GetPermittedReadCount(buffer.Length);
@@ -87,16 +97,6 @@ internal sealed class UnframedInputLimitStream : Stream
         var read = await _inner.ReadAsync(buffer[..permitted], cancellationToken).ConfigureAwait(false);
         Count(read, permitted);
         return read;
-    }
-
-    public override Task<int> ReadAsync(
-        byte[] buffer,
-        int offset,
-        int count,
-        CancellationToken cancellationToken)
-    {
-        ValidateBuffer(buffer, offset, count);
-        return ReadLegacyAsync(buffer, offset, count, cancellationToken);
     }
 
     private async Task<int> ReadLegacyAsync(

@@ -19,7 +19,7 @@ public delegate ValueTask<HttpRequestMessage> HttpRequestFactory<T>(
 /// <param name="response">The borrowed response for the duration of enumeration.</param>
 /// <param name="cancellationToken">Cancellation token for response-body reading.</param>
 /// <returns>An asynchronous sequence of materialized values.</returns>
-public delegate IAsyncEnumerable<T> HttpResponseReader<T>(
+public delegate IAsyncEnumerable<T> HttpResponseReader<out T>(
     HttpResponseMessage response,
     CancellationToken cancellationToken);
 

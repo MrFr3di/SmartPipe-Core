@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -25,7 +26,7 @@ public static class HttpJsonResponseReaders
         var snapshot = HttpJsonOptionsSnapshotFactory.Create(options);
         var frozenTypeInfo = JsonMetadataSnapshot.ForValue(itemTypeInfo, snapshot.MaxDepth);
         return (response, cancellationToken) => ReadArrayAsync(
-            response,
+            GetContent(response),
             frozenTypeInfo,
             snapshot,
             cancellationToken);
@@ -43,20 +44,25 @@ public static class HttpJsonResponseReaders
         var snapshot = HttpJsonOptionsSnapshotFactory.Create(options);
         var frozenTypeInfo = JsonMetadataSnapshot.ForValue(itemTypeInfo, snapshot.MaxDepth);
         return (response, cancellationToken) => ReadNdjsonAsync(
-            response,
+            GetContent(response),
             frozenTypeInfo,
             snapshot,
             cancellationToken);
     }
 
+    /// <summary>Validates the response eagerly so argument failures surface when the reader is invoked.</summary>
+    private static HttpContent GetContent(HttpResponseMessage response)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+        return response.Content ?? throw new InvalidOperationException("The HTTP response has no body content.");
+    }
+
     private static async IAsyncEnumerable<T> ReadArrayAsync<T>(
-        HttpResponseMessage response,
+        HttpContent content,
         JsonTypeInfo<T> itemTypeInfo,
         HttpJsonArrayOptionsSnapshot options,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(response);
-        var content = response.Content ?? throw new InvalidOperationException("The HTTP response has no body content.");
         var body = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         using var limitedBody = new UnframedInputLimitStream(body, options.MaxUnframedBytes, CreateLimitException);
 
@@ -68,18 +74,16 @@ public static class HttpJsonResponseReaders
             if (IsSkippedNull(item, options.NullItemPolicy, "The HTTP JSON array contains a null item."))
                 continue;
 
-            yield return item!;
+            yield return item;
         }
     }
 
     private static async IAsyncEnumerable<T> ReadNdjsonAsync<T>(
-        HttpResponseMessage response,
+        HttpContent content,
         JsonTypeInfo<T> itemTypeInfo,
         HttpNdjsonOptionsSnapshot options,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(response);
-        var content = response.Content ?? throw new InvalidOperationException("The HTTP response has no body content.");
         var body = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         using var limitedBody = new UnframedInputLimitStream(body, options.MaxUnframedBytes, CreateLimitException);
 
@@ -99,13 +103,13 @@ public static class HttpJsonResponseReaders
             if (IsSkippedNull(item, options.NullItemPolicy, "The HTTP NDJSON response contains a null item."))
                 continue;
 
-            yield return item!;
+            yield return item;
         }
     }
 
     /// <summary>Applies the null-item policy at a complete item boundary.</summary>
     /// <returns><see langword="true"/> when the item is null and must be skipped.</returns>
-    private static bool IsSkippedNull<T>(T? item, HttpJsonNullItemPolicy policy, string message)
+    private static bool IsSkippedNull<T>([NotNullWhen(false)] T? item, HttpJsonNullItemPolicy policy, string message)
     {
         if (item is not null)
             return false;

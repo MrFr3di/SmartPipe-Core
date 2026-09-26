@@ -19,6 +19,16 @@ public sealed class HttpJsonResponseReadersTests
     }
 
     [Fact]
+    public void JsonArrayAndNdjson_RejectNullResponseWhenInvokedBeforeEnumeration()
+    {
+        var arrayReader = HttpJsonResponseReaders.JsonArray(TestJsonContext.Default.Int32);
+        var ndjsonReader = HttpJsonResponseReaders.Ndjson(TestJsonContext.Default.Int32);
+
+        Assert.Equal("response", Assert.Throws<ArgumentNullException>(() => arrayReader(null!, default)).ParamName);
+        Assert.Equal("response", Assert.Throws<ArgumentNullException>(() => ndjsonReader(null!, default)).ParamName);
+    }
+
+    [Fact]
     public async Task JsonArray_YieldsFirstItemBeforeTheRemainingBodyArrives()
     {
         var stream = new ChunkGateStream(Encoding.UTF8.GetBytes("[1,"), Encoding.UTF8.GetBytes("2]"));
