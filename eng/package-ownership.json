@@ -420,15 +420,15 @@
       "evidence": "facade ExportedType forwarder and Mapster leaf implementation"
     },
     {
-      "typePattern": "SmartPipe.Extensions.Transforms.PollyResilienceTransform*",
+      "typePattern": "SmartPipe.Extensions.Transforms.PollyResilienceTransform\u00601",
       "baselineAssembly": "SmartPipe.Extensions",
       "currentImplementationAssembly": "SmartPipe.Extensions",
-      "targetImplementationAssembly": "SmartPipe.Extensions.Polly",
-      "compatibilityAssembly": "SmartPipe.Extensions",
-      "strategy": "type-forward",
+      "targetImplementationAssembly": "SmartPipe.Extensions",
+      "compatibilityAssembly": null,
+      "strategy": "removed",
       "migrationEpic": "SP220-14",
       "namespacePreserved": true,
-      "evidence": "SP220 Polly extraction"
+      "evidence": "ADR-0004 removal without wrapper or forwarder; the 2.1.2 type returned success from a no-op instead of running an inner transform; replacement SmartPipe.Extensions.Polly.PollyPipelineComponents.Decorate/PollyTransformDecorator"
     },
     {
       "typePattern": "SmartPipe.Extensions.Transforms.ValidationTransform*",

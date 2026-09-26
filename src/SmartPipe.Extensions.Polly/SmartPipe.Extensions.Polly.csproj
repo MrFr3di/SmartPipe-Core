@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SmartPipePackage>true</SmartPipePackage>
+  </PropertyGroup>
+  <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
+  <PropertyGroup>
+    <PackageId>SmartPipe.Extensions.Polly</PackageId>
+    <Description>Polly resilience decorator for SmartPipe.Core transforms with explicit inner-transform ownership.</Description>
+    <PackageTags>smartpipe;pipeline;polly;resilience;retry;transform</PackageTags>
+    <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SmartPipe.Core\SmartPipe.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <PackageReference Include="Polly.Core" />
+  </ItemGroup>
+</Project>

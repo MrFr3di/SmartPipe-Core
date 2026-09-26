@@ -32,7 +32,6 @@ connection.
 | `CsvTransform<TIn,TOut>` | CsvHelper | CSV parsing |
 | `MapsterTransform<TIn,TOut>` | Mapster | Runtime object mapping |
 | `CompressionTransform` | System.IO.Compression | Brotli/GZip compression |
-| `PollyResilienceTransform<T>` | Polly v8 | Retry/CircuitBreaker/Hedging |
 | `FilterTransform<T>` | — | Predicate-based filtering with And/Or/Not |
 | `ValidationTransform<T>` | DataAnnotations | Data validation with custom rules |
 | `ConditionalTransform<T>` | — | Apply transform only when condition met |
@@ -62,7 +61,16 @@ request content from those packages, then recompile.
 The HTTP adapters never retry. Avoid configuring retry in several of the
 following for the same operation unless that layered retry budget is
 intentional: SmartPipe stage policies, `HttpClient` handlers, and the
-SP220-14 Polly decorator.
+`SmartPipe.Extensions.Polly` decorator.
+
+## Polly
+
+`PollyResilienceTransform<T>` was removed in 2.2.0 by
+[ADR-0004](../../docs/adr/0004-smartpipe-2.2-breaking-migration.md), with no wrapper
+or type forwarder: it returned success without running an inner transform. This
+bundle references `SmartPipe.Extensions.Polly`; use `PollyPipelineComponents.Decorate`
+or `PollyTransformDecorator<TInput,TOutput>` with a typed `ResiliencePipeline<StageResult<TOutput>>`
+and explicit inner ownership, then recompile.
 
 ## Health Checks
 
@@ -128,13 +136,13 @@ is planned for removal in SmartPipe 3.0.
 - SmartPipe.Core 2.1.2 (included as dependency)
 - This package intentionally includes integration dependencies for the features below.
 - Individual features pull their own dependencies:
-  - `HttpSelector` / `HttpSink` → Polly (via Microsoft.Extensions.Resilience)
+  - HTTP transport and codecs → `SmartPipe.Extensions.Http` / `SmartPipe.Extensions.Http.Json`
   - `EfCoreSelector` → Entity Framework Core (forwarded; the leaf owns the implementation)
   - `DapperSelector` / `DbSink` → Dapper
   - `MapsterTransform` → Mapster (forwarded; the `SmartPipe.Extensions.Mapster` leaf owns the
     implementation and the new composition API)
   - `CsvFileSource` / `CsvFileSink` / `CsvTransform` → CsvHelper
-  - `PollyResilienceTransform` → Polly.Core
+  - Polly decorator → `SmartPipe.Extensions.Polly` (`Polly.Core` only)
   - `SmartPipeHostedService` / `SmartPipeHealthCheck` → Microsoft.Extensions.Hosting / HealthChecks
   - Other components use platform APIs or dependencies already carried by this package.
 

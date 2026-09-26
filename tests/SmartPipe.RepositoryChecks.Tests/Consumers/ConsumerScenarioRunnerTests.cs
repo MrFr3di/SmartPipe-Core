@@ -516,7 +516,7 @@ public sealed class ConsumerScenarioRunnerTests
              "SmartPipe.Extensions.EntityFrameworkCore",
              "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Http", "SmartPipe.Extensions.Json",
              "SmartPipe.Extensions.Http.Json",
-             "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.Mapster", "SmartPipe.Extensions"],
+             "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.Mapster", "SmartPipe.Extensions.Polly", "SmartPipe.Extensions"],
             closure);
     }
 
