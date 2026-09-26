@@ -58,9 +58,25 @@ preserved for the removed identities. The facade no longer carries these
 composite APIs. ADR-0001 is partially superseded for HTTP compatibility only;
 ADR-0002 and ADR-0003 are unchanged.
 
+## Amendment: SP220-14 Polly no-op removal
+
+- Date: 2026-09-26
+- Accepted checkpoint base: F, true merge `7901a79ce153c3fec22121b9d782d5c8a1576451` (PR #92)
+
+`SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>` is removed from
+`SmartPipe.Extensions` under the same rules. Its Polly callback returned
+`StageResult<T>.Success(envelope.Payload)` without running an inner transform,
+so forwarding it would preserve a type that never protected real work. It is
+recorded as `Removed` in the ownership matrix, is absent from implementation and
+type forwarders, and has one targeted native `CP0001` ApiCompat suppression.
+Consumers migrate to `SmartPipe.Extensions.Polly`
+(`PollyTransformDecorator<TInput,TOutput>` and `PollyPipelineComponents.Decorate`)
+and recompile. The facade no longer depends on `Microsoft.Extensions.Resilience`.
+
 ## Supersession
 
 This ADR partially supersedes ADR-0001's compatibility requirements for the
-four named HTTP identities. It also replaces the direct-to-release task route in
+four named HTTP identities and, by the SP220-14 amendment, for
+`PollyResilienceTransform<T>`. It also replaces the direct-to-release task route in
 the 2.2.0 branch policy with the E/F/G checkpoint sequence. All unrelated
 package, runtime, and compatibility decisions remain in force.

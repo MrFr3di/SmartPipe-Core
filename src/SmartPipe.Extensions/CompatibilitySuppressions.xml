@@ -36,4 +36,11 @@
     <Right>lib/net10.0/SmartPipe.Extensions.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0001</DiagnosticId>
+    <Target>T:SmartPipe.Extensions.Transforms.PollyResilienceTransform`1</Target>
+    <Left>lib/net10.0/SmartPipe.Extensions.dll</Left>
+    <Right>lib/net10.0/SmartPipe.Extensions.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
 </Suppressions>

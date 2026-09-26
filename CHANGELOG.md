@@ -16,6 +16,15 @@
   `HttpSink<T>`, `HttpClientFactorySink<T>`, and `HttpSelectorStreamingMode` from
   `SmartPipe.Extensions` per ADR-0004. There are no wrappers or forwarders;
   migrate to the HTTP leaves and recompile.
+- Added `SmartPipe.Extensions.Polly`, a decorator that runs the real inner
+  transform once per attempt of an application-owned typed Polly pipeline, with
+  explicit inner ownership, single-flight lifecycle, final-outcome preservation,
+  and an opt-in final-exception mapper. It depends only on Core and
+  `Polly.Core` 8.8.0.
+- **Breaking:** removed the no-op `PollyResilienceTransform<T>` from
+  `SmartPipe.Extensions` per ADR-0004; it never ran an inner transform. There is
+  no wrapper or forwarder; migrate to `SmartPipe.Extensions.Polly` and
+  recompile. The facade no longer depends on `Microsoft.Extensions.Resilience`.
 
 ## [2.2.0] — Development
 

@@ -85,7 +85,10 @@
         "http-nativeaot",
         "http-json-direct",
         "http-json-trim",
-        "http-json-nativeaot"
+        "http-json-nativeaot",
+        "polly-direct",
+        "polly-trim",
+        "polly-nativeaot"
       ]
     },
     {
@@ -406,9 +409,9 @@
     {
       "id": "SmartPipe.Extensions.Polly",
       "projectPath": "src/SmartPipe.Extensions.Polly/SmartPipe.Extensions.Polly.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-14",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 10,
       "baselineVersion": null,
       "aotContract": "verified",
@@ -418,7 +421,7 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Resilience"
+          "Polly.Core"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -430,7 +433,7 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Resilience"
+          "Polly.Core"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -438,7 +441,9 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "polly-direct"
+        "polly-direct",
+        "polly-trim",
+        "polly-nativeaot"
       ]
     },
     {
@@ -818,7 +823,8 @@
           "SmartPipe.Extensions.EntityFrameworkCore",
           "SmartPipe.Extensions.Mapster",
           "SmartPipe.Extensions.Http",
-          "SmartPipe.Extensions.Http.Json"
+          "SmartPipe.Extensions.Http.Json",
+          "SmartPipe.Extensions.Polly"
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
@@ -856,7 +862,6 @@
           "Microsoft.Extensions.Hosting.Abstractions",
           "Microsoft.Extensions.Http",
           "Microsoft.Extensions.Options",
-          "Microsoft.Extensions.Resilience",
           "Microsoft.Extensions.Logging.Abstractions",
           "CsvHelper",
           "Dapper",
@@ -866,13 +871,6 @@
         "forbiddenPackagePatterns": []
       },
       "temporaryAllowances": [
-        {
-          "dependency": "Microsoft.Extensions.Resilience",
-          "reason": "Legacy resilience signatures remain embedded",
-          "ownerEpic": "SP220-14",
-          "expiresBeforeRelease": false,
-          "evidence": "legacy PollyResilienceTransform public surface"
-        },
         {
           "dependency": "Microsoft.Extensions.Logging.Abstractions",
           "reason": "Compatibility facade public signatures require logging abstractions",

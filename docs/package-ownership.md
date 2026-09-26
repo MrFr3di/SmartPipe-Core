@@ -19,6 +19,8 @@ The machine-readable authority is `eng/package-ownership.json`.
 | Streaming HTTP transport sources and sinks | `SmartPipe.Extensions.Http` | none | new 2.2 API |
 | HTTP JSON array/NDJSON readers and request content | `SmartPipe.Extensions.Http.Json` | none | new 2.2 API |
 | `HttpSelector<T>`, `HttpClientFactorySelector<T>`, `HttpSink<T>`, `HttpClientFactorySink<T>`, `HttpSelectorStreamingMode` | none | none | `removed` per ADR-0004; consumers recompile against the HTTP leaves |
+| Polly transform decorator and component factories | `SmartPipe.Extensions.Polly` | none | new 2.2 API |
+| `PollyResilienceTransform<T>` | none | none | `removed` per ADR-0004; consumers recompile against `SmartPipe.Extensions.Polly` |
 
 The HealthChecks leaf depends only on Core, DependencyInjection, DI abstractions, Diagnostics.HealthChecks, and Options. It does not depend on Hosting, ASP.NET Core, or the broad facade.
 
@@ -53,3 +55,9 @@ leaves as part of the bundle and no longer carries a direct `Microsoft.Extension
 five removed HTTP identities are recorded as `removed` in `eng/package-ownership.json`: they are absent
 from every current implementation and forwarder, and native ApiCompat suppresses exactly those
 `CP0001` differences against the 2.1.2 baseline.
+
+`SmartPipe.Extensions.Polly` depends only on Core and `Polly.Core`; it has no dependency on the facade,
+`Polly.Extensions`, `Polly.RateLimiting`, `Microsoft.Extensions.Resilience`, DI, Hosting, or HTTP. The facade
+references the leaf as part of the bundle and no longer carries `Microsoft.Extensions.Resilience`. The
+no-op `PollyResilienceTransform<T>` is recorded as `removed` in `eng/package-ownership.json`, and native
+ApiCompat suppresses exactly that `CP0001` difference against the 2.1.2 baseline.

@@ -102,6 +102,10 @@ HTTP_JSON_TEST_PROJECT = (
     "tests/SmartPipe.Extensions.Http.Json.Tests/"
     "SmartPipe.Extensions.Http.Json.Tests.csproj"
 )
+POLLY_TEST_PROJECT = (
+    "tests/SmartPipe.Extensions.Polly.Tests/"
+    "SmartPipe.Extensions.Polly.Tests.csproj"
+)
 LYCHEE_URL = (
     "https://github.com/lycheeverse/lychee/releases/download/"
     "lychee-v0.21.0/lychee-x86_64-windows.exe"
@@ -834,6 +838,11 @@ def assert_csv_integration_contract(ci: dict, reusable: dict) -> None:
         f"dotnet test --project {HTTP_JSON_TEST_PROJECT} --configuration Release --no-build "
         "--minimum-expected-tests 1"
     ), "Reusable validation must run the complete HTTP JSON test project with a non-empty gate.")
+    polly_step = named_step(reusable_steps, "Polly Extensions tests")
+    require(" ".join(str(polly_step.get("run", "")).split()) == (
+        f"dotnet test --project {POLLY_TEST_PROJECT} --configuration Release --no-build "
+        "--minimum-expected-tests 1"
+    ), "Reusable validation must run the complete Polly test project with a non-empty gate.")
     correctness = str(named_step(reusable_steps, "Extensions correctness regressions").get("run", ""))
     require("HttpSelectorTests" not in correctness
             and f"--project {HTTP_TEST_PROJECT} --no-build -c Release "

@@ -28,6 +28,12 @@ array and NDJSON readers and JSON request content accept only source-generated `
 `http-json-trim` and `http-json-nativeaot` consumers publish and run that path with reflection
 serialization disabled.
 
+`SmartPipe.Extensions.Polly` declares the `verified` contract for the decorator over `Polly.Core`: the
+`polly-trim` and `polly-nativeaot` consumers publish and run a Core pipeline whose stage is decorated with
+a Polly retry over an owned inner transform, plus a direct decorator with a borrowed inner transform and
+an exception mapper. Application strategies, callbacks, Polly registry packages, and other dynamic code
+stay outside the claim.
+
 Use source-generated JSON metadata as the primary path for JSON file and
 dead-letter helpers:
 

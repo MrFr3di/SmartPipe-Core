@@ -278,7 +278,9 @@ Mapster leaves are active and their legacy identities are forwarded from the
 bundle. HTTP lives in the `SmartPipe.Extensions.Http` transport and
 `SmartPipe.Extensions.Http.Json` codec leaves; the 2.1.2 HTTP selector and sink
 types were removed by ADR-0004 and consumers recompile against those leaves.
-Polly still lives in `SmartPipe.Extensions` until its own leaf package lands.
+Polly lives in the `SmartPipe.Extensions.Polly` decorator leaf, which depends only on
+Core and `Polly.Core`; the 2.1.2 no-op `PollyResilienceTransform<T>` was removed by
+ADR-0004.
 Some non-JSON integrations may not be AOT-friendly.
 
 ## Extensions Package Surface

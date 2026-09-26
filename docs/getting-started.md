@@ -111,8 +111,7 @@ remain sequential; cross-envelope output order is not guaranteed.
 - selectors: `CsvFileSource<T>`, `EfCoreSelector<T>`,
   `DapperSelector<T>`;
 - transforms: `CsvTransform<TInput,TOutput>`, `MapsterTransform<TInput,TOutput>`,
-  `FilterTransform<T>`, `ValidationTransform<T>`,
-  `PollyResilienceTransform<T>`;
+  `FilterTransform<T>`, `ValidationTransform<T>`;
 - sinks: `LoggerSink<T>`, `CsvFileSink<T>`, `DbSink<T>`.
 
 The 2.1.2 `HttpSelector<T>`, `HttpClientFactorySelector<T>`, `HttpSink<T>`, and
@@ -121,6 +120,11 @@ The 2.1.2 `HttpSelector<T>`, `HttpClientFactorySelector<T>`, `HttpSink<T>`, and
 `SmartPipe.Extensions.Http.Json` (`HttpJsonResponseReaders`,
 `HttpJsonRequestContent`, `FromHttpNdjson`/`FromHttpJsonArray`/`ToHttpJson`) for
 source-generated JSON bodies.
+
+The 2.1.2 `PollyResilienceTransform<T>` was also removed: it never ran an inner
+transform. Use `SmartPipe.Extensions.Polly` (`PollyPipelineComponents.Decorate`
+with Core's `Transform(stageKey, component)`, or `PollyTransformDecorator<TInput,TOutput>`)
+with an application-owned `ResiliencePipeline<StageResult<TOutput>>`.
 
 `EfCoreSelector<T>` is forwarded from `SmartPipe.Extensions.EntityFrameworkCore`; new code uses
 `EfCorePipelineComponents.QuerySource`/`CompiledQuerySource` or the typed `FromQuery`/`FromCompiledQuery`

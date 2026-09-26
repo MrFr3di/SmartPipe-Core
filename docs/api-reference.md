@@ -90,6 +90,13 @@ Important selector and streaming contracts:
   source-generated `JsonTypeInfo<T>`. These replace the removed 2.1.2
   `HttpSelector<T>`, `HttpClientFactorySelector<T>`, `HttpSink<T>`, and
   `HttpClientFactorySink<T>`.
+- `SmartPipe.Extensions.Polly` (`PollyTransformDecorator<TInput,TOutput>`,
+  `PollyPipelineComponents.Decorate`) runs the real inner transform once per
+  attempt of an application-owned `ResiliencePipeline<StageResult<TOutput>>`,
+  returns the final result unchanged, and rethrows the final exception with its
+  identity unless an opt-in mapper handles it. Inner ownership (`Borrowed` or
+  `Owned`) is explicit. It replaces the removed 2.1.2 no-op
+  `PollyResilienceTransform<T>`.
 - `EfCoreSelector<T>` (forwarded from `SmartPipe.Extensions.EntityFrameworkCore`) reads with
   `AsNoTracking()` by default. Use `.WithTracking()` to opt into EF Core change tracking for returned
   entities. New code uses `EfCorePipelineComponents.QuerySource`/`CompiledQuerySource` or the typed

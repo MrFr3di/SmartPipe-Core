@@ -138,6 +138,9 @@ public sealed class ConsumerScenarioSchemaTests
                 "http-json-direct",
                 "http-json-trim",
                 "http-json-nativeaot",
+                "polly-direct",
+                "polly-trim",
+                "polly-nativeaot",
         };
         var actualIds = document.Scenarios.Select(scenario => scenario.Id).ToArray();
         Assert.Equal(actualIds.Length, actualIds.Distinct(StringComparer.Ordinal).Count());
