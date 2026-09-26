@@ -102,7 +102,7 @@ internal sealed class HttpPipelineSource<T> : IPipelineSource<T>
                 }
                 catch (Exception exception)
                 {
-                    primaryFailure = bodyCancellation?.Translate(exception) ?? exception;
+                    primaryFailure = bodyCancellation.Translate(exception);
                     ExceptionDispatchInfo.Throw(primaryFailure);
                     throw;
                 }
@@ -122,7 +122,8 @@ internal sealed class HttpPipelineSource<T> : IPipelineSource<T>
                 }
                 catch (Exception exception)
                 {
-                    if (primaryFailure is not null || bodyCancellation?.IsLateCancellation(exception) != true)
+                    // The enumerator exists only after the body-cancellation scope was created.
+                    if (primaryFailure is not null || !bodyCancellation!.IsLateCancellation(exception))
                         cleanupFailures.Add(exception);
                 }
             }

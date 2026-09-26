@@ -31,6 +31,10 @@ configured `MaxDepth`, freezes the copy, and captures a private `JsonTypeInfo<T>
 Runs use that snapshot directly. Your metadata is never changed, and later
 changes to your options do not affect a composed reader.
 
+A composed reader checks its `HttpResponseMessage` argument and body content
+when it is invoked, before enumeration starts. A null response or a response
+without content fails at that call rather than on the first `MoveNextAsync`.
+
 ## Limits and policies
 
 | Option | Default | Contract |
