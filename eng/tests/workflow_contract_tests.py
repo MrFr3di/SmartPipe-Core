@@ -118,8 +118,11 @@ POSTGRESQL_PRIMARY_VERSION = "18.6"
 POSTGRESQL_COMPATIBILITY_VERSION = "17.11"
 POSTGRESQL_SERVICE_IMAGE = "postgres:${{ matrix.postgres-version }}"
 POSTGRESQL_SERVICE_PORT = "5432:5432"
+POSTGRESQL_PASSWORD_EXPRESSION = "${{ format('smartpipe-{0}-{1}', github.run_id, github.run_attempt) }}"
 POSTGRESQL_CONNECTION_STRING = (
-    "Host=127.0.0.1;Port=5432;Username=postgres;Password=postgres;Database=smartpipe"
+    "Host=127.0.0.1;Port=5432;Username=postgres;Password="
+    + POSTGRESQL_PASSWORD_EXPRESSION
+    + ";Database=smartpipe"
 )
 LYCHEE_URL = (
     "https://github.com/lycheeverse/lychee/releases/download/"
@@ -898,8 +901,9 @@ def assert_postgresql_integration_contract(ci: dict) -> None:
     credentials = service.get("env")
     require(isinstance(credentials, dict)
             and credentials.get("POSTGRES_USER") == "postgres"
-            and credentials.get("POSTGRES_PASSWORD") == "postgres"
+            and credentials.get("POSTGRES_PASSWORD") == POSTGRESQL_PASSWORD_EXPRESSION
             and credentials.get("POSTGRES_DB") == "smartpipe"
+            and credentials.get("POSTGRES_HOST_AUTH_METHOD") != "trust"
             and POSTGRESQL_CONNECTION_STRING.endswith(
                 "Username=" + str(credentials.get("POSTGRES_USER"))
                 + ";Password=" + str(credentials.get("POSTGRES_PASSWORD"))
@@ -936,8 +940,9 @@ def assert_postgresql_integration_contract(ci: dict) -> None:
             "PostgreSQL integration tests must set --minimum-expected-tests 1.")
     environment = tests.get("env")
     require(isinstance(environment, dict)
-            and environment.get("SMARTPIPE_POSTGRES_CONNECTION_STRING") == POSTGRESQL_CONNECTION_STRING,
-            "PostgreSQL integration must expose SMARTPIPE_POSTGRES_CONNECTION_STRING to the test project.")
+            and environment.get("SMARTPIPE_POSTGRES_CONNECTION_STRING") == POSTGRESQL_CONNECTION_STRING
+            and POSTGRESQL_PASSWORD_EXPRESSION in str(environment.get("SMARTPIPE_POSTGRES_CONNECTION_STRING")),
+            "PostgreSQL integration must expose SMARTPIPE_POSTGRES_CONNECTION_STRING with the same per-run authenticated service connection.")
     require(environment.get("SMARTPIPE_POSTGRES_OPTIONAL") != "1",
             "PostgreSQL integration must fail, not skip, when the server is unavailable.")
     require(job_steps.index(restore) < job_steps.index(build) < job_steps.index(tests),
@@ -1000,8 +1005,9 @@ def assert_postgresql_consumer_partition_contract(reusable: dict, ci: dict) -> N
     environment = consumers.get("env")
     require(isinstance(environment, dict)
             and environment.get("SMARTPIPE_POSTGRES_CONNECTION_STRING") == POSTGRESQL_CONNECTION_STRING
+            and POSTGRESQL_PASSWORD_EXPRESSION in str(environment.get("SMARTPIPE_POSTGRES_CONNECTION_STRING"))
             and environment.get("SMARTPIPE_POSTGRES_OPTIONAL") == "0",
-            "PostgreSQL consumer scenarios must use the required real service connection.")
+            "PostgreSQL consumer scenarios must use the same required per-run authenticated service connection.")
     integration_tests = named_step(job_steps, "PostgreSQL integration tests")
     require(job_steps.index(integration_tests) < job_steps.index(package_steps[0])
             < job_steps.index(package_steps[1]) < job_steps.index(package_steps[2])

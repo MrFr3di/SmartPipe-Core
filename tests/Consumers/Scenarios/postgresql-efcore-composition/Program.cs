@@ -4,6 +4,7 @@ using NpgsqlTypes;
 using SmartPipe.Core;
 using SmartPipe.Extensions.EntityFrameworkCore;
 using SmartPipe.Extensions.PostgreSql;
+using SmartPipe.Consumer.PostgreSql;
 
 // The application owns the data source, the Entity Framework Core context factory and every connection string.
 // Npgsql.EntityFrameworkCore.PostgreSQL belongs to the application/test surface only: neither SmartPipe production

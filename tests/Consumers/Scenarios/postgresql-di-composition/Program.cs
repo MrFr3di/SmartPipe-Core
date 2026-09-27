@@ -3,6 +3,7 @@ using Npgsql;
 using SmartPipe.Core;
 using SmartPipe.Extensions.DependencyInjection;
 using SmartPipe.Extensions.PostgreSql;
+using SmartPipe.Consumer.PostgreSql;
 
 // The application builds the data source and the PostgreSQL definition; SmartPipe.Extensions.DependencyInjection
 // only registers the finished definition, and the PostgreSQL package itself stays free of any DI dependency.

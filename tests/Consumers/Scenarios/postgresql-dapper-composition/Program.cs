@@ -3,6 +3,7 @@ using NpgsqlTypes;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Dapper;
 using SmartPipe.Extensions.PostgreSql;
+using SmartPipe.Consumer.PostgreSql;
 
 // The application owns the data source, the schema and every connection string. Both integrations borrow the
 // same long-lived instance: SmartPipe.Extensions.Dapper through the generic DbDataSource boundary and the

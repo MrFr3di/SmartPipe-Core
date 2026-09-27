@@ -71,7 +71,13 @@ maps each external package ID explicitly to nuget.org.
 When `templatePath` names a `.csproj`, that exact top-level project is run;
 `.cs` templates still use the sole top-level project in their directory. A
 shared template directory may contain multiple projects when each project
-explicitly lists the source files it compiles.
+explicitly lists the source files it compiles. PostgreSQL consumer projects
+explicitly link `Scenarios/_shared/PostgreSqlConsumerSupport.cs`; the runner
+copies that one file into the isolated workspace beside the selected scenario.
+
+Contained paths reject reparse points in every existing component below the
+supplied repository root before reading or copying; missing paths retain their
+existing caller-specific validation.
 
 ## Verification
 

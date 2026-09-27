@@ -302,7 +302,7 @@ internal sealed class PostgreSqlBinaryCopySource<T> : IPipelineSource<T>
 
     private async Task DisposeCoreAsync()
     {
-        await _initializeGate.WaitAsync().ConfigureAwait(false);
+        await _initializeGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
             if (_disposed)
