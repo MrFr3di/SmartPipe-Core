@@ -703,9 +703,6 @@ internal sealed class SqliteDbDataSource(string connectionString) : DbDataSource
 /// <summary>Activates descriptors and builds the shared per-run test inputs.</summary>
 internal static class DapperTestActivation
 {
-    public static PipelineActivationContext CreateContext(string key = "dapper-test") =>
-        new(new PipelineKey(key), Guid.NewGuid());
-
     public static async Task<TComponent> ActivateAsync<TComponent>(
         PipelineComponent<TComponent> descriptor,
         PipelineActivationContext context,
@@ -733,15 +730,6 @@ internal static class DapperTestActivation
             Guid.NewGuid().ToString("N"),
             traceId: 1);
 
-    public static async Task<List<ProcessingEnvelope<T>>> ReadAllAsync<T>(
-        IPipelineSource<T> source,
-        CancellationToken cancellationToken)
-    {
-        var envelopes = new List<ProcessingEnvelope<T>>();
-        await foreach (var envelope in source.ReadEnvelopesAsync(cancellationToken))
-            envelopes.Add(envelope);
-        return envelopes;
-    }
 }
 
 /// <summary>A borrowed logger factory that records formatted messages.</summary>

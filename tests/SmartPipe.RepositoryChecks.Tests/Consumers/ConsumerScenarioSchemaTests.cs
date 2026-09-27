@@ -85,6 +85,7 @@ public sealed class ConsumerScenarioSchemaTests
                 "csv-facade-binary-2.1.2",
                 "csv-trim-diagnostic",
                 "core-direct",
+                "testing-direct",
                 "json-direct",
                 "extensions-meta",
                 "legacy-binary-2.1.2",
@@ -152,6 +153,10 @@ public sealed class ConsumerScenarioSchemaTests
         var actualIds = document.Scenarios.Select(scenario => scenario.Id).ToArray();
         Assert.Equal(actualIds.Length, actualIds.Distinct(StringComparer.Ordinal).Count());
         Assert.Subset(expectedIds, actualIds.ToHashSet(StringComparer.Ordinal));
+        var testing = Assert.Single(document.Scenarios, scenario => scenario.Id == "testing-direct");
+        Assert.Equal("current", testing.Set);
+        Assert.Equal(["SmartPipe.Testing"], testing.PackageIds);
+        Assert.Equal(["SmartPipe.Core", "SmartPipe.Testing"], testing.ExpectedSmartPipeDependencies);
         Assert.All(
             document.Scenarios.Where(scenario => scenario.Id.StartsWith("postgresql-", StringComparison.Ordinal)),
             scenario => Assert.Equal("postgresql", scenario.Category));

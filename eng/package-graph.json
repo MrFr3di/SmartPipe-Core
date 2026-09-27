@@ -505,9 +505,9 @@
     {
       "id": "SmartPipe.Testing",
       "projectPath": "src/SmartPipe.Testing/SmartPipe.Testing.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-16",
-      "scaffoldKind": "testing",
+      "scaffoldKind": null,
       "publishOrder": 12,
       "baselineVersion": null,
       "aotContract": "not-runtime",
