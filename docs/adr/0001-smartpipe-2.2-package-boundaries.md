@@ -31,6 +31,7 @@ All official packages ship in lockstep at version `2.2.0`. Internal package depe
 | `SmartPipe.Extensions.Http.Json` | JSON codecs over HTTP | Http, Json |
 | `SmartPipe.Extensions.Dapper` | Dapper query, command, and batch integration | Core |
 | `SmartPipe.Extensions.EntityFrameworkCore` | Provider-neutral EF Core streaming | Core |
+| `SmartPipe.Extensions.PostgreSql` | Binary COPY sources/sink and LISTEN/NOTIFY notification source | Core |
 | `SmartPipe.Extensions.Mapster` | Mapster transforms | Core |
 | `SmartPipe.Extensions.Polly` | Resilience decorator | Core |
 | `SmartPipe.Extensions.Transforms` | BCL transforms | Core |

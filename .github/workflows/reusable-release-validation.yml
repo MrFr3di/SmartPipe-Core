@@ -119,7 +119,7 @@ jobs:
 
     - name: Run current consumers
       shell: pwsh
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --package-directory artifacts/packages --package-version "$env:PACKAGE_VERSION"
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --exclude-category postgresql --package-directory artifacts/packages --package-version "$env:PACKAGE_VERSION"
 
     - name: Core correctness regressions
       run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-query /[Category=CorrectnessRegression] --minimum-expected-tests 1

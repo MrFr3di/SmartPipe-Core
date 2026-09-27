@@ -67,6 +67,49 @@ public sealed class ConsumerScenarioRunnerTests
     }
 
     [Fact]
+    public void RunConsumers_CurrentPostgreSqlAndExcludedPartitionsCoverAllScenarios()
+    {
+        var current = Enumerable.Range(1, 7)
+            .Select(index => CreateScenario($"postgresql-{index}", "postgresql"))
+            .Append(CreateScenario("core-direct", "core"))
+            .Append(CreateScenario("hosting-direct", "hosting"))
+            .Append(CreateScenario("unclassified", null))
+            .ToArray();
+        var postgresql = ConsumerScenarioRunner.SelectScenarios(
+            current,
+            new(string.Empty, "current", string.Empty, string.Empty, string.Empty, Category: "postgresql"));
+        var withoutPostgreSql = ConsumerScenarioRunner.SelectScenarios(
+            current,
+            new(string.Empty, "current", string.Empty, string.Empty, string.Empty, ExcludeCategory: "postgresql"));
+        var conflictingFilters = ConsumerScenarioRunner.SelectScenarios(
+            current,
+            new(string.Empty, "current", string.Empty, string.Empty, string.Empty,
+                Category: "postgresql", ExcludeCategory: "postgresql"));
+
+        Assert.Equal(7, postgresql.Count);
+        Assert.All(postgresql, scenario => Assert.Equal("postgresql", scenario.Category));
+        Assert.All(withoutPostgreSql, scenario => Assert.NotEqual("postgresql", scenario.Category));
+        Assert.Empty(conflictingFilters);
+        Assert.Equal(
+            current.Select(scenario => scenario.Id).Order(StringComparer.Ordinal),
+            postgresql.Concat(withoutPostgreSql).Select(scenario => scenario.Id).Order(StringComparer.Ordinal));
+
+        static ConsumerScenario CreateScenario(string id, string? category) => new()
+        {
+            Id = id,
+            Set = "current",
+            Category = category,
+            Mode = ConsumerMode.BuildAndRun,
+            TemplatePath = string.Empty,
+            PackageIds = [],
+            ExpectedSmartPipeDependencies = [],
+            ForbiddenDependencies = [],
+            Timeout = TimeSpan.FromSeconds(1),
+            RunSecondLockedRestore = false,
+        };
+    }
+
+    [Fact]
     public void ProcessFailure_IsBoundedSingleLineAndPointsToRelativeRetainedEvidence()
     {
         using var fixture = new RepositoryTestDirectory();

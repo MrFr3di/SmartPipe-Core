@@ -106,6 +106,15 @@ remain sequential; cross-envelope output order is not guaranteed.
 - `JsonFileSink<T>`
 - `DeadLetterSink<T>`
 
+### SmartPipe.Extensions.PostgreSql
+
+- sources: `PostgreSqlPipelineDefinitionBuilder.FromBinaryCopy<T>`,
+  `FromNotifications`;
+- sink: `ToPostgreSqlBinaryCopy`.
+
+Binary `COPY` and `LISTEN`/`NOTIFY` over an application-owned `NpgsqlDataSource`. See the
+[PostgreSQL subsystem reference](postgresql.md).
+
 ### SmartPipe.Extensions
 
 - selectors: `CsvFileSource<T>`, `EfCoreSelector<T>`,
@@ -144,5 +153,6 @@ Next links:
 - [Configuration](configuration.md)
 - [Runtime contracts](runtime-contracts.md)
 - [Resilience](resilience.md)
+- [PostgreSQL](postgresql.md)
 - [API reference](api-reference.md)
 - [Migration guide](migration/legacy-to-typed.md)

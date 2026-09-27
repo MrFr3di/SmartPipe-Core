@@ -327,7 +327,7 @@
       "targetImplementationAssembly": "SmartPipe.Extensions",
       "compatibilityAssembly": "SmartPipe.Extensions",
       "strategy": "obsolete-wrapper",
-      "migrationEpic": "SP220-16",
+      "migrationEpic": "SP220-17",
       "namespacePreserved": true,
       "evidence": "legacy facade service collection wrapper"
     },
