@@ -26,14 +26,23 @@ internal static class Program
 
     private sealed class TinySource : IPipelineSource<int>
     {
+        private bool _initialized;
+
         public int DisposeCount { get; private set; }
 
-        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask InitializeAsync(CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            _initialized = true;
+            return ValueTask.CompletedTask;
+        }
 
         public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
             [EnumeratorCancellation] CancellationToken ct = default)
         {
             ct.ThrowIfCancellationRequested();
+            if (!_initialized)
+                throw new InvalidOperationException("The source has not been initialized.");
             yield return ProcessingEnvelope<int>.Create(42);
             await Task.CompletedTask;
         }
