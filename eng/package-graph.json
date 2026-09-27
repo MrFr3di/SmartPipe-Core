@@ -88,7 +88,14 @@
         "http-json-nativeaot",
         "polly-direct",
         "polly-trim",
-        "polly-nativeaot"
+        "polly-nativeaot",
+        "postgresql-direct",
+        "postgresql-dapper-composition",
+        "postgresql-efcore-composition",
+        "postgresql-di-composition",
+        "postgresql-opentelemetry-composition",
+        "postgresql-trim",
+        "postgresql-nativeaot"
       ]
     },
     {
@@ -322,7 +329,8 @@
       "consumerScenarios": [
         "dapper-direct",
         "dapper-di-composition",
-        "dapper-trim-diagnostic"
+        "dapper-trim-diagnostic",
+        "postgresql-dapper-composition"
       ]
     },
     {
@@ -364,7 +372,8 @@
       "consumerScenarios": [
         "entity-framework-core-direct",
         "entity-framework-core-di-composition",
-        "entity-framework-core-trim-diagnostic"
+        "entity-framework-core-trim-diagnostic",
+        "postgresql-efcore-composition"
       ]
     },
     {
@@ -497,7 +506,7 @@
       "id": "SmartPipe.Testing",
       "projectPath": "src/SmartPipe.Testing/SmartPipe.Testing.csproj",
       "lifecycle": "planned",
-      "activationEpic": "SP220-15",
+      "activationEpic": "SP220-16",
       "scaffoldKind": "testing",
       "publishOrder": 12,
       "baselineVersion": null,
@@ -620,7 +629,8 @@
         "health-checks-direct",
         "health-checks-aspnet",
         "health-checks-trim",
-        "health-checks-nativeaot"
+        "health-checks-nativeaot",
+        "postgresql-di-composition"
       ]
     },
     {
@@ -662,7 +672,8 @@
         "opentelemetry-otlp",
         "opentelemetry-facade",
         "opentelemetry-trim",
-        "opentelemetry-nativeaot"
+        "opentelemetry-nativeaot",
+        "postgresql-opentelemetry-composition"
       ]
     },
     {
@@ -803,7 +814,7 @@
       "id": "SmartPipe.Extensions",
       "projectPath": "src/SmartPipe.Extensions/SmartPipe.Extensions.csproj",
       "lifecycle": "compatibility-facade",
-      "activationEpic": "existing/SP220-16",
+      "activationEpic": "existing/SP220-17",
       "scaffoldKind": null,
       "publishOrder": 19,
       "baselineVersion": "2.1.2",
@@ -874,7 +885,7 @@
         {
           "dependency": "Microsoft.Extensions.Logging.Abstractions",
           "reason": "Compatibility facade public signatures require logging abstractions",
-          "ownerEpic": "SP220-16",
+          "ownerEpic": "SP220-17",
           "expiresBeforeRelease": false,
           "evidence": "public LoggerSink and logging extension signatures"
         },
@@ -915,6 +926,54 @@
         "entity-framework-core-facade-binary-2.1.2",
         "mapster-facade-binary-2.1.2",
         "opentelemetry-facade"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.PostgreSql",
+      "projectPath": "src/SmartPipe.Extensions.PostgreSql/SmartPipe.Extensions.PostgreSql.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-15",
+      "scaffoldKind": null,
+      "publishOrder": 20,
+      "baselineVersion": null,
+      "aotContract": "verified",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Logging.Abstractions",
+          "Npgsql"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions",
+          "SmartPipe.Extensions.Dapper"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Logging.Abstractions",
+          "Npgsql"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions",
+          "SmartPipe.Extensions.Dapper"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "postgresql-direct",
+        "postgresql-dapper-composition",
+        "postgresql-efcore-composition",
+        "postgresql-di-composition",
+        "postgresql-opentelemetry-composition",
+        "postgresql-trim",
+        "postgresql-nativeaot"
       ]
     }
   ]

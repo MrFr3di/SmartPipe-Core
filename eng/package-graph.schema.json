@@ -10,8 +10,8 @@
     "releaseVersion": { "const": "2.2.0" },
     "packages": {
       "type": "array",
-      "minItems": 19,
-      "maxItems": 19,
+      "minItems": 20,
+      "maxItems": 20,
       "items": { "$ref": "#/$defs/package" }
     }
   },

@@ -125,6 +125,17 @@ Important selector and streaming contracts:
   preformed `IReadOnlyList<T>` envelope as a single bounded parameter sequence
   with an explicit `PerBatch` or `None` transaction mode. The entry points carry
   `RequiresUnreferencedCode` and `RequiresDynamicCode` annotations.
+- `SmartPipe.Extensions.PostgreSql` adds PostgreSQL-native components over an
+  application-owned `NpgsqlDataSource` that SmartPipe never constructs,
+  configures, mutates or disposes and never accepts as a connection string:
+  `PostgreSqlPipelineDefinitionBuilder.FromBinaryCopy<T>` streams a binary
+  `COPY … TO STDOUT (FORMAT BINARY)` result, `ToPostgreSqlBinaryCopy` writes one
+  complete binary `COPY … FROM STDIN (FORMAT BINARY)` per batch envelope so a
+  successful `WriteAsync` means `CompleteAsync` already succeeded, and
+  `FromNotifications` emits `PostgreSqlNotification` records from
+  `LISTEN`/`NOTIFY` with no reconnect, no retry and no durability guarantee.
+  Every component rejects an ambient `System.Transactions.Transaction.Current`.
+  See the [PostgreSQL subsystem reference](postgresql.md).
 - `JsonFileSink<T>` writes newline-delimited JSON batches: each flush appends
   one UTF-8 JSON array followed by a newline. Path-backed files use append
   semantics, checkpoint seekable stream length and position before each batch,

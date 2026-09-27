@@ -772,6 +772,97 @@
       "baselineVersion": null,
       "timeout": "00:15:00",
       "runSecondLockedRestore": true
+    },
+    {
+      "id": "postgresql-direct",
+      "set": "current",
+      "category": "postgresql",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Dapper", "SmartPipe.Extensions.EntityFrameworkCore"],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "postgresql-dapper-composition",
+      "set": "current",
+      "category": "postgresql",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/postgresql-dapper-composition/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql", "SmartPipe.Extensions.Dapper"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql", "SmartPipe.Extensions.Dapper"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.EntityFrameworkCore", "SmartPipe.Extensions.Hosting"],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "postgresql-efcore-composition",
+      "set": "current",
+      "category": "postgresql",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/postgresql-efcore-composition/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql", "SmartPipe.Extensions.EntityFrameworkCore"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql", "SmartPipe.Extensions.EntityFrameworkCore"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Dapper", "SmartPipe.Extensions.Hosting"],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "postgresql-di-composition",
+      "set": "current",
+      "category": "postgresql",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/postgresql-di-composition/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql", "SmartPipe.Extensions.DependencyInjection"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql", "SmartPipe.Extensions.DependencyInjection"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.Dapper", "SmartPipe.Extensions.EntityFrameworkCore", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.HealthChecks"],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "postgresql-opentelemetry-composition",
+      "set": "current",
+      "category": "postgresql",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/postgresql-opentelemetry-composition/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql", "SmartPipe.Extensions.OpenTelemetry"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql", "SmartPipe.Extensions.OpenTelemetry"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.HealthChecks", "OpenTelemetry.Exporter.OpenTelemetryProtocol"],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "postgresql-trim",
+      "set": "current",
+      "category": "postgresql",
+      "mode": "publish-trimmed",
+      "templatePath": "tests/Consumers/Scenarios/postgresql-trim/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Dapper", "SmartPipe.Extensions.EntityFrameworkCore"],
+      "baselineVersion": null,
+      "timeout": "00:10:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "postgresql-nativeaot",
+      "set": "current",
+      "category": "postgresql",
+      "mode": "publish-native-aot",
+      "templatePath": "tests/Consumers/Scenarios/postgresql-nativeaot/Consumer.csproj",
+      "packageIds": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Extensions.PostgreSql"],
+      "forbiddenDependencies": ["SmartPipe.Extensions", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.Dapper", "SmartPipe.Extensions.EntityFrameworkCore"],
+      "baselineVersion": null,
+      "timeout": "00:15:00",
+      "runSecondLockedRestore": true
     }
   ]
 }

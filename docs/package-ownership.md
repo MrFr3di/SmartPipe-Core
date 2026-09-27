@@ -15,6 +15,7 @@ The machine-readable authority is `eng/package-ownership.json`.
 | CSV file source, sink, transform, and strict definitions | `SmartPipe.Extensions.Csv` | `SmartPipe.Extensions` | legacy type forwarding plus new strict 2.2 API |
 | Dapper selector and DB sink plus explicit-SQL definitions | `SmartPipe.Extensions.Dapper` | `SmartPipe.Extensions` | legacy type forwarding plus new explicit-SQL 2.2 API |
 | Entity Framework Core query sources | `SmartPipe.Extensions.EntityFrameworkCore` | `SmartPipe.Extensions` | legacy type forwarding plus new provider-neutral 2.2 query sources |
+| Binary COPY sources/sink and LISTEN/NOTIFY notification source | `SmartPipe.Extensions.PostgreSql` | none | new 2.2 API; no facade edge and no type forwarding |
 | Mapster composition transform | `SmartPipe.Extensions.Mapster` | `SmartPipe.Extensions` | legacy type forwarding plus new composition-time isolation API |
 | Streaming HTTP transport sources and sinks | `SmartPipe.Extensions.Http` | none | new 2.2 API |
 | HTTP JSON array/NDJSON readers and request content | `SmartPipe.Extensions.Http.Json` | none | new 2.2 API |
@@ -42,6 +43,12 @@ no dependency on the facade, DI, Hosting, JSON, CSV, or HTTP packages.
 Logging.Abstractions. The broad facade keeps its direct Entity Framework Core dependency while the
 `EfCoreSelector<T>` forwarder exists. The leaf has no dependency on the facade, DI, Hosting, JSON,
 CSV, Dapper, or HTTP packages, and no dependency on any Entity Framework Core provider.
+
+`SmartPipe.Extensions.PostgreSql` depends only on Core, `Npgsql`, and Logging.Abstractions. It has
+no dependency on the facade, DI, Hosting, JSON, CSV, Dapper, Entity Framework Core, or HTTP packages,
+and it never constructs, mutates or disposes the application-owned `NpgsqlDataSource`. The facade does
+not reference it, its public types are new in 2.2.0, and it therefore carries no type forwarder and no
+required package edge from `SmartPipe.Extensions`.
 
 `SmartPipe.Extensions.Mapster` depends only on Core and `Mapster`. The broad facade keeps its direct
 Mapster dependency while the `MapsterTransform<TInput,TOutput>` forwarder exists, and the Mapster leaf has

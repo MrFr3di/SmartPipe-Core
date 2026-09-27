@@ -20,7 +20,8 @@ internal sealed record RunConsumersOptions(
     string PackageVersion,
     string ManifestPath,
     string? Category = null,
-    string? Scenario = null);
+    string? Scenario = null,
+    string? ExcludeCategory = null);
 
 internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner = null)
 {
@@ -31,12 +32,8 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
     {
         var graph = await new PackageGraphLoader().LoadAsync(options.RepositoryRoot, "eng/package-graph.json", ct).ConfigureAwait(false);
         var document = await new ConsumerScenarioLoader().LoadAsync(options.RepositoryRoot, options.ManifestPath, graph, ct).ConfigureAwait(false);
-        var scenarios = document.Scenarios
-            .Where(scenario => scenario.Set == options.Set
-                && (options.Category is null || scenario.Category == options.Category)
-                && (options.Scenario is null || scenario.Id == options.Scenario))
-            .ToArray();
-        if (scenarios.Length == 0)
+        var scenarios = SelectScenarios(document.Scenarios, options);
+        if (scenarios.Count == 0)
         {
             var selection = options.Scenario is null
                 ? $"Consumer set '{options.Set}' is empty."
@@ -60,6 +57,16 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         foreach (var scenario in scenarios) results.Add(await RunScenarioAsync(options, scenario, graph, externalPackageVersions, externalPackageIds, ct).ConfigureAwait(false));
         return results;
     }
+
+    internal static IReadOnlyList<ConsumerScenario> SelectScenarios(
+        IReadOnlyList<ConsumerScenario> candidates,
+        RunConsumersOptions options) =>
+        candidates
+            .Where(scenario => scenario.Set == options.Set
+                && (options.Category is null || scenario.Category == options.Category)
+                && (options.ExcludeCategory is null || scenario.Category != options.ExcludeCategory)
+                && (options.Scenario is null || scenario.Id == options.Scenario))
+            .ToArray();
 
     private async Task<ConsumerScenarioResult> RunScenarioAsync(
         RunConsumersOptions options,
