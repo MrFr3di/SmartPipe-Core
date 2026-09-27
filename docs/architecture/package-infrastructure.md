@@ -8,7 +8,7 @@ in agreement without changing runtime code.
 ## Contracts and ownership
 
 `Directory.Packages.props` owns exact external versions. `eng/package-graph.json`
-owns the 19-package topology, lifecycle, package-specific policies, and
+owns the 20-package topology, lifecycle, package-specific policies, and
 temporary allowances. `eng/package-ownership.json` maps public types to their
 owning package and records compatibility forwarding. `eng/consumer-scenarios.json`
 describes executable consumer claims; its JSON Schema files are checked for

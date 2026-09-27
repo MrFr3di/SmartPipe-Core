@@ -140,12 +140,40 @@ internal sealed class ConsumerScenarioLoader
 
     internal static string ResolveContained(string root, string value, string name)
     {
-        if (string.IsNullOrWhiteSpace(value) || Path.IsPathRooted(value) || value.Contains('\\') || value.Split('/').Any(x => x is "" or "." or ".."))
+        if (string.IsNullOrWhiteSpace(value) || Path.IsPathRooted(value) || value.Contains('\\'))
             throw new ConsumerScenarioException("SPCONS005", $"{name} must be a normalized repository-relative path.");
-        var full = Path.GetFullPath(value, root);
-        var relative = Path.GetRelativePath(root, full);
+        var segments = value.Split('/');
+        if (segments.Any(x => x is "" or "." or ".."))
+            throw new ConsumerScenarioException("SPCONS005", $"{name} must be a normalized repository-relative path.");
+
+        var fullRoot = Path.GetFullPath(root);
+        var full = Path.GetFullPath(value, fullRoot);
+        var relative = Path.GetRelativePath(fullRoot, full);
         if (Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
             throw new ConsumerScenarioException("SPCONS005", $"{name} escapes the repository.");
+
+        var current = fullRoot;
+        foreach (var segment in segments)
+        {
+            current = Path.Combine(current, segment);
+            FileAttributes attributes;
+            try
+            {
+                attributes = File.GetAttributes(current);
+            }
+            catch (FileNotFoundException)
+            {
+                break;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                break;
+            }
+
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+                throw new ConsumerScenarioException("SPCONS005", $"{name} traverses a reparse point.");
+        }
+
         return full;
     }
 

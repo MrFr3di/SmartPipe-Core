@@ -101,6 +101,95 @@ jobs:
       - name: CSV strict sink tests
         run: dotnet test --project tests/SmartPipe.Extensions.Csv.Tests/SmartPipe.Extensions.Csv.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Csv.Tests.CsvStrictSinkTests --minimum-expected-tests 1
 
+  # PostgreSQL 18.6 is the primary server and 17.11 the compatibility server. Both legs run against a
+  # real service container and fail, not skip, when the server or the connection string is unavailable.
+  postgresql-integration:
+    name: PostgreSQL integration (${{ matrix.postgres-version }})
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_dispatch' || (inputs.diagnostic-sha == '' && inputs.diagnostic-scenario == '' && inputs.diagnostic-repeat == ''))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON('{"postgres-version":["18.6","17.11"]}') }}
+
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres-version }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: "${{ format('smartpipe-{0}-{1}', github.run_id, github.run_attempt) }}"
+          POSTGRES_DB: smartpipe
+        ports:
+          - '5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U postgres -d smartpipe"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore locked
+        run: dotnet restore tests/SmartPipe.Extensions.PostgreSql.Tests/SmartPipe.Extensions.PostgreSql.Tests.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true
+
+      - name: Build PostgreSQL test project
+        run: dotnet build tests/SmartPipe.Extensions.PostgreSql.Tests/SmartPipe.Extensions.PostgreSql.Tests.csproj --configuration Release --no-restore -warnaserror
+
+      - name: PostgreSQL integration tests
+        env:
+          SMARTPIPE_POSTGRES_CONNECTION_STRING: >-
+            Host=127.0.0.1;Port=5432;Username=postgres;Password=${{ format('smartpipe-{0}-{1}', github.run_id, github.run_attempt) }};Database=smartpipe
+          SMARTPIPE_POSTGRES_OPTIONAL: '0'
+        run: dotnet test --project tests/SmartPipe.Extensions.PostgreSql.Tests/SmartPipe.Extensions.PostgreSql.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
+      - name: Restore current package graph for consumers
+        if: matrix.postgres-version == '18.6'
+        run: dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true
+
+      - name: Build current packages for consumers
+        if: matrix.postgres-version == '18.6'
+        run: dotnet build SmartPipe.Core.slnx --configuration Release --no-restore -warnaserror
+
+      - name: Set package version for consumers
+        if: matrix.postgres-version == '18.6'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $packageVersion = (dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo).Trim()
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($packageVersion)) { throw 'Unable to determine the package version.' }
+          "PACKAGE_VERSION=$packageVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Pack current packages for PostgreSQL consumers
+        if: matrix.postgres-version == '18.6'
+        shell: pwsh
+        run: >
+          dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj
+          --configuration Release --no-build -- pack-packages
+          --mode current --configuration Release --package-version "$env:PACKAGE_VERSION"
+          --output artifacts/packages --manifest artifacts/packages/manifest.json
+
+      - name: Run PostgreSQL consumer scenarios
+        if: matrix.postgres-version == '18.6'
+        shell: pwsh
+        env:
+          SMARTPIPE_POSTGRES_CONNECTION_STRING: >-
+            Host=127.0.0.1;Port=5432;Username=postgres;Password=${{ format('smartpipe-{0}-{1}', github.run_id, github.run_attempt) }};Database=smartpipe
+          SMARTPIPE_POSTGRES_OPTIONAL: '0'
+        run: >
+          dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj
+          --configuration Release --no-build -- run-consumers --set current --category postgresql
+          --package-directory artifacts/packages --package-version "$env:PACKAGE_VERSION"
+
   json-file-windows:
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_dispatch' || (inputs.diagnostic-sha == '' && inputs.diagnostic-scenario == '' && inputs.diagnostic-repeat == ''))
     runs-on: windows-latest

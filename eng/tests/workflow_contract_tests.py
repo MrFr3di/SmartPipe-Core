@@ -106,6 +106,24 @@ POLLY_TEST_PROJECT = (
     "tests/SmartPipe.Extensions.Polly.Tests/"
     "SmartPipe.Extensions.Polly.Tests.csproj"
 )
+POSTGRESQL_TEST_PROJECT = (
+    "tests/SmartPipe.Extensions.PostgreSql.Tests/"
+    "SmartPipe.Extensions.PostgreSql.Tests.csproj"
+)
+POSTGRESQL_INTEGRATION_NAME = "PostgreSQL integration (${{ matrix.postgres-version }})"
+POSTGRESQL_INTEGRATION_MATRIX = (
+    "${{ fromJSON('{\"postgres-version\":[\"18.6\",\"17.11\"]}') }}"
+)
+POSTGRESQL_PRIMARY_VERSION = "18.6"
+POSTGRESQL_COMPATIBILITY_VERSION = "17.11"
+POSTGRESQL_SERVICE_IMAGE = "postgres:${{ matrix.postgres-version }}"
+POSTGRESQL_SERVICE_PORT = "5432:5432"
+POSTGRESQL_PASSWORD_EXPRESSION = "${{ format('smartpipe-{0}-{1}', github.run_id, github.run_attempt) }}"
+POSTGRESQL_CONNECTION_STRING = (
+    "Host=127.0.0.1;Port=5432;Username=postgres;Password="
+    + POSTGRESQL_PASSWORD_EXPRESSION
+    + ";Database=smartpipe"
+)
 LYCHEE_URL = (
     "https://github.com/lycheeverse/lychee/releases/download/"
     "lychee-v0.21.0/lychee-x86_64-windows.exe"
@@ -851,6 +869,152 @@ def assert_csv_integration_contract(ci: dict, reusable: dict) -> None:
             "Extensions correctness regressions must target the HTTP leaf tests, not removed legacy HTTP tests.")
 
 
+def assert_postgresql_integration_contract(ci: dict) -> None:
+    job = ci["jobs"].get("postgresql-integration")
+    require(isinstance(job, dict),
+            "CI must define the real-PostgreSQL service-container job.")
+    require(job.get("name") == POSTGRESQL_INTEGRATION_NAME,
+            "PostgreSQL integration must use the stable matrix check name.")
+    require_ci_normal_job_guard(job, "PostgreSQL integration")
+    require(job.get("runs-on") == "ubuntu-latest",
+            "PostgreSQL integration must use hosted Linux because service containers are Linux-only.")
+    strategy = job.get("strategy")
+    require(isinstance(strategy, dict)
+            and strategy.get("fail-fast") is False
+            and strategy.get("matrix") == POSTGRESQL_INTEGRATION_MATRIX
+            and POSTGRESQL_PRIMARY_VERSION in str(strategy.get("matrix"))
+            and POSTGRESQL_COMPATIBILITY_VERSION in str(strategy.get("matrix")),
+            "PostgreSQL integration must use the fixed primary/compatibility version matrix.")
+
+    services = job.get("services")
+    require(isinstance(services, dict) and set(services) == {"postgres"},
+            "PostgreSQL integration must define exactly one PostgreSQL service container.")
+    service = services["postgres"]
+    require(service.get("image") == POSTGRESQL_SERVICE_IMAGE,
+            "PostgreSQL service container must track the matrix server version.")
+    require([str(port) for port in service.get("ports", [])] == [POSTGRESQL_SERVICE_PORT],
+            "PostgreSQL service container must publish the connection port to the runner.")
+    options = str(service.get("options", ""))
+    require("--health-cmd" in options and "pg_isready" in options
+            and "--health-interval" in options and "--health-retries" in options,
+            "PostgreSQL service container must gate the job on a pg_isready health check.")
+    credentials = service.get("env")
+    require(isinstance(credentials, dict)
+            and credentials.get("POSTGRES_USER") == "postgres"
+            and credentials.get("POSTGRES_PASSWORD") == POSTGRESQL_PASSWORD_EXPRESSION
+            and credentials.get("POSTGRES_DB") == "smartpipe"
+            and credentials.get("POSTGRES_HOST_AUTH_METHOD") != "trust"
+            and POSTGRESQL_CONNECTION_STRING.endswith(
+                "Username=" + str(credentials.get("POSTGRES_USER"))
+                + ";Password=" + str(credentials.get("POSTGRES_PASSWORD"))
+                + ";Database=" + str(credentials.get("POSTGRES_DB"))),
+            "PostgreSQL service credentials must match the connection string.")
+
+    job_steps = steps(job, "postgresql-integration")
+    checkouts = [step for step in job_steps
+                 if str(step.get("uses", "")).startswith("actions/checkout")]
+    require(len(checkouts) == 1
+            and checkouts[0].get("with", {}).get("persist-credentials") is False,
+            "PostgreSQL integration checkout must be pinned and credential-free.")
+    setups = [step for step in job_steps
+              if str(step.get("uses", "")).startswith("actions/setup-dotnet")]
+    require(len(setups) == 1
+            and setups[0].get("with", {}).get("global-json-file") == "global.json"
+            and setups[0].get("with", {}).get("cache") is True
+            and setups[0].get("with", {}).get("cache-dependency-path") == "**/packages.lock.json",
+            "PostgreSQL integration setup-dotnet must use the standard lock-file cache.")
+    restore = named_step(job_steps, "Restore locked")
+    require(str(restore.get("run", "")).strip() ==
+            f"dotnet restore {POSTGRESQL_TEST_PROJECT} --locked-mode "
+            "-p:DisableImplicitLibraryPacksFolder=true",
+            "PostgreSQL integration must perform one locked PostgreSQL test-project restore.")
+    build = named_step(job_steps, "Build PostgreSQL test project")
+    require(" ".join(str(build.get("run", "")).split()) ==
+            f"dotnet build {POSTGRESQL_TEST_PROJECT} --configuration Release "
+            "--no-restore -warnaserror",
+            "PostgreSQL integration must build the PostgreSQL test project in Release with warnings as errors.")
+    tests = named_step(job_steps, "PostgreSQL integration tests")
+    require(" ".join(str(tests.get("run", "")).split()) ==
+            f"dotnet test --project {POSTGRESQL_TEST_PROJECT} --configuration Release "
+            "--no-build --minimum-expected-tests 1",
+            "PostgreSQL integration tests must set --minimum-expected-tests 1.")
+    environment = tests.get("env")
+    require(isinstance(environment, dict)
+            and environment.get("SMARTPIPE_POSTGRES_CONNECTION_STRING") == POSTGRESQL_CONNECTION_STRING
+            and POSTGRESQL_PASSWORD_EXPRESSION in str(environment.get("SMARTPIPE_POSTGRES_CONNECTION_STRING")),
+            "PostgreSQL integration must expose SMARTPIPE_POSTGRES_CONNECTION_STRING with the same per-run authenticated service connection.")
+    require(environment.get("SMARTPIPE_POSTGRES_OPTIONAL") != "1",
+            "PostgreSQL integration must fail, not skip, when the server is unavailable.")
+    require(job_steps.index(restore) < job_steps.index(build) < job_steps.index(tests),
+            "PostgreSQL integration must restore, build, then run the real-server tests.")
+
+
+def assert_postgresql_consumer_partition_contract(reusable: dict, ci: dict) -> None:
+    manifest = json.loads((ROOT / "eng" / "consumer-scenarios.json").read_text(encoding="utf-8"))
+    current = [scenario for scenario in manifest["scenarios"] if scenario["set"] == "current"]
+    postgresql = [scenario for scenario in current if scenario.get("category") == "postgresql"]
+    without_postgresql = [scenario for scenario in current if scenario.get("category") != "postgresql"]
+    current_ids = {scenario["id"] for scenario in current}
+    postgresql_ids = {scenario["id"] for scenario in postgresql}
+    without_postgresql_ids = {scenario["id"] for scenario in without_postgresql}
+    require(len(postgresql) == 7,
+            "The current consumer manifest must contain all seven PostgreSQL scenarios.")
+    require(len(current_ids) == len(current)
+            and len(postgresql_ids) == len(postgresql)
+            and len(without_postgresql_ids) == len(without_postgresql)
+            and postgresql_ids.isdisjoint(without_postgresql_ids)
+            and postgresql_ids | without_postgresql_ids == current_ids,
+            "PostgreSQL and non-PostgreSQL consumer partitions must be disjoint and cover current.")
+
+    reusable_steps = steps(reusable["jobs"]["build-test-pack"], "reusable release validation")
+    reusable_consumers = named_step(reusable_steps, "Run current consumers")
+    require("--exclude-category postgresql" in str(reusable_consumers.get("run", "")),
+            "Reusable current consumers must exclude the PostgreSQL category.")
+
+    job_steps = steps(ci["jobs"]["postgresql-integration"], "postgresql-integration")
+    pg18_only = "matrix.postgres-version == '18.6'"
+    package_step_names = (
+        "Restore current package graph for consumers",
+        "Build current packages for consumers",
+        "Set package version for consumers",
+        "Pack current packages for PostgreSQL consumers",
+    )
+    package_steps = [named_step(job_steps, name) for name in package_step_names]
+    require(all(step.get("if") == pg18_only for step in package_steps),
+            "Only the PostgreSQL 18.6 job may restore, build, and pack current consumer packages.")
+    require("dotnet restore SmartPipe.Core.slnx --locked-mode" in str(package_steps[0].get("run", "")),
+            "PostgreSQL consumers must restore the current package graph in locked mode.")
+    require("dotnet build SmartPipe.Core.slnx" in str(package_steps[1].get("run", ""))
+            and "--no-restore" in str(package_steps[1].get("run", ""))
+            and "-warnaserror" in str(package_steps[1].get("run", "")),
+            "PostgreSQL consumers must use a warnings-as-errors Release package build.")
+    pack_run = " ".join(str(package_steps[3].get("run", "")).split())
+    require("pack-packages" in pack_run
+            and "--mode current" in pack_run
+            and '--package-version "$env:PACKAGE_VERSION"' in pack_run
+            and "--output artifacts/packages" in pack_run,
+            "PostgreSQL consumers must use the current graph package set.")
+
+    consumers = named_step(job_steps, "Run PostgreSQL consumer scenarios")
+    consumer_run = " ".join(str(consumers.get("run", "")).split())
+    require(consumers.get("if") == pg18_only
+            and "run-consumers --set current --category postgresql" in consumer_run
+            and "--package-directory artifacts/packages" in consumer_run
+            and '--package-version "$env:PACKAGE_VERSION"' in consumer_run,
+            "PostgreSQL 18.6 must run every current PostgreSQL consumer scenario from packed current packages.")
+    environment = consumers.get("env")
+    require(isinstance(environment, dict)
+            and environment.get("SMARTPIPE_POSTGRES_CONNECTION_STRING") == POSTGRESQL_CONNECTION_STRING
+            and POSTGRESQL_PASSWORD_EXPRESSION in str(environment.get("SMARTPIPE_POSTGRES_CONNECTION_STRING"))
+            and environment.get("SMARTPIPE_POSTGRES_OPTIONAL") == "0",
+            "PostgreSQL consumer scenarios must use the same required per-run authenticated service connection.")
+    integration_tests = named_step(job_steps, "PostgreSQL integration tests")
+    require(job_steps.index(integration_tests) < job_steps.index(package_steps[0])
+            < job_steps.index(package_steps[1]) < job_steps.index(package_steps[2])
+            < job_steps.index(package_steps[3]) < job_steps.index(consumers),
+            "PostgreSQL consumer validation must follow integration tests and pack current packages first.")
+
+
 def validate(documents: dict[str, dict]) -> None:
     reusable = documents["reusable-release-validation.yml"]
     ci = documents["ci.yml"]
@@ -1042,8 +1206,9 @@ def validate(documents: dict[str, dict]) -> None:
     ]
     require(len(current_consumers) == 1
             and "--category" not in current_consumers[0]
-            and "--scenario" not in current_consumers[0],
-            "Reusable validation must execute exactly one full current consumer run.")
+            and "--scenario" not in current_consumers[0]
+            and "--exclude-category postgresql" in current_consumers[0],
+            "Reusable validation must run all current consumers while excluding the PostgreSQL category.")
     concurrency_job = reusable["jobs"].get("health-checks-concurrency")
     require(isinstance(concurrency_job, dict),
             "Reusable validation must define the HealthChecks concurrency OS matrix.")
@@ -1210,6 +1375,8 @@ def validate(documents: dict[str, dict]) -> None:
     assert_persist_credentials_disabled(documents)
     assert_setup_dotnet_uses_global_json(documents)
     assert_csv_integration_contract(ci, reusable)
+    assert_postgresql_integration_contract(ci)
+    assert_postgresql_consumer_partition_contract(reusable, ci)
     assert_link_check_exclusion_scoped()
     assert_private_repository_docs_links_are_local()
     assert_consumer_contract()
@@ -1404,6 +1571,88 @@ def _strip_csv_reusable_minimum(documents: dict[str, dict]) -> None:
         "CSV Extensions tests",
     )
     step["run"] = str(step["run"]).replace(" --minimum-expected-tests 1", "")
+
+
+def _remove_postgresql_integration_job(documents: dict[str, dict]) -> None:
+    del documents["ci.yml"]["jobs"]["postgresql-integration"]
+
+
+def _change_postgresql_integration_name(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["jobs"]["postgresql-integration"]["name"] = "PostgreSQL integration"
+
+
+def _drop_postgresql_compatibility_leg(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["jobs"]["postgresql-integration"]["strategy"]["matrix"] = (
+        "${{ fromJSON('{\"postgres-version\":[\"18.6\"]}') }}"
+    )
+
+
+def _make_postgresql_runner_windows(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["jobs"]["postgresql-integration"]["runs-on"] = HOSTED_WINDOWS
+
+
+def _remove_postgresql_service(documents: dict[str, dict]) -> None:
+    del documents["ci.yml"]["jobs"]["postgresql-integration"]["services"]
+
+
+def _make_postgresql_lane_optional(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["postgresql-integration"]["steps"],
+        "PostgreSQL integration tests",
+    )
+    step["env"]["SMARTPIPE_POSTGRES_OPTIONAL"] = "1"
+
+
+def _drop_postgresql_connection_string(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["postgresql-integration"]["steps"],
+        "PostgreSQL integration tests",
+    )
+    step["env"].pop("SMARTPIPE_POSTGRES_CONNECTION_STRING", None)
+
+
+def _change_postgresql_restore(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["postgresql-integration"]["steps"],
+        "Restore locked",
+    )
+    step["run"] = str(step["run"]).replace("--locked-mode", "")
+
+
+def _change_postgresql_build(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["postgresql-integration"]["steps"],
+        "Build PostgreSQL test project",
+    )
+    step["run"] = str(step["run"]).replace("-warnaserror", "")
+
+
+def _strip_postgresql_test_minimum(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["postgresql-integration"]["steps"],
+        "PostgreSQL integration tests",
+    )
+    step["run"] = str(step["run"]).replace(" --minimum-expected-tests 1", "")
+
+
+def _drop_current_consumer_exclusion(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
+        "Run current consumers",
+    )
+    step["run"] = str(step["run"]).replace("--exclude-category postgresql", "")
+
+
+def _remove_postgresql_consumer_step(documents: dict[str, dict]) -> None:
+    job = documents["ci.yml"]["jobs"]["postgresql-integration"]
+    job["steps"] = [step for step in job["steps"]
+                    if step.get("name") != "Run PostgreSQL consumer scenarios"]
+
+
+def _remove_postgresql_consumer_pack_step(documents: dict[str, dict]) -> None:
+    job = documents["ci.yml"]["jobs"]["postgresql-integration"]
+    job["steps"] = [step for step in job["steps"]
+                    if step.get("name") != "Pack current packages for PostgreSQL consumers"]
 
 
 def _revert_windows_lifecycle_namespace(documents: dict[str, dict]) -> None:
@@ -1832,6 +2081,29 @@ def main() -> int:
         (_strip_csv_test_minimum, "CSV strict source tests must set --minimum-expected-tests 1"),
         (_remove_csv_reusable_step, "exactly one step named 'CSV Extensions tests'"),
         (_strip_csv_reusable_minimum, "complete CSV test project with a non-empty gate"),
+    ):
+        assert_mutation_rejected(documents, mutate, expected)
+    for mutate, expected in (
+        (_remove_postgresql_integration_job, "define the real-PostgreSQL service-container job"),
+        (_change_postgresql_integration_name, "stable matrix check name"),
+        (_drop_postgresql_compatibility_leg, "fixed primary/compatibility version matrix"),
+        (_make_postgresql_runner_windows, "hosted Linux because service containers are Linux-only"),
+        (_remove_postgresql_service, "exactly one PostgreSQL service container"),
+        (_make_postgresql_lane_optional, "must fail, not skip, when the server is unavailable"),
+        (_drop_postgresql_connection_string, "must expose SMARTPIPE_POSTGRES_CONNECTION_STRING"),
+        (_change_postgresql_restore, "locked PostgreSQL test-project restore"),
+        (_change_postgresql_build, "build the PostgreSQL test project in Release"),
+        (_strip_postgresql_test_minimum,
+         "PostgreSQL integration tests must set --minimum-expected-tests 1"),
+    ):
+        assert_mutation_rejected(documents, mutate, expected)
+    for mutate, expected in (
+        (_drop_current_consumer_exclusion,
+         "Reusable validation must run all current consumers while excluding the PostgreSQL category"),
+        (_remove_postgresql_consumer_pack_step,
+         "Expected exactly one step named 'Pack current packages for PostgreSQL consumers'"),
+        (_remove_postgresql_consumer_step,
+         "Expected exactly one step named 'Run PostgreSQL consumer scenarios'"),
     ):
         assert_mutation_rejected(documents, mutate, expected)
     assert_mutation_rejected(

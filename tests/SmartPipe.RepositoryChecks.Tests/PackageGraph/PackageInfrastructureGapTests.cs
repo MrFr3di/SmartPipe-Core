@@ -97,7 +97,7 @@ public sealed class PackageInfrastructureGapTests
     }
 
     [Fact]
-    public async Task Loader_DefaultContractRejectsCatalogWithoutAllExactNineteenIds()
+    public async Task Loader_DefaultContractRejectsCatalogWithoutAllExactTwentyIds()
     {
         using var fixture = new RepositoryTestDirectory();
         fixture.Write("src/SmartPipe.Core/SmartPipe.Core.csproj", "<Project />");

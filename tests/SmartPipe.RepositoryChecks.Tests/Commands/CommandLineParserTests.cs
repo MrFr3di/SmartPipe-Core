@@ -323,6 +323,45 @@ public sealed class CommandLineParserTests
     }
 
     [Fact]
+    public void Parse_RunConsumersAcceptsExcludedCategory()
+    {
+        using var repository = new CommandRepository();
+
+        var command = Assert.IsType<RunConsumersCommandOptions>(CommandLineParser.Parse(
+        [
+            "run-consumers", "--repo-root", repository.Path,
+            "--set", "current",
+            "--package-directory", "packages",
+            "--package-version", "2.2.0",
+            "--exclude-category", "postgresql",
+        ]));
+
+        Assert.Equal("postgresql", command.ExcludeCategory);
+        Assert.Null(command.Category);
+        Assert.Null(command.Scenario);
+    }
+
+    [Theory]
+    [InlineData("PostgreSQL")]
+    [InlineData("dependency_injection")]
+    [InlineData("")]
+    public void Parse_RunConsumersRejectsMalformedExcludedCategory(string category)
+    {
+        using var repository = new CommandRepository();
+
+        var error = Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+        [
+            "run-consumers", "--repo-root", repository.Path,
+            "--set", "current",
+            "--package-directory", "packages",
+            "--package-version", "2.2.0",
+            "--exclude-category", category,
+        ]));
+
+        Assert.Equal("Option '--exclude-category' must contain lowercase letters, digits, or hyphens.", error.Message);
+    }
+
+    [Fact]
     public void Parse_RunConsumersAcceptsExactDottedScenario()
     {
         using var repository = new CommandRepository();

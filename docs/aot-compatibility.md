@@ -125,3 +125,14 @@ provider, compiled models, and generated query delegates are evaluated by the co
 legacy `EfCoreSelector<T>` resolves its entity set through `DbContext.Set<T>()`, which is
 trimming-unsafe; its narrow internal suppression documents that boundary, and the factory-based
 `EfCorePipelineComponents` sources are the supported alternative.
+
+`SmartPipe.Extensions.PostgreSql` declares the positive `IsAotCompatible`, trim-analyzer, and
+AOT-analyzer contract for the slim/static primitive path only: `NpgsqlSlimDataSourceBuilder`, built-in
+primitive mappings, static COPY callbacks, no dynamic JSON, no unmapped types, and no composite
+mapping. Binary COPY and `LISTEN` carry no `RequiresUnreferencedCode` or `RequiresDynamicCode`
+annotations, and Npgsql ships `IsAotCompatible` for `net8.0+`. Caller opt-ins such as
+`EnableDynamicJson`, `EnableRecordsAsTuples`, `EnableUnmappedTypes`, `MapComposite`, and
+`MapEnum(Type, …)` keep their own warnings; SmartPipe never suppresses them globally, and arbitrary
+application callbacks remain outside the claim. Transport security is off by default in the slim
+builder, so a TLS deployment must call `EnableTransportSecurity()` and select its own Npgsql SSL
+verification settings. See the [PostgreSQL subsystem reference](postgresql.md).

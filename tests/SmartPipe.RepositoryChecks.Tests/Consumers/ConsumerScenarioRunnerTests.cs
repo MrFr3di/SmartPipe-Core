@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using SmartPipe.RepositoryChecks.Consumers;
 using SmartPipe.RepositoryChecks.Infrastructure;
@@ -64,6 +65,49 @@ public sealed class ConsumerScenarioRunnerTests
 
         Assert.Equal("SPCONS010", error.Code);
         Assert.Contains("does-not-exist", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RunConsumers_CurrentPostgreSqlAndExcludedPartitionsCoverAllScenarios()
+    {
+        var current = Enumerable.Range(1, 7)
+            .Select(index => CreateScenario($"postgresql-{index}", "postgresql"))
+            .Append(CreateScenario("core-direct", "core"))
+            .Append(CreateScenario("hosting-direct", "hosting"))
+            .Append(CreateScenario("unclassified", null))
+            .ToArray();
+        var postgresql = ConsumerScenarioRunner.SelectScenarios(
+            current,
+            new(string.Empty, "current", string.Empty, string.Empty, string.Empty, Category: "postgresql"));
+        var withoutPostgreSql = ConsumerScenarioRunner.SelectScenarios(
+            current,
+            new(string.Empty, "current", string.Empty, string.Empty, string.Empty, ExcludeCategory: "postgresql"));
+        var conflictingFilters = ConsumerScenarioRunner.SelectScenarios(
+            current,
+            new(string.Empty, "current", string.Empty, string.Empty, string.Empty,
+                Category: "postgresql", ExcludeCategory: "postgresql"));
+
+        Assert.Equal(7, postgresql.Count);
+        Assert.All(postgresql, scenario => Assert.Equal("postgresql", scenario.Category));
+        Assert.All(withoutPostgreSql, scenario => Assert.NotEqual("postgresql", scenario.Category));
+        Assert.Empty(conflictingFilters);
+        Assert.Equal(
+            current.Select(scenario => scenario.Id).Order(StringComparer.Ordinal),
+            postgresql.Concat(withoutPostgreSql).Select(scenario => scenario.Id).Order(StringComparer.Ordinal));
+
+        static ConsumerScenario CreateScenario(string id, string? category) => new()
+        {
+            Id = id,
+            Set = "current",
+            Category = category,
+            Mode = ConsumerMode.BuildAndRun,
+            TemplatePath = string.Empty,
+            PackageIds = [],
+            ExpectedSmartPipeDependencies = [],
+            ForbiddenDependencies = [],
+            Timeout = TimeSpan.FromSeconds(1),
+            RunSecondLockedRestore = false,
+        };
     }
 
     [Fact]
@@ -399,6 +443,153 @@ public sealed class ConsumerScenarioRunnerTests
             fixture.Path, "tests/Consumers/Scenarios/fixture/Consumer.csproj", destination));
         Assert.Equal("SPCONS005", error.Code);
         Assert.False(File.Exists(Path.Combine(destination, "linked", "secret.txt")));
+    }
+
+    [Fact]
+    public void TemplateCopy_RejectsSourceAncestorReparsePointBeforeCopyAndKeepsMissingPathsResolvable()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("outside/Consumers/Scenarios/postgresql-direct/Consumer.csproj", "<Project />");
+        fixture.Write("outside/Consumers/Scenarios/_shared/PostgreSqlConsumerSupport.cs", "// external support");
+        var linkPath = Path.Combine(fixture.Path, "tests");
+        try
+        {
+            CreateSourceAncestorDirectoryLink(linkPath, Path.Combine(fixture.Path, "outside"));
+
+            var source = Path.Combine(fixture.Path, "workspace", "source");
+            Directory.CreateDirectory(source);
+
+            var error = Assert.Throws<ConsumerScenarioException>(() => ConsumerScenarioRunner.CopyTemplateDirectory(
+                fixture.Path, "tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", source));
+
+            Assert.Equal("SPCONS005", error.Code);
+            Assert.Empty(Directory.EnumerateFileSystemEntries(source));
+            Assert.Equal(
+                Path.Combine(fixture.Path, "missing", "source.cs"),
+                ConsumerScenarioLoader.ResolveContained(fixture.Path, "missing/source.cs", "missing source"));
+        }
+        finally
+        {
+            DeleteDirectoryLink(linkPath);
+        }
+    }
+
+    private static void CreateSourceAncestorDirectoryLink(string linkPath, string targetPath)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Directory.CreateSymbolicLink(linkPath, targetPath);
+            Assert.NotNull(new DirectoryInfo(linkPath).LinkTarget);
+            return;
+        }
+
+        var startInfo = new ProcessStartInfo(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+        };
+        startInfo.ArgumentList.Add("/c");
+        startInfo.ArgumentList.Add("mklink");
+        startInfo.ArgumentList.Add("/J");
+        startInfo.ArgumentList.Add(linkPath);
+        startInfo.ArgumentList.Add(targetPath);
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Unable to start cmd.exe to create the directory junction.");
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.True(
+            process.ExitCode == 0
+                && (File.GetAttributes(linkPath) & FileAttributes.ReparsePoint) != 0,
+            $"Unable to create the source-ancestor directory junction: {standardOutput} {standardError}");
+    }
+
+    private static void DeleteDirectoryLink(string linkPath)
+    {
+        try
+        {
+            if ((File.GetAttributes(linkPath) & FileAttributes.ReparsePoint) != 0)
+                Directory.Delete(linkPath);
+        }
+        catch (FileNotFoundException)
+        {
+        }
+        catch (DirectoryNotFoundException)
+        {
+        }
+    }
+
+    [Fact]
+    public void TemplateCopy_PostgreSqlScenarioCopiesSharedSupportToItsContainedWorkspaceSibling()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", "<Project />");
+        fixture.Write("tests/Consumers/Scenarios/_shared/PostgreSqlConsumerSupport.cs", "// shared PostgreSQL support");
+        var workspace = Path.Combine(fixture.Path, "workspace");
+        var source = Path.Combine(workspace, "source");
+        Directory.CreateDirectory(source);
+
+        var project = ConsumerScenarioRunner.CopyTemplateDirectory(
+            fixture.Path, "tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", source);
+
+        var copiedSupport = Path.Combine(workspace, "_shared", "PostgreSqlConsumerSupport.cs");
+        Assert.Equal(Path.Combine(source, "Consumer.csproj"), project);
+        Assert.Equal("// shared PostgreSQL support", File.ReadAllText(copiedSupport));
+
+        fixture.Write("tests/Consumers/Scenarios/http-direct/Consumer.csproj", "<Project />");
+        var nonPostgreSqlWorkspace = Path.Combine(fixture.Path, "non-postgresql-workspace");
+        var nonPostgreSqlSource = Path.Combine(nonPostgreSqlWorkspace, "source");
+        Directory.CreateDirectory(nonPostgreSqlSource);
+        ConsumerScenarioRunner.CopyTemplateDirectory(
+            fixture.Path, "tests/Consumers/Scenarios/http-direct/Consumer.csproj", nonPostgreSqlSource);
+        Assert.False(Directory.Exists(Path.Combine(nonPostgreSqlWorkspace, "_shared")));
+    }
+
+    [Fact]
+    public void TemplateCopy_PostgreSqlSharedSupportRejectsSourceFileReparsePoint()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", "<Project />");
+        fixture.Write("outside/PostgreSqlConsumerSupport.cs", "outside");
+        if (!fixture.TryCreateFileLink(
+                "tests/Consumers/Scenarios/_shared/PostgreSqlConsumerSupport.cs",
+                "outside/PostgreSqlConsumerSupport.cs"))
+        {
+            return;
+        }
+
+        var source = Path.Combine(fixture.Path, "workspace", "source");
+        Directory.CreateDirectory(source);
+
+        var error = Assert.Throws<ConsumerScenarioException>(() => ConsumerScenarioRunner.CopyTemplateDirectory(
+            fixture.Path, "tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", source));
+
+        Assert.Equal("SPCONS005", error.Code);
+        Assert.False(File.Exists(Path.Combine(fixture.Path, "workspace", "_shared", "PostgreSqlConsumerSupport.cs")));
+    }
+
+    [Fact]
+    public void TemplateCopy_PostgreSqlSharedSupportRejectsDestinationDirectoryReparsePoint()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", "<Project />");
+        fixture.Write("tests/Consumers/Scenarios/_shared/PostgreSqlConsumerSupport.cs", "// support");
+        fixture.Write("outside/placeholder.txt", "outside");
+        if (!fixture.TryCreateDirectoryLink("workspace/_shared", "outside"))
+            return;
+
+        var source = Path.Combine(fixture.Path, "workspace", "source");
+        Directory.CreateDirectory(source);
+
+        var error = Assert.Throws<ConsumerScenarioException>(() => ConsumerScenarioRunner.CopyTemplateDirectory(
+            fixture.Path, "tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", source));
+
+        Assert.Equal("SPCONS005", error.Code);
+        Assert.False(File.Exists(Path.Combine(fixture.Path, "outside", "PostgreSqlConsumerSupport.cs")));
     }
 
     [Fact]

@@ -141,10 +141,20 @@ public sealed class ConsumerScenarioSchemaTests
                 "polly-direct",
                 "polly-trim",
                 "polly-nativeaot",
+                "postgresql-direct",
+                "postgresql-dapper-composition",
+                "postgresql-efcore-composition",
+                "postgresql-di-composition",
+                "postgresql-opentelemetry-composition",
+                "postgresql-trim",
+                "postgresql-nativeaot",
         };
         var actualIds = document.Scenarios.Select(scenario => scenario.Id).ToArray();
         Assert.Equal(actualIds.Length, actualIds.Distinct(StringComparer.Ordinal).Count());
         Assert.Subset(expectedIds, actualIds.ToHashSet(StringComparer.Ordinal));
+        Assert.All(
+            document.Scenarios.Where(scenario => scenario.Id.StartsWith("postgresql-", StringComparison.Ordinal)),
+            scenario => Assert.Equal("postgresql", scenario.Category));
         Assert.All(
             document.Scenarios.Where(scenario => scenario.Id.StartsWith("hosting-", StringComparison.Ordinal)),
             scenario => Assert.Equal("hosting", scenario.Category));

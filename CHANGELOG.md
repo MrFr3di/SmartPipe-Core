@@ -25,6 +25,12 @@
   `SmartPipe.Extensions` per ADR-0004; it never ran an inner transform. There is
   no wrapper or forwarder; migrate to `SmartPipe.Extensions.Polly` and
   recompile. The facade no longer depends on `Microsoft.Extensions.Resilience`.
+- Added `SmartPipe.Extensions.PostgreSql`, a PostgreSQL-native package with
+  binary `COPY … TO STDOUT (FORMAT BINARY)` as a streaming source, binary
+  `COPY … FROM STDIN (FORMAT BINARY)` as a batch sink where one envelope is
+  one complete COPY, and `LISTEN`/`NOTIFY` as a notification source over an
+  application-owned `NpgsqlDataSource`. It depends only on Core, `Npgsql`
+  10.0.3, and `Microsoft.Extensions.Logging.Abstractions`.
 
 ## [2.2.0] — Development
 
