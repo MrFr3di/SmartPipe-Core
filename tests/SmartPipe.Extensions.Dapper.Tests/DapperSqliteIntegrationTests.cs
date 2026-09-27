@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using SmartPipe.Core;
+using SmartPipe.Testing;
 
 namespace SmartPipe.Extensions.Dapper.Tests;
 
@@ -23,10 +24,8 @@ public sealed class DapperSqliteIntegrationTests
                 new DapperQueryOptions { OperationName = "read-people" });
             var source = await DapperTestActivation.ActivateAsync(
                 runtimeMapping,
-                DapperTestActivation.CreateContext("sqlite-runtime-mapping"));
-            var envelopes = await DapperTestActivation.ReadAllAsync(
-                source,
-                TestContext.Current.CancellationToken);
+                TestActivation.Create("sqlite-runtime-mapping"));
+            var envelopes = await SourceReader.ReadEnvelopesAsync(source, 1024, TestContext.Current.CancellationToken);
             await source.DisposeAsync();
 
             Assert.Equal(3, envelopes.Count);
@@ -41,10 +40,8 @@ public sealed class DapperSqliteIntegrationTests
                 rowMapper: reader => reader.GetString(0));
             var single = await DapperTestActivation.ActivateAsync(
                 explicitMapping,
-                DapperTestActivation.CreateContext("sqlite-explicit-mapping"));
-            var singleEnvelopes = await DapperTestActivation.ReadAllAsync(
-                single,
-                TestContext.Current.CancellationToken);
+                TestActivation.Create("sqlite-explicit-mapping"));
+            var singleEnvelopes = await SourceReader.ReadEnvelopesAsync(single, 1024, TestContext.Current.CancellationToken);
             await single.DisposeAsync();
 
             Assert.Equal("Bob", Assert.Single(singleEnvelopes).Payload);
@@ -71,11 +68,9 @@ public sealed class DapperSqliteIntegrationTests
                 rowMapper: reader => reader.GetInt32(0));
             var source = await DapperTestActivation.ActivateAsync(
                 descriptor,
-                DapperTestActivation.CreateContext("sqlite-first-result-set"));
+                TestActivation.Create("sqlite-first-result-set"));
 
-            var envelopes = await DapperTestActivation.ReadAllAsync(
-                source,
-                TestContext.Current.CancellationToken);
+            var envelopes = await SourceReader.ReadEnvelopesAsync(source, 1024, TestContext.Current.CancellationToken);
             await source.DisposeAsync();
 
             Assert.Equal([1, 2], envelopes.Select(envelope => envelope.Payload));
@@ -100,7 +95,7 @@ public sealed class DapperSqliteIntegrationTests
                 loggerFactory: loggerFactory);
             var sink = await DapperTestActivation.ActivateAsync(
                 descriptor,
-                DapperTestActivation.CreateContext("sqlite-command-sink"));
+                TestActivation.Create("sqlite-command-sink"));
             await sink.InitializeAsync(TestContext.Current.CancellationToken);
 
             await sink.WriteAsync(
@@ -135,7 +130,7 @@ public sealed class DapperSqliteIntegrationTests
                 new DapperSinkOptions { OperationName = "insert-person" });
             var sink = await DapperTestActivation.ActivateAsync(
                 descriptor,
-                DapperTestActivation.CreateContext("sqlite-command-failure"));
+                TestActivation.Create("sqlite-command-failure"));
             await sink.InitializeAsync(TestContext.Current.CancellationToken);
 
             await Assert.ThrowsAnyAsync<DbException>(() => sink.WriteAsync(
@@ -175,7 +170,7 @@ public sealed class DapperSqliteIntegrationTests
                 loggerFactory: loggerFactory);
             var sink = await DapperTestActivation.ActivateAsync(
                 descriptor,
-                DapperTestActivation.CreateContext("sqlite-batch-sink"));
+                TestActivation.Create("sqlite-batch-sink"));
             await sink.InitializeAsync(TestContext.Current.CancellationToken);
             IReadOnlyList<TestPerson> payload =
             [
@@ -221,7 +216,7 @@ public sealed class DapperSqliteIntegrationTests
                 });
             var sink = await DapperTestActivation.ActivateAsync(
                 descriptor,
-                DapperTestActivation.CreateContext("sqlite-batch-rollback"));
+                TestActivation.Create("sqlite-batch-rollback"));
             await sink.InitializeAsync(TestContext.Current.CancellationToken);
             IReadOnlyList<TestPerson> payload =
             [
@@ -264,7 +259,7 @@ public sealed class DapperSqliteIntegrationTests
                 });
             var sink = await DapperTestActivation.ActivateAsync(
                 descriptor,
-                DapperTestActivation.CreateContext("sqlite-batch-none"));
+                TestActivation.Create("sqlite-batch-none"));
             await sink.InitializeAsync(TestContext.Current.CancellationToken);
             IReadOnlyList<TestPerson> payload =
             [

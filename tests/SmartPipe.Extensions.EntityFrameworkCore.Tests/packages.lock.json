@@ -324,6 +324,12 @@
           "SmartPipe.Core": "[2.2.0, )"
         }
       },
+      "smartpipe.testing": {
+        "type": "Project",
+        "dependencies": {
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
       "Microsoft.EntityFrameworkCore": {
         "type": "CentralTransitive",
         "requested": "[10.0.11, )",

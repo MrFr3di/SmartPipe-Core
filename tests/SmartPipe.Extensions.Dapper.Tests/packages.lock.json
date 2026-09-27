@@ -475,6 +475,12 @@
           "SmartPipe.Core": "[2.2.0, )"
         }
       },
+      "smartpipe.testing": {
+        "type": "Project",
+        "dependencies": {
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
       "CsvHelper": {
         "type": "CentralTransitive",
         "requested": "[33.1.0, )",

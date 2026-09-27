@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using SmartPipe.Core;
+using SmartPipe.Testing;
 
 namespace SmartPipe.Extensions.Dapper.Tests;
 
@@ -27,15 +28,13 @@ public sealed class DapperQuerySourceTests
             rowMapper: reader => reader.GetString(0));
         var source = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
 
         await source.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.Single(connections);
         connection.Reader = new RecordingDbDataReader(journal, ["Name"], ["Alice"], ["Bob"]);
 
-        var envelopes = await DapperTestActivation.ReadAllAsync(
-            source,
-            TestContext.Current.CancellationToken);
+        var envelopes = await SourceReader.ReadEnvelopesAsync(source, 1024, TestContext.Current.CancellationToken);
 
         Assert.Equal(["Alice", "Bob"], envelopes.Select(envelope => envelope.Payload));
         Assert.Single(connections);
@@ -82,7 +81,7 @@ public sealed class DapperQuerySourceTests
             rowMapper: reader => reader.GetString(0));
         var source = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         using var cancellation = new CancellationTokenSource();
 
         await source.InitializeAsync(cancellation.Token);
@@ -90,7 +89,7 @@ public sealed class DapperQuerySourceTests
         var reader = new RecordingDbDataReader(journal, ["Name"], ["Alice"], ["Bob"], ["Carol"]);
         connection.Reader = reader;
 
-        var envelopes = await DapperTestActivation.ReadAllAsync(source, cancellation.Token);
+        var envelopes = await SourceReader.ReadEnvelopesAsync(source, 1024, cancellation.Token);
 
         Assert.Equal(3, envelopes.Count);
         Assert.Equal(4, reader.ReadCount);
@@ -120,7 +119,7 @@ public sealed class DapperQuerySourceTests
             rowMapper: reader => reader.GetString(0));
         var source = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await source.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.IsType<RecordingDbConnection>(created);
         var reader = new RecordingDbDataReader(journal, ["Name"], ["Alice"], ["Bob"], ["Carol"]);
@@ -178,14 +177,14 @@ public sealed class DapperQuerySourceTests
             });
         var source = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await source.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.IsType<RecordingDbConnection>(created);
         var reader = new RecordingDbDataReader(journal, ["Name"], ["Alice"], ["Bob"], ["Carol"]);
         connection.Reader = reader;
 
         var exception = await Assert.ThrowsAsync<RecordingTestFailure>(
-            () => DapperTestActivation.ReadAllAsync(source, TestContext.Current.CancellationToken));
+            () => SourceReader.ReadEnvelopesAsync(source, 1024, TestContext.Current.CancellationToken));
 
         Assert.Same(mapperFailure, exception);
         Assert.Equal(2, reader.ReadCount);
@@ -214,14 +213,14 @@ public sealed class DapperQuerySourceTests
             rowMapper: _ => throw mapperFailure);
         var source = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await source.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.IsType<RecordingDbConnection>(created);
         connection.DisposeFailure = disposeFailure;
         connection.Reader = new RecordingDbDataReader(journal, ["Name"], ["Alice"]);
 
         var exception = await Assert.ThrowsAsync<AggregateException>(
-            () => DapperTestActivation.ReadAllAsync(source, TestContext.Current.CancellationToken));
+            () => SourceReader.ReadEnvelopesAsync(source, 1024, TestContext.Current.CancellationToken));
 
         Assert.Equal(2, exception.InnerExceptions.Count);
         Assert.Same(mapperFailure, exception.InnerExceptions[0]);
@@ -260,14 +259,14 @@ public sealed class DapperQuerySourceTests
             rowMapper: reader => reader.GetString(0));
         var source = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await source.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.IsType<RecordingDbConnection>(created);
         var reader = new RecordingDbDataReader(journal, ["Name"], ["Alice"]) { ReadFailure = readFailure };
         connection.Reader = reader;
 
         var exception = await Assert.ThrowsAsync<RecordingTestFailure>(
-            () => DapperTestActivation.ReadAllAsync(source, TestContext.Current.CancellationToken));
+            () => SourceReader.ReadEnvelopesAsync(source, 1024, TestContext.Current.CancellationToken));
 
         Assert.Same(readFailure, exception);
         Assert.Equal(1, reader.DisposeCount);
@@ -293,7 +292,7 @@ public sealed class DapperQuerySourceTests
             rowMapper: reader => reader.GetString(0));
         var source = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         using var cancellation = new CancellationTokenSource();
         await source.InitializeAsync(cancellation.Token);
         var connection = Assert.IsType<RecordingDbConnection>(created);
@@ -306,7 +305,7 @@ public sealed class DapperQuerySourceTests
         connection.Reader = reader;
 
         var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => DapperTestActivation.ReadAllAsync(source, cancellation.Token));
+            () => SourceReader.ReadEnvelopesAsync(source, 1024, cancellation.Token));
 
         Assert.Equal(cancellation.Token, exception.CancellationToken);
         Assert.Equal(1, reader.DisposeCount);
@@ -331,7 +330,7 @@ public sealed class DapperQuerySourceTests
             new DapperQueryOptions());
         var source = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await source.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.IsType<RecordingDbConnection>(created);
         connection.Reader = new RecordingDbDataReader(
@@ -340,9 +339,7 @@ public sealed class DapperQuerySourceTests
             [7, "Alice"],
             [8, "Bob"]);
 
-        var envelopes = await DapperTestActivation.ReadAllAsync(
-            source,
-            TestContext.Current.CancellationToken);
+        var envelopes = await SourceReader.ReadEnvelopesAsync(source, 1024, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, envelopes.Count);
         Assert.Equal(7, envelopes[0].Payload.Id);
@@ -377,7 +374,7 @@ public sealed class DapperQuerySourceTests
             rowMapper: reader => reader.GetString(0));
         var source = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
 
         await source.InitializeAsync(TestContext.Current.CancellationToken);
         await source.InitializeAsync(TestContext.Current.CancellationToken);
@@ -385,9 +382,7 @@ public sealed class DapperQuerySourceTests
 
         var connection = Assert.IsType<RecordingDbConnection>(created);
         connection.Reader = new RecordingDbDataReader(journal, ["Name"], ["Alice"]);
-        var envelopes = await DapperTestActivation.ReadAllAsync(
-            source,
-            TestContext.Current.CancellationToken);
+        var envelopes = await SourceReader.ReadEnvelopesAsync(source, 1024, TestContext.Current.CancellationToken);
 
         Assert.Single(envelopes);
         Assert.Equal(1, factoryCalls);
@@ -429,9 +424,9 @@ public sealed class DapperQuerySourceTests
 
         var sources = new List<IPipelineSource<int>>
         {
-            await DapperTestActivation.ActivateAsync(descriptor, DapperTestActivation.CreateContext("run-1")),
-            await DapperTestActivation.ActivateAsync(descriptor, DapperTestActivation.CreateContext("run-2")),
-            await DapperTestActivation.ActivateAsync(dataSourceDescriptor, DapperTestActivation.CreateContext("run-3")),
+            await DapperTestActivation.ActivateAsync(descriptor, TestActivation.Create("run-1")),
+            await DapperTestActivation.ActivateAsync(descriptor, TestActivation.Create("run-2")),
+            await DapperTestActivation.ActivateAsync(dataSourceDescriptor, TestActivation.Create("run-3")),
         };
 
         foreach (var source in sources)
@@ -485,8 +480,8 @@ public sealed class DapperQuerySourceTests
             "select 1",
             new DapperQueryOptions(),
             rowMapper: reader => reader.GetInt32(0));
-        var first = await DapperTestActivation.ActivateAsync(descriptor, DapperTestActivation.CreateContext("run-1"));
-        var second = await DapperTestActivation.ActivateAsync(descriptor, DapperTestActivation.CreateContext("run-2"));
+        var first = await DapperTestActivation.ActivateAsync(descriptor, TestActivation.Create("run-1"));
+        var second = await DapperTestActivation.ActivateAsync(descriptor, TestActivation.Create("run-2"));
 
         await Task.WhenAll(
             first.InitializeAsync(TestContext.Current.CancellationToken).AsTask(),
@@ -520,7 +515,7 @@ public sealed class DapperQuerySourceTests
             new DapperQueryOptions());
         var source = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await source.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.IsType<RecordingDbConnection>(created);
 
@@ -551,15 +546,13 @@ public sealed class DapperQuerySourceTests
             parametersFactory: _ => new Dictionary<string, object?> { ["@Token"] = "super-secret" },
             rowMapper: reader => reader.GetString(0),
             loggerFactory: loggerFactory);
-        var context = DapperTestActivation.CreateContext("query-log-pipeline");
+        var context = TestActivation.Create("query-log-pipeline");
         var source = await DapperTestActivation.ActivateAsync(descriptor, context);
         await source.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.IsType<RecordingDbConnection>(created);
         connection.Reader = new RecordingDbDataReader(journal, ["Secret"], ["hidden-value"]);
 
-        var envelopes = await DapperTestActivation.ReadAllAsync(
-            source,
-            TestContext.Current.CancellationToken);
+        var envelopes = await SourceReader.ReadEnvelopesAsync(source, 1024, TestContext.Current.CancellationToken);
         await source.DisposeAsync();
 
         Assert.Single(envelopes);

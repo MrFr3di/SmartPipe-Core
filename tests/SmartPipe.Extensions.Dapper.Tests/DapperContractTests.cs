@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using SmartPipe.Core;
+using SmartPipe.Testing;
 
 namespace SmartPipe.Extensions.Dapper.Tests;
 
@@ -159,7 +160,7 @@ public sealed class DapperContractTests
 
         var source = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         Assert.Equal(0, factoryCalls);
         Assert.Empty(createdConnections);
         Assert.Equal(0, dataSource.CreateConnectionCount);
@@ -170,7 +171,7 @@ public sealed class DapperContractTests
         connection.Reader = reader;
         Assert.Equal(1, factoryCalls);
 
-        var envelopes = await DapperTestActivation.ReadAllAsync(source, TestContext.Current.CancellationToken);
+        var envelopes = await SourceReader.ReadEnvelopesAsync(source, 1024, TestContext.Current.CancellationToken);
         var command = connection.SingleCommand;
         Assert.Equal(30, command.CommandTimeout);
         Assert.Equal(CommandType.Text, command.CommandType);
