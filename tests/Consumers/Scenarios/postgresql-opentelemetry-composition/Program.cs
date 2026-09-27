@@ -6,6 +6,7 @@ using OpenTelemetry.Trace;
 using SmartPipe.Core;
 using SmartPipe.Extensions.OpenTelemetry;
 using SmartPipe.Extensions.PostgreSql;
+using SmartPipe.Consumer.PostgreSql;
 
 // Telemetry stays layered: SmartPipe.Extensions.OpenTelemetry registers the pipeline runtime's own diagnostics
 // sources, Npgsql.OpenTelemetry registers the database client instrumentation, and the PostgreSQL production package

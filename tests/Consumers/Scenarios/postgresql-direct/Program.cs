@@ -2,6 +2,7 @@ using Npgsql;
 using NpgsqlTypes;
 using SmartPipe.Core;
 using SmartPipe.Extensions.PostgreSql;
+using SmartPipe.Consumer.PostgreSql;
 
 // The application owns the data source and the connection string. The scenario reads the connection string from
 // the environment, never from a hardcoded fallback, and fails loudly when it is missing.
@@ -154,7 +155,7 @@ try
         ConsumerCheck.Require(rejectedOutputs == 0, "A rejected batch must not publish a success output.");
         ConsumerCheck.Require(
             rejection is InvalidOperationException,
-            $"A batch above MaxRowsPerBatch must fail the sink before server work; observed {rejection?.GetType().Name ?? "no failure"}.");
+            $"A batch above MaxRowsPerBatch must fail the sink before server work; observed {rejection!.GetType().Name}.");
         ConsumerCheck.Require(
             rejection!.Message.Contains("MaxRowsPerBatch", StringComparison.Ordinal),
             "The oversized-batch rejection did not report the MaxRowsPerBatch contract.");

@@ -7,7 +7,11 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
-  <ItemGroup>
+   <ItemGroup>
+    <Compile Include="..\_shared\PostgreSqlConsumerSupport.cs" Link="PostgreSqlConsumerSupport.cs" />
+  </ItemGroup>
+
+ <ItemGroup>
     <PackageReference Include="Npgsql" />
     <PackageReference Include="SmartPipe.Core" />
     <PackageReference Include="SmartPipe.Extensions.PostgreSql" />

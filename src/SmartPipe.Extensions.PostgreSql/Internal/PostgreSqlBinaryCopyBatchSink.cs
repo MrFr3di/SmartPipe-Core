@@ -228,7 +228,7 @@ internal sealed partial class PostgreSqlBinaryCopyBatchSink<T> : IPipelineSink<I
         var cleanupFailures = new List<Exception>();
         try
         {
-            await _writeGate.WaitAsync().ConfigureAwait(false);
+            await _writeGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             acquired = true;
 
             // Cleanup only: no SQL, no business write and no completion call. An importer still held here belongs

@@ -176,9 +176,10 @@ var definition = PipelineDefinitionBuilder
     .Build();
 ```
 
-Channel identifiers reach PostgreSQL quoted through Npgsql's public identifier-quoting API,
-`NpgsqlCommandBuilder.QuoteIdentifier`. `LISTEN` takes effect at commit, so the source
-reports ready only after the registration transaction has committed.
+PostgreSQL does not accept bind parameters for identifiers, so channel identifiers reach
+the server quoted through Npgsql's public `NpgsqlCommandBuilder.QuoteIdentifier` API, which
+escapes embedded quotes. `LISTEN` takes effect at commit, so the source reports ready only
+after the registration transaction has committed.
 
 `WaitAsync` returning `true` means only that an asynchronous message was received — a notice
 or a parameter change also returns `true` — so the notification event is the signal, not the

@@ -1,6 +1,7 @@
 using Npgsql;
 using SmartPipe.Core;
 using SmartPipe.Extensions.PostgreSql;
+using SmartPipe.Consumer.PostgreSql;
 
 // The slim data source is the documented trim/AOT and static-primitive path: built-in primitive mappings only, no
 // dynamic JSON, no unmapped or composite types, no reflection-based registration and static COPY callbacks.

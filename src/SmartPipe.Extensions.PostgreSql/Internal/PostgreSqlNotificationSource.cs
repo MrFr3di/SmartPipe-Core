@@ -382,9 +382,11 @@ internal sealed class PostgreSqlNotificationSource : IPipelineSource<PostgreSqlN
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
 
-        // The identifier is quoted through the provider API, which doubles embedded quotes: raw channel text is
-        // never concatenated into the statement and the statement text is never logged.
+        // PostgreSQL does not allow a parameter for the LISTEN identifier. Npgsql's QuoteIdentifier encloses the
+        // identifier and doubles embedded quotes; existing integration coverage includes a quoted, spaced channel.
+#pragma warning disable S2077 // The LISTEN identifier is Npgsql-quoted because PostgreSQL identifiers are not parameterizable.
         command.CommandText = "LISTEN " + _identifierQuoter.QuoteIdentifier(channel);
+#pragma warning restore S2077
         await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
     }
 
