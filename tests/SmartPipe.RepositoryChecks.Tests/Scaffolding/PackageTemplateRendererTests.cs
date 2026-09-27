@@ -24,6 +24,7 @@ public sealed class PackageTemplateRendererTests
         {
             "SmartPipe.Extensions.Channels" => PackageScaffoldKind.CoreLeaf,
             "SmartPipe.Extensions.Polly" => PackageScaffoldKind.FrameworkIntegration,
+            "SmartPipe.Testing" => PackageScaffoldKind.Testing,
             _ => (PackageScaffoldKind?)null,
         };
         if (activeKind is { } scaffoldKind)
@@ -68,7 +69,13 @@ public sealed class PackageTemplateRendererTests
     {
         var root = RepositoryRoot();
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
-        var plan = new PackageTemplateRenderer(root).Render(graph, graph.Packages.Single(x => x.Id == "SmartPipe.Testing"));
+        var node = graph.Packages.Single(x => x.Id == "SmartPipe.Testing") with
+        {
+            Lifecycle = PackageLifecycle.Planned,
+            ScaffoldKind = PackageScaffoldKind.Testing,
+        };
+        graph = graph with { Packages = graph.Packages.Select(item => item.Id == node.Id ? node : item).ToArray() };
+        var plan = new PackageTemplateRenderer(root).Render(graph, node);
         using var fixture = new RepositoryTestDirectory();
         fixture.Write("Directory.Build.props", File.ReadAllText(Path.Combine(root, "Directory.Build.props")));
         fixture.Write("Directory.Build.targets", File.ReadAllText(Path.Combine(root, "Directory.Build.targets")));

@@ -8,16 +8,14 @@ namespace SmartPipe.RepositoryChecks.Tests.Scaffolding;
 public sealed class ScaffoldPackageCommandTests
 {
     [Fact]
-    public async Task DryRun_OnlyPlannedId_WritesNothing()
+    public async Task DryRun_RejectsTheNowActiveTestingPackage()
     {
         var root = RepositoryRoot(); var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var command = new ScaffoldPackageCommand();
-        foreach (var node in graph.Packages.Where(x => x.Lifecycle == PackageLifecycle.Planned))
-        {
-            var report = await command.ExecuteAsync(new(root, node.Id, true, null), TestContext.Current.CancellationToken);
-            Assert.True(report.Success); Assert.Equal(node.Id, report.PackageId); Assert.All(report.Files, path => Assert.False(File.Exists(Path.Combine(root, path))));
-        }
-        Assert.Equal("SmartPipe.Testing", Assert.Single(graph.Packages, x => x.Lifecycle == PackageLifecycle.Planned).Id);
+        Assert.DoesNotContain(graph.Packages, node => node.Lifecycle == PackageLifecycle.Planned);
+        var error = await Assert.ThrowsAsync<ScaffoldException>(() => command.ExecuteAsync(
+            new(root, "SmartPipe.Testing", true, null), TestContext.Current.CancellationToken));
+        Assert.Equal("SPSCAF002", error.Code);
     }
 
     [Fact]
@@ -25,7 +23,12 @@ public sealed class ScaffoldPackageCommandTests
     {
         using var fixture = new RepositoryTestDirectory();
         var root = RepositoryRoot(); var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
-        var node = graph.Packages.Single(x => x.Id == "SmartPipe.Testing");
+        var node = graph.Packages.Single(x => x.Id == "SmartPipe.Testing") with
+        {
+            Lifecycle = PackageLifecycle.Planned,
+            ScaffoldKind = PackageScaffoldKind.Testing,
+        };
+        graph = graph with { Packages = graph.Packages.Select(item => item.Id == node.Id ? node : item).ToArray() };
         var plan = new PackageTemplateRenderer(root).Render(graph, node);
         fixture.Write(plan.Files[0].RelativePath, "collision");
         var collision = await Assert.ThrowsAsync<ScaffoldException>(() => new AtomicFileWriter().WriteAsync(fixture.Path, plan.Files, TestContext.Current.CancellationToken));

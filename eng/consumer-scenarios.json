@@ -1,8 +1,6 @@
 {
   "schemaVersion": 1,
-  "requiredAtRelease": [
-    "testing-direct"
-  ],
+  "requiredAtRelease": [],
   "scenarios": [
     {
       "id": "csv-direct",
@@ -72,6 +70,18 @@
       "packageIds": ["SmartPipe.Core"],
       "expectedSmartPipeDependencies": ["SmartPipe.Core"],
       "forbiddenDependencies": [],
+      "baselineVersion": null,
+      "timeout": "00:05:00",
+      "runSecondLockedRestore": true
+    },
+    {
+      "id": "testing-direct",
+      "set": "current",
+      "mode": "build-and-run",
+      "templatePath": "tests/Consumers/Scenarios/testing-direct/Consumer.csproj",
+      "packageIds": ["SmartPipe.Testing"],
+      "expectedSmartPipeDependencies": ["SmartPipe.Core", "SmartPipe.Testing"],
+      "forbiddenDependencies": ["SmartPipe.Extensions"],
       "baselineVersion": null,
       "timeout": "00:05:00",
       "runSecondLockedRestore": true

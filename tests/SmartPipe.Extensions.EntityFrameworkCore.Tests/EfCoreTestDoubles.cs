@@ -107,7 +107,6 @@ internal sealed class RecordingQueryable<T> : IQueryable<T>, IAsyncEnumerable<T>
             throw new NotSupportedException("The provider-neutral double never executes a query.");
     }
 }
-
 /// <summary>A context double that counts creation and disposal and can fail on disposal.</summary>
 internal sealed class TestDbContext : DbContext
 {
@@ -207,24 +206,5 @@ internal sealed class RecordingLoggerFactory : ILoggerFactory
             Exception? exception,
             Func<TState, Exception?, string> formatter) =>
             _messages.Add(formatter(state, exception));
-    }
-}
-
-/// <summary>Builds the activation context used by every provider-neutral test.</summary>
-internal static class TestActivation
-{
-    internal static PipelineActivationContext Create(string key = "sp220-11-tests") =>
-        new(new PipelineKey(key), Guid.NewGuid());
-}
-
-/// <summary>Reads every envelope from a source without a pipeline runtime.</summary>
-internal static class SourceReader
-{
-    internal static async Task<List<T>> ReadAllAsync<T>(IPipelineSource<T> source, CancellationToken ct = default)
-    {
-        var items = new List<T>();
-        await foreach (var envelope in source.ReadEnvelopesAsync(ct))
-            items.Add(envelope.Payload);
-        return items;
     }
 }

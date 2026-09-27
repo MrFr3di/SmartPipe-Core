@@ -39,6 +39,7 @@
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
     <PackageVersion Include="Polly.Core" Version="8.8.0" />
     <PackageVersion Include="SmartPipe.Core" Version="2.2.0" />
+    <PackageVersion Include="SmartPipe.Testing" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.DependencyInjection" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.Channels" Version="2.2.0" />
     <PackageVersion Include="SmartPipe.Extensions.DataAnnotations" Version="2.2.0" />

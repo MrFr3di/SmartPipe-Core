@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SmartPipe.Core;
+using SmartPipe.Testing;
 using SmartPipe.Extensions.EntityFrameworkCore.Runtime;
 
 namespace SmartPipe.Extensions.EntityFrameworkCore.Tests;
@@ -73,7 +74,7 @@ public sealed class EfCoreSqliteIntegrationTests
             factory,
             (context, activation) => context.Rows.OrderBy(row => row.Id));
 
-        var items = await SourceReader.ReadAllAsync(source);
+        var items = (await SourceReader.ReadEnvelopesAsync(source, 1024)).Select(envelope => envelope.Payload).ToList();
 
         items.Select(item => item.Name).Should().Equal("Ada", "Grace");
         factory.Contexts.Should().ContainSingle();
@@ -134,7 +135,7 @@ public sealed class EfCoreSqliteIntegrationTests
             loggerFactory: null,
             activationCancellationToken: default);
 
-        var items = await SourceReader.ReadAllAsync(source);
+        var items = (await SourceReader.ReadEnvelopesAsync(source, 1024)).Select(envelope => envelope.Payload).ToList();
 
         items.Should().Equal(2);
     }
@@ -192,7 +193,7 @@ public sealed class EfCoreSqliteIntegrationTests
                 .OrderBy(row => row.Id),
             new EfCoreQueryOptions { OperationName = "identity-resolution", TrackingMode = trackingMode });
 
-        return await SourceReader.ReadAllAsync(source);
+        return (await SourceReader.ReadEnvelopesAsync(source, 1024)).Select(envelope => envelope.Payload).ToList();
     }
 
     private static EfCoreQuerySource<SqliteContext, SqliteRow> CreateQuerySource(

@@ -25,6 +25,7 @@
     <Project Path="src/SmartPipe.Extensions.Mapster/SmartPipe.Extensions.Mapster.csproj" />
     <Project Path="src/SmartPipe.Extensions.Polly/SmartPipe.Extensions.Polly.csproj" />
     <Project Path="src/SmartPipe.Extensions.PostgreSql/SmartPipe.Extensions.PostgreSql.csproj" />
+    <Project Path="src/SmartPipe.Testing/SmartPipe.Testing.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SmartPipe.RepositoryChecks.ProcessFixture/SmartPipe.RepositoryChecks.ProcessFixture.csproj" />
@@ -47,6 +48,7 @@
     <Project Path="tests/SmartPipe.Extensions.OpenTelemetry.Tests/SmartPipe.Extensions.OpenTelemetry.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Polly.Tests/SmartPipe.Extensions.Polly.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.PostgreSql.Tests/SmartPipe.Extensions.PostgreSql.Tests.csproj" />
+    <Project Path="tests/SmartPipe.Testing.Tests/SmartPipe.Testing.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj" />
   </Folder>
 </Solution>
