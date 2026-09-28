@@ -48,8 +48,3 @@ finally
 
 Console.WriteLine("CONSUMER_OK dapper-facade-binary-2.1.2");
 return 0;
-
-namespace SmartPipe.ConsumerScenarios
-{
-    internal sealed record Row(int Id, string Name);
-}
