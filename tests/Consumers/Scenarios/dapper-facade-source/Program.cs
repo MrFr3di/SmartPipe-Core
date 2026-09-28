@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using SmartPipe.ConsumerScenarios;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Selectors;
 using SmartPipe.Extensions.Sinks;
@@ -48,4 +49,7 @@ finally
 Console.WriteLine("CONSUMER_OK dapper-facade-source");
 return 0;
 
-internal sealed record Row(int Id, string Name);
+namespace SmartPipe.ConsumerScenarios
+{
+    internal sealed record Row(int Id, string Name);
+}

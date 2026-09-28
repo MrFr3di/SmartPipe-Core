@@ -1,6 +1,7 @@
 using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
+using SmartPipe.ConsumerScenarios;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Dapper;
 using SmartPipe.Extensions.DependencyInjection;
@@ -47,4 +48,7 @@ finally
 Console.WriteLine("CONSUMER_OK dapper-di-composition");
 return 0;
 
-internal sealed record Row(int Id, string Name);
+namespace SmartPipe.ConsumerScenarios
+{
+    internal sealed record Row(int Id, string Name);
+}

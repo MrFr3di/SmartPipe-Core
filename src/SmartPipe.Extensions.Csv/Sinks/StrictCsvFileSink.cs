@@ -467,7 +467,7 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
         Exception? cleanupFailure = null;
         try
         {
-            await _writeGate.WaitAsync().ConfigureAwait(false);
+            await _writeGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             acquired = true;
             try
             {

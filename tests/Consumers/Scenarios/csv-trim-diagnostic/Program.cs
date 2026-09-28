@@ -2,6 +2,8 @@ using System.Diagnostics.CodeAnalysis;
 using SmartPipe.Core;
 using SmartPipe.Extensions.Csv;
 
+namespace SmartPipe.ConsumerScenarios;
+
 internal static class Program
 {
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "This diagnostic consumer documents the CsvHelper reflection boundary.")]
