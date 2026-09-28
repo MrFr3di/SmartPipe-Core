@@ -1,3 +1,4 @@
+using SmartPipe.ConsumerScenarios;
 using SmartPipe.Extensions.Selectors;
 
 var input = Path.Combine(Path.GetTempPath(), $"smartpipe-csv-facade-{Guid.NewGuid():N}.csv");
@@ -18,5 +19,3 @@ finally
 {
     File.Delete(input);
 }
-
-internal sealed record Person(string Name, int Age);

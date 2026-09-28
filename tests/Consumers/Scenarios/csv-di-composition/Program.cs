@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using SmartPipe.ConsumerScenarios;
 using SmartPipe.Core;
 using SmartPipe.Extensions;
 using SmartPipe.Extensions.Csv;
@@ -27,4 +28,7 @@ finally
 Console.WriteLine("CONSUMER_OK csv-di-composition");
 return 0;
 
-internal sealed record Person(string Name, int Age);
+namespace SmartPipe.ConsumerScenarios
+{
+    internal sealed record Person(string Name, int Age);
+}
