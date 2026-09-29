@@ -8,13 +8,13 @@ Ready-to-use integrations for SmartPipe.Core: file, HTTP, database, mapping, val
 | Selector | Library | Description |
 |----------|---------|-------------|
 | `HttpSelector<T>` | HttpClient + Polly | Fetch data from REST APIs |
-| `EfCoreSelector<T>` | Entity Framework Core | Stream entities from database |
+| `EfCoreSelector<T>` | Entity Framework Core (forwarded to `SmartPipe.Extensions.EntityFrameworkCore`) | Stream entities from database |
 | `DapperSelector<T>` | Dapper | High-performance SQL queries |
 | `CsvFileSource<T>` | CsvHelper | Read CSV files |
 | `JsonFileSource<T>` | SmartPipe.Extensions.Json / System.Text.Json | Read JSON arrays and NDJSON |
 | `DeadLetterSource<T>` | SmartPipe.Extensions.Json / System.Text.Json | Read persisted failed-item records |
 
-`EfCoreSelector<T>` uses no-tracking queries by default for read-only pipeline
+`EfCoreSelector<T>` (forwarded from `SmartPipe.Extensions.EntityFrameworkCore`) uses no-tracking queries by default for read-only pipeline
 source scenarios. Call `.WithTracking()` when returned entities must remain
 tracked by the supplied `DbContext`.
 
@@ -135,9 +135,10 @@ is planned for removal in SmartPipe 3.0.
 - This package intentionally includes integration dependencies for the features below.
 - Individual features pull their own dependencies:
   - `HttpSelector` / `HttpSink` → Polly (via Microsoft.Extensions.Resilience)
-  - `EfCoreSelector` → Entity Framework Core
+  - `EfCoreSelector` → Entity Framework Core (forwarded; the leaf owns the implementation)
   - `DapperSelector` / `DbSink` → Dapper
-  - `MapsterTransform` → Mapster
+  - `MapsterTransform` → Mapster (forwarded; the `SmartPipe.Extensions.Mapster` leaf owns the
+    implementation and the new composition API)
   - `CsvFileSource` / `CsvFileSink` / `CsvTransform` → CsvHelper
   - `PollyResilienceTransform` → Polly.Core
   - `SmartPipeHostedService` / `SmartPipeHealthCheck` → Microsoft.Extensions.Hosting / HealthChecks
@@ -149,6 +150,8 @@ is planned for removal in SmartPipe 3.0.
 expression compilation. It is supported for normal runtime consumers, but is not
 trim- or NativeAOT-safe. For trimmed or NativeAOT applications, prefer a
 hand-written mapper, a source-generated mapper, or `PipelineTransformer.FromFunc`.
+The type is forwarded from `SmartPipe.Extensions.Mapster`, which also exposes
+`MapsterPipelineComponents.Transform<TIn,TOut>` and the `MapWithMapster` builder extensions for new code.
 
 
 ## License

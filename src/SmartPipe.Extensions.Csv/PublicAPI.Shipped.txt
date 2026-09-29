@@ -1,0 +1,121 @@
+#nullable enable
+SmartPipe.Extensions.Selectors.CsvFileSource<T>
+SmartPipe.Extensions.Selectors.CsvFileSource<T>.CsvFileSource(string! path, string! delimiter = ",", System.Globalization.CultureInfo? culture = null) -> void
+SmartPipe.Extensions.Selectors.CsvFileSource<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Selectors.CsvFileSource<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Selectors.CsvFileSource<T>.ReadEnvelopesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SmartPipe.Core.ProcessingEnvelope<T>!>!
+SmartPipe.Extensions.Sinks.CsvFileSink<T>
+SmartPipe.Extensions.Sinks.CsvFileSink<T>.CsvFileSink(string! path, string! delimiter = ",", System.Globalization.CultureInfo? culture = null) -> void
+SmartPipe.Extensions.Sinks.CsvFileSink<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Sinks.CsvFileSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Sinks.CsvFileSink<T>.WriteAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.CsvTransform(string! delimiter = ",", System.Globalization.CultureInfo? culture = null, System.Action<CsvHelper.Configuration.CsvConfiguration!>? configure = null) -> void
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.CsvTransform<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<TInput>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<TOutput>>
+SmartPipe.Extensions.Csv.CsvFileOpenMode
+SmartPipe.Extensions.Csv.CsvFileOpenMode.Append = 1 -> SmartPipe.Extensions.Csv.CsvFileOpenMode
+SmartPipe.Extensions.Csv.CsvFileOpenMode.Create = 0 -> SmartPipe.Extensions.Csv.CsvFileOpenMode
+SmartPipe.Extensions.Csv.CsvFormulaInjectionMode
+SmartPipe.Extensions.Csv.CsvFormulaInjectionMode.Escape = 1 -> SmartPipe.Extensions.Csv.CsvFormulaInjectionMode
+SmartPipe.Extensions.Csv.CsvFormulaInjectionMode.None = 0 -> SmartPipe.Extensions.Csv.CsvFormulaInjectionMode
+SmartPipe.Extensions.Csv.CsvFormulaInjectionMode.Strip = 2 -> SmartPipe.Extensions.Csv.CsvFormulaInjectionMode
+SmartPipe.Extensions.Csv.CsvFormulaInjectionMode.Throw = 3 -> SmartPipe.Extensions.Csv.CsvFormulaInjectionMode
+SmartPipe.Extensions.Csv.CsvHeaderValidationBehavior
+SmartPipe.Extensions.Csv.CsvHeaderValidationBehavior.Ignore = 1 -> SmartPipe.Extensions.Csv.CsvHeaderValidationBehavior
+SmartPipe.Extensions.Csv.CsvHeaderValidationBehavior.Throw = 0 -> SmartPipe.Extensions.Csv.CsvHeaderValidationBehavior
+SmartPipe.Extensions.Csv.CsvInvalidRecordBehavior
+SmartPipe.Extensions.Csv.CsvInvalidRecordBehavior.SkipAndLog = 1 -> SmartPipe.Extensions.Csv.CsvInvalidRecordBehavior
+SmartPipe.Extensions.Csv.CsvInvalidRecordBehavior.Throw = 0 -> SmartPipe.Extensions.Csv.CsvInvalidRecordBehavior
+SmartPipe.Extensions.Csv.CsvMapRegistration<T>
+static SmartPipe.Extensions.Csv.CsvMapRegistration<T>.Auto.get -> SmartPipe.Extensions.Csv.CsvMapRegistration<T>!
+static SmartPipe.Extensions.Csv.CsvMapRegistration<T>.From<TMap>() -> SmartPipe.Extensions.Csv.CsvMapRegistration<T>!
+static SmartPipe.Extensions.Csv.CsvMapRegistration<T>.FromFactory(System.Func<CsvHelper.Configuration.ClassMap<T>!>! mapFactory) -> SmartPipe.Extensions.Csv.CsvMapRegistration<T>!
+SmartPipe.Extensions.Csv.CsvMissingFieldBehavior
+SmartPipe.Extensions.Csv.CsvMissingFieldBehavior.Throw = 0 -> SmartPipe.Extensions.Csv.CsvMissingFieldBehavior
+SmartPipe.Extensions.Csv.CsvMissingFieldBehavior.UseDefault = 1 -> SmartPipe.Extensions.Csv.CsvMissingFieldBehavior
+SmartPipe.Extensions.Csv.CsvPipelineComponents
+static SmartPipe.Extensions.Csv.CsvPipelineComponents.FileSink<T>(string! path, SmartPipe.Extensions.Csv.CsvSinkOptions! options, SmartPipe.Extensions.Csv.CsvMapRegistration<T>? map = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSink<T>!>!
+static SmartPipe.Extensions.Csv.CsvPipelineComponents.FileSource<T>(string! path, SmartPipe.Extensions.Csv.CsvSourceOptions! options, SmartPipe.Extensions.Csv.CsvMapRegistration<T>? map = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineSource<T>!>!
+SmartPipe.Extensions.Csv.CsvPipelineDefinitionBuilder
+static SmartPipe.Extensions.Csv.CsvPipelineDefinitionBuilder.FromCsvFile<T>(SmartPipe.Core.PipelineKey pipelineKey, string! path, SmartPipe.Extensions.Csv.CsvSourceOptions! options, SmartPipe.Extensions.Csv.CsvMapRegistration<T>? map = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SmartPipe.Core.PipelineDefinitionBuilder<T>!
+SmartPipe.Extensions.Csv.CsvPipelineDefinitionBuilderExtensions
+static SmartPipe.Extensions.Csv.CsvPipelineDefinitionBuilderExtensions.ToCsvFile<T>(this SmartPipe.Core.PipelineDefinitionBuilder<T>! builder, string! path, SmartPipe.Extensions.Csv.CsvSinkOptions! options, SmartPipe.Extensions.Csv.CsvMapRegistration<T>? map = null) -> SmartPipe.Core.PipelineDefinition<T, T>!
+static SmartPipe.Extensions.Csv.CsvPipelineDefinitionBuilderExtensions.ToCsvFile<TInput, TOutput>(this SmartPipe.Core.PipelineDefinitionBuilder<TInput, TOutput>! builder, string! path, SmartPipe.Extensions.Csv.CsvSinkOptions! options, SmartPipe.Extensions.Csv.CsvMapRegistration<TOutput>? map = null) -> SmartPipe.Core.PipelineDefinition<TInput, TOutput>!
+SmartPipe.Extensions.Csv.CsvSinkOptions
+SmartPipe.Extensions.Csv.CsvSinkOptions.CsvSinkOptions() -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.<Clone>$() -> SmartPipe.Extensions.Csv.CsvSinkOptions!
+override SmartPipe.Extensions.Csv.CsvSinkOptions.Equals(object? obj) -> bool
+SmartPipe.Extensions.Csv.CsvSinkOptions.Equals(SmartPipe.Extensions.Csv.CsvSinkOptions? other) -> bool
+override SmartPipe.Extensions.Csv.CsvSinkOptions.GetHashCode() -> int
+override SmartPipe.Extensions.Csv.CsvSinkOptions.ToString() -> string!
+static SmartPipe.Extensions.Csv.CsvSinkOptions.operator !=(SmartPipe.Extensions.Csv.CsvSinkOptions? left, SmartPipe.Extensions.Csv.CsvSinkOptions? right) -> bool
+static SmartPipe.Extensions.Csv.CsvSinkOptions.operator ==(SmartPipe.Extensions.Csv.CsvSinkOptions? left, SmartPipe.Extensions.Csv.CsvSinkOptions? right) -> bool
+SmartPipe.Extensions.Csv.CsvSinkOptions.Delimiter.get -> char
+SmartPipe.Extensions.Csv.CsvSinkOptions.Delimiter.init -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.Quote.get -> char
+SmartPipe.Extensions.Csv.CsvSinkOptions.Quote.init -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.Culture.get -> System.Globalization.CultureInfo!
+SmartPipe.Extensions.Csv.CsvSinkOptions.Culture.init -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.Encoding.get -> System.Text.Encoding!
+SmartPipe.Extensions.Csv.CsvSinkOptions.Encoding.init -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.EmitByteOrderMark.get -> bool
+SmartPipe.Extensions.Csv.CsvSinkOptions.EmitByteOrderMark.init -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.HasHeaderRecord.get -> bool
+SmartPipe.Extensions.Csv.CsvSinkOptions.HasHeaderRecord.init -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.OpenMode.get -> SmartPipe.Extensions.Csv.CsvFileOpenMode
+SmartPipe.Extensions.Csv.CsvSinkOptions.OpenMode.init -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.ValidateExistingHeaderOnAppend.get -> bool
+SmartPipe.Extensions.Csv.CsvSinkOptions.ValidateExistingHeaderOnAppend.init -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.WriteHeaderWhenFileIsEmpty.get -> bool
+SmartPipe.Extensions.Csv.CsvSinkOptions.WriteHeaderWhenFileIsEmpty.init -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.NewLine.get -> string!
+SmartPipe.Extensions.Csv.CsvSinkOptions.NewLine.init -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.MaxRecordSizeCharacters.get -> int
+SmartPipe.Extensions.Csv.CsvSinkOptions.MaxRecordSizeCharacters.init -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.FlushEveryRecords.get -> int
+SmartPipe.Extensions.Csv.CsvSinkOptions.FlushEveryRecords.init -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.FormulaInjectionMode.get -> SmartPipe.Extensions.Csv.CsvFormulaInjectionMode
+SmartPipe.Extensions.Csv.CsvSinkOptions.FormulaInjectionMode.init -> void
+SmartPipe.Extensions.Csv.CsvSinkOptions.BufferSize.get -> int
+SmartPipe.Extensions.Csv.CsvSinkOptions.BufferSize.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions
+SmartPipe.Extensions.Csv.CsvSourceOptions.CsvSourceOptions() -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.<Clone>$() -> SmartPipe.Extensions.Csv.CsvSourceOptions!
+override SmartPipe.Extensions.Csv.CsvSourceOptions.Equals(object? obj) -> bool
+SmartPipe.Extensions.Csv.CsvSourceOptions.Equals(SmartPipe.Extensions.Csv.CsvSourceOptions? other) -> bool
+override SmartPipe.Extensions.Csv.CsvSourceOptions.GetHashCode() -> int
+override SmartPipe.Extensions.Csv.CsvSourceOptions.ToString() -> string!
+static SmartPipe.Extensions.Csv.CsvSourceOptions.operator !=(SmartPipe.Extensions.Csv.CsvSourceOptions? left, SmartPipe.Extensions.Csv.CsvSourceOptions? right) -> bool
+static SmartPipe.Extensions.Csv.CsvSourceOptions.operator ==(SmartPipe.Extensions.Csv.CsvSourceOptions? left, SmartPipe.Extensions.Csv.CsvSourceOptions? right) -> bool
+SmartPipe.Extensions.Csv.CsvSourceOptions.Delimiter.get -> char
+SmartPipe.Extensions.Csv.CsvSourceOptions.Delimiter.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.Quote.get -> char
+SmartPipe.Extensions.Csv.CsvSourceOptions.Quote.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.Culture.get -> System.Globalization.CultureInfo!
+SmartPipe.Extensions.Csv.CsvSourceOptions.Culture.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.Encoding.get -> System.Text.Encoding!
+SmartPipe.Extensions.Csv.CsvSourceOptions.Encoding.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.DetectEncodingFromByteOrderMarks.get -> bool
+SmartPipe.Extensions.Csv.CsvSourceOptions.DetectEncodingFromByteOrderMarks.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.HasHeaderRecord.get -> bool
+SmartPipe.Extensions.Csv.CsvSourceOptions.HasHeaderRecord.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.InvalidRecordBehavior.get -> SmartPipe.Extensions.Csv.CsvInvalidRecordBehavior
+SmartPipe.Extensions.Csv.CsvSourceOptions.InvalidRecordBehavior.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.MissingFieldBehavior.get -> SmartPipe.Extensions.Csv.CsvMissingFieldBehavior
+SmartPipe.Extensions.Csv.CsvSourceOptions.MissingFieldBehavior.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.HeaderValidationBehavior.get -> SmartPipe.Extensions.Csv.CsvHeaderValidationBehavior
+SmartPipe.Extensions.Csv.CsvSourceOptions.HeaderValidationBehavior.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.DetectColumnCountChanges.get -> bool
+SmartPipe.Extensions.Csv.CsvSourceOptions.DetectColumnCountChanges.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.IgnoreBlankLines.get -> bool
+SmartPipe.Extensions.Csv.CsvSourceOptions.IgnoreBlankLines.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.MaxRecordSizeCharacters.get -> int
+SmartPipe.Extensions.Csv.CsvSourceOptions.MaxRecordSizeCharacters.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.MaxFieldSizeCharacters.get -> int
+SmartPipe.Extensions.Csv.CsvSourceOptions.MaxFieldSizeCharacters.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.MaxColumnCount.get -> int
+SmartPipe.Extensions.Csv.CsvSourceOptions.MaxColumnCount.init -> void
+SmartPipe.Extensions.Csv.CsvSourceOptions.BufferSize.get -> int
+SmartPipe.Extensions.Csv.CsvSourceOptions.BufferSize.init -> void

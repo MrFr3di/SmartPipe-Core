@@ -1,0 +1,11 @@
+#nullable enable
+SmartPipe.Extensions.Mapster.MapsterPipelineComponents
+SmartPipe.Extensions.Mapster.MapsterPipelineDefinitionBuilderExtensions
+static SmartPipe.Extensions.Mapster.MapsterPipelineComponents.Transform<TInput, TOutput>(System.Action<Mapster.TypeAdapterConfig!>? configure = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineTransformer<TInput, TOutput>!>!
+static SmartPipe.Extensions.Mapster.MapsterPipelineDefinitionBuilderExtensions.MapWithMapster<TInput, TOutput>(this SmartPipe.Core.PipelineDefinitionBuilder<TInput>! builder, SmartPipe.Core.PipelineStageKey stageKey, System.Action<Mapster.TypeAdapterConfig!>? configure = null) -> SmartPipe.Core.PipelineDefinitionBuilder<TInput, TOutput>!
+static SmartPipe.Extensions.Mapster.MapsterPipelineDefinitionBuilderExtensions.MapWithMapster<TPipelineInput, TCurrent, TOutput>(this SmartPipe.Core.PipelineDefinitionBuilder<TPipelineInput, TCurrent>! builder, SmartPipe.Core.PipelineStageKey stageKey, System.Action<Mapster.TypeAdapterConfig!>? configure = null) -> SmartPipe.Core.PipelineDefinitionBuilder<TPipelineInput, TOutput>!
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.MapsterTransform(Mapster.TypeAdapterConfig? config = null) -> void
+SmartPipe.Extensions.Transforms.MapsterTransform<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<TInput>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<TOutput>>

@@ -61,7 +61,25 @@
         "opentelemetry-otlp",
         "opentelemetry-facade",
         "opentelemetry-trim",
-        "opentelemetry-nativeaot"
+        "opentelemetry-nativeaot",
+        "csv-direct",
+        "csv-di-composition",
+        "csv-facade-source",
+        "csv-facade-binary-2.1.2",
+        "csv-trim-diagnostic",
+        "dapper-direct",
+        "dapper-di-composition",
+        "dapper-facade-source",
+        "dapper-facade-binary-2.1.2",
+        "dapper-trim-diagnostic",
+        "entity-framework-core-direct",
+        "entity-framework-core-di-composition",
+        "entity-framework-core-facade-source",
+        "entity-framework-core-facade-binary-2.1.2",
+        "entity-framework-core-trim-diagnostic",
+        "mapster-direct",
+        "mapster-facade-binary-2.1.2",
+        "mapster-trim-diagnostic"
       ]
     },
     {
@@ -217,9 +235,9 @@
     {
       "id": "SmartPipe.Extensions.Csv",
       "projectPath": "src/SmartPipe.Extensions.Csv/SmartPipe.Extensions.Csv.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-09",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 6,
       "baselineVersion": null,
       "aotContract": "verified-no-blanket",
@@ -229,7 +247,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "CsvHelper"
+          "CsvHelper",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -241,7 +260,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "CsvHelper"
+          "CsvHelper",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -249,15 +269,17 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "csv-direct"
+        "csv-direct",
+        "csv-di-composition",
+        "csv-trim-diagnostic"
       ]
     },
     {
       "id": "SmartPipe.Extensions.Dapper",
       "projectPath": "src/SmartPipe.Extensions.Dapper/SmartPipe.Extensions.Dapper.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-10",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 7,
       "baselineVersion": null,
       "aotContract": "explicit-sql",
@@ -267,7 +289,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Dapper"
+          "Dapper",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -279,7 +302,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Dapper"
+          "Dapper",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -287,15 +311,17 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "dapper-direct"
+        "dapper-direct",
+        "dapper-di-composition",
+        "dapper-trim-diagnostic"
       ]
     },
     {
       "id": "SmartPipe.Extensions.EntityFrameworkCore",
       "projectPath": "src/SmartPipe.Extensions.EntityFrameworkCore/SmartPipe.Extensions.EntityFrameworkCore.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-11",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 8,
       "baselineVersion": null,
       "aotContract": "no-blanket",
@@ -305,7 +331,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.EntityFrameworkCore"
+          "Microsoft.EntityFrameworkCore",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -317,7 +344,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.EntityFrameworkCore"
+          "Microsoft.EntityFrameworkCore",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -325,15 +353,17 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "entity-framework-core-direct"
+        "entity-framework-core-direct",
+        "entity-framework-core-di-composition",
+        "entity-framework-core-trim-diagnostic"
       ]
     },
     {
       "id": "SmartPipe.Extensions.Mapster",
       "projectPath": "src/SmartPipe.Extensions.Mapster/SmartPipe.Extensions.Mapster.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-12",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 9,
       "baselineVersion": null,
       "aotContract": "unsupported-blanket",
@@ -363,7 +393,8 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "mapster-direct"
+        "mapster-direct",
+        "mapster-trim-diagnostic"
       ]
     },
     {
@@ -553,6 +584,9 @@
       "consumerScenarios": [
         "dependency-injection-direct",
         "json-dependency-injection-direct",
+        "csv-di-composition",
+        "dapper-di-composition",
+        "entity-framework-core-di-composition",
         "dependency-injection-keyed",
         "dependency-injection-from-keyed-services",
         "dependency-injection-facade-source",
@@ -763,11 +797,19 @@
           "SmartPipe.Extensions.DataAnnotations",
           "SmartPipe.Extensions.DependencyInjection",
           "SmartPipe.Extensions.Hosting",
-          "SmartPipe.Extensions.Json"
+          "SmartPipe.Extensions.Json",
+          "SmartPipe.Extensions.Csv",
+          "SmartPipe.Extensions.Dapper",
+          "SmartPipe.Extensions.EntityFrameworkCore",
+          "SmartPipe.Extensions.Mapster"
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Logging.Abstractions"
+          "Microsoft.Extensions.Logging.Abstractions",
+          "CsvHelper",
+          "Dapper",
+          "Mapster",
+          "Microsoft.EntityFrameworkCore"
         ],
         "forbiddenPackagePatterns": []
       },
@@ -798,39 +840,15 @@
           "Microsoft.Extensions.Http",
           "Microsoft.Extensions.Options",
           "Microsoft.Extensions.Resilience",
-          "Microsoft.Extensions.Logging.Abstractions"
+          "Microsoft.Extensions.Logging.Abstractions",
+          "CsvHelper",
+          "Dapper",
+          "Mapster",
+          "Microsoft.EntityFrameworkCore"
         ],
         "forbiddenPackagePatterns": []
       },
       "temporaryAllowances": [
-        {
-          "dependency": "CsvHelper",
-          "reason": "CSV implementation remains embedded until extraction",
-          "ownerEpic": "SP220-09",
-          "expiresBeforeRelease": true,
-          "evidence": "SmartPipe.Extensions current PackageReference"
-        },
-        {
-          "dependency": "Dapper",
-          "reason": "Dapper implementation remains embedded until extraction",
-          "ownerEpic": "SP220-10",
-          "expiresBeforeRelease": true,
-          "evidence": "SmartPipe.Extensions current PackageReference"
-        },
-        {
-          "dependency": "Microsoft.EntityFrameworkCore",
-          "reason": "EF implementation remains embedded until extraction",
-          "ownerEpic": "SP220-11",
-          "expiresBeforeRelease": true,
-          "evidence": "SmartPipe.Extensions current PackageReference"
-        },
-        {
-          "dependency": "Mapster",
-          "reason": "Mapster implementation remains embedded until extraction",
-          "ownerEpic": "SP220-12",
-          "expiresBeforeRelease": true,
-          "evidence": "SmartPipe.Extensions current PackageReference"
-        },
         {
           "dependency": "Microsoft.Extensions.Http",
           "reason": "Legacy HTTP implementation remains embedded",
@@ -881,6 +899,13 @@
         "dependency-injection-facade-binary-2.1.2",
         "hosting-facade-source",
         "hosting-facade-binary-2.1.2",
+        "csv-facade-source",
+        "csv-facade-binary-2.1.2",
+        "dapper-facade-source",
+        "dapper-facade-binary-2.1.2",
+        "entity-framework-core-facade-source",
+        "entity-framework-core-facade-binary-2.1.2",
+        "mapster-facade-binary-2.1.2",
         "opentelemetry-facade"
       ]
     }

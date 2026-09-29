@@ -9,14 +9,19 @@ namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 public sealed class ConsumerScenarioSchemaTests
 {
     [Fact]
-    public async Task CurrentManifest_HasExactlyThirtyFiveStrictScenarios()
+    public async Task CurrentManifest_HasExactlyFiftyThreeStrictScenarios()
     {
         var root = RepositoryRoot();
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var document = await new ConsumerScenarioLoader().LoadAsync(root, "eng/consumer-scenarios.json", graph, TestContext.Current.CancellationToken);
-        Assert.Equal(35, document.Scenarios.Count);
+        Assert.Equal(53, document.Scenarios.Count);
         Assert.Equal(
             [
+                "csv-direct",
+                "csv-di-composition",
+                "csv-facade-source",
+                "csv-facade-binary-2.1.2",
+                "csv-trim-diagnostic",
                 "core-direct",
                 "json-direct",
                 "extensions-meta",
@@ -52,6 +57,19 @@ public sealed class ConsumerScenarioSchemaTests
                 "logging-direct",
                 "data-annotations-direct",
                 "data-annotations-runtime",
+                "dapper-direct",
+                "dapper-di-composition",
+                "dapper-facade-source",
+                "dapper-facade-binary-2.1.2",
+                "dapper-trim-diagnostic",
+                "entity-framework-core-direct",
+                "entity-framework-core-di-composition",
+                "entity-framework-core-facade-source",
+                "entity-framework-core-facade-binary-2.1.2",
+                "entity-framework-core-trim-diagnostic",
+                "mapster-direct",
+                "mapster-facade-binary-2.1.2",
+                "mapster-trim-diagnostic",
             ],
             document.Scenarios.Select(x => x.Id));
         Assert.All(

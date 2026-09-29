@@ -265,6 +265,10 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
             _bindings = bindings;
         }
 
+        [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+            "Trimming",
+            "IL2090",
+            Justification = "The shipped legacy reflection mapper binds the public writable properties of T. This path is documented as trimming-unsafe in the package README and docs/aot-compatibility.md, and the explicit Func<DbDataReader,T> mapper is the supported alternative.")]
         public static RowMapper Create(IDataRecord record)
         {
             var writableProperties = typeof(T)
@@ -283,6 +287,10 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
             return new RowMapper(bindings.ToArray());
         }
 
+        [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+            "Trimming",
+            "IL2091",
+            Justification = "The shipped legacy reflection mapper constructs T through its public parameterless constructor. This path is documented as trimming-unsafe, and the explicit Func<DbDataReader,T> mapper is the supported alternative.")]
         public T Map(IDataRecord record)
         {
             var instance = Activator.CreateInstance<T>();

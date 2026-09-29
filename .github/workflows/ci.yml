@@ -19,9 +19,9 @@ on:
         type: string
         default: ''
   push:
-    branches: [ main, upd, release/2.2.0 ]
+    branches: [ main, upd, release/2.2.0, sp220/checkpoint-e ]
   pull_request:
-    branches: [ main, upd, release/2.2.0, sp220/checkpoint-c, sp220/checkpoint-d ]
+    branches: [ main, upd, release/2.2.0, sp220/checkpoint-c, sp220/checkpoint-d, sp220/checkpoint-e ]
 
 permissions:
   contents: read
@@ -67,6 +67,39 @@ jobs:
 
       - name: Generic Host ordering and cancellation tests
         run: dotnet test --project tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Hosting.Tests.Integration.GenericHostIntegrationTests --minimum-expected-tests 1
+
+  csv-file-integration:
+    name: CSV file integration (${{ matrix.os == 'windows-latest' && 'Windows' || matrix.os }})
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_dispatch' || (inputs.diagnostic-sha == '' && inputs.diagnostic-scenario == '' && inputs.diagnostic-repeat == ''))
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON('{"os":["ubuntu-latest","windows-latest"]}') }}
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore locked
+        run: dotnet restore tests/SmartPipe.Extensions.Csv.Tests/SmartPipe.Extensions.Csv.Tests.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true
+
+      - name: Build CSV test project
+        run: dotnet build tests/SmartPipe.Extensions.Csv.Tests/SmartPipe.Extensions.Csv.Tests.csproj --configuration Release --no-restore -warnaserror
+
+      - name: CSV strict source tests
+        run: dotnet test --project tests/SmartPipe.Extensions.Csv.Tests/SmartPipe.Extensions.Csv.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Csv.Tests.CsvStrictSourceTests --minimum-expected-tests 1
+
+      - name: CSV strict sink tests
+        run: dotnet test --project tests/SmartPipe.Extensions.Csv.Tests/SmartPipe.Extensions.Csv.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Extensions.Csv.Tests.CsvStrictSinkTests --minimum-expected-tests 1
 
   json-file-windows:
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_dispatch' || (inputs.diagnostic-sha == '' && inputs.diagnostic-scenario == '' && inputs.diagnostic-repeat == ''))
@@ -174,7 +207,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:DIAGNOSTIC_SHA -notmatch '^[0-9a-f]{40}$') { throw 'diagnostic-sha must be exactly 40 lowercase hexadecimal characters.' }
-          if ($env:DIAGNOSTIC_SCENARIO -notmatch '^[a-z0-9-]+$') { throw 'diagnostic-scenario must contain lowercase letters, digits, or hyphens.' }
+          if ($env:DIAGNOSTIC_SCENARIO -notmatch '^[a-z0-9-]+(?:\.[a-z0-9-]+)*$') { throw 'diagnostic-scenario must contain lowercase letters, digits, hyphens, or separated dots.' }
           if ($env:DIAGNOSTIC_REPEAT -notmatch '^[1-5]$') { throw 'diagnostic-repeat must be an integer from 1 through 5.' }
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

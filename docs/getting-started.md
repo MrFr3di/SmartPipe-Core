@@ -115,9 +115,18 @@ remain sequential; cross-envelope output order is not guaranteed.
   `PollyResilienceTransform<T>`;
 - sinks: `LoggerSink<T>`, `HttpSink<T>`, `CsvFileSink<T>`, `DbSink<T>`.
 
-`MapsterTransform<TInput,TOutput>` uses Mapster runtime mapping and is not
-trim- or NativeAOT-safe. Use a hand-written mapper, a source-generated mapper,
-or `PipelineTransformer.FromFunc` for trimmed or NativeAOT applications.
+`EfCoreSelector<T>` is forwarded from `SmartPipe.Extensions.EntityFrameworkCore`; new code uses
+`EfCorePipelineComponents.QuerySource`/`CompiledQuerySource` or the typed `FromQuery`/`FromCompiledQuery`
+builders from that leaf.
+
+`MapsterTransform<TInput,TOutput>` is forwarded from `SmartPipe.Extensions.Mapster`; new code uses
+`MapsterPipelineComponents.Transform<TInput,TOutput>` or the `MapWithMapster` builder extensions from
+that leaf, which isolate the caller callback, clone the working configuration once, and compile the
+requested root pair once at composition.
+
+`MapsterTransform<TInput,TOutput>` and the Mapster composition API both use Mapster runtime mapping and
+are not trim- or NativeAOT-safe. Use a hand-written mapper, a source-generated mapper, or
+`PipelineTransformer.FromFunc` for trimmed or NativeAOT applications.
 
 Next links:
 

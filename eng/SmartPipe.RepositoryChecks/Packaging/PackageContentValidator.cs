@@ -94,10 +94,10 @@ internal sealed class PackageContentValidator
         {
             using var provider = MetadataReaderProvider.FromPortablePdbStream(new MemoryStream(bytes, false));
             var reader = provider.GetMetadataReader();
-            var sourceLink = reader.GetCustomDebugInformation(MetadataTokens.EntityHandle(0x00000001))
-                .Select(reader.GetCustomDebugInformation).FirstOrDefault(info => reader.GetGuid(info.Kind) == SourceLinkKind);
-            if (sourceLink.Kind.IsNil) { add("SPMETA013", "portable PDB must contain Source Link JSON", pdbPath); return; }
-            var json = reader.GetBlobBytes(sourceLink.Value);
+            var sourceLinkHandle = reader.GetCustomDebugInformation(MetadataTokens.EntityHandle(0x00000001))
+                .FirstOrDefault(handle => reader.GetGuid(reader.GetCustomDebugInformation(handle).Kind) == SourceLinkKind);
+            if (sourceLinkHandle.IsNil) { add("SPMETA013", "portable PDB must contain Source Link JSON", pdbPath); return; }
+            var json = reader.GetBlobBytes(reader.GetCustomDebugInformation(sourceLinkHandle).Value);
             using var document = JsonDocument.Parse(json);
             var documents = document.RootElement.GetProperty("documents");
             foreach (var property in documents.EnumerateObject())

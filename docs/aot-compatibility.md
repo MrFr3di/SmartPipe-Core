@@ -4,6 +4,22 @@ SmartPipe.Core typed runtime APIs are designed to be explicit and reflection
 light. Reflection-based extension helpers are annotated when they are not safe
 for trimming or NativeAOT.
 
+`SmartPipe.Extensions.Csv` deliberately has no blanket NativeAOT claim.
+CsvHelper object mapping builds expression trees and compiled delegates at
+runtime, so strict CSV mapping entry points expose the applicable trimming and
+dynamic-code diagnostics. No hidden reflection fallback or blanket warning
+suppression is provided.
+
+`SmartPipe.Extensions.Mapster` makes no blanket trimming or NativeAOT claim either. Its runtime mapping
+entry points — `MapsterPipelineComponents.Transform<TInput,TOutput>` and both `MapWithMapster` builder
+overloads — carry `RequiresUnreferencedCode` and `RequiresDynamicCode`, because Mapster builds expression
+trees and compiles them at runtime. Two measured facts bound the claim: a trimmed publish reports the
+aggregate `IL2104` for the `Mapster` and `Mapster.Core` assemblies, and executing composition under
+`TrimMode=link` fails inside `Mapster.TypeAdapterConfig.GetMapFunction`. The trimming-safe route is a
+hand-written or source-generated mapper passed to `PipelineTransformer.FromFunc`; the
+`mapster-trim-diagnostic` consumer publishes and runs that route under `TrimMode=link`. The forwarded
+legacy `MapsterTransform<TInput,TOutput>` keeps its shipped annotations.
+
 Use source-generated JSON metadata as the primary path for JSON file and
 dead-letter helpers:
 
@@ -75,6 +91,12 @@ Database helpers have source-safe paths:
 - `DapperSelector<T>` default mapping reflects over writable properties on
   `T`. Prefer the `Func<DbDataReader,T>` mapper overload for NativeAOT and
   trimming-sensitive applications.
+- `SmartPipe.Extensions.Dapper` annotates its explicit-SQL entry points with
+  `RequiresUnreferencedCode` and `RequiresDynamicCode`, because Dapper row
+  mapping and parameter binding use reflection and runtime code generation.
+  Supplying an explicit `Func<DbDataReader,T>` row mapper removes the
+  application's own mapping reflection, but the package makes no blanket
+  NativeAOT claim.
 
 The runtime does not add hidden persistence, dynamic plugin loading, or source
 materialization for replay.
@@ -83,3 +105,9 @@ Channels, reflection-free Transforms rules, and the safe Logging options path ar
 trim and NativeAOT consumer-tested. `ValidationTransform<T>.TransformAsync` and
 `ToFilter` are explicitly `RequiresUnreferencedCode`; use
 `RuleValidationTransform<T>` instead when publishing trimmed or NativeAOT code.
+
+`SmartPipe.Extensions.EntityFrameworkCore` makes no blanket trimming or NativeAOT claim: query shape,
+provider, compiled models, and generated query delegates are evaluated by the consumer. The forwarded
+legacy `EfCoreSelector<T>` resolves its entity set through `DbContext.Set<T>()`, which is
+trimming-unsafe; its narrow internal suppression documents that boundary, and the factory-based
+`EfCorePipelineComponents` sources are the supported alternative.

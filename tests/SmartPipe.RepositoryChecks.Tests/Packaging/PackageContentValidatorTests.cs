@@ -1,3 +1,5 @@
+using System.Reflection.Metadata;
+using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using SmartPipe.RepositoryChecks.NuGet;
 using SmartPipe.RepositoryChecks.PackageGraph;
@@ -49,6 +51,32 @@ public sealed class PackageContentValidatorTests
             entries: [("lib/net10.0/SmartPipe.Core.pdb", Encoding.UTF8.GetBytes("not-portable"))]);
         var errors = await new PackageContentValidator().ValidateAsync(Node(), "2.2.0", Metadata(), symbols.Path, PackageGraphMode.Current, TestContext.Current.CancellationToken);
         Assert.Contains(errors, x => x.Code == "SPMETA011");
+    }
+
+    [Fact]
+    public async Task SymbolWithoutSourceLinkProducesStableDiagnostic()
+    {
+        var pdb = CreatePortablePdbWithoutSourceLink();
+        using var symbols = SyntheticNuGetPackage.Create(
+            packageId: "symbols",
+            version: "1.0.0",
+            nuspecPath: "SmartPipe.Core.nuspec",
+            nuspec: Nuspec("SmartPipe.Core", "2.2.0", "0000000000000000000000000000000000000000"),
+            entries: [("lib/net10.0/SmartPipe.Core.pdb", pdb)]);
+
+        var errors = await new PackageContentValidator().ValidateAsync(
+            Node(), "2.2.0", Metadata(), symbols.Path, PackageGraphMode.Current, TestContext.Current.CancellationToken);
+
+        Assert.Contains(errors, x => x.Code == "SPMETA013");
+    }
+
+    private static byte[] CreatePortablePdbWithoutSourceLink()
+    {
+        var metadata = new MetadataBuilder();
+        var pdb = new PortablePdbBuilder(metadata, metadata.GetRowCounts(), default, BlobContentId.GetTimeBasedProvider());
+        var blob = new BlobBuilder();
+        pdb.Serialize(blob);
+        return blob.ToArray();
     }
 
     private static PackageMetadata Metadata() => new(

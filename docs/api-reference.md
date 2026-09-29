@@ -85,8 +85,17 @@ Important selector and streaming contracts:
   Reflection JSON constructors are annotated for trimming and NativeAOT risk;
   prefer the `JsonTypeInfo<List<T>>` buffered overload or `JsonTypeInfo<T>`
   streaming overload in trimmed or NativeAOT applications.
-- `EfCoreSelector<T>` reads with `AsNoTracking()` by default. Use
-  `.WithTracking()` to opt into EF Core change tracking for returned entities.
+- `EfCoreSelector<T>` (forwarded from `SmartPipe.Extensions.EntityFrameworkCore`) reads with
+  `AsNoTracking()` by default. Use `.WithTracking()` to opt into EF Core change tracking for returned
+  entities. New code uses `EfCorePipelineComponents.QuerySource`/`CompiledQuerySource` or the typed
+  `FromQuery`/`FromCompiledQuery` builders, which own exactly one context per run and select the
+  tracking mode through `EfCoreQueryOptions.TrackingMode`.
+- `MapsterTransform<TInput,TOutput>` (forwarded from `SmartPipe.Extensions.Mapster`) keeps its shipped
+  behaviour: it adapts with the supplied `TypeAdapterConfig` and converts mapping failures into a
+  `Permanent` stage failure. New code uses `MapsterPipelineComponents.Transform<TInput,TOutput>` or the
+  `MapWithMapster` builder extensions from `SmartPipe.Extensions.Mapster`, where a callback configures a
+  fresh working configuration that is cloned once and compiled once at composition, and where mapping
+  exceptions reach Core unchanged.
 - `DapperSelector<T>` uses asynchronous `DbConnection` open/read operations and
   leaves externally supplied connections open by default. Use the explicit
   ownership overload with `leaveOpen: false` when the selector should dispose
@@ -96,6 +105,14 @@ Important selector and streaming contracts:
   `leaveOpen: false`. Prefer the explicit `DbConnection` overloads for new
   code: use `leaveOpen: true` for externally owned connections, and provide
   explicit INSERT SQL in trimming or NativeAOT-sensitive applications.
+- `SmartPipe.Extensions.Dapper` adds explicit-SQL components: composing
+  `DapperPipelineComponents.QuerySource<T>`, `CommandSink<T>`, or
+  `BatchCommandSink<T>` performs no I/O, each run borrows a `DbDataSource` or a
+  caller-supplied connection factory and owns one fresh connection, and no
+  `leaveOpen` or external transaction option exists. A batch sink treats one
+  preformed `IReadOnlyList<T>` envelope as a single bounded parameter sequence
+  with an explicit `PerBatch` or `None` transaction mode. The entry points carry
+  `RequiresUnreferencedCode` and `RequiresDynamicCode` annotations.
 - `JsonFileSink<T>` writes newline-delimited JSON batches: each flush appends
   one UTF-8 JSON array followed by a newline. Path-backed files use append
   semantics, checkpoint seekable stream length and position before each batch,

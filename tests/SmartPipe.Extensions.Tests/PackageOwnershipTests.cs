@@ -35,6 +35,9 @@ public sealed class PackageOwnershipTests
             typeof(DeadLetterWriteFailureMode),
             typeof(DeadLetterWriteException),
             typeof(JsonTransform<,>),
+            typeof(CsvFileSource<>),
+            typeof(CsvFileSink<>),
+            typeof(CsvTransform<,>),
             typeof(ChannelMerge),
             typeof(CompositeTransform<>),
             typeof(CompressionAlgorithm),
@@ -44,9 +47,13 @@ public sealed class PackageOwnershipTests
             typeof(FilterValidationExtensions),
             typeof(ValidationTransform<>),
             typeof(LoggerSink<>),
+            typeof(DapperSelector<>),
+            typeof(DbSink<>),
+            typeof(EfCoreSelector<>),
+            typeof(MapsterTransform<,>),
         };
 
-        var extensionsAssembly = typeof(DapperSelector<>).Assembly;
+        var extensionsAssembly = typeof(SmartPipeHostedService<,>).Assembly;
         var forwardedTypes = extensionsAssembly.GetForwardedTypes().ToHashSet();
 
         Assert.True(expectedForwardedTypes.SetEquals(forwardedTypes));

@@ -99,6 +99,10 @@ public class DbSink<T> : IPipelineSink<T>
         return ValueTask.CompletedTask;
     }
 
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2090",
+        Justification = "The shipped legacy auto-SQL path reflects over the insertable public properties of T. This path is documented as trimming-unsafe in the package README and docs/aot-compatibility.md, and the explicit-SQL command sink is the supported alternative.")]
     private static string GenerateInsertSql()
     {
         var type = typeof(T);
