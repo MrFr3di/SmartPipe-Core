@@ -197,6 +197,29 @@ public sealed class ScopedPipelineRunLifetimeTests
         Assert.Equal(1, scope.DisposeCalls);
     }
 
+    [Fact]
+    public async Task WallClockMovedBackwards_ClampsTerminalTimestampToStart()
+    {
+        var startedAtUtc = DateTimeOffset.UnixEpoch.AddHours(1);
+        var observations = new TestObservationStore();
+        var lifetime = new ScopedPipelineRunLifetime<int, int>(
+            CreateRun(Task.CompletedTask, static () => ValueTask.CompletedTask),
+            new CountingLease(),
+            new AsyncServiceScope(new CountingScope()),
+            startedAtUtc,
+            new FixedTimeProvider(DateTimeOffset.UnixEpoch),
+            observations);
+
+        await lifetime.Completion;
+
+        Assert.Equal(startedAtUtc, observations.Candidate?.CompletedAtUtc);
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
     private static PipelineRun<int> CreateRun(
         Task completion,
         Func<ValueTask> dispose,

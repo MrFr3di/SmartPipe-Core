@@ -80,6 +80,19 @@
 - Added contributor and architecture guides for package authoring and release
   gates.
 
+### Fixed
+
+- Parallel runs (`MaxConcurrency > 1`) now cancel the source when a stage
+  requests `FaultPipeline` or `StopPipeline`, so the run completes promptly
+  instead of waiting for the source to yield its next item.
+- Dead-letter records written by parallel workers are serialized per run and no
+  longer interleave on the shared dead-letter stream.
+- `DrainAsync` and `TryDrainAsync` on a run whose activation is still pending
+  honor the drain timeout; the drain request is applied once activation
+  completes.
+- Canonical DI terminal observations clamp the completion timestamp to the run
+  start when the wall clock moves backwards, instead of faulting run cleanup.
+
 ## [2.1.2] — 2026-07-15
 
 Patch release that separates JSON integrations into a dedicated package while

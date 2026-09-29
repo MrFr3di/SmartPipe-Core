@@ -103,7 +103,7 @@ internal sealed class SmartPipeRunFactory<TInput, TOutput> : ISmartPipeRunFactor
                         typeof(TOutput),
                         SmartPipeRunObservationOutcome.ActivationFailed,
                         startedAtUtc,
-                        _timeProvider.GetUtcNow().ToUniversalTime(),
+                        SmartPipeRunClock.GetCompletedAtUtc(startedAtUtc, _timeProvider),
                         SmartPipeMetricsSnapshot.Empty,
                         _definition.RuntimeOptions.InputCapacity,
                         TypedPipelineExecutor<TInput, TOutput>.GetEffectiveOutputCapacity(
@@ -129,6 +129,19 @@ internal sealed class SmartPipeRunFactory<TInput, TOutput> : ISmartPipeRunFactor
         CancellationToken requestedToken) =>
         requestedToken.IsCancellationRequested
         && error.CancellationToken == requestedToken;
+}
+
+internal static class SmartPipeRunClock
+{
+    // Wall-clock time can move backwards (NTP, manual adjustment); a terminal observation must
+    // never precede its start, or publishing it would fail the run's cleanup.
+    internal static DateTimeOffset GetCompletedAtUtc(
+        DateTimeOffset startedAtUtc,
+        TimeProvider timeProvider)
+    {
+        var now = timeProvider.GetUtcNow().ToUniversalTime();
+        return now < startedAtUtc ? startedAtUtc : now;
+    }
 }
 
 internal sealed class ScopedPipelineRunLifetime<TInput, TOutput>
@@ -260,7 +273,7 @@ internal sealed class ScopedPipelineRunLifetime<TInput, TOutput>
                 typeof(TOutput),
                 outcome,
                 _startedAtUtc,
-                _timeProvider.GetUtcNow().ToUniversalTime(),
+                SmartPipeRunClock.GetCompletedAtUtc(_startedAtUtc, _timeProvider),
                 _inner.Metrics,
                 _inner.InputCapacity,
                 _inner.OutputCapacity));
