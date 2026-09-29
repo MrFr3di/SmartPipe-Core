@@ -601,6 +601,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         None = 0,
         Drain = 1,
         RuntimeCancellation = 2,
+        StopPipeline = 3,
+        WorkerFailure = 4,
     }
 
     private readonly record struct SourceStopClassificationSnapshot(
@@ -609,7 +611,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     {
         public bool IsGraceful =>
             SourceCancellationRequested
-            && Reason == SourceStopReason.Drain;
+            && Reason is SourceStopReason.Drain or SourceStopReason.StopPipeline;
     }
 
     // Prevents scheduling retries when the remaining StageTimeout budget is too small
@@ -644,6 +646,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly CancellationTokenRegistration _sourceCancellationRegistration;
     private ChannelReader<ProcessingEnvelope<TInput>>? _inputReader;
     private readonly Dictionary<string, CircuitBreaker> _breakers = [];
+    // Dead-letter streams are caller-owned and may be shared by stages; parallel workers
+    // must not interleave records on them.
+    private readonly SemaphoreSlim _deadLetterWriteGate = new(1, 1);
     private readonly object _breakersGate = new();
     private readonly object _lifecycleGate = new();
     private ExecutorLifecycleState _executorLifecycleState;
@@ -720,7 +725,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _metrics.RecordActivity);
         _worker = new PipelineWorker<TInput>(
             ProcessEnvelopeWithAdaptiveAdmissionAsync,
-            RequestStopAccepting);
+            RequestParallelStopAccepting);
         _stageExecutor = new StageExecutor(
             _spec.PipelineId,
             _runtime.RunId,
@@ -877,6 +882,14 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     public async ValueTask DrainAsync(TimeSpan timeout, CancellationToken ct = default)
     {
         var result = await TryDrainAsync(timeout, ct).ConfigureAwait(false);
+        ThrowIfDrainFailed(result, timeout, ct);
+    }
+
+    internal static void ThrowIfDrainFailed(
+        PipelineDrainResult result,
+        TimeSpan timeout,
+        CancellationToken ct)
+    {
         switch (result.Status)
         {
             case PipelineDrainStatus.Completed:
@@ -1340,6 +1353,15 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     private void RequestStopAccepting() => Volatile.Write(ref _stopAcceptingRequested, 1);
 
+    // Parallel workers cannot rely on the producer re-checking the stop flag: it may be
+    // suspended inside the source waiting for the next item, so the source is cancelled too.
+    private void RequestParallelStopAccepting()
+    {
+        RequestStopAccepting();
+        RecordSourceStopReason(SourceStopReason.StopPipeline);
+        _sourceCts.Cancel();
+    }
+
     private void RequestRuntimeSourceCancellation()
     {
         RecordSourceStopReason(SourceStopReason.RuntimeCancellation);
@@ -1415,6 +1437,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         {
             lock (workerFailureGate)
                 workerFailure ??= ex;
+
+            // Unblock a producer waiting on the source; the worker failure is the run outcome.
+            RecordSourceStopReason(SourceStopReason.WorkerFailure);
+            _sourceCts.Cancel();
         }
 
         bool HasWorkerFailure()
@@ -1436,6 +1462,11 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             try
             {
                 await _producer.ProduceAsync(input.Writer, sourceToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+                when (CaptureSourceStopClassificationSnapshot().Reason == SourceStopReason.WorkerFailure)
+            {
+                // The worker failure cancelled the source; Task.WhenAll below surfaces it.
             }
             catch (OperationCanceledException)
             {
@@ -2025,9 +2056,19 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     )
     {
         _metrics.RecordActivity();
-        var deadLetter = await stage
-            .WriteDeadLetterAsync(envelope, error, _clock, ct)
-            .ConfigureAwait(false);
+        DeadLetterWriteResult deadLetter;
+        await _deadLetterWriteGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            deadLetter = await stage
+                .WriteDeadLetterAsync(envelope, error, _clock, ct)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _deadLetterWriteGate.Release();
+        }
+
         _metrics.RecordDeadLetter();
         await EmitAsync(
                 new DeadLetterWrittenEvent(

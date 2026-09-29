@@ -247,8 +247,9 @@ clock is shared by startup, events, metrics, retries, and timeouts.
 
 A deferred run can be cancelled, aborted, drained, disposed, or have its outputs
 observed before readiness. Cancellation and abort cancel activation; disposal
-waits for rollback; drain waits for executor attachment or propagates startup
-failure. Canonical startup failure is returned only after the owned completion
+waits for rollback; drain waits for executor attachment within its timeout or
+propagates startup failure. A drain that times out before attachment still
+applies once the executor attaches. Canonical startup failure is returned only after the owned completion
 has observed cleanup. A run returned successfully is `Running` or terminal,
 never `NotStarted`.
 

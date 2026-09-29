@@ -34,6 +34,7 @@ internal sealed class DeferredPipelineRunController<TInput, TOutput>
     private readonly PipelineExecutionPlan<TInput, TOutput> _plan;
     private readonly PipelineActivationContext _context;
     private readonly PipelineRuntimeOptions _options;
+    private readonly PipelineTime _time;
     private readonly Channel<PipelineOutput<TOutput>> _outputs;
     private readonly CancellationTokenSource _activationCancellation;
     private readonly TaskCompletionSource _ready =
@@ -50,6 +51,7 @@ internal sealed class DeferredPipelineRunController<TInput, TOutput>
     private ExceptionDispatchInfo? _startupFailure;
     private int _state = (int)PipelineRunState.NotStarted;
     private int _abortRequested;
+    private int _drainRequested;
 
     public DeferredPipelineRunController(
         PipelineExecutionPlan<TInput, TOutput> plan,
@@ -59,6 +61,7 @@ internal sealed class DeferredPipelineRunController<TInput, TOutput>
         _plan = plan ?? throw new ArgumentNullException(nameof(plan));
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _options = plan.RuntimeOptions.Materialize(context);
+        _time = new PipelineTime(_options.Clock);
         _activationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _outputs = TypedPipelineExecutor<TInput, TOutput>.CreateOutputChannel(
             _options,
@@ -135,6 +138,9 @@ internal sealed class DeferredPipelineRunController<TInput, TOutput>
             var executorRun = executor.Start();
             Volatile.Write(ref _executorRun, executorRun);
             _executorAttached.TrySetResult(executor);
+
+            if (Volatile.Read(ref _drainRequested) != 0)
+                executor.RequestDrain();
 
             if (Volatile.Read(ref _abortRequested) != 0)
                 await executor.AbortAsync(CancellationToken.None).ConfigureAwait(false);
@@ -221,16 +227,53 @@ internal sealed class DeferredPipelineRunController<TInput, TOutput>
 
     private async ValueTask DrainAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        var executor = await GetAttachedExecutorAsync(cancellationToken).ConfigureAwait(false);
-        await executor.DrainAsync(timeout, cancellationToken).ConfigureAwait(false);
+        var result = await TryDrainAsync(timeout, cancellationToken).ConfigureAwait(false);
+        TypedPipelineExecutor<TInput, TOutput>.ThrowIfDrainFailed(result, timeout, cancellationToken);
     }
 
     private async ValueTask<PipelineDrainResult> TryDrainAsync(
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
+        // A drain that times out before activation finishes still applies once the executor attaches.
+        Interlocked.Exchange(ref _drainRequested, 1);
+        if (_executorAttached.Task.IsCompleted)
+        {
+            var attached = await GetAttachedExecutorAsync(cancellationToken).ConfigureAwait(false);
+            return await attached.TryDrainAsync(timeout, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Activation is still running: the drain timeout also bounds the wait for the executor.
+        var clock = _options.Clock;
+        var started = clock.GetTimestamp();
+        try
+        {
+            await _time.WaitAsync(_executorAttached.Task, timeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            return new PipelineDrainResult(
+                PipelineDrainStatus.TimedOutStillRunning,
+                GetState(),
+                clock.GetElapsedTime(started, clock.GetTimestamp()));
+        }
+        catch (OperationCanceledException error) when (cancellationToken.IsCancellationRequested)
+        {
+            return new PipelineDrainResult(
+                PipelineDrainStatus.CancelledByCaller,
+                GetState(),
+                clock.GetElapsedTime(started, clock.GetTimestamp()),
+                error);
+        }
+
+        var waited = clock.GetElapsedTime(started, clock.GetTimestamp());
         var executor = await GetAttachedExecutorAsync(cancellationToken).ConfigureAwait(false);
-        return await executor.TryDrainAsync(timeout, cancellationToken).ConfigureAwait(false);
+        var remaining = timeout;
+        if (timeout != Timeout.InfiniteTimeSpan)
+            remaining = waited >= timeout ? TimeSpan.Zero : timeout - waited;
+
+        var result = await executor.TryDrainAsync(remaining, cancellationToken).ConfigureAwait(false);
+        return result with { Elapsed = result.Elapsed + waited };
     }
 
     private async ValueTask<TypedPipelineExecutor<TInput, TOutput>> GetAttachedExecutorAsync(
