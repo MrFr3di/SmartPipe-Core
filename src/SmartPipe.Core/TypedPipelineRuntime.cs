@@ -1466,6 +1466,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             catch (OperationCanceledException)
                 when (CaptureSourceStopClassificationSnapshot().Reason == SourceStopReason.WorkerFailure)
             {
+                // The worker failure cancelled the source; Task.WhenAll below surfaces it.
             }
             catch (OperationCanceledException)
             {

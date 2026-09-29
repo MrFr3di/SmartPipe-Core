@@ -268,9 +268,10 @@ internal sealed class DeferredPipelineRunController<TInput, TOutput>
 
         var waited = clock.GetElapsedTime(started, clock.GetTimestamp());
         var executor = await GetAttachedExecutorAsync(cancellationToken).ConfigureAwait(false);
-        var remaining = timeout == Timeout.InfiniteTimeSpan
-            ? timeout
-            : waited >= timeout ? TimeSpan.Zero : timeout - waited;
+        var remaining = timeout;
+        if (timeout != Timeout.InfiniteTimeSpan)
+            remaining = waited >= timeout ? TimeSpan.Zero : timeout - waited;
+
         var result = await executor.TryDrainAsync(remaining, cancellationToken).ConfigureAwait(false);
         return result with { Elapsed = result.Elapsed + waited };
     }
