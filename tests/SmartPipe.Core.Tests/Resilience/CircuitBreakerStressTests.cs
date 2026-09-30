@@ -93,7 +93,6 @@ public class CircuitBreakerStressTests
     public async Task RaceCondition_EwmaNotCorrupted()
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(30));
         var cb = new CircuitBreaker(
             failureRatio: 0.5,
             minimumThroughput: 10,
@@ -110,8 +109,7 @@ public class CircuitBreakerStressTests
                 var rnd = new Random(Thread.CurrentThread.ManagedThreadId + Environment.TickCount);
                 for (int i = 0; i < iterationsPerThread; i++)
                 {
-                    if (cts.IsCancellationRequested)
-                        return;
+                    cts.Token.ThrowIfCancellationRequested();
 
                     if (rnd.NextDouble() < 0.5)
                         cb.RecordSuccess();
@@ -125,9 +123,8 @@ public class CircuitBreakerStressTests
             }, cts.Token);
         }
 
-        await Task.WhenAny(
-            Task.WhenAll(tasks),
-            Task.Delay(TimeSpan.FromSeconds(30), cts.Token));
+        await StressWorkload.WaitForCompletionAsync(
+            Task.WhenAll(tasks), cts, TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
 
         // Check EWMA value via reflection
         double ewma = (double)EwmaField.GetValue(cb)!;
@@ -144,7 +141,6 @@ public class CircuitBreakerStressTests
     public async Task RaceCondition_EwmaLostUpdates_ShouldBeDetected()
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(120));
 
         // This test attempts to expose the lost-update race condition in _ewmaFailureRate updates.
         // The bug: _ewmaFailureRate is updated via read-modify-write without atomic operations.
@@ -170,8 +166,7 @@ public class CircuitBreakerStressTests
             {
                 for (int i = 0; i < iterationsPerThread; i++)
                 {
-                    if (cts.IsCancellationRequested)
-                        return;
+                    cts.Token.ThrowIfCancellationRequested();
 
                     if (recordFailure)
                     {
@@ -191,9 +186,8 @@ public class CircuitBreakerStressTests
             }, cts.Token);
         }
 
-        await Task.WhenAny(
-            Task.WhenAll(tasks),
-            Task.Delay(TimeSpan.FromSeconds(120), cts.Token));
+        await StressWorkload.WaitForCompletionAsync(
+            Task.WhenAll(tasks), cts, TimeSpan.FromSeconds(120), TestContext.Current.CancellationToken);
 
         // With the race condition, some updates may be lost
         // The EWMA value should reflect the ratio of failures to total calls
