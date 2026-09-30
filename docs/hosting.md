@@ -74,9 +74,14 @@ Waiting for disposal is bounded by the host stopping token (for example, the
 host `ShutdownTimeout`). When the token is cancelled before a run finishes
 disposing — typically because a stage or source ignores cancellation — the
 orchestrator logs a `DisposeAbandoned` warning, moves on to the remaining runs,
-and `StopAsync` reports cancellation. The abandoned disposal keeps running in
-the background and a later failure is logged at `Error`. `DrainTimeout` must be
-positive and at most 4294967294 milliseconds, or `Timeout.InfiniteTimeSpan`.
+and `StopAsync` reports cancellation. This is an emergency outcome with weaker
+guarantees: disposal of the abandoned run was started but may never finish, its
+scope may outlive the host's root service provider, and a later disposal failure
+is logged only on a best-effort basis. Cleanup is guaranteed complete only when
+`StopAsync` finishes without cancellation. See the
+[ADR-0003 amendment](adr/0003-single-hosted-orchestrator.md#amendment-bounded-shutdown-wait-for-run-disposal).
+`DrainTimeout` must be positive and at most 4294967294 milliseconds, or
+`Timeout.InfiniteTimeSpan`.
 
 Start, stop, and disposal are idempotent under races. Natural completion is not
 an automatic restart signal: a hosted registration has at most one run for the

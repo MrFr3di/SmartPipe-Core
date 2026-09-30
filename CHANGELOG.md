@@ -48,8 +48,12 @@
 - Metrics from runs with a stable pipeline identity carry the
   `smartpipe.pipeline_id` tag, so pipelines in one process no longer share a
   single series.
+- Circuit-breaker window samples are timestamped inside the window lock, so a
+  concurrent record can no longer enqueue an older sample behind a newer one
+  and escape expiry.
 - Performance: stages without a circuit breaker no longer take a lock per item,
-  circuit-breaker window statistics are O(1), lineage append is amortized O(1)
+  circuit-breaker threshold evaluation no longer scans the sliding window,
+  lineage append is amortized O(1)
   instead of copying the whole chain per stage, and the strict CSV sink encodes
   records directly into a pooled buffer without two per-record allocations.
 

@@ -110,6 +110,13 @@ produce separate series. Legacy builders without an explicit id generate a
 unique id per run; their measurements stay untagged to avoid unbounded
 cardinality.
 
+The pipeline id is a metric dimension, so it must name a stable logical
+pipeline. Do not derive it per run, per message, per tenant, or from user data:
+every distinct value creates new time series. SmartPipe does not hash or
+truncate ids. When an OpenTelemetry SDK cardinality limit is exceeded, further
+series are aggregated into an overflow series; totals stay correct but the
+per-pipeline breakdown is lost.
+
 Meter measurements must not include high-cardinality dimensions such as
 `run_id`, `trace_id`, `exception_message`, `payload_value`, or `raw_payload`.
 
