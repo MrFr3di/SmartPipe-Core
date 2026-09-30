@@ -382,6 +382,43 @@ public sealed class PollyTransformDecoratorExecutionTests
         Assert.Equal(0, mapperCalls);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Mapper_NeverMapsCancellationThrownByRetryHookOrPredicate(bool predicate)
+    {
+        var cancellation = new OperationCanceledException("retry hook cancelled", TestToken);
+        var mapperCalls = 0;
+        var retry = new RetryStrategyOptions<StageResult<int>>
+        {
+            MaxRetryAttempts = 1,
+            Delay = TimeSpan.Zero,
+        };
+        if (predicate)
+            retry.ShouldHandle = _ => ValueTask.FromException<bool>(cancellation);
+        else
+            retry.OnRetry = _ => ValueTask.FromException(cancellation);
+        var pipeline = new ResiliencePipelineBuilder<StageResult<int>>().AddRetry(retry).Build();
+        var inner = new RecordingTransformer<int, int>((_, _, _) =>
+            ThrowFromInner<int>(new InvalidOperationException("inner")));
+        var options = new PollyTransformDecoratorOptions
+        {
+            ExceptionMapper = _ =>
+            {
+                Interlocked.Increment(ref mapperCalls);
+                return new SmartPipeError("mapped", ErrorType.Permanent);
+            },
+        };
+        await using var decorator = await InitializedAsync(inner, pipeline, options);
+
+        var error = await Assert.ThrowsAsync<OperationCanceledException>(
+            () => decorator.TransformAsync(Envelope(1), TestToken).AsTask());
+
+        Assert.Same(cancellation, error);
+        Assert.Equal(TestToken, error.CancellationToken);
+        Assert.Equal(0, mapperCalls);
+    }
+
     [Fact]
     public async Task Mapper_ReturningNull_RethrowsTheOriginalException()
     {

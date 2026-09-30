@@ -69,4 +69,26 @@ public sealed partial class HttpPipelineComponentsTests
         Assert.Equal(1, handler.SendCount);
         Assert.Equal([invalidDefault], client.DefaultRequestHeaders.GetValues("X-Unsafe"));
     }
+
+    [Fact]
+    public async Task GeneratedIdempotencyKey_OverridesInvalidDefaultWithoutMutatingBorrowedClient()
+    {
+        const string invalidDefault = "value\r\nInjected: yes";
+        var handler = new RecordingHandler((request, _) =>
+        {
+            Assert.Equal(["generated-key"], request.Headers.GetValues("Idempotency-Key"));
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+        using var client = new HttpClient(handler);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Idempotency-Key", invalidDefault);
+        var definition = PipelineDefinitionBuilder.From(new PipelineKey("generated-idempotency-override"), RuntimeSource([1]))
+            .ToHttp(client,
+                (_, _) => ValueTask.FromResult(new HttpRequestMessage(HttpMethod.Post, "https://example.test/")),
+                _ => "generated-key");
+
+        await RunAndDisposeAsync(definition);
+
+        Assert.Equal(1, handler.SendCount);
+        Assert.Equal([invalidDefault], client.DefaultRequestHeaders.GetValues("Idempotency-Key"));
+    }
 }
