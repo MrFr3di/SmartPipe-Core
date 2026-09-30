@@ -414,13 +414,13 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
 
     private void CaptureMonitorFault(List<Exception> monitorErrors)
     {
-        if (ExecuteTask?.IsFaulted != true)
+        if (ExecuteTask is not { IsFaulted: true, Exception: { } fault })
             return;
 
-        foreach (var error in ExecuteTask.Exception!.InnerExceptions)
+        foreach (var error in fault.InnerExceptions.Where(
+            error => !monitorErrors.Any(existing => ReferenceEquals(existing, error))))
         {
-            if (!monitorErrors.Any(existing => ReferenceEquals(existing, error)))
-                monitorErrors.Add(error);
+            monitorErrors.Add(error);
         }
     }
 
