@@ -843,7 +843,7 @@ public class CircuitBreakerTests
         Assert.NotNull(cleanupMethod);
         Assert.NotNull(windowField);
 
-        var window = (ConcurrentQueue<(long Timestamp, bool IsSuccess)>)windowField.GetValue(cb)!;
+        var window = (Queue<(long Timestamp, bool IsSuccess)>)windowField.GetValue(cb)!;
 
         int recordFailureThreads = 10;
         int cleanupThreads = 5;
@@ -953,7 +953,7 @@ public class CircuitBreakerTests
         _output.WriteLine("The fix is to replace TryPeek+TryDequeue with TryDequeue+check pattern.");
     }
 
-    private static ConcurrentQueue<(long Timestamp, bool IsSuccess)> GetWindow(CircuitBreaker cb)
+    private static Queue<(long Timestamp, bool IsSuccess)> GetWindow(CircuitBreaker cb)
     {
         var windowField = typeof(CircuitBreaker).GetField(
             "_window",
@@ -961,7 +961,7 @@ public class CircuitBreakerTests
         );
 
         windowField.Should().NotBeNull();
-        return (ConcurrentQueue<(long Timestamp, bool IsSuccess)>)windowField!.GetValue(cb)!;
+        return (Queue<(long Timestamp, bool IsSuccess)>)windowField!.GetValue(cb)!;
     }
 
     private static void InvokeCleanupWindow(CircuitBreaker cb)

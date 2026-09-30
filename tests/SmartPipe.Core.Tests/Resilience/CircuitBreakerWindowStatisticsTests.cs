@@ -1,3 +1,4 @@
+using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using SmartPipe.Core;
@@ -63,5 +64,62 @@ public sealed class CircuitBreakerWindowStatisticsTests
 
         breaker.RecordFailure();
         breaker.State.Should().Be(CircuitState.Open);
+    }
+
+    [Fact]
+    [Trait("Category", "ConcurrencyRegression")]
+    public async Task ConcurrentRecords_KeepWindowInTimestampOrder()
+    {
+        var time = new GatedFirstReadTimeSource(firstTimestamp: 100, laterTimestamp: 200);
+        var breaker = new CircuitBreaker(
+            failureRatio: 0.9,
+            samplingDuration: TimeSpan.FromTicks(1_000),
+            minimumThroughput: 100,
+            breakDuration: TimeSpan.FromSeconds(30),
+            maxHalfOpenRequests: 1,
+            time);
+
+        var first = Task.Run(breaker.RecordFailure);
+        await time.FirstReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = Task.Run(breaker.RecordSuccess);
+
+        // The later sample cannot be stamped and enqueued ahead of the earlier, still-pending one.
+        await Task.Delay(50);
+        second.IsCompleted.Should().BeFalse();
+
+        time.ReleaseFirstRead();
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+
+        var window = (Queue<(long Timestamp, bool IsSuccess)>)typeof(CircuitBreaker)
+            .GetField("_window", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(breaker)!;
+        window.Select(sample => sample.Timestamp).Should().BeInAscendingOrder();
+        breaker.GetCurrentFailureRatio().Should().Be(0.5);
+    }
+
+    private sealed class GatedFirstReadTimeSource(long firstTimestamp, long laterTimestamp) : ICircuitBreakerTimeSource
+    {
+        private readonly ManualResetEventSlim _release = new(false);
+        private int _reads;
+
+        public TaskCompletionSource FirstReadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public DateTime UtcNow => new(laterTimestamp, DateTimeKind.Utc);
+
+        public long GetTimestamp()
+        {
+            if (Interlocked.Increment(ref _reads) != 1)
+                return laterTimestamp;
+
+            FirstReadStarted.TrySetResult();
+            _release.Wait(TimeSpan.FromSeconds(10));
+            return firstTimestamp;
+        }
+
+        public TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp) =>
+            TimeSpan.FromTicks(endingTimestamp - startingTimestamp);
+
+        public void ReleaseFirstRead() => _release.Set();
     }
 }

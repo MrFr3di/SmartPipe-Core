@@ -1,7 +1,6 @@
 #nullable enable
 
 using System;
-using System.Collections.Concurrent;
 using System.Threading;
 
 namespace SmartPipe.Core;
@@ -112,9 +111,10 @@ public class CircuitBreaker
 
     // Hybrid: EWMA for early warning + Sliding window for decisions
     private double _ewmaFailureRate;
-    // Every window access happens under _windowGate; the failure count is maintained incrementally so
-    // threshold evaluation stays O(1) regardless of throughput within the sampling duration.
-    private readonly ConcurrentQueue<(long Timestamp, bool IsSuccess)> _window = new();
+    // Every window access happens under _windowGate, so a plain queue suffices. Samples are stamped
+    // inside the gate to keep FIFO order equal to time order, which expiry relies on, and the failure
+    // count is maintained incrementally so threshold evaluation never scans the window.
+    private readonly Queue<(long Timestamp, bool IsSuccess)> _window = new();
     private readonly object _windowGate = new();
     private int _windowFailures;
 
@@ -676,7 +676,7 @@ public class CircuitBreaker
                 if (!_window.TryPeek(out var current) || current != candidate)
                     continue;
 
-                _ = _window.TryDequeue(out _);
+                _ = _window.Dequeue();
                 if (!candidate.IsSuccess)
                     _windowFailures--;
             }
@@ -685,10 +685,9 @@ public class CircuitBreaker
 
     private void EnqueueWindowSample(bool isSuccess)
     {
-        var timestamp = _time.GetTimestamp();
         lock (_windowGate)
         {
-            _window.Enqueue((timestamp, isSuccess));
+            _window.Enqueue((_time.GetTimestamp(), isSuccess));
             if (!isSuccess)
                 _windowFailures++;
         }
