@@ -152,6 +152,38 @@ public sealed class RuntimeHardeningTests
         fromArray.Select(entry => entry.StageId).Should().Equal("a", "b", "c");
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public async Task LineageTrail_ConcurrentBranchesFromSharedPrefix_NeverObserveEachOther(int prefixLength)
+    {
+        // Prefix lengths 3 and 4 put the contended append just before and exactly at the capacity edge.
+        IReadOnlyList<LineageEntry> prefix = [];
+        for (var index = 0; index < prefixLength; index++)
+            prefix = LineageTrail.Append(prefix, Entry($"p{index}"));
+        var expectedPrefix = prefix.Select(entry => entry.StageId).ToArray();
+
+        for (var round = 0; round < 200; round++)
+        {
+            using var start = new Barrier(8);
+            var branches = await Task.WhenAll(Enumerable.Range(0, 8).Select(branch => Task.Run(() =>
+            {
+                start.SignalAndWait();
+                var first = LineageTrail.Append(prefix, Entry($"b{branch}"));
+                return (Branch: branch, Trail: LineageTrail.Append(first, Entry($"b{branch}-next")));
+            })));
+
+            foreach (var (branch, trail) in branches)
+            {
+                trail.Select(entry => entry.StageId)
+                    .Should().Equal(expectedPrefix.Concat([$"b{branch}", $"b{branch}-next"]));
+            }
+
+            prefix.Select(entry => entry.StageId).Should().Equal(expectedPrefix);
+        }
+    }
+
     [Fact]
     public async Task Metrics_CanonicalPipeline_TagsMeasurementsWithPipelineId()
     {

@@ -158,6 +158,40 @@ public class SmartPipeMetricsSdkIntegrationTests
         byPipeline.Should().Contain("orders", 2).And.Contain("invoices", 3);
     }
 
+    [Fact]
+    public async Task RepeatedRunsOfOnePipeline_ShareOneSeriesAndCarryOnlyThePipelineTag()
+    {
+        var exported = new List<MetricSnapshot>();
+        var services = new ServiceCollection();
+        services.AddOpenTelemetry()
+            .WithMetrics(builder => builder.AddInMemoryExporter(exported))
+            .AddSmartPipeInstrumentation();
+
+        using var provider = services.BuildServiceProvider();
+        using var meterProvider = provider.GetRequiredService<MeterProvider>();
+
+        for (var run = 0; run < 3; run++)
+        {
+            await using var pipelineRun = await SdkPipelineFixtures.StartDefinitionAsync(
+                "orders-repeated", 2, TestContext.Current.CancellationToken);
+            await pipelineRun.Completion;
+        }
+
+        meterProvider.ForceFlush();
+
+        var processed = exported.Single(snapshot => snapshot.Name == "smartpipe.items.processed");
+        processed.MetricPoints.Where(point => PipelineIdOf(point) == "orders-repeated")
+            .Should().ContainSingle().Which.GetSumLong().Should().Be(6);
+        foreach (var snapshot in exported)
+        {
+            foreach (var point in snapshot.MetricPoints)
+            {
+                foreach (var tag in point.Tags)
+                    tag.Key.Should().Be("smartpipe.pipeline_id", "{0} must not carry run-level tags", snapshot.Name);
+            }
+        }
+    }
+
     private static string? PipelineIdOf(MetricPoint point)
     {
         foreach (var tag in point.Tags)
