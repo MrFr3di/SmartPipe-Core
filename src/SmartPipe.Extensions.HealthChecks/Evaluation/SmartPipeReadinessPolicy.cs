@@ -14,7 +14,8 @@ internal sealed class SmartPipeReadinessPolicy :
         HealthStatus hardFailureStatus)
     {
         SmartPipeHealthObservationValidation.Validate(observation);
-        var finishing = PartitionActiveRuns(observation.ActiveRuns, out var live);
+        var finishingOutcomes = PartitionActiveRuns(observation.ActiveRuns, out var live);
+        var finishing = MostSevere(finishingOutcomes);
         HealthStatus status;
         string? problemRule;
         int problemRuns;
@@ -24,7 +25,7 @@ internal sealed class SmartPipeReadinessPolicy :
                 finishing ?? observation.LatestTerminal?.Outcome,
                 options,
                 hardFailureStatus);
-            problemRuns = status == HealthStatus.Healthy ? 0 : 1;
+            problemRuns = CountAbsentRunProblems(finishingOutcomes, status, options, hardFailureStatus);
         }
         else
         {
@@ -49,21 +50,54 @@ internal sealed class SmartPipeReadinessPolicy :
     // report a "non-running state" failure. Run snapshots carry no completion order, so when several
     // runs are finishing at once the most severe outcome wins until the published latest terminal
     // takes over.
-    private static SmartPipeRunObservationOutcome? PartitionActiveRuns(
+    private static List<SmartPipeRunObservationOutcome> PartitionActiveRuns(
         IReadOnlyList<SmartPipeRunSnapshot> activeRuns,
         out List<SmartPipeRunSnapshot> live)
     {
         live = new List<SmartPipeRunSnapshot>(activeRuns.Count);
-        SmartPipeRunObservationOutcome? finishing = null;
+        var finishing = new List<SmartPipeRunObservationOutcome>();
         foreach (var run in activeRuns)
         {
             if (ToTerminalOutcome(run.State) is { } outcome)
-                finishing = finishing is { } current && Severity(current) >= Severity(outcome) ? current : outcome;
+                finishing.Add(outcome);
             else
                 live.Add(run);
         }
 
         return finishing;
+    }
+
+    private static SmartPipeRunObservationOutcome? MostSevere(List<SmartPipeRunObservationOutcome> outcomes)
+    {
+        SmartPipeRunObservationOutcome? worst = null;
+        foreach (var outcome in outcomes)
+        {
+            if (worst is not { } current || Severity(outcome) > Severity(current))
+                worst = outcome;
+        }
+
+        return worst;
+    }
+
+    // problem_run_count counts runs that fail readiness. Finishing runs are counted individually by
+    // their own outcome; with no registered run, a failing requirement counts as one problem.
+    private static int CountAbsentRunProblems(
+        List<SmartPipeRunObservationOutcome> finishingOutcomes,
+        HealthStatus status,
+        SmartPipeReadinessOptionsSnapshot options,
+        HealthStatus hardFailureStatus)
+    {
+        if (finishingOutcomes.Count == 0)
+            return status == HealthStatus.Healthy ? 0 : 1;
+
+        var problems = 0;
+        foreach (var outcome in finishingOutcomes)
+        {
+            if (EvaluateAbsentRun(outcome, options, hardFailureStatus).Status != HealthStatus.Healthy)
+                problems++;
+        }
+
+        return problems;
     }
 
     private static (HealthStatus Status, string? Rule, int ProblemRuns) EvaluateLiveRuns(

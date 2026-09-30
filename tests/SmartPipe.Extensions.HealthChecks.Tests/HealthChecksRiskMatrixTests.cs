@@ -134,6 +134,49 @@ public sealed class HealthChecksRiskMatrixTests
         Assert.Equal("Completed", result.Data["smartpipe.latest_outcome"]);
     }
 
+    [Theory]
+    [InlineData(SmartPipeReadinessRunRequirement.ActiveOrSuccessfulCompletion, new[] { PipelineRunState.Faulted, PipelineRunState.Faulted }, 2)]
+    [InlineData(SmartPipeReadinessRunRequirement.ActiveOrSuccessfulCompletion, new[] { PipelineRunState.Completed, PipelineRunState.Faulted }, 1)]
+    [InlineData(SmartPipeReadinessRunRequirement.ActiveOrSuccessfulCompletion, new[] { PipelineRunState.Completed, PipelineRunState.Completed }, 0)]
+    [InlineData(SmartPipeReadinessRunRequirement.RegistrationOnly, new[] { PipelineRunState.Faulted, PipelineRunState.Faulted }, 2)]
+    [InlineData(SmartPipeReadinessRunRequirement.RegistrationOnly, new[] { PipelineRunState.Completed, PipelineRunState.Faulted, PipelineRunState.Cancelled }, 1)]
+    [InlineData(SmartPipeReadinessRunRequirement.ActiveRunRequired, new[] { PipelineRunState.Completed, PipelineRunState.Completed }, 2)]
+    public void ProblemRunCountCountsFinishingRunsThatFailReadiness(
+        SmartPipeReadinessRunRequirement requirement,
+        PipelineRunState[] finishingStates,
+        int expectedProblemRuns)
+    {
+        var result = new SmartPipeReadinessPolicy().Evaluate(
+            Observation("orders", finishingStates.Select(state => Run("orders", state)).ToArray()),
+            Readiness(requirement),
+            DateTimeOffset.UnixEpoch,
+            HealthStatus.Unhealthy);
+
+        Assert.Equal(expectedProblemRuns, result.Data["smartpipe.problem_run_count"]);
+        Assert.Equal(finishingStates.Length, result.Data["smartpipe.active_run_count"]);
+        Assert.Equal(
+            expectedProblemRuns == 0 ? HealthStatus.Healthy : HealthStatus.Unhealthy,
+            result.Status);
+    }
+
+    [Theory]
+    [InlineData(SmartPipeReadinessRunRequirement.ActiveRunRequired, null, 1)]
+    [InlineData(SmartPipeReadinessRunRequirement.ActiveOrSuccessfulCompletion, SmartPipeRunObservationOutcome.Faulted, 1)]
+    [InlineData(SmartPipeReadinessRunRequirement.ActiveOrSuccessfulCompletion, SmartPipeRunObservationOutcome.Completed, 0)]
+    public void ProblemRunCountIsOneFailingConditionWhenNoRunIsRegistered(
+        SmartPipeReadinessRunRequirement requirement,
+        SmartPipeRunObservationOutcome? latest,
+        int expectedProblemRuns)
+    {
+        var result = new SmartPipeReadinessPolicy().Evaluate(
+            Observation("orders", terminal: latest is null ? null : Terminal("orders", latest.Value)),
+            Readiness(requirement),
+            DateTimeOffset.UnixEpoch,
+            HealthStatus.Unhealthy);
+
+        Assert.Equal(expectedProblemRuns, result.Data["smartpipe.problem_run_count"]);
+    }
+
     [Fact]
     public void FinishingOutcomeIsOmittedOnceTerminalIsPublishedOrWhileRunIsLive()
     {
