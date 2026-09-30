@@ -14,23 +14,10 @@ internal sealed class SmartPipeReadinessPolicy :
         HealthStatus hardFailureStatus)
     {
         SmartPipeHealthObservationValidation.Validate(observation);
-        var status = HealthStatus.Healthy;
-        var problemRuns = 0;
-        string? problemRule = null;
-
-        // A run that reached a terminal state stays registered until its cleanup publishes the terminal
-        // observation. Treat it as that terminal outcome so a finishing batch run does not briefly
-        // report a "non-running state" failure.
-        var live = new List<SmartPipeRunSnapshot>(observation.ActiveRuns.Count);
-        SmartPipeRunObservationOutcome? finishing = null;
-        foreach (var run in observation.ActiveRuns)
-        {
-            if (ToTerminalOutcome(run.State) is { } outcome)
-                finishing = outcome;
-            else
-                live.Add(run);
-        }
-
+        var finishing = PartitionActiveRuns(observation.ActiveRuns, out var live);
+        HealthStatus status;
+        string? problemRule;
+        int problemRuns;
         if (live.Count == 0)
         {
             (status, problemRule) = EvaluateAbsentRun(
@@ -41,19 +28,7 @@ internal sealed class SmartPipeReadinessPolicy :
         }
         else
         {
-            foreach (var run in live)
-            {
-                var (runStatus, runRule) = EvaluateRun(run, options, nowUtc, hardFailureStatus);
-                if (runStatus != HealthStatus.Healthy
-                    && (status == HealthStatus.Healthy
-                        || SmartPipeHealthStatusRank.Rank(runStatus) > SmartPipeHealthStatusRank.Rank(status)))
-                {
-                    problemRule = runRule;
-                }
-
-                status = SmartPipeHealthStatusRank.Worst(status, runStatus);
-                if (runStatus != HealthStatus.Healthy) problemRuns++;
-            }
+            (status, problemRule, problemRuns) = EvaluateLiveRuns(live, options, nowUtc, hardFailureStatus);
         }
 
         return new(
@@ -66,6 +41,54 @@ internal sealed class SmartPipeReadinessPolicy :
                 "readiness",
                 problemRuns,
                 options.MaximumReportedProblemRuns));
+    }
+
+    // A run that reached a terminal state stays registered until its cleanup publishes the terminal
+    // observation. Report it as that terminal outcome so a finishing batch run does not briefly
+    // report a "non-running state" failure.
+    private static SmartPipeRunObservationOutcome? PartitionActiveRuns(
+        IReadOnlyList<SmartPipeRunSnapshot> activeRuns,
+        out List<SmartPipeRunSnapshot> live)
+    {
+        live = new List<SmartPipeRunSnapshot>(activeRuns.Count);
+        SmartPipeRunObservationOutcome? finishing = null;
+        foreach (var run in activeRuns)
+        {
+            if (ToTerminalOutcome(run.State) is { } outcome)
+                finishing = outcome;
+            else
+                live.Add(run);
+        }
+
+        return finishing;
+    }
+
+    private static (HealthStatus Status, string? Rule, int ProblemRuns) EvaluateLiveRuns(
+        List<SmartPipeRunSnapshot> live,
+        SmartPipeReadinessOptionsSnapshot options,
+        DateTimeOffset nowUtc,
+        HealthStatus hardFailureStatus)
+    {
+        var status = HealthStatus.Healthy;
+        string? problemRule = null;
+        var problemRuns = 0;
+        foreach (var run in live)
+        {
+            var (runStatus, runRule) = EvaluateRun(run, options, nowUtc, hardFailureStatus);
+            if (runStatus == HealthStatus.Healthy)
+                continue;
+
+            if (status == HealthStatus.Healthy
+                || SmartPipeHealthStatusRank.Rank(runStatus) > SmartPipeHealthStatusRank.Rank(status))
+            {
+                problemRule = runRule;
+            }
+
+            status = SmartPipeHealthStatusRank.Worst(status, runStatus);
+            problemRuns++;
+        }
+
+        return (status, problemRule, problemRuns);
     }
 
     private static (HealthStatus Status, string? Rule) EvaluateAbsentRun(

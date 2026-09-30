@@ -311,21 +311,7 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
         var cleanupErrors = new List<Exception>();
         var monitorErrors = new List<Exception>();
 
-        if (startupTask is not null)
-        {
-            try
-            {
-                await startupTask.ConfigureAwait(false);
-            }
-            catch (AggregateException aggregate)
-            {
-                CaptureStartupErrors(aggregate, monitorErrors);
-            }
-            catch (Exception error)
-            {
-                CaptureStartupErrors(error, monitorErrors);
-            }
-        }
+        await ObserveStartupAsync(startupTask, monitorErrors).ConfigureAwait(false);
 
         try
         {
@@ -336,12 +322,63 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
             monitorErrors.Add(error);
         }
 
-        if (cancellationToken.IsCancellationRequested
-            && !monitorErrors.Any(static error => error is OperationCanceledException))
+        if (cancellationToken.IsCancellationRequested)
+            AddCancellationOnce(monitorErrors, cancellationToken);
+
+        var disposeAbandoned = await StopStartedRunsAsync(cancellationToken, cleanupErrors).ConfigureAwait(false);
+
+        // Runs whose disposal outlived the stopping token were abandoned, not stopped.
+        if (disposeAbandoned)
+            AddCancellationOnce(monitorErrors, cancellationToken);
+
+        CaptureMonitorFault(monitorErrors);
+
+        var errors = cleanupErrors
+            .Concat(monitorErrors)
+            .Concat(Flatten(cancellationError))
+            .ToArray();
+        lock (_gate)
         {
-            monitorErrors.Add(new OperationCanceledException(cancellationToken));
+            _started.Clear();
+            _state = errors.Length == 0
+                ? HostedOrchestratorState.Stopped
+                : HostedOrchestratorState.Faulted;
         }
 
+        if (errors.Length == 1)
+        {
+            ExceptionDispatchInfo.Capture(errors[0]).Throw();
+            throw new InvalidOperationException("Unreachable.");
+        }
+
+        if (errors.Length > 1)
+            throw new AggregateException(errors);
+    }
+
+    private async Task ObserveStartupAsync(Task? startupTask, List<Exception> monitorErrors)
+    {
+        if (startupTask is null)
+            return;
+
+        try
+        {
+            await startupTask.ConfigureAwait(false);
+        }
+        catch (AggregateException aggregate)
+        {
+            CaptureStartupErrors(aggregate, monitorErrors);
+        }
+        catch (Exception error)
+        {
+            CaptureStartupErrors(error, monitorErrors);
+        }
+    }
+
+    /// <returns><see langword="true"/> when any run's disposal was abandoned to the background.</returns>
+    private async Task<bool> StopStartedRunsAsync(
+        CancellationToken cancellationToken,
+        List<Exception> cleanupErrors)
+    {
         (HostedPipelineDescriptor Descriptor, IHostedPipelineRun Run)[] started;
         lock (_gate)
             started = _started.ToArray();
@@ -366,42 +403,25 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
             }
         }
 
-        // Runs whose disposal outlived the stopping token were abandoned, not stopped.
-        if (disposeAbandoned
-            && !monitorErrors.Any(static error => error is OperationCanceledException))
-        {
-            monitorErrors.Add(new OperationCanceledException(cancellationToken));
-        }
+        return disposeAbandoned;
+    }
 
-        if (ExecuteTask?.IsFaulted == true)
-        {
-            foreach (var error in ExecuteTask.Exception!.InnerExceptions)
-            {
-                if (!monitorErrors.Any(existing => ReferenceEquals(existing, error)))
-                    monitorErrors.Add(error);
-            }
-        }
+    private static void AddCancellationOnce(List<Exception> errors, CancellationToken cancellationToken)
+    {
+        if (!errors.Any(static error => error is OperationCanceledException))
+            errors.Add(new OperationCanceledException(cancellationToken));
+    }
 
-        var errors = cleanupErrors
-            .Concat(monitorErrors)
-            .Concat(Flatten(cancellationError))
-            .ToArray();
-        lock (_gate)
-        {
-            _started.Clear();
-            _state = errors.Length == 0
-                ? HostedOrchestratorState.Stopped
-                : HostedOrchestratorState.Faulted;
-        }
+    private void CaptureMonitorFault(List<Exception> monitorErrors)
+    {
+        if (ExecuteTask?.IsFaulted != true)
+            return;
 
-        if (errors.Length == 1)
+        foreach (var error in ExecuteTask.Exception!.InnerExceptions)
         {
-            ExceptionDispatchInfo.Capture(errors[0]).Throw();
-            throw new InvalidOperationException("Unreachable.");
+            if (!monitorErrors.Any(existing => ReferenceEquals(existing, error)))
+                monitorErrors.Add(error);
         }
-
-        if (errors.Length > 1)
-            throw new AggregateException(errors);
     }
 
     private bool IsStopping()

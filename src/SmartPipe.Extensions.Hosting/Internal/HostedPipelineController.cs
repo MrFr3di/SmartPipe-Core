@@ -86,96 +86,119 @@ internal sealed class HostedPipelineController
         var mustAbort = !isTerminal && hostStoppingToken.IsCancellationRequested;
 
         if (isTerminal)
-        {
             LogOperation(LogLevel.Debug, "Drain", descriptor, run);
-        }
         else if (!mustAbort)
-        {
-            try
-            {
-                var drain = await run.TryDrainAsync(
-                    descriptor.DrainTimeout,
-                    hostStoppingToken).ConfigureAwait(false);
-                mustAbort = drain.Status is not (
-                    PipelineDrainStatus.Completed or PipelineDrainStatus.AlreadyCompleted);
-                LogOperation(
-                    drain.Status switch
-                    {
-                        PipelineDrainStatus.Completed => LogLevel.Information,
-                        PipelineDrainStatus.AlreadyCompleted => LogLevel.Debug,
-                        PipelineDrainStatus.TimedOutStillRunning => LogLevel.Warning,
-                        PipelineDrainStatus.CancelledByCaller => LogLevel.Warning,
-                        PipelineDrainStatus.Faulted => LogLevel.Error,
-                        _ => LogLevel.Error,
-                    },
-                    "Drain",
-                    descriptor,
-                    run,
-                    drain.Exception);
-                if (drain.Status == PipelineDrainStatus.Faulted)
-                {
-                    errors.Capture(drain.Exception ?? new InvalidOperationException(
-                        $"Hosted pipeline '{descriptor.Key.Value}' faulted while draining."));
-                }
-            }
-            catch (ObjectDisposedException)
-            {
-                LogOperation(LogLevel.Debug, "Drain", descriptor, run);
-                mustAbort = false;
-            }
-            catch (Exception error)
-            {
-                LogOperation(LogLevel.Error, "Drain", descriptor, run, error);
-                errors.Capture(error);
-                mustAbort = true;
-            }
-        }
+            mustAbort = await DrainRunAsync(run, descriptor, hostStoppingToken, errors).ConfigureAwait(false);
 
         if (mustAbort)
-        {
-            LogOperation(LogLevel.Warning, "Abort", descriptor, run);
-            try
-            {
-                await run.AbortAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException)
-            {
-                LogOperation(LogLevel.Debug, "Abort", descriptor, run);
-            }
-            catch (Exception error)
-            {
-                LogOperation(LogLevel.Error, "Abort", descriptor, run, error);
-                errors.Capture(error);
-            }
-        }
+            await AbortRunAsync(run, descriptor, errors).ConfigureAwait(false);
 
+        var disposeAbandoned = await DisposeRunAsync(run, descriptor, hostStoppingToken, errors).ConfigureAwait(false);
+        if (!errors.HasErrors && !disposeAbandoned)
+            LogOperation(LogLevel.Information, "Stop", descriptor, run);
+
+        errors.ThrowIfAny();
+        return disposeAbandoned;
+    }
+
+    /// <returns><see langword="true"/> when the run must be aborted.</returns>
+    private async Task<bool> DrainRunAsync(
+        IHostedPipelineRun run,
+        HostedPipelineDescriptor descriptor,
+        CancellationToken hostStoppingToken,
+        HostedExceptionCollector errors)
+    {
+        try
+        {
+            var drain = await run.TryDrainAsync(
+                descriptor.DrainTimeout,
+                hostStoppingToken).ConfigureAwait(false);
+            LogOperation(
+                drain.Status switch
+                {
+                    PipelineDrainStatus.Completed => LogLevel.Information,
+                    PipelineDrainStatus.AlreadyCompleted => LogLevel.Debug,
+                    PipelineDrainStatus.TimedOutStillRunning => LogLevel.Warning,
+                    PipelineDrainStatus.CancelledByCaller => LogLevel.Warning,
+                    PipelineDrainStatus.Faulted => LogLevel.Error,
+                    _ => LogLevel.Error,
+                },
+                "Drain",
+                descriptor,
+                run,
+                drain.Exception);
+            if (drain.Status == PipelineDrainStatus.Faulted)
+            {
+                errors.Capture(drain.Exception ?? new InvalidOperationException(
+                    $"Hosted pipeline '{descriptor.Key.Value}' faulted while draining."));
+            }
+
+            return drain.Status is not (
+                PipelineDrainStatus.Completed or PipelineDrainStatus.AlreadyCompleted);
+        }
+        catch (ObjectDisposedException)
+        {
+            LogOperation(LogLevel.Debug, "Drain", descriptor, run);
+            return false;
+        }
+        catch (Exception error)
+        {
+            LogOperation(LogLevel.Error, "Drain", descriptor, run, error);
+            errors.Capture(error);
+            return true;
+        }
+    }
+
+    private async Task AbortRunAsync(
+        IHostedPipelineRun run,
+        HostedPipelineDescriptor descriptor,
+        HostedExceptionCollector errors)
+    {
+        LogOperation(LogLevel.Warning, "Abort", descriptor, run);
+        try
+        {
+            await run.AbortAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            LogOperation(LogLevel.Debug, "Abort", descriptor, run);
+        }
+        catch (Exception error)
+        {
+            LogOperation(LogLevel.Error, "Abort", descriptor, run, error);
+            errors.Capture(error);
+        }
+    }
+
+    /// <returns><see langword="true"/> when disposal was abandoned to the background.</returns>
+    private async Task<bool> DisposeRunAsync(
+        IHostedPipelineRun run,
+        HostedPipelineDescriptor descriptor,
+        CancellationToken hostStoppingToken,
+        HostedExceptionCollector errors)
+    {
         // A stage that ignores cancellation can keep the run's disposal pending indefinitely; the host
         // stopping token bounds how long shutdown waits for it, and disposal continues in the background.
         Task? dispose = null;
-        var disposeAbandoned = false;
         try
         {
             dispose = run.DisposeAsync().AsTask();
             await dispose.WaitAsync(hostStoppingToken).ConfigureAwait(false);
+            return false;
         }
         catch (OperationCanceledException) when (
             dispose is { IsCompleted: false } && hostStoppingToken.IsCancellationRequested)
         {
             LogOperation(LogLevel.Warning, "DisposeAbandoned", descriptor, run);
             ObserveAbandonedDispose(dispose, descriptor, run);
-            disposeAbandoned = true;
+            return true;
         }
         catch (Exception error)
         {
             LogOperation(LogLevel.Error, "Dispose", descriptor, run, error);
             errors.Capture(error);
+            return false;
         }
-
-        if (!errors.HasErrors && !disposeAbandoned)
-            LogOperation(LogLevel.Information, "Stop", descriptor, run);
-
-        errors.ThrowIfAny();
-        return disposeAbandoned;
     }
 
     private void ObserveAbandonedDispose(
