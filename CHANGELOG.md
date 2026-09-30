@@ -42,9 +42,18 @@
 - `TryDrainAsync` and `DrainAsync` throw `ArgumentOutOfRangeException` for a
   negative (non-infinite) or oversized timeout before requesting a drain,
   instead of reporting `PipelineDrainStatus.Faulted`.
-- Readiness no longer reports a transient failure for a finite run that has
-  reached a terminal state but is still finishing cleanup; such a run is
-  evaluated as its terminal outcome.
+- Notable readiness behavior change: a run that has reached a terminal state
+  but has not yet published its terminal observation is evaluated by that
+  provisional outcome instead of being treated as an active non-running
+  failure. With `ActiveOrSuccessfulCompletion`, a finite run no longer flickers
+  unhealthy between completion and cleanup. With `RegistrationOnly`, the
+  provisional outcome is evaluated like a latest terminal: a provisional
+  `Faulted` fails readiness when `FailOnLatestFailure` is set, and a
+  provisional `Completed` replaces an older committed failure. When several
+  runs are finishing at once, the most severe outcome is used and reported as
+  `smartpipe.finishing_outcome`; `smartpipe.problem_run_count` counts each
+  failing run. `ActiveRunRequired` is unchanged: it already rejected terminal
+  active snapshots and still requires a running run.
 - Metrics from runs with a stable pipeline identity carry the
   `smartpipe.pipeline_id` tag, so pipelines in one process no longer share a
   single series.

@@ -327,7 +327,9 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
 
         var disposeAbandoned = await StopStartedRunsAsync(cancellationToken, cleanupErrors).ConfigureAwait(false);
 
-        // Runs whose disposal outlived the stopping token were abandoned, not stopped.
+        // Runs whose disposal outlived the stopping token were abandoned, not stopped. Keep this second
+        // check: the token can be cancelled while runs are being disposed, after the first check above
+        // found it still uncancelled. AddCancellationOnce makes the pair idempotent.
         if (disposeAbandoned)
             AddCancellationOnce(monitorErrors, cancellationToken);
 
