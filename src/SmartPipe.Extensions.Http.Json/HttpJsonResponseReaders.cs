@@ -65,9 +65,10 @@ public static class HttpJsonResponseReaders
     {
         var body = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         using var limitedBody = new UnframedInputLimitStream(body, options.MaxUnframedBytes, CreateLimitException);
+        using var arrayBody = new HttpJsonArrayReadStream(limitedBody);
 
         await foreach (var item in JsonSerializer.DeserializeAsyncEnumerable(
-            limitedBody,
+            arrayBody,
             itemTypeInfo,
             cancellationToken).ConfigureAwait(false))
         {

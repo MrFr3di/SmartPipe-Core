@@ -18,6 +18,32 @@ public sealed class HttpJsonResponseReadersTests
         Assert.Equal([7, 8, 9], await ReadAllAsync(reader, Response("[7,8,9]")));
     }
 
+    [Theory]
+    [InlineData(HttpJsonNullItemPolicy.Throw)]
+    [InlineData(HttpJsonNullItemPolicy.Skip)]
+    public async Task JsonArray_RejectsNullRootRegardlessOfItemPolicy(HttpJsonNullItemPolicy policy)
+    {
+        var reader = HttpJsonResponseReaders.JsonArray(
+            TestJsonContext.Default.Int32, new HttpJsonArrayOptions { NullItemPolicy = policy });
+        foreach (var json in new[] { "null", " \t\r\nnull", "\uFEFFnull" })
+        {
+            using var response = Response(new RecordingStream(Encoding.UTF8.GetBytes(json), maxChunkSize: 1));
+            await Assert.ThrowsAsync<JsonException>(() => DrainAsync(reader, response));
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8192)]
+    public async Task JsonArray_AcceptsSplitBomAndWhitespaceBeforeArray(int chunkSize)
+    {
+        const string json = "\uFEFF \t\r\n[1,2]";
+        using var response = Response(new RecordingStream(Encoding.UTF8.GetBytes(json), chunkSize));
+        var reader = HttpJsonResponseReaders.JsonArray(TestJsonContext.Default.Int32);
+
+        Assert.Equal([1, 2], await ReadAllAsync(reader, response));
+    }
+
     [Fact]
     public void JsonArrayAndNdjson_RejectNullResponseWhenInvokedBeforeEnumeration()
     {
