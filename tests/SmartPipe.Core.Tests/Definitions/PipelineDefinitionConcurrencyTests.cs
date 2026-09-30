@@ -52,7 +52,7 @@ public sealed class PipelineDefinitionConcurrencyTests
             .ToArray();
 
         var starts = contexts
-            .Select(context => definition.StartAsync(context, CancellationToken.None))
+            .Select(context => definition.StartAsync(context, TestContext.Current.CancellationToken))
             .ToArray();
         await allSourcesCreated.Task;
         factoryRelease.TrySetResult(null);
@@ -98,8 +98,8 @@ public sealed class PipelineDefinitionConcurrencyTests
             .Build();
         var firstContext = new PipelineActivationContext(key, Guid.NewGuid());
         var secondContext = new PipelineActivationContext(key, Guid.NewGuid());
-        var first = definition.StartDeferred(firstContext, CancellationToken.None);
-        var second = definition.StartDeferred(secondContext, CancellationToken.None);
+        var first = definition.StartDeferred(firstContext, TestContext.Current.CancellationToken);
+        var second = definition.StartDeferred(secondContext, TestContext.Current.CancellationToken);
 
         await allSourcesCreated.Task;
         var firstSource = sources[firstContext.RunId];
@@ -158,8 +158,8 @@ public sealed class PipelineDefinitionConcurrencyTests
             }));
         var firstContext = new PipelineActivationContext(key, Guid.NewGuid());
         var secondContext = new PipelineActivationContext(key, Guid.NewGuid());
-        var first = definition.StartDeferred(firstContext, CancellationToken.None);
-        var second = definition.StartDeferred(secondContext, CancellationToken.None);
+        var first = definition.StartDeferred(firstContext, TestContext.Current.CancellationToken);
+        var second = definition.StartDeferred(secondContext, TestContext.Current.CancellationToken);
 
         await allComponentsCreated.Task;
         var firstSource = sources[firstContext.RunId];
@@ -219,7 +219,7 @@ public sealed class PipelineDefinitionConcurrencyTests
                 {
                     var run = await definition.StartAsync(
                         new PipelineActivationContext(key, Guid.NewGuid()),
-                        CancellationToken.None);
+                        TestContext.Current.CancellationToken);
                     await run.Completion.ConfigureAwait(false);
                     await run.DisposeAsync().ConfigureAwait(false);
                 }
@@ -272,7 +272,7 @@ public sealed class PipelineDefinitionConcurrencyTests
                 }));
         var operation = definition.StartDeferred(
             new PipelineActivationContext(key, Guid.NewGuid()),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var source = await sourceCreated.Task;
         var stage = await stageCreated.Task;
         var sink = await sinkCreated.Task;
@@ -312,7 +312,7 @@ public sealed class PipelineDefinitionConcurrencyTests
             .Build();
         var operation = definition.StartDeferred(
             new PipelineActivationContext(key, Guid.NewGuid()),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         await factoryEntered.Task;
         var cancel = operation.Run.CancelAsync().AsTask();
