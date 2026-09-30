@@ -35,6 +35,10 @@
   token: a stage that ignores cancellation can no longer hold shutdown past
   `ShutdownTimeout`. Abandoned disposal is logged and continues in the
   background, and `StopAsync` reports cancellation.
+- Fixed unobserved task exceptions from hosted runs: a stop that arrived right
+  after startup could cancel the orchestrator's monitor before it ran, and a
+  run whose disposal was abandoned could fault after `StopAsync` returned.
+  Stop and rollback now observe each run's completion.
 - Fixed a circuit-breaker race where a half-open permit taken from a stale
   generation could occupy a probe slot of the next generation for good, and a
   path where a failing `StageStarted` notification leaked the half-open slot.
@@ -62,9 +66,10 @@
   and escape expiry.
 - Performance: stages without a circuit breaker no longer take a lock per item,
   circuit-breaker threshold evaluation no longer scans the sliding window,
-  lineage append is amortized O(1)
-  instead of copying the whole chain per stage, and the strict CSV sink encodes
-  records directly into a pooled buffer without two per-record allocations.
+  lineage append is amortized O(1) instead of copying the whole chain per
+  stage, and the strict CSV sink encodes records directly into a pooled buffer
+  with no per-record allocation. Measurements are in
+  `benchmarks/SmartPipe.Benchmarks/ReleaseHardening-results.md`.
 
 ## [2.2.0] — Development
 
