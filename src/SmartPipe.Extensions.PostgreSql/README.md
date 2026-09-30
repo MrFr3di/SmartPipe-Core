@@ -16,6 +16,12 @@ SmartPipe.Extensions.PostgreSql
     └── NpgsqlDataSource        → application-owned provider boundary
 ```
 
+`LISTEN` requires an application-owned data source with `Multiplexing=false` (the Npgsql default).
+A multiplexing data source is rejected when the notification descriptor is composed, before any connection
+is opened or `LISTEN` is registered: Npgsql does not support `WaitAsync` in multiplexing mode.
+Use a separate non-multiplexing data source for notifications if other application work uses multiplexing.
+SmartPipe never changes the borrowed data source settings.
+
 ## What this package adds beyond Dapper and EF Core
 
 Ordinary `SELECT`/`INSERT`/`UPDATE`/`DELETE` work belongs to `SmartPipe.Extensions.Dapper`; ORM and `IQueryable`

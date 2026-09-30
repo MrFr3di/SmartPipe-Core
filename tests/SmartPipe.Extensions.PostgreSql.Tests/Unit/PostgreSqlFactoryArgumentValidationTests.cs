@@ -172,6 +172,23 @@ public sealed class PostgreSqlFactoryArgumentValidationTests
     }
 
     [Fact]
+    public void NotificationSource_Multiplexing_IsRejectedBeforeProviderWork()
+    {
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(
+            PostgreSqlUnitTestSupport.UnreachableConnectionString + ";Multiplexing=true");
+        var originalSettings = dataSource.ConnectionString;
+
+        var error = Assert.Throws<ArgumentException>(() =>
+            PostgreSqlPipelineComponents.NotificationSource(dataSource, ["events"], new PostgreSqlNotificationSourceOptions()));
+
+        Assert.Equal("dataSource", error.ParamName);
+        Assert.Contains("multiplexing", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(originalSettings, dataSource.ConnectionString);
+        using var connection = dataSource.CreateConnection();
+        Assert.Equal(System.Data.ConnectionState.Closed, connection.State);
+    }
+
+    [Fact]
     public void NotificationSource_NullChannels_IsRejected()
     {
         using var dataSource = PostgreSqlUnitTestSupport.CreateUnreachableDataSource();

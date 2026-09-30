@@ -98,6 +98,8 @@ public static class PostgreSqlPipelineComponents
         ILoggerFactory? loggerFactory = null)
     {
         var validatedDataSource = PostgreSqlArguments.DataSource(dataSource);
+        if (new NpgsqlConnectionStringBuilder(validatedDataSource.ConnectionString).Multiplexing)
+            throw new ArgumentException(PostgreSqlErrorMessages.NotificationMultiplexingUnsupported, nameof(dataSource));
         var channelSet = PostgreSqlChannelSet.Create(channels);
         var snapshot = PostgreSqlNotificationSourceOptionsSnapshot.Create(options);
 

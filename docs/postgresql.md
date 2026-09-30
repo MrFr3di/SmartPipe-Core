@@ -32,6 +32,12 @@ payload is opaque and is never parsed, validated or logged by the package.
 The full package walk-through, including the `NpgsqlSlimDataSourceBuilder` setup for
 NativeAOT, lives in the [package README](../src/SmartPipe.Extensions.PostgreSql/README.md).
 
+`LISTEN` requires an application-owned data source with `Multiplexing=false` (the Npgsql default).
+A multiplexing data source is rejected when the notification descriptor is composed, before any connection
+is opened or `LISTEN` is registered: Npgsql does not support `WaitAsync` in multiplexing mode.
+Use a separate non-multiplexing data source for notifications if other application work uses multiplexing.
+SmartPipe never changes the borrowed data source settings.
+
 ## Provider boundary
 
 Every factory takes an already-configured, application-owned `NpgsqlDataSource`. SmartPipe
