@@ -1,4 +1,5 @@
 using Polly;
+using Polly.Hedging;
 using Polly.Retry;
 using SmartPipe.Core;
 using static SmartPipe.Extensions.Polly.Tests.PollyTestSupport;
@@ -224,6 +225,64 @@ public sealed class PollyTransformDecoratorLifecycleTests
         Assert.Equal(0, inner.DisposeCalls);
         await decorator.DisposeAsync();
 
+        Assert.Equal(1, inner.DisposeCalls);
+    }
+
+    [Fact]
+    public async Task DisposalAfterHedgingPredicateFault_WaitsForSecondaryCancellationCleanup()
+    {
+        var secondaryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondaryCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cleanup = new Gate();
+        var predicateFailure = new FormatException("hedging predicate");
+        var inner = new RecordingTransformer<int, int>(async (envelope, attempt, token) =>
+        {
+            if (attempt == 1)
+            {
+                await secondaryStarted.Task.WaitAsync(TestToken);
+                return StageResult<int>.Success(envelope.Payload);
+            }
+
+            secondaryStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                return StageResult<int>.Success(envelope.Payload);
+            }
+            finally
+            {
+                await cleanup.WaitAsync(TestToken);
+                secondaryCompleted.TrySetResult();
+            }
+        });
+        var pipeline = new ResiliencePipelineBuilder<StageResult<int>>()
+            .AddHedging(new HedgingStrategyOptions<StageResult<int>>
+            {
+                Delay = TimeSpan.Zero,
+                MaxHedgedAttempts = 1,
+                ShouldHandle = args => args.AttemptNumber == 0
+                    ? ValueTask.FromException<bool>(predicateFailure)
+                    : ValueTask.FromResult(false),
+            }).Build();
+        var decorator = await InitializedAsync(inner, pipeline);
+        var execution = decorator.TransformAsync(Envelope(1), TestToken).AsTask();
+        Assert.Same(predicateFailure, await Assert.ThrowsAsync<FormatException>(
+            () => execution.WaitAsync(TimeSpan.FromSeconds(5), TestToken)));
+        await cleanup.Entered.WaitAsync(TimeSpan.FromSeconds(5), TestToken);
+
+        var disposal = decorator.DisposeAsync().AsTask();
+        try
+        {
+            Assert.False(disposal.IsCompleted);
+            Assert.Equal(0, inner.DisposeCalls);
+            Assert.False(secondaryCompleted.Task.IsCompleted);
+        }
+        finally
+        {
+            cleanup.Release();
+            await secondaryCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestToken);
+            await disposal.WaitAsync(TimeSpan.FromSeconds(5), TestToken);
+        }
         Assert.Equal(1, inner.DisposeCalls);
     }
 

@@ -34,6 +34,8 @@ public sealed class PollyTransformDecorator<TInput, TOutput> : IPipelineTransfor
     private LifecycleState _state;
     private Task? _initialization;
     private Task? _disposal;
+    // Counts outer executions and inner callbacks: strategy faults can finish an execution
+    // before a losing hedge has completed its cancellation cleanup.
     private int _activeOperations;
     private TaskCompletionSource? _drained;
 
@@ -201,12 +203,16 @@ public sealed class PollyTransformDecorator<TInput, TOutput> : IPipelineTransfor
         try
         {
             outcome = await _pipeline.ExecuteOutcomeAsync(
-                static (attemptContext, state) => InvokeInnerAsync(
-                    state.Inner,
+                static (attemptContext, state) => state.Decorator.InvokeInnerAsync(
                     state.Envelope,
                     attemptContext.CancellationToken),
                 context,
-                (Inner: _inner, Envelope: envelope)).ConfigureAwait(false);
+                (Decorator: this, Envelope: envelope)).ConfigureAwait(false);
+        }
+        catch (Exception executionFailure)
+        {
+            // Hooks and custom strategies may throw instead of returning an Outcome.
+            outcome = Outcome.FromException<StageResult<TOutput>>(executionFailure);
         }
         finally
         {
@@ -220,19 +226,39 @@ public sealed class PollyTransformDecorator<TInput, TOutput> : IPipelineTransfor
         return outcome.Result;
     }
 
-    private static async ValueTask<Outcome<StageResult<TOutput>>> InvokeInnerAsync(
-        IPipelineTransformer<TInput, TOutput> inner,
+    private async ValueTask<Outcome<StageResult<TOutput>>> InvokeInnerAsync(
         ProcessingEnvelope<TInput> envelope,
         CancellationToken ct)
     {
+        if (!TryEnterAttempt())
+            return Outcome.FromException<StageResult<TOutput>>(CreateDisposedException());
+
         // Polly requires outcome callbacks to report failures as outcomes instead of throwing.
         try
         {
-            return Outcome.FromResult(await inner.TransformAsync(envelope, ct).ConfigureAwait(false));
+            return Outcome.FromResult(await _inner.TransformAsync(envelope, ct).ConfigureAwait(false));
         }
         catch (Exception exception)
         {
             return Outcome.FromException<StageResult<TOutput>>(exception);
+        }
+        finally
+        {
+            ExitOperation();
+        }
+    }
+
+    private bool TryEnterAttempt()
+    {
+        lock (_gate)
+        {
+            // Existing executions may start retries while disposal waits. A callback
+            // scheduled after all work drained must not resurrect an owned component.
+            if (_activeOperations == 0 || _state >= LifecycleState.Disposed)
+                return false;
+
+            _activeOperations++;
+            return true;
         }
     }
 
