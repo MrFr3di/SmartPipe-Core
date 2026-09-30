@@ -24,5 +24,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="SmartPipe.Extensions.Csv.Tests" />
+    <InternalsVisibleTo Include="SmartPipe.Benchmarks" />
   </ItemGroup>
 </Project>

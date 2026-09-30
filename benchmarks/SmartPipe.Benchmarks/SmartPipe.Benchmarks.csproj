@@ -6,6 +6,7 @@
     <ProjectReference Include="..\..\src\SmartPipe.Extensions.Transforms\SmartPipe.Extensions.Transforms.csproj" />
     <ProjectReference Include="..\..\src\SmartPipe.Extensions.Logging\SmartPipe.Extensions.Logging.csproj" />
     <ProjectReference Include="..\..\src\SmartPipe.Extensions.Json\SmartPipe.Extensions.Json.csproj" />
+    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Csv\SmartPipe.Extensions.Csv.csproj" />
   </ItemGroup>
 
   <ItemGroup>

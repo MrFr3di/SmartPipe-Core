@@ -151,6 +151,14 @@
           "SmartPipe.Core": "[2.2.0, )"
         }
       },
+      "smartpipe.extensions.csv": {
+        "type": "Project",
+        "dependencies": {
+          "CsvHelper": "[33.1.0, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.11, )",
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
       "smartpipe.extensions.json": {
         "type": "Project",
         "dependencies": {
@@ -170,6 +178,12 @@
         "dependencies": {
           "SmartPipe.Core": "[2.2.0, )"
         }
+      },
+      "CsvHelper": {
+        "type": "CentralTransitive",
+        "requested": "[33.1.0, )",
+        "resolved": "33.1.0",
+        "contentHash": "kqfTOZGrn7NarNeXgjh86JcpTHUoeQDMB8t9NVa/ZtlSYiV1rxfRnQ49WaJsob4AiGrbK0XDzpyKkBwai4F8eg=="
       },
       "Microsoft.Extensions.DependencyInjection": {
         "type": "CentralTransitive",
