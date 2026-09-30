@@ -244,7 +244,7 @@ public sealed class GenericHostIntegrationTests
     }
 
     [Fact]
-    public async Task Host_CancelledShutdownTokenAbortsBeforeDisposingScope()
+    public async Task Host_CancelledShutdownTokenAbortsAndDoesNotWaitForUncooperativeStage()
     {
         var probes = new ConcurrentBag<ScopedProbe>();
         var source = new ControlledSource("orders") { IgnoreReadCancellation = true };
@@ -263,12 +263,81 @@ public sealed class GenericHostIntegrationTests
 
         var stop = host.StopAsync(cancellation.Token);
         await source.ReadCancellationObserved.Task.WaitAsync(TestContext.Current.CancellationToken);
-        Assert.All(probes, probe => Assert.False(probe.IsDisposed));
-        source.AllowReadCompletion.SetResult();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stop);
 
-        Assert.Single(probes);
-        Assert.All(probes, probe => Assert.True(probe.IsDisposed));
+        // The source still ignores cancellation, so stopping must not wait for its disposal.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stop);
+        var probe = Assert.Single(probes);
+        Assert.False(probe.IsDisposed);
+
+        source.AllowReadCompletion.SetResult();
+        await probe.Disposed.Task.WaitAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Host_DisposedWhileAbandonedDisposalPending_ReportsCancellationAndLeaksNoTaskFailure(
+        bool faultLateCleanup)
+    {
+        var marker = $"abandoned-cleanup-{Guid.NewGuid():N}";
+        var unobserved = new ConcurrentQueue<Exception>();
+        void OnUnobserved(object? sender, UnobservedTaskExceptionEventArgs args)
+        {
+            if (args.Exception.Flatten().InnerExceptions.Any(error => error.ToString().Contains(marker, StringComparison.Ordinal)))
+                unobserved.Enqueue(args.Exception);
+        }
+
+        TaskScheduler.UnobservedTaskException += OnUnobserved;
+        try
+        {
+            var probes = new ConcurrentBag<ScopedProbe>();
+            var stuck = new ControlledSource("stuck") { IgnoreReadCancellation = true };
+            var cooperative = new ControlledSource("cooperative");
+            stuck.AllowInitialize.SetResult();
+            cooperative.AllowInitialize.SetResult();
+            var builder = CreateBuilder();
+            AddScopedProbes(builder, new(), probes);
+            var smartPipe = builder.Services.AddSmartPipe();
+            smartPipe.AddPipeline(CreateDefinition(cooperative)).RunAsHostedService(options => options.Order = 0);
+            smartPipe.AddPipeline(CreateDefinition(stuck)).RunAsHostedService(options => options.Order = 1);
+            var host = builder.Build();
+            await host.StartAsync(TestContext.Current.CancellationToken);
+            await stuck.ReadStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+            await cooperative.ReadStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+            var orchestrator = GetOrchestrator(host);
+            var stuckProbe = stuck.Probe!;
+            if (faultLateCleanup)
+                stuckProbe.DisposeError = new InvalidOperationException(marker);
+
+            using (var stopping = new CancellationTokenSource())
+            {
+                await stopping.CancelAsync();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => host.StopAsync(stopping.Token));
+            }
+
+            // Shutdown moved on: the stuck run is abandoned, the cooperative run was still aborted
+            // after it (reverse order), and nothing reports a fully cleaned-up stop. A cooperative
+            // read unregisters its cancellation probe as it exits, so its completion is the signal.
+            await stuck.ReadCancellationObserved.Task.WaitAsync(TestContext.Current.CancellationToken);
+            await cooperative.ReadCompleted.Task.WaitAsync(TestContext.Current.CancellationToken);
+            Assert.False(stuckProbe.IsDisposed);
+            Assert.Equal(HostedOrchestratorState.Faulted, orchestrator.State);
+
+            // The root provider and logging go away while the abandoned cleanup is still pending.
+            host.Dispose();
+            stuck.AllowReadCompletion.SetResult();
+            await stuckProbe.Disposed.Task.WaitAsync(TestContext.Current.CancellationToken);
+            await Task.Delay(100, TestContext.Current.CancellationToken);
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            Assert.Empty(unobserved);
+        }
+        finally
+        {
+            TaskScheduler.UnobservedTaskException -= OnUnobserved;
+        }
     }
 
     private static HostApplicationBuilder CreateBuilder()
@@ -390,11 +459,17 @@ public sealed class GenericHostIntegrationTests
 
         internal bool IsDisposed { get; private set; }
 
+        internal TaskCompletionSource Disposed { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal Exception? DisposeError { get; set; }
+
         public ValueTask DisposeAsync()
         {
             IsDisposed = true;
             disposalOrder.Enqueue(Key);
-            return ValueTask.CompletedTask;
+            Disposed.TrySetResult();
+            return DisposeError is null ? ValueTask.CompletedTask : ValueTask.FromException(DisposeError);
         }
     }
 }

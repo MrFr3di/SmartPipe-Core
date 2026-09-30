@@ -54,3 +54,31 @@ start or stop is enabled. Partial startup has one rollback coordinator, and
 monitoring has one place to classify completion, faults, and intentional
 shutdown. Pipelines cannot be independently restarted by the orchestrator; a new
 host lifetime is required for another hosted run.
+
+## Amendment: bounded shutdown wait for run disposal
+
+- Date: 2026-09-30
+
+Abort and disposal are still always started, and still with
+`CancellationToken.None`. What changes is how long shutdown waits for disposal
+to finish: the wait for each run's `DisposeAsync` is bounded by the caller
+shutdown token (normally the host `ShutdownTimeout`). A stage or source that
+ignores cancellation could otherwise hold the whole host open indefinitely.
+
+Shutdown therefore has two outcomes:
+
+- **Completed cleanup.** Every run finished disposing before the token was
+  cancelled. All run-owned resources and scopes are released when `StopAsync`
+  returns, and cleanup failures are reported by `StopAsync`.
+- **Abandoned cleanup.** The token was cancelled while a run was still
+  disposing. The orchestrator logs `DisposeAbandoned`, continues the reverse
+  cleanup of the remaining runs, ends in the `Faulted` state, and `StopAsync`
+  reports cancellation. For the abandoned run it guarantees only that disposal
+  was started. It does not guarantee that disposal completes, that the run's
+  scope is released before the host disposes the root service provider, or that
+  a later disposal failure is delivered: such a failure is logged on a
+  best-effort basis while logging is still available.
+
+Startup is not bounded the same way. Shutdown during startup still waits for the
+startup coordinator's own rollback, so a factory that ignores cancellation can
+delay shutdown until it returns (see Decision above).

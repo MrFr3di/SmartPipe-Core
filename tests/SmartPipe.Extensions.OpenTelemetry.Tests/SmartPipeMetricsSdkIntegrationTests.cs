@@ -131,7 +131,116 @@ public class SmartPipeMetricsSdkIntegrationTests
     }
 
     [Fact]
-    public async Task ExportedMetricPoints_CarryNoTags()
+    public async Task DefinitionPipelines_ExportSeparateSeriesPerPipelineId()
+    {
+        var exported = new List<MetricSnapshot>();
+        var services = new ServiceCollection();
+        services.AddOpenTelemetry()
+            .WithMetrics(builder => builder.AddInMemoryExporter(exported))
+            .AddSmartPipeInstrumentation();
+
+        using var provider = services.BuildServiceProvider();
+        using var meterProvider = provider.GetRequiredService<MeterProvider>();
+
+        await using (var orders = await SdkPipelineFixtures.StartDefinitionAsync(
+            "orders", 2, TestContext.Current.CancellationToken))
+            await orders.Completion;
+        await using (var invoices = await SdkPipelineFixtures.StartDefinitionAsync(
+            "invoices", 3, TestContext.Current.CancellationToken))
+            await invoices.Completion;
+
+        meterProvider.ForceFlush();
+
+        var processed = exported.Single(snapshot => snapshot.Name == "smartpipe.items.processed");
+        var byPipeline = processed.MetricPoints
+            .GroupBy(point => PipelineIdOf(point))
+            .ToDictionary(group => group.Key ?? "<untagged>", group => group.Sum(point => point.GetSumLong()));
+        byPipeline.Should().Contain("orders", 2).And.Contain("invoices", 3);
+    }
+
+    [Fact]
+    public async Task RepeatedRunsOfOnePipeline_ShareOneSeriesAndCarryOnlyThePipelineTag()
+    {
+        var exported = new List<MetricSnapshot>();
+        var services = new ServiceCollection();
+        services.AddOpenTelemetry()
+            .WithMetrics(builder => builder.AddInMemoryExporter(exported))
+            .AddSmartPipeInstrumentation();
+
+        using var provider = services.BuildServiceProvider();
+        using var meterProvider = provider.GetRequiredService<MeterProvider>();
+
+        for (var run = 0; run < 3; run++)
+        {
+            await using var pipelineRun = await SdkPipelineFixtures.StartDefinitionAsync(
+                "orders-repeated", 2, TestContext.Current.CancellationToken);
+            await pipelineRun.Completion;
+        }
+
+        meterProvider.ForceFlush();
+
+        var processed = exported.Single(snapshot => snapshot.Name == "smartpipe.items.processed");
+        processed.MetricPoints.Where(point => PipelineIdOf(point) == "orders-repeated")
+            .Should().ContainSingle().Which.GetSumLong().Should().Be(6);
+        foreach (var snapshot in exported)
+        {
+            foreach (var point in snapshot.MetricPoints)
+            {
+                foreach (var tag in point.Tags)
+                    tag.Key.Should().Be("smartpipe.pipeline_id", "{0} must not carry run-level tags", snapshot.Name);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(10)]
+    [InlineData(100)]
+    public async Task StablePipelineIds_ProduceExactlyOneSeriesPerId(int pipelineCount)
+    {
+        var exported = new List<MetricSnapshot>();
+        var services = new ServiceCollection();
+        services.AddOpenTelemetry()
+            .WithMetrics(builder => builder.AddInMemoryExporter(exported))
+            .AddSmartPipeInstrumentation();
+
+        using var provider = services.BuildServiceProvider();
+        using var meterProvider = provider.GetRequiredService<MeterProvider>();
+        var prefix = $"cardinality-{pipelineCount}-";
+
+        for (var round = 0; round < 2; round++)
+        {
+            for (var index = 0; index < pipelineCount; index++)
+            {
+                await using var run = await SdkPipelineFixtures.StartDefinitionAsync(
+                    $"{prefix}{index:D3}", 1, TestContext.Current.CancellationToken);
+                await run.Completion;
+            }
+        }
+
+        meterProvider.ForceFlush();
+
+        var processed = exported.Single(snapshot => snapshot.Name == "smartpipe.items.processed");
+        var series = processed.MetricPoints
+            .Where(point => PipelineIdOf(point)?.StartsWith(prefix, StringComparison.Ordinal) == true)
+            .ToArray();
+        series.Should().HaveCount(pipelineCount);
+        series.Should().OnlyContain(point => point.GetSumLong() == 2);
+    }
+
+    private static string? PipelineIdOf(MetricPoint point)
+    {
+        foreach (var tag in point.Tags)
+        {
+            if (tag.Key == "smartpipe.pipeline_id")
+                return tag.Value as string;
+        }
+
+        return null;
+    }
+
+    [Fact]
+    public async Task ExportedMetricPoints_WithoutExplicitPipelineId_CarryNoTags()
     {
         var exported = new List<MetricSnapshot>();
         var services = new ServiceCollection();

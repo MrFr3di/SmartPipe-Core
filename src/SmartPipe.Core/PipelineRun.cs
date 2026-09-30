@@ -208,21 +208,35 @@ public sealed class PipelineRun<TOutput> : IAsyncDisposable
     /// <param name="timeout">Maximum drain duration.</param>
     /// <param name="ct">Cancellation token for the drain request.</param>
     /// <returns>A value task representing the drain request.</returns>
-    public ValueTask DrainAsync(TimeSpan timeout, CancellationToken ct = default) =>
-        _drain?.Invoke(timeout, ct) ?? ValueTask.CompletedTask;
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="timeout"/> is negative (other than <see cref="Timeout.InfiniteTimeSpan"/>) or too large.
+    /// </exception>
+    public ValueTask DrainAsync(TimeSpan timeout, CancellationToken ct = default)
+    {
+        PipelineDrainTimeout.ThrowIfInvalid(timeout);
+        return _drain?.Invoke(timeout, ct) ?? ValueTask.CompletedTask;
+    }
 
     /// <summary>Attempts to drain accepted work and returns structured completion status.</summary>
     /// <param name="timeout">Maximum drain duration.</param>
     /// <param name="ct">Cancellation token for the drain request.</param>
     /// <returns>Structured drain result.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="timeout"/> is negative (other than <see cref="Timeout.InfiniteTimeSpan"/>) or too large.
+    /// Invalid arguments are rejected before the drain request is applied instead of being reported as
+    /// <see cref="PipelineDrainStatus.Faulted"/>.
+    /// </exception>
     public ValueTask<PipelineDrainResult> TryDrainAsync(
         TimeSpan timeout,
-        CancellationToken ct = default) =>
-        _tryDrain?.Invoke(timeout, ct)
-        ?? ValueTask.FromResult(new PipelineDrainResult(
-            PipelineDrainStatus.AlreadyCompleted,
-            State,
-            TimeSpan.Zero));
+        CancellationToken ct = default)
+    {
+        PipelineDrainTimeout.ThrowIfInvalid(timeout);
+        return _tryDrain?.Invoke(timeout, ct)
+            ?? ValueTask.FromResult(new PipelineDrainResult(
+                PipelineDrainStatus.AlreadyCompleted,
+                State,
+                TimeSpan.Zero));
+    }
 
     /// <summary>Requests immediate abort of pending work.</summary>
     /// <param name="ct">Cancellation token for the abort request.</param>

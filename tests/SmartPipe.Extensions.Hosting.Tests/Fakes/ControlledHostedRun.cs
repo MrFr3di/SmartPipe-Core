@@ -25,6 +25,8 @@ internal sealed class ControlledHostedRun : IHostedPipelineRun
 
     internal Exception? DisposeError { get; set; }
 
+    internal Task? PendingDispose { get; set; }
+
     internal CancellationToken DrainToken { get; private set; }
 
     internal CancellationToken AbortToken { get; private set; }
@@ -67,6 +69,9 @@ internal sealed class ControlledHostedRun : IHostedPipelineRun
     {
         Calls.Add("dispose");
         CallObserver?.Invoke($"{Key.Value}:dispose");
+        if (PendingDispose is not null)
+            return new ValueTask(PendingDispose);
+
         return DisposeError is null
             ? ValueTask.CompletedTask
             : ValueTask.FromException(DisposeError);

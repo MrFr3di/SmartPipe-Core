@@ -67,6 +67,13 @@ internal sealed class CsvBoundedRecordTextWriter : TextWriter
         }
     }
 
+    // TextWriter.Write(string) copies the string into a new char[] before writing.
+    public override void Write(string? value)
+    {
+        if (value is not null)
+            Write(value.AsSpan());
+    }
+
     public override Task WriteAsync(char[] buffer, int index, int count)
     {
         Write(buffer, index, count);
@@ -104,6 +111,30 @@ internal sealed class CsvBoundedRecordTextWriter : TextWriter
         var result = string.Create(_length, this, static (destination, writer) => writer.CopyTo(destination));
         ReturnChunks();
         return result;
+    }
+
+    /// <summary>
+    /// Encodes the retained record into <paramref name="buffer"/>, growing it from the shared pool when
+    /// needed, and resets the writer. Returns the number of bytes written.
+    /// </summary>
+    internal int EncodeAndReset(Encoder encoder, ref byte[]? buffer)
+    {
+        ArgumentNullException.ThrowIfNull(encoder);
+        ThrowIfDisposed();
+        try
+        {
+            if (_exceeded)
+                throw new InvalidDataException("CSV output record exceeded the configured character limit.");
+
+            if (_length == 0)
+                return 0;
+
+            return EncodeTo(encoder, ref buffer);
+        }
+        finally
+        {
+            ReturnChunks();
+        }
     }
 
     protected override void Dispose(bool disposing)
@@ -153,6 +184,64 @@ internal sealed class CsvBoundedRecordTextWriter : TextWriter
         _currentChunkLength = 0;
         _length = 0;
         _exceeded = false;
+    }
+
+    private int EncodeTo(Encoder encoder, ref byte[]? buffer)
+    {
+        // Encoder.Convert keeps surrogate state across chunk boundaries; GetByteCount would not.
+        // The caller's reference is updated on every growth so a failure never leaves it pointing
+        // at an array that was already returned to the pool.
+        var minimumFreeBytes = _encoding.GetMaxByteCount(2);
+        var bytes = buffer;
+        if (bytes is null || bytes.Length < minimumFreeBytes)
+            buffer = bytes = Grow(bytes, written: 0, Math.Max(_length, minimumFreeBytes));
+
+        encoder.Reset();
+        var written = 0;
+        var remaining = _length;
+        foreach (var chunk in _chunks)
+        {
+            var count = Math.Min(remaining, chunk.Length);
+            remaining -= count;
+            var flush = remaining == 0;
+            ReadOnlySpan<char> chars = chunk.AsSpan(0, count);
+            while (true)
+            {
+                if (bytes.Length - written < minimumFreeBytes)
+                    buffer = bytes = Grow(bytes, written, bytes.Length * 2);
+
+                encoder.Convert(
+                    chars,
+                    bytes.AsSpan(written),
+                    flush,
+                    out var charsUsed,
+                    out var bytesUsed,
+                    out var completed);
+                written += bytesUsed;
+                chars = chars[charsUsed..];
+                if (chars.IsEmpty && (completed || !flush))
+                    break;
+
+                buffer = bytes = Grow(bytes, written, bytes.Length * 2);
+            }
+
+            if (flush)
+                break;
+        }
+
+        return written;
+    }
+
+    private static byte[] Grow(byte[]? buffer, int written, int minimumLength)
+    {
+        var next = ArrayPool<byte>.Shared.Rent(minimumLength);
+        if (buffer is not null)
+        {
+            buffer.AsSpan(0, written).CopyTo(next);
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return next;
     }
 
     private void CopyTo(Span<char> destination)

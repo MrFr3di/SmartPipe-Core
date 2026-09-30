@@ -496,10 +496,15 @@ public sealed class TypedPipelineDrainTests
 
         await source.FirstItemYielded.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // Abort should not wait for source to cooperate.
+        // Abort must finish the run without the source ever being released. The terminal state is
+        // published by run finalization, so observe it at the Completion boundary rather than
+        // immediately after AbortAsync returns.
         await run.AbortAsync();
 
+        var completion = async () => await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await completion.Should().ThrowAsync<OperationCanceledException>();
         run.State.Should().Be(PipelineRunState.Aborted);
+        neverComplete.Task.IsCompleted.Should().BeFalse();
 
         neverComplete.TrySetResult();
     }

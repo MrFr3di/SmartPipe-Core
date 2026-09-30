@@ -311,21 +311,7 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
         var cleanupErrors = new List<Exception>();
         var monitorErrors = new List<Exception>();
 
-        if (startupTask is not null)
-        {
-            try
-            {
-                await startupTask.ConfigureAwait(false);
-            }
-            catch (AggregateException aggregate)
-            {
-                CaptureStartupErrors(aggregate, monitorErrors);
-            }
-            catch (Exception error)
-            {
-                CaptureStartupErrors(error, monitorErrors);
-            }
-        }
+        await ObserveStartupAsync(startupTask, monitorErrors).ConfigureAwait(false);
 
         try
         {
@@ -336,43 +322,18 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
             monitorErrors.Add(error);
         }
 
-        if (cancellationToken.IsCancellationRequested
-            && !monitorErrors.Any(static error => error is OperationCanceledException))
-        {
-            monitorErrors.Add(new OperationCanceledException(cancellationToken));
-        }
+        if (cancellationToken.IsCancellationRequested)
+            AddCancellationOnce(monitorErrors, cancellationToken);
 
-        (HostedPipelineDescriptor Descriptor, IHostedPipelineRun Run)[] started;
-        lock (_gate)
-            started = _started.ToArray();
+        var disposeAbandoned = await StopStartedRunsAsync(cancellationToken, cleanupErrors).ConfigureAwait(false);
 
-        for (var index = started.Length - 1; index >= 0; index--)
-        {
-            try
-            {
-                await _controller.StopAsync(
-                    started[index].Run,
-                    started[index].Descriptor,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch (AggregateException aggregate)
-            {
-                cleanupErrors.AddRange(aggregate.InnerExceptions);
-            }
-            catch (Exception error)
-            {
-                cleanupErrors.Add(error);
-            }
-        }
+        // Runs whose disposal outlived the stopping token were abandoned, not stopped. Keep this second
+        // check: the token can be cancelled while runs are being disposed, after the first check above
+        // found it still uncancelled. AddCancellationOnce makes the pair idempotent.
+        if (disposeAbandoned)
+            AddCancellationOnce(monitorErrors, cancellationToken);
 
-        if (ExecuteTask?.IsFaulted == true)
-        {
-            foreach (var error in ExecuteTask.Exception!.InnerExceptions)
-            {
-                if (!monitorErrors.Any(existing => ReferenceEquals(existing, error)))
-                    monitorErrors.Add(error);
-            }
-        }
+        CaptureMonitorFault(monitorErrors);
 
         var errors = cleanupErrors
             .Concat(monitorErrors)
@@ -394,6 +355,75 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
 
         if (errors.Length > 1)
             throw new AggregateException(errors);
+    }
+
+    private async Task ObserveStartupAsync(Task? startupTask, List<Exception> monitorErrors)
+    {
+        if (startupTask is null)
+            return;
+
+        try
+        {
+            await startupTask.ConfigureAwait(false);
+        }
+        catch (AggregateException aggregate)
+        {
+            CaptureStartupErrors(aggregate, monitorErrors);
+        }
+        catch (Exception error)
+        {
+            CaptureStartupErrors(error, monitorErrors);
+        }
+    }
+
+    /// <returns><see langword="true"/> when any run's disposal was abandoned to the background.</returns>
+    private async Task<bool> StopStartedRunsAsync(
+        CancellationToken cancellationToken,
+        List<Exception> cleanupErrors)
+    {
+        (HostedPipelineDescriptor Descriptor, IHostedPipelineRun Run)[] started;
+        lock (_gate)
+            started = _started.ToArray();
+
+        var disposeAbandoned = false;
+        for (var index = started.Length - 1; index >= 0; index--)
+        {
+            try
+            {
+                disposeAbandoned |= await _controller.StopAsync(
+                    started[index].Run,
+                    started[index].Descriptor,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (AggregateException aggregate)
+            {
+                cleanupErrors.AddRange(aggregate.InnerExceptions);
+            }
+            catch (Exception error)
+            {
+                cleanupErrors.Add(error);
+            }
+        }
+
+        return disposeAbandoned;
+    }
+
+    private static void AddCancellationOnce(List<Exception> errors, CancellationToken cancellationToken)
+    {
+        if (!errors.Any(static error => error is OperationCanceledException))
+            errors.Add(new OperationCanceledException(cancellationToken));
+    }
+
+    private void CaptureMonitorFault(List<Exception> monitorErrors)
+    {
+        if (ExecuteTask is not { IsFaulted: true, Exception: { } fault })
+            return;
+
+        foreach (var error in fault.InnerExceptions.Where(
+            error => !monitorErrors.Any(existing => ReferenceEquals(existing, error))))
+        {
+            monitorErrors.Add(error);
+        }
     }
 
     private bool IsStopping()

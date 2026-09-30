@@ -83,8 +83,11 @@ The registered meter exposes the frozen 2.2.0 instrument set:
 - `smartpipe.stage.duration`, `smartpipe.sink.duration` (unit `ms`)
 
 The registered activity source emits `Pipeline.Run` and `Transform` activities
-with the existing operation names, status mapping, and tag set. All current
-instruments emit measurements with no tags (zero-tag); the allowed
+with the existing operation names, status mapping, and tag set. Measurements
+from runs with a stable pipeline identity (definition-based, DI-registered, or
+hosted pipelines, and legacy builders with `WithPipelineId`) carry exactly one
+tag, `smartpipe.pipeline_id`, so each pipeline in a process is exported as its
+own series. Legacy runs with a generated identity stay zero-tag. The allowed
 low-cardinality dimension ceiling and the high-cardinality prohibitions are
 defined in [Observability](observability.md). Run/trace identifiers remain
 activity-only data and never become metric dimensions.

@@ -26,6 +26,9 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
     private Stream? _stream;
     private CsvBoundedRecordTextWriter? _recordWriter;
     private CsvWriter? _csv;
+    private Encoder? _encoder;
+    private byte[]? _recordBuffer;
+    private byte[] _newLineBytes = [];
     private bool _initialized;
     private bool _needsSeparator;
     private int _recordsSinceFlush;
@@ -87,7 +90,7 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
         try
         {
             ThrowIfNotActive();
-            if (!_initialized || _stream is null || _recordWriter is null || _csv is null)
+            if (!_initialized || _stream is null || _recordWriter is null || _csv is null || _encoder is null)
                 throw new InvalidOperationException("Sink is not initialized. Call InitializeAsync before writing.");
 
             using var linked = CreateLinkedCancellation(ct, out var cancellationToken);
@@ -99,20 +102,18 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
                 await _csv.NextRecordAsync().ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var text = _recordWriter.ToStringAndReset();
-                var bytes = EncodeRecord(text);
-                try
-                {
-                    var separator = _needsSeparator ? EncodeText(_options.NewLine) : Array.Empty<byte>();
-                    var shouldFlush = _recordsSinceFlush + 1 >= _options.FlushEveryRecords;
-                    await CommitRecordAsync(separator, bytes, shouldFlush, cancellationToken).ConfigureAwait(false);
-                    _needsSeparator = false;
-                    _recordsSinceFlush = shouldFlush ? 0 : _recordsSinceFlush + 1;
-                }
-                finally
-                {
-                    ReturnBuffer(bytes);
-                }
+                // Encode straight from the pooled character chunks into a reusable byte buffer instead of
+                // materializing an intermediate string and an exact-length array for every record.
+                var length = EncodePendingRecord(_recordWriter, _encoder);
+                var separator = _needsSeparator ? _newLineBytes : ReadOnlyMemory<byte>.Empty;
+                var shouldFlush = _recordsSinceFlush + 1 >= _options.FlushEveryRecords;
+                await CommitRecordAsync(
+                    separator,
+                    _recordBuffer.AsMemory(0, length),
+                    shouldFlush,
+                    cancellationToken).ConfigureAwait(false);
+                _needsSeparator = false;
+                _recordsSinceFlush = shouldFlush ? 0 : _recordsSinceFlush + 1;
             }
             finally
             {
@@ -180,6 +181,8 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
             _options.NewLine);
         _csv = new CsvWriter(_recordWriter, CreateConfiguration(), leaveOpen: true);
         _map.Register(_csv.Context);
+        _encoder = _options.Encoding.GetEncoder();
+        _newLineBytes = EncodeText(_options.NewLine);
 
         var contentLength = stream.Length - probe.ContentOffset;
         if (_options.OpenMode == CsvFileOpenMode.Append && contentLength > 0)
@@ -202,14 +205,7 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
         if (_options.HasHeaderRecord && _options.WriteHeaderWhenFileIsEmpty)
         {
             var header = await BuildHeaderAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                await CommitRecordAsync(preamble, header, shouldFlush: true, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                ReturnBuffer(header);
-            }
+            await CommitRecordAsync(preamble, header, shouldFlush: true, cancellationToken).ConfigureAwait(false);
         }
         else if (preamble.Length != 0)
         {
@@ -237,7 +233,6 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
         CancellationToken cancellationToken)
     {
         var expectedHeader = ParseHeader(expectedHeaderBytes);
-        ReturnBuffer(expectedHeaderBytes);
 
         await using var existing = new FileStream(
             _path,
@@ -439,6 +434,18 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
 
     private byte[] EncodeRecord(string text) => EncodeText(text);
 
+    private int EncodePendingRecord(CsvBoundedRecordTextWriter recordWriter, Encoder encoder)
+    {
+        try
+        {
+            return recordWriter.EncodeAndReset(encoder, ref _recordBuffer);
+        }
+        catch (EncoderFallbackException exception)
+        {
+            throw new InvalidDataException("CSV output encoding failed.", exception);
+        }
+    }
+
     private byte[] EncodeText(string text)
     {
         try
@@ -454,10 +461,12 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
         }
     }
 
-    private static void ReturnBuffer(byte[] bytes)
+    private void ReturnRecordBuffer()
     {
-        // The character staging buffer is pooled; encoded records are already bounded by the
-        // configured character limit and are kept as exact-length arrays for stream writes.
+        var buffer = _recordBuffer;
+        _recordBuffer = null;
+        if (buffer is not null)
+            ArrayPool<byte>.Shared.Return(buffer);
     }
 
     private async Task DisposeCoreAsync()
@@ -510,6 +519,8 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
             _csv = null;
             _recordWriter = null;
             _stream = null;
+            _encoder = null;
+            ReturnRecordBuffer();
             _initialized = false;
             if (finalizationFailure is not null || cleanupFailure is not null)
             {
@@ -563,6 +574,8 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
             failures.Add(exception);
         }
 
+        _encoder = null;
+        ReturnRecordBuffer();
         _initialized = false;
         return failures;
     }

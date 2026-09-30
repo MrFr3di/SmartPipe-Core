@@ -235,6 +235,8 @@ internal sealed class DeferredPipelineRunController<TInput, TOutput>
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
+        PipelineDrainTimeout.ThrowIfInvalid(timeout);
+
         // A drain that times out before activation finishes still applies once the executor attaches.
         Interlocked.Exchange(ref _drainRequested, 1);
         if (_executorAttached.Task.IsCompleted)

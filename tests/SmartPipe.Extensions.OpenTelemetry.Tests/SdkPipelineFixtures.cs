@@ -13,6 +13,23 @@ internal static class SdkPipelineFixtures
             .TransformFactory<int>(_ => new IdentityTransformer())
             .ToFactory(_ => new CountingSink(), ct);
 
+    internal static Task<PipelineRun<int>> StartDefinitionAsync(
+        string pipelineKey,
+        int itemCount,
+        CancellationToken ct = default) =>
+        PipelineDefinitionBuilder
+            .From(
+                new PipelineKey(pipelineKey),
+                PipelineComponent.RuntimeOwned<IPipelineSource<int>>((_, _) =>
+                    ValueTask.FromResult<IPipelineSource<int>>(new ItemSource(itemCount))))
+            .Transform(
+                new PipelineStageKey("identity"),
+                PipelineComponent.RuntimeOwned<IPipelineTransformer<int, int>>((_, _) =>
+                    ValueTask.FromResult<IPipelineTransformer<int, int>>(new IdentityTransformer())))
+            .To(PipelineComponent.RuntimeOwned<IPipelineSink<int>>((_, _) =>
+                ValueTask.FromResult<IPipelineSink<int>>(new CountingSink())))
+            .StartAsync(ct);
+
     internal static PipelineRun<int> StartFailingPipeline(CancellationToken ct = default) =>
         PipelineBuilder
             .FromFactory<int>(_ => new ItemSource(1))
