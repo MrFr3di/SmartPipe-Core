@@ -399,7 +399,7 @@ public class ReleaseHardeningOpenTelemetryBenchmarks
         _provider = Sdk.CreateMeterProviderBuilder()
             .AddMeter(SmartPipeMeter.Name)
             .AddInMemoryExporter(_exported)
-            .Build()!;
+            .Build();
         _untagged = new SmartPipeMetricsRecorder(SystemPipelineClock.Instance, pipelineId: null);
         _recorders = Enumerable.Range(0, PipelineCount)
             .Select(index => new SmartPipeMetricsRecorder(SystemPipelineClock.Instance, $"pipeline-{index:D3}"))
