@@ -523,7 +523,8 @@ public class CircuitBreakerTests
         cb.State.Should().Be(CircuitState.Open);
 
         clock.Advance(TimeSpan.FromSeconds(11));
-        clock.GateReadsAfterPassThrough(passThroughReads: 2, gatedReads: 2);
+        // Each attempt's first clock read is the open-to-half-open transition timestamp.
+        clock.GateReadsAfterPassThrough(passThroughReads: 0, gatedReads: 2);
 
         var firstAttempt = Task.Run(() =>
         {

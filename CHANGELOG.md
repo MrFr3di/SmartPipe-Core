@@ -31,6 +31,27 @@
   one complete COPY, and `LISTEN`/`NOTIFY` as a notification source over an
   application-owned `NpgsqlDataSource`. It depends only on Core, `Npgsql`
   10.0.3, and `Microsoft.Extensions.Logging.Abstractions`.
+- Hosted shutdown now bounds waiting for run disposal by the host stopping
+  token: a stage that ignores cancellation can no longer hold shutdown past
+  `ShutdownTimeout`. Abandoned disposal is logged and continues in the
+  background, and `StopAsync` reports cancellation.
+- Fixed a circuit-breaker race where a half-open permit taken from a stale
+  generation could occupy a probe slot of the next generation for good, and a
+  path where a failing `StageStarted` notification leaked the half-open slot.
+  Probe accounting is now owned by each half-open generation.
+- `TryDrainAsync` and `DrainAsync` throw `ArgumentOutOfRangeException` for a
+  negative (non-infinite) or oversized timeout before requesting a drain,
+  instead of reporting `PipelineDrainStatus.Faulted`.
+- Readiness no longer reports a transient failure for a finite run that has
+  reached a terminal state but is still finishing cleanup; such a run is
+  evaluated as its terminal outcome.
+- Metrics from runs with a stable pipeline identity carry the
+  `smartpipe.pipeline_id` tag, so pipelines in one process no longer share a
+  single series.
+- Performance: stages without a circuit breaker no longer take a lock per item,
+  circuit-breaker window statistics are O(1), lineage append is amortized O(1)
+  instead of copying the whole chain per stage, and the strict CSV sink encodes
+  records directly into a pooled buffer without two per-record allocations.
 
 ## [2.2.0] — Development
 

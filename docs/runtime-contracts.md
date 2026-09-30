@@ -155,7 +155,10 @@ token for work that was already accepted. A drain timeout throws
 
 `TryDrainAsync` is the structured non-throwing drain API. It returns
 `PipelineDrainResult` with `Completed`, `TimedOutStillRunning`,
-`CancelledByCaller`, `Faulted`, or `AlreadyCompleted`.
+`CancelledByCaller`, `Faulted`, or `AlreadyCompleted`. Argument validation is
+not a run outcome: both drain methods throw `ArgumentOutOfRangeException` for a
+negative timeout other than `Timeout.InfiniteTimeSpan`, or a timeout above
+4294967294 milliseconds, before the drain request is applied.
 After `Completion` finishes, a drain request remains idempotent even when a
 factory-owned scope has already disposed the completed runtime: `TryDrainAsync`
 returns `AlreadyCompleted`, and `DrainAsync` completes without throwing.

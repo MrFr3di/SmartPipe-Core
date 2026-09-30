@@ -273,7 +273,11 @@ public sealed record SmartPipeMetricsSnapshot
 /// <summary>Thread-safe mutable recorder that owns SmartPipe metric state.</summary>
 public sealed class SmartPipeMetricsRecorder
 {
+    internal const string PipelineIdTagName = "smartpipe.pipeline_id";
+
     private readonly IPipelineClock _clock;
+    private readonly KeyValuePair<string, object?> _pipelineTag;
+    private readonly bool _hasPipelineTag;
     private long _itemsProcessed;
     private long _itemsFailed;
     private long _itemsFiltered;
@@ -300,8 +304,18 @@ public sealed class SmartPipeMetricsRecorder
     }
 
     internal SmartPipeMetricsRecorder(IPipelineClock clock)
+        : this(clock, pipelineId: null)
+    {
+    }
+
+    internal SmartPipeMetricsRecorder(IPipelineClock clock, string? pipelineId)
     {
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        if (!string.IsNullOrWhiteSpace(pipelineId))
+        {
+            _pipelineTag = new(PipelineIdTagName, pipelineId);
+            _hasPipelineTag = true;
+        }
     }
 
     /// <summary>Total items successfully processed.</summary>
@@ -392,8 +406,8 @@ public sealed class SmartPipeMetricsRecorder
         Volatile.Write(ref _lastStageLatencyMs, latencyMs);
         MaxTimestamp(ref _lastProcessedAtUtcTicks, now.UtcTicks);
         RecordActivity(now);
-        SmartPipeMeter.ItemsProcessedCounter.Add(1);
-        SmartPipeMeter.StageLatencyHistogram.Record(latencyMs);
+        Increment(SmartPipeMeter.ItemsProcessedCounter);
+        Record(SmartPipeMeter.StageLatencyHistogram, latencyMs);
     }
 
     /// <summary>Record a failed item.</summary>
@@ -401,7 +415,7 @@ public sealed class SmartPipeMetricsRecorder
     {
         Interlocked.Increment(ref _itemsFailed);
         RecordActivity();
-        SmartPipeMeter.ItemsFailedCounter.Add(1);
+        Increment(SmartPipeMeter.ItemsFailedCounter);
     }
 
     /// <summary>Record a filtered item.</summary>
@@ -409,7 +423,7 @@ public sealed class SmartPipeMetricsRecorder
     {
         Interlocked.Increment(ref _itemsFiltered);
         RecordActivity();
-        SmartPipeMeter.ItemsFilteredCounter.Add(1);
+        Increment(SmartPipeMeter.ItemsFilteredCounter);
     }
 
     /// <summary>Record an input item dropped by bounded channel policy.</summary>
@@ -417,7 +431,7 @@ public sealed class SmartPipeMetricsRecorder
     {
         Interlocked.Increment(ref _itemsDropped);
         RecordActivity();
-        SmartPipeMeter.ItemsDroppedCounter.Add(1);
+        Increment(SmartPipeMeter.ItemsDroppedCounter);
     }
 
     /// <summary>Record an output item dropped by bounded channel policy.</summary>
@@ -425,14 +439,14 @@ public sealed class SmartPipeMetricsRecorder
     {
         Interlocked.Increment(ref _outputItemsDropped);
         RecordActivity();
-        SmartPipeMeter.OutputItemsDroppedCounter.Add(1);
+        Increment(SmartPipeMeter.OutputItemsDroppedCounter);
     }
 
     /// <summary>Record an observer event dropped by buffered dispatch pressure.</summary>
     public void RecordObserverEventDropped()
     {
         Interlocked.Increment(ref _observerEventsDropped);
-        SmartPipeMeter.ObserverEventsDroppedCounter.Add(1);
+        Increment(SmartPipeMeter.ObserverEventsDroppedCounter);
     }
 
     /// <summary>Record a filtered duplicate.</summary>
@@ -440,7 +454,7 @@ public sealed class SmartPipeMetricsRecorder
     {
         Interlocked.Increment(ref _duplicatesFiltered);
         RecordActivity();
-        SmartPipeMeter.DuplicatesFilteredCounter.Add(1);
+        Increment(SmartPipeMeter.DuplicatesFilteredCounter);
     }
 
     /// <summary>Record a retry attempt.</summary>
@@ -448,7 +462,7 @@ public sealed class SmartPipeMetricsRecorder
     {
         Interlocked.Increment(ref _itemsRetried);
         RecordActivity();
-        SmartPipeMeter.ItemsRetriedCounter.Add(1);
+        Increment(SmartPipeMeter.ItemsRetriedCounter);
     }
 
     /// <summary>Record a dead-lettered item.</summary>
@@ -456,7 +470,7 @@ public sealed class SmartPipeMetricsRecorder
     {
         Interlocked.Increment(ref _itemsDeadLettered);
         RecordActivity();
-        SmartPipeMeter.ItemsDeadLetteredCounter.Add(1);
+        Increment(SmartPipeMeter.ItemsDeadLetteredCounter);
     }
 
     internal void RecordActivity()
@@ -466,7 +480,7 @@ public sealed class SmartPipeMetricsRecorder
 
     internal void RecordSinkDuration(double latencyMs)
     {
-        SmartPipeMeter.SinkLatencyHistogram.Record(latencyMs);
+        Record(SmartPipeMeter.SinkLatencyHistogram, latencyMs);
     }
 
     /// <summary>Update current input and output queue depths.</summary>
@@ -520,6 +534,22 @@ public sealed class SmartPipeMetricsRecorder
             SmoothThroughput,
             QueueSize,
             PoolHitRate);
+    }
+
+    private void Increment(Counter<long> counter)
+    {
+        if (_hasPipelineTag)
+            counter.Add(1, _pipelineTag);
+        else
+            counter.Add(1);
+    }
+
+    private void Record(Histogram<double> histogram, double value)
+    {
+        if (_hasPipelineTag)
+            histogram.Record(value, _pipelineTag);
+        else
+            histogram.Record(value);
     }
 
     private static void AddDouble(ref double location, double value)

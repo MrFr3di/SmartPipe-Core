@@ -97,7 +97,8 @@ public class CircuitBreaker
     private sealed record BreakerStateSnapshot(
         CircuitState State,
         long OpenedAtTimestamp,
-        int HalfOpenGeneration);
+        int HalfOpenGeneration,
+        HalfOpenProbeState? Probes = null);
 
     private readonly double _failureRatio;
     private readonly TimeSpan _samplingDuration;
@@ -106,16 +107,16 @@ public class CircuitBreaker
     private readonly int _maxHalfOpenRequests;
     private readonly ICircuitBreakerTimeSource _time;
 
-    private int _halfOpenCount;
-    private int _activeHalfOpenProbes;
-    private int _halfOpenSuccesses;
     private BreakerStateSnapshot _snapshot = new(CircuitState.Closed, OpenedAtTimestamp: 0, HalfOpenGeneration: 0);
     private readonly object _halfOpenTransitionGate = new();
 
     // Hybrid: EWMA for early warning + Sliding window for decisions
     private double _ewmaFailureRate;
+    // Every window access happens under _windowGate; the failure count is maintained incrementally so
+    // threshold evaluation stays O(1) regardless of throughput within the sampling duration.
     private readonly ConcurrentQueue<(long Timestamp, bool IsSuccess)> _window = new();
     private readonly object _windowGate = new();
+    private int _windowFailures;
 
     /// <summary>Gets the current circuit state.</summary>
     public CircuitState State => Volatile.Read(ref _snapshot).State;
@@ -385,12 +386,11 @@ public class CircuitBreaker
     /// </remarks>
     public CircuitBreakerPermit AcquirePermit()
     {
-        CleanupWindow();
         var snapshot = Volatile.Read(ref _snapshot);
         var currentState = snapshot.State;
 
         if (currentState == CircuitState.Closed)
-            return CircuitBreakerPermit.Allowed(this, isHalfOpen: false, generation: 0);
+            return CircuitBreakerPermit.Allowed(this, generation: 0, probes: null);
 
         if (currentState == CircuitState.Open)
         {
@@ -402,17 +402,14 @@ public class CircuitBreaker
             currentState = snapshot.State;
         }
 
-        if (currentState == CircuitState.HalfOpen)
+        if (currentState == CircuitState.HalfOpen && snapshot.Probes is { } probes)
         {
-            var generation = snapshot.HalfOpenGeneration;
-            if (Interlocked.Increment(ref _activeHalfOpenProbes) > _maxHalfOpenRequests)
-            {
-                Interlocked.Decrement(ref _activeHalfOpenProbes);
+            // Probe slots belong to one half-open generation, so a permit acquired from a stale
+            // snapshot can only occupy (and later release) a slot of that finished generation.
+            if (!probes.TryEnter(_maxHalfOpenRequests))
                 return default;
-            }
 
-            Interlocked.Increment(ref _halfOpenCount);
-            return CircuitBreakerPermit.Allowed(this, isHalfOpen: true, generation);
+            return CircuitBreakerPermit.Allowed(this, snapshot.HalfOpenGeneration, probes);
         }
 
         return default;
@@ -466,13 +463,11 @@ public class CircuitBreaker
             if (_time.GetElapsedTime(snapshot.OpenedAtTimestamp, nowTimestamp) < _breakDuration)
                 return false;
 
-            Interlocked.Exchange(ref _halfOpenCount, 0);
-            Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
-            Interlocked.Exchange(ref _halfOpenSuccesses, 0);
             var next = snapshot with
             {
                 State = CircuitState.HalfOpen,
                 HalfOpenGeneration = snapshot.HalfOpenGeneration + 1,
+                Probes = new HalfOpenProbeState(),
             };
             return Interlocked.CompareExchange(ref _snapshot, next, snapshot) == snapshot;
         }
@@ -505,10 +500,10 @@ public class CircuitBreaker
         double alpha = _ewmaFailureRate > 0.1 ? 0.5 : 0.2;
         AtomicHelper.CompareExchangeLoop(ref _ewmaFailureRate, current => (1.0 - alpha) * current);
 
-        if ((isHalfOpenPermit || Volatile.Read(ref _snapshot).State == CircuitState.HalfOpen)
-            && IsCurrentHalfOpenGeneration(generation))
+        if (Volatile.Read(ref _snapshot) is { State: CircuitState.HalfOpen, Probes: { } probes } snapshot
+            && snapshot.HalfOpenGeneration == generation)
         {
-            int successes = Interlocked.Increment(ref _halfOpenSuccesses);
+            int successes = probes.RecordSuccess();
             if (successes >= _maxHalfOpenRequests / 2 + 1)
                 TryCloseHalfOpen(generation);
         }
@@ -594,34 +589,35 @@ public class CircuitBreaker
                 return false;
             }
 
-            ResetHalfOpenCounters();
             var next = snapshot with
             {
                 State = CircuitState.Open,
                 OpenedAtTimestamp = _time.GetTimestamp(),
+                Probes = null,
             };
             return Interlocked.CompareExchange(ref _snapshot, next, snapshot) == snapshot;
         }
     }
 
     /// <summary>Manually isolates the circuit (blocks all requests).</summary>
-    public void Isolate() => UpdateSnapshot(current => current with { State = CircuitState.Isolated });
+    public void Isolate() => UpdateSnapshot(current => current with { State = CircuitState.Isolated, Probes = null });
 
     /// <summary>Resets the circuit to Closed state and clears history.</summary>
     public void Reset()
     {
         lock (_windowGate)
         {
-            while (_window.TryDequeue(out _)) { }
+            _window.Clear();
+            _windowFailures = 0;
         }
 
-        ResetHalfOpenCounters();
         Interlocked.Exchange(ref _ewmaFailureRate, 0.0);
         UpdateSnapshot(current => current with
         {
             State = CircuitState.Closed,
             OpenedAtTimestamp = 0,
             HalfOpenGeneration = current.HalfOpenGeneration + 1,
+            Probes = null,
         });
     }
 
@@ -655,19 +651,8 @@ public class CircuitBreaker
         dict[_metricKeys[0]] = State.ToString();
         dict[_metricKeys[1]] = GetCurrentFailureRatio();
         dict[_metricKeys[2]] = _ewmaFailureRate;
-        dict[_metricKeys[3]] = _halfOpenCount;
+        dict[_metricKeys[3]] = Volatile.Read(ref _snapshot).Probes?.Attempts ?? 0;
         return dict;
-    }
-
-    internal void ReleaseHalfOpenPermit(int generation)
-    {
-        var snapshot = Volatile.Read(ref _snapshot);
-        if (snapshot.State == CircuitState.HalfOpen
-            && snapshot.HalfOpenGeneration == generation
-            && Volatile.Read(ref _activeHalfOpenProbes) > 0)
-        {
-            Interlocked.Decrement(ref _activeHalfOpenProbes);
-        }
     }
 
     private void CleanupWindow()
@@ -692,6 +677,8 @@ public class CircuitBreaker
                     continue;
 
                 _ = _window.TryDequeue(out _);
+                if (!candidate.IsSuccess)
+                    _windowFailures--;
             }
         }
     }
@@ -700,24 +687,17 @@ public class CircuitBreaker
     {
         var timestamp = _time.GetTimestamp();
         lock (_windowGate)
+        {
             _window.Enqueue((timestamp, isSuccess));
+            if (!isSuccess)
+                _windowFailures++;
+        }
     }
 
     private WindowStatistics GetWindowStatistics()
     {
         lock (_windowGate)
-        {
-            var total = 0;
-            var failures = 0;
-            foreach (var (_, isSuccess) in _window)
-            {
-                total++;
-                if (!isSuccess)
-                    failures++;
-            }
-
-            return new WindowStatistics(total, failures);
-        }
+            return new WindowStatistics(_window.Count, _windowFailures);
     }
 
     private readonly record struct WindowStatistics(int Total, int Failures);
@@ -734,23 +714,16 @@ public class CircuitBreaker
             if (snapshot.State != CircuitState.HalfOpen || snapshot.HalfOpenGeneration != generation)
                 return;
 
-            ResetHalfOpenCounters();
             Interlocked.Exchange(ref _ewmaFailureRate, 0.0);
             var next = snapshot with
             {
                 State = CircuitState.Closed,
                 OpenedAtTimestamp = 0,
                 HalfOpenGeneration = snapshot.HalfOpenGeneration + 1,
+                Probes = null,
             };
             _ = Interlocked.CompareExchange(ref _snapshot, next, snapshot);
         }
-    }
-
-    private void ResetHalfOpenCounters()
-    {
-        Interlocked.Exchange(ref _halfOpenCount, 0);
-        Interlocked.Exchange(ref _activeHalfOpenProbes, 0);
-        Interlocked.Exchange(ref _halfOpenSuccesses, 0);
     }
 
     private void UpdateSnapshot(Func<BreakerStateSnapshot, BreakerStateSnapshot> update)
@@ -775,13 +748,13 @@ public readonly struct CircuitBreakerPermit : IDisposable
 
     private CircuitBreakerPermit(
         CircuitBreaker owner,
-        bool isHalfOpen,
-        int generation)
+        int generation,
+        HalfOpenProbeState? probes)
     {
         _owner = owner;
-        _isHalfOpen = isHalfOpen;
+        _isHalfOpen = probes is not null;
         _generation = generation;
-        _lease = isHalfOpen ? new LeaseState(owner, generation) : null;
+        _lease = probes is null ? null : new LeaseState(probes);
         IsAllowed = true;
     }
 
@@ -792,9 +765,9 @@ public readonly struct CircuitBreakerPermit : IDisposable
 
     internal static CircuitBreakerPermit Allowed(
         CircuitBreaker owner,
-        bool isHalfOpen,
-        int generation) =>
-        new(owner, isHalfOpen, generation);
+        int generation,
+        HalfOpenProbeState? probes) =>
+        new(owner, generation, probes);
 
     /// <summary>Records successful completion for this permit.</summary>
     public void RecordSuccess()
@@ -822,22 +795,64 @@ public readonly struct CircuitBreakerPermit : IDisposable
 
     private sealed class LeaseState
     {
-        private readonly CircuitBreaker _owner;
-        private readonly int _generation;
+        private readonly HalfOpenProbeState _probes;
         private int _released;
 
-        internal LeaseState(CircuitBreaker owner, int generation)
+        internal LeaseState(HalfOpenProbeState probes)
         {
-            _owner = owner;
-            _generation = generation;
+            _probes = probes;
         }
 
         internal void Release()
         {
             if (Interlocked.Exchange(ref _released, 1) == 0)
-                _owner.ReleaseHalfOpenPermit(_generation);
+                _probes.Exit();
         }
     }
+}
+
+/// <summary>Probe accounting for exactly one half-open generation of a circuit breaker.</summary>
+internal sealed class HalfOpenProbeState
+{
+    private int _active;
+    private int _attempts;
+    private int _successes;
+
+    internal int Attempts => Volatile.Read(ref _attempts);
+
+    internal bool TryEnter(int maxActive)
+    {
+        var current = Volatile.Read(ref _active);
+        while (true)
+        {
+            if (current >= maxActive)
+                return false;
+
+            var observed = Interlocked.CompareExchange(ref _active, current + 1, current);
+            if (observed == current)
+                break;
+
+            current = observed;
+        }
+
+        Interlocked.Increment(ref _attempts);
+        return true;
+    }
+
+    internal void Exit()
+    {
+        var current = Volatile.Read(ref _active);
+        while (current > 0)
+        {
+            var observed = Interlocked.CompareExchange(ref _active, current - 1, current);
+            if (observed == current)
+                return;
+
+            current = observed;
+        }
+    }
+
+    internal int RecordSuccess() => Interlocked.Increment(ref _successes);
 }
 
 /// <summary>Lease for a circuit breaker half-open probe slot.</summary>

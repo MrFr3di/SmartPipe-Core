@@ -103,6 +103,13 @@ Current instruments:
 Allowed low-cardinality metric dimensions are `pipeline_id`, `stage_id`,
 `outcome`, and `error_type`.
 
+Runs started from a `PipelineDefinition` (including DI-registered and hosted
+pipelines) and legacy builders with an explicit `WithPipelineId` tag every
+measurement with `smartpipe.pipeline_id`, so several pipelines in one process
+produce separate series. Legacy builders without an explicit id generate a
+unique id per run; their measurements stay untagged to avoid unbounded
+cardinality.
+
 Meter measurements must not include high-cardinality dimensions such as
 `run_id`, `trace_id`, `exception_message`, `payload_value`, or `raw_payload`.
 

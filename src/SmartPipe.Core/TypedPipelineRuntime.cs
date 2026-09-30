@@ -416,7 +416,7 @@ internal sealed class TypedPipelineStage<TInput, TOutput> : ITypedPipelineStage
             outcome
         );
 
-        return current.Count == 0 ? [next] : current.Concat([next]).ToArray();
+        return LineageTrail.Append(current, next);
     }
 
     private static StageOutcome ToOutcome(StageResultKind kind)
@@ -645,11 +645,11 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly CancellationTokenSource _processingCts;
     private readonly CancellationTokenRegistration _sourceCancellationRegistration;
     private ChannelReader<ProcessingEnvelope<TInput>>? _inputReader;
-    private readonly Dictionary<string, CircuitBreaker> _breakers = [];
+    // Built once per run and read without locking on the per-item path.
+    private readonly Dictionary<string, CircuitBreaker> _breakers;
     // Dead-letter streams are caller-owned and may be shared by stages; parallel workers
     // must not interleave records on them.
     private readonly SemaphoreSlim _deadLetterWriteGate = new(1, 1);
-    private readonly object _breakersGate = new();
     private readonly object _lifecycleGate = new();
     private ExecutorLifecycleState _executorLifecycleState;
     private int _disposed;
@@ -709,7 +709,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _options = _runtime.Options;
         _clock = _options.Clock;
         _time = new PipelineTime(_clock);
-        _metrics = new SmartPipeMetricsRecorder(_clock);
+        _breakers = CreateBreakers();
+        // Generated legacy ids are unique per run and must not become metric dimensions.
+        _metrics = new SmartPipeMetricsRecorder(_clock, _spec.ForcePipelineId ? _spec.PipelineId : null);
         _lateAttemptRegistry = new LateStageAttemptRegistry(_time);
         _componentLifetime = new PipelineComponentLifetimeManager<TInput, TOutput>(
             lifetime,
@@ -732,7 +734,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _spec.LineageMode,
             _clock,
             _time,
-            GetOrCreateBreaker,
+            GetBreaker,
             GetRetryDecision,
             EmitRetryScheduledAsync,
             EmitRetryExhaustedAsync,
@@ -914,6 +916,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         TimeSpan timeout,
         CancellationToken ct = default)
     {
+        PipelineDrainTimeout.ThrowIfInvalid(timeout);
         var started = _clock.GetTimestamp();
         RequestDrain();
         var runTask = _runTask ?? throw new InvalidOperationException("Pipeline run has not started.");
@@ -2116,19 +2119,25 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
     }
 
-    private CircuitBreaker? GetOrCreateBreaker(ITypedPipelineStage stage)
-    {
-        lock (_breakersGate)
-        {
-            if (!_breakers.TryGetValue(stage.StageId, out var breaker))
-            {
-                breaker = CreateBreaker(stage);
-                if (breaker is not null)
-                    _breakers[stage.StageId] = breaker;
-            }
+    private CircuitBreaker? GetBreaker(ITypedPipelineStage stage) =>
+        _breakers.Count != 0 && _breakers.TryGetValue(stage.StageId, out var breaker)
+            ? breaker
+            : null;
 
-            return breaker;
+    private Dictionary<string, CircuitBreaker> CreateBreakers()
+    {
+        var breakers = new Dictionary<string, CircuitBreaker>(StringComparer.Ordinal);
+        foreach (var stage in _spec.Stages)
+        {
+            if (breakers.ContainsKey(stage.StageId))
+                continue;
+
+            var breaker = CreateBreaker(stage);
+            if (breaker is not null)
+                breakers.Add(stage.StageId, breaker);
         }
+
+        return breakers;
     }
 
     private CircuitBreaker? CreateBreaker(ITypedPipelineStage stage)
