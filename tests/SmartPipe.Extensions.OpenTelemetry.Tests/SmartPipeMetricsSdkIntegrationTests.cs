@@ -192,6 +192,42 @@ public class SmartPipeMetricsSdkIntegrationTests
         }
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(10)]
+    [InlineData(100)]
+    public async Task StablePipelineIds_ProduceExactlyOneSeriesPerId(int pipelineCount)
+    {
+        var exported = new List<MetricSnapshot>();
+        var services = new ServiceCollection();
+        services.AddOpenTelemetry()
+            .WithMetrics(builder => builder.AddInMemoryExporter(exported))
+            .AddSmartPipeInstrumentation();
+
+        using var provider = services.BuildServiceProvider();
+        using var meterProvider = provider.GetRequiredService<MeterProvider>();
+        var prefix = $"cardinality-{pipelineCount}-";
+
+        for (var round = 0; round < 2; round++)
+        {
+            for (var index = 0; index < pipelineCount; index++)
+            {
+                await using var run = await SdkPipelineFixtures.StartDefinitionAsync(
+                    $"{prefix}{index:D3}", 1, TestContext.Current.CancellationToken);
+                await run.Completion;
+            }
+        }
+
+        meterProvider.ForceFlush();
+
+        var processed = exported.Single(snapshot => snapshot.Name == "smartpipe.items.processed");
+        var series = processed.MetricPoints
+            .Where(point => PipelineIdOf(point)?.StartsWith(prefix, StringComparison.Ordinal) == true)
+            .ToArray();
+        series.Should().HaveCount(pipelineCount);
+        series.Should().OnlyContain(point => point.GetSumLong() == 2);
+    }
+
     private static string? PipelineIdOf(MetricPoint point)
     {
         foreach (var tag in point.Tags)
