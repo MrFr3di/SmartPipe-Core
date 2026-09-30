@@ -102,6 +102,66 @@ public sealed class CsvStrictSinkTests
     }
 
     [Fact]
+    public async Task FileSink_EncodesMultiChunkRecordsWithSplitSurrogatesAcrossWrites()
+    {
+        var path = CreatePath();
+        // 4095 ASCII characters followed by a surrogate pair straddle the writer's 4 KiB chunk boundary.
+        var longName = new string('a', 4095) + "\U0001F600" + new string('b', 5000);
+        try
+        {
+            var sink = await ActivateSinkAsync(
+                CsvPipelineComponents.FileSink<Person>(
+                    path,
+                    new CsvSinkOptions { Encoding = new UTF8Encoding(false, true) }));
+            await sink.InitializeAsync();
+            await sink.WriteAsync(ProcessingEnvelope<Person>.Create(new Person { Name = longName, Age = 1 }));
+            await sink.WriteAsync(ProcessingEnvelope<Person>.Create(new Person { Name = "Bob", Age = 2 }));
+            await sink.WriteAsync(ProcessingEnvelope<Person>.Create(new Person { Name = "\u00e9t\u00e9", Age = 3 }));
+            await sink.DisposeAsync();
+
+            Assert.Equal(
+                new UTF8Encoding(false).GetBytes($"Name,Age\r\n{longName},1\r\nBob,2\r\n\u00e9t\u00e9,3\r\n"),
+                await File.ReadAllBytesAsync(path));
+        }
+        finally
+        {
+            DeleteIfPresent(path);
+        }
+    }
+
+    [Fact]
+    public async Task FileSink_UnencodableRecordIsRejectedWithoutPublishingBytes()
+    {
+        var path = CreatePath();
+        try
+        {
+            var sink = await ActivateSinkAsync(
+                CsvPipelineComponents.FileSink<Person>(
+                    path,
+                    new CsvSinkOptions
+                    {
+                        Encoding = Encoding.GetEncoding(
+                            "us-ascii",
+                            EncoderFallback.ExceptionFallback,
+                            DecoderFallback.ExceptionFallback),
+                    }));
+            await sink.InitializeAsync();
+
+            await Assert.ThrowsAsync<InvalidDataException>(async () =>
+                await sink.WriteAsync(ProcessingEnvelope<Person>.Create(
+                    new Person { Name = "\u00e9", Age = 1 })));
+            await sink.WriteAsync(ProcessingEnvelope<Person>.Create(new Person { Name = "Bob", Age = 2 }));
+            await sink.DisposeAsync();
+
+            Assert.Equal("Name,Age\r\nBob,2\r\n", await File.ReadAllTextAsync(path));
+        }
+        finally
+        {
+            DeleteIfPresent(path);
+        }
+    }
+
+    [Fact]
     public async Task FileSink_OversizeRecordDoesNotPublishPartialBytes()
     {
         var path = CreatePath();
