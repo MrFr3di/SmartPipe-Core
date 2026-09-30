@@ -40,12 +40,15 @@ internal sealed class SmartPipeReadinessPolicy :
                 observation,
                 "readiness",
                 problemRuns,
-                options.MaximumReportedProblemRuns));
+                options.MaximumReportedProblemRuns,
+                live.Count == 0 ? finishing : null));
     }
 
     // A run that reached a terminal state stays registered until its cleanup publishes the terminal
     // observation. Report it as that terminal outcome so a finishing batch run does not briefly
-    // report a "non-running state" failure.
+    // report a "non-running state" failure. Run snapshots carry no completion order, so when several
+    // runs are finishing at once the most severe outcome wins until the published latest terminal
+    // takes over.
     private static SmartPipeRunObservationOutcome? PartitionActiveRuns(
         IReadOnlyList<SmartPipeRunSnapshot> activeRuns,
         out List<SmartPipeRunSnapshot> live)
@@ -55,7 +58,7 @@ internal sealed class SmartPipeReadinessPolicy :
         foreach (var run in activeRuns)
         {
             if (ToTerminalOutcome(run.State) is { } outcome)
-                finishing = outcome;
+                finishing = finishing is { } current && Severity(current) >= Severity(outcome) ? current : outcome;
             else
                 live.Add(run);
         }
@@ -109,6 +112,14 @@ internal sealed class SmartPipeReadinessPolicy :
                     : (hardFailureStatus, "successful completion required"),
             _ => throw new InvalidOperationException("Readiness run requirement is invalid."),
         };
+
+    private static int Severity(SmartPipeRunObservationOutcome outcome) => outcome switch
+    {
+        SmartPipeRunObservationOutcome.Completed => 0,
+        SmartPipeRunObservationOutcome.Cancelled => 1,
+        SmartPipeRunObservationOutcome.Aborted => 2,
+        _ => 3,
+    };
 
     private static SmartPipeRunObservationOutcome? ToTerminalOutcome(PipelineRunState state) => state switch
     {

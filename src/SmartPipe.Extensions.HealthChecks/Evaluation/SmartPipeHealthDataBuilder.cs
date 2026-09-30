@@ -9,7 +9,8 @@ internal static class SmartPipeHealthDataBuilder
         SmartPipePipelineObservation observation,
         string kind,
         int problemRunCount,
-        int maximumReportedProblemRuns)
+        int maximumReportedProblemRuns,
+        SmartPipeRunObservationOutcome? finishingOutcome = null)
     {
         ArgumentNullException.ThrowIfNull(observation);
         var active = observation.ActiveRuns;
@@ -22,6 +23,11 @@ internal static class SmartPipeHealthDataBuilder
             ["smartpipe.problem_runs_reported"] = Math.Min(problemRunCount, maximumReportedProblemRuns),
             ["smartpipe.problem_runs_truncated"] = problemRunCount > maximumReportedProblemRuns,
         };
+
+        // Present only when readiness was decided by runs that finished but have not yet published
+        // their terminal observation, so the payload explains a status that differs from latest_outcome.
+        if (finishingOutcome is { } finishing)
+            data["smartpipe.finishing_outcome"] = finishing.ToString();
 
         if (observation.LatestTerminal is { } terminal)
         {
