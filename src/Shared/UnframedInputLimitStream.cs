@@ -18,6 +18,7 @@ internal sealed class UnframedInputLimitStream : Stream
     private readonly Stream _inner;
     private readonly long _maximumBytes;
     private readonly long _initialPosition;
+    private readonly long _initialBytesRead;
     private readonly Func<long, Exception>? _limitExceededFactory;
     private long _bytesRead;
     private bool _limitExceeded;
@@ -25,14 +26,16 @@ internal sealed class UnframedInputLimitStream : Stream
     public UnframedInputLimitStream(
         Stream inner,
         long maximumBytes,
-        Func<long, Exception>? limitExceededFactory = null)
+        Func<long, Exception>? limitExceededFactory = null,
+        bool countInitialPosition = true)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumBytes);
         _maximumBytes = maximumBytes;
         _limitExceededFactory = limitExceededFactory;
         _initialPosition = inner.CanSeek ? inner.Position : 0;
-        _bytesRead = _initialPosition;
+        _initialBytesRead = countInitialPosition ? _initialPosition : 0;
+        _bytesRead = _initialBytesRead;
         _limitExceeded = _bytesRead > _maximumBytes;
     }
 
@@ -152,7 +155,7 @@ internal sealed class UnframedInputLimitStream : Stream
         if (position != _initialPosition)
             return;
 
-        _bytesRead = _initialPosition;
+        _bytesRead = _initialBytesRead;
         _limitExceeded = _bytesRead > _maximumBytes;
     }
 

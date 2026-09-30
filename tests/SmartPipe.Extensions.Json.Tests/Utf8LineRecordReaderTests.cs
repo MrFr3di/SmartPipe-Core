@@ -93,7 +93,7 @@ public sealed class Utf8LineRecordReaderTests
         await using var stream = new MemoryStream("123456789\nnext\n"u8.ToArray());
         var records = await ReadAllAsync(stream, 4);
         Assert.True(records[0].TooLarge);
-        Assert.Equal("1234"u8.ToArray(), records[0].Bytes);
+        Assert.Empty(records[0].Bytes);
         Assert.False(records[1].TooLarge);
         Assert.Equal("next"u8.ToArray(), records[1].Bytes);
     }
@@ -131,6 +131,23 @@ public sealed class Utf8LineRecordReaderTests
         Assert.Equal("\"first\""u8.ToArray(), records[0].Bytes);
         Assert.Equal("\"second\""u8.ToArray(), records[1].Bytes);
         Assert.All(records, static record => Assert.False(record.TooLarge));
+    }
+
+    [Fact]
+    public async Task ReturnedArray_IsOwnedAfterAdvancingAndDisposingIterator()
+    {
+        using var stream = new OneByteReadStream("  first  \nsecond-longer\n"u8.ToArray());
+        byte[] first;
+        await using (var values = Utf8LineRecordReader.ReadAsync(stream, 32, default).GetAsyncEnumerator())
+        {
+            Assert.True(await values.MoveNextAsync());
+            first = values.Current.Bytes;
+            Assert.True(await values.MoveNextAsync());
+            Assert.NotSame(first, values.Current.Bytes);
+            Assert.Equal("second-longer"u8.ToArray(), values.Current.Bytes);
+            Assert.False(await values.MoveNextAsync());
+        }
+        Assert.Equal("first"u8.ToArray(), first);
     }
 
     private static async Task<List<Utf8LineRecord>> ReadAllAsync(Stream stream, int maxRecordSizeBytes)

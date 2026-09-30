@@ -108,6 +108,18 @@ public sealed class JsonUnframedInputLimitStreamTests
         Assert.Equal(5, stream.Read(new byte[5], 0, 5));
     }
 
+    [Fact]
+    public void PositionedFileStream_CountsProbedPrefixAndRewindResetsToAbsoluteBudget()
+    {
+        using var inner = new MemoryStream("12345"u8.ToArray()) { Position = 2 };
+        using var stream = JsonUnframedInputLimit.Create(inner, 4, "probe.json");
+        Assert.Equal(2, stream.Read(new byte[2], 0, 2));
+        Assert.Throws<JsonException>(() => stream.ReadByte());
+        stream.Position = 2;
+        Assert.Equal(2, stream.Read(new byte[2], 0, 2));
+        Assert.Throws<JsonException>(() => stream.ReadByte());
+    }
+
     private static void AssertLimitException(JsonException exception, string path, long limit)
     {
         Assert.Contains(path, exception.Message, StringComparison.Ordinal);

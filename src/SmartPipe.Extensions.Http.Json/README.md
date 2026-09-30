@@ -31,19 +31,20 @@ configured `MaxDepth`, freezes the copy, and captures a private `JsonTypeInfo<T>
 Runs use that snapshot directly. Your metadata is never changed, and later
 changes to your options do not affect a composed reader.
 
-A composed reader checks its `HttpResponseMessage` argument and body content
-when it is invoked, before enumeration starts. A null response or a response
-without content fails at that call rather than on the first `MoveNextAsync`.
+A composed reader rejects a null `HttpResponseMessage` when it is invoked,
+before enumeration starts. An empty body fails array JSON validation during
+enumeration; an empty NDJSON body produces an empty sequence. Leading array
+comments follow the frozen metadata's `ReadCommentHandling` option.
 
 ## Limits and policies
 
 | Option | Default | Contract |
 |---|---|---|
 | `MaxDepth` | 64 | JSON nesting limit applied to the frozen metadata. |
-| `MaxUnframedBytes` | 256 MiB | Total raw body bytes. Counted while reading. Each read asks for at most the remaining budget plus one sentinel byte. |
+| `MaxUnframedBytes` | 256 MiB | Total raw body bytes from the stream position at invocation. Counted while reading. Each read asks for at most the remaining budget plus one sentinel byte. |
 | `MaxRecordSizeBytes` (NDJSON) | 16 MiB | Maximum encoded size of one line, and so of the memory buffered for it. Must fit a managed byte array. |
 | `NullItemPolicy` | `Throw` | `Skip` drops a JSON `null` item at a complete item boundary. |
-| `OversizeRecordPolicy` (NDJSON) | `Throw` | `Skip` drains the oversized line in bounded memory and continues at the next line. The total-body limit still applies. |
+| `OversizeRecordPolicy` (NDJSON) | `Throw` | `Throw` stops once nonblank oversize content is known; `Skip` drains the oversized line in bounded memory and continues at the next line. The total-body limit still applies. |
 
 Exceeding `MaxUnframedBytes` raises a `JsonException`. So does invalid array or
 record JSON, which ends the stream. A root array has only the total-body bound,

@@ -54,7 +54,7 @@ public static class HttpJsonResponseReaders
     private static HttpContent GetContent(HttpResponseMessage response)
     {
         ArgumentNullException.ThrowIfNull(response);
-        return response.Content ?? throw new InvalidOperationException("The HTTP response has no body content.");
+        return response.Content;
     }
 
     private static async IAsyncEnumerable<T> ReadArrayAsync<T>(
@@ -64,8 +64,8 @@ public static class HttpJsonResponseReaders
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var body = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var limitedBody = new UnframedInputLimitStream(body, options.MaxUnframedBytes, CreateLimitException);
-        using var arrayBody = new HttpJsonArrayReadStream(limitedBody);
+        using var limitedBody = new UnframedInputLimitStream(body, options.MaxUnframedBytes, CreateLimitException, countInitialPosition: false);
+        using var arrayBody = new HttpJsonArrayReadStream(limitedBody, itemTypeInfo.Options.ReadCommentHandling);
 
         await foreach (var item in JsonSerializer.DeserializeAsyncEnumerable(
             arrayBody,
@@ -86,17 +86,18 @@ public static class HttpJsonResponseReaders
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var body = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var limitedBody = new UnframedInputLimitStream(body, options.MaxUnframedBytes, CreateLimitException);
+        using var limitedBody = new UnframedInputLimitStream(body, options.MaxUnframedBytes, CreateLimitException, countInitialPosition: false);
 
         await foreach (var record in Utf8LineRecordReader.ReadAsync(
             limitedBody,
             options.MaxRecordSizeBytes,
-            cancellationToken).ConfigureAwait(false))
+            cancellationToken,
+            options.OversizeRecordPolicy == HttpJsonOversizeRecordPolicy.Throw ? CreateRecordLimitException : null).ConfigureAwait(false))
         {
             if (record.TooLarge)
             {
                 if (options.OversizeRecordPolicy == HttpJsonOversizeRecordPolicy.Throw)
-                    throw new JsonException("An HTTP NDJSON record exceeds the configured record-size limit.");
+                    throw CreateRecordLimitException();
                 continue;
             }
 
@@ -118,6 +119,9 @@ public static class HttpJsonResponseReaders
             throw new JsonException(message);
         return true;
     }
+
+    private static JsonException CreateRecordLimitException() =>
+        new("An HTTP NDJSON record exceeds the configured record-size limit.");
 
     private static JsonException CreateLimitException(long maximumBytes) =>
         new($"The HTTP JSON response body exceeds the configured {maximumBytes}-byte limit.");

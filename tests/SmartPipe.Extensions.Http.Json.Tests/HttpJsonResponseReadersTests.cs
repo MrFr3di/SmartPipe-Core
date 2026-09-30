@@ -2,6 +2,7 @@ using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using SmartPipe.Extensions.Http.Json;
 
 namespace SmartPipe.Extensions.Http.Json.Tests;
@@ -42,6 +43,103 @@ public sealed class HttpJsonResponseReadersTests
         var reader = HttpJsonResponseReaders.JsonArray(TestJsonContext.Default.Int32);
 
         Assert.Equal([1, 2], await ReadAllAsync(reader, response));
+    }
+
+    [Theory]
+    [InlineData("/*leading*/ [1,2]")]
+    [InlineData("//leading\n[1,2]")]
+    [InlineData("\uFEFF/* one */ //two\r\n /* split **/ [1,2]")]
+    public async Task JsonArray_AcceptsLeadingCommentsWithFrozenSkipOptions(string json)
+    {
+        var options = new JsonSerializerOptions { ReadCommentHandling = JsonCommentHandling.Skip, TypeInfoResolver = TestJsonContext.Default };
+        var reader = HttpJsonResponseReaders.JsonArray((JsonTypeInfo<int>)options.GetTypeInfo(typeof(int)));
+        options.ReadCommentHandling = JsonCommentHandling.Disallow;
+        foreach (var chunkSize in new[] { 1, 2, 8192 })
+        {
+            using var response = Response(new RecordingStream(Encoding.UTF8.GetBytes(json), chunkSize));
+            Assert.Equal([1, 2], await ReadAllAsync(reader, response));
+        }
+    }
+
+    [Theory]
+    [InlineData("/*leading*/ null")]
+    [InlineData("//leading\nnull")]
+    [InlineData("/*unterminated [1]")]
+    [InlineData("/ [1]")]
+    public async Task JsonArray_RejectsInvalidRootOrCommentWithSkipOptions(string json)
+    {
+        var context = new TestJsonContext(new JsonSerializerOptions { ReadCommentHandling = JsonCommentHandling.Skip });
+        using var response = Response(new RecordingStream(Encoding.UTF8.GetBytes(json), 1));
+        await Assert.ThrowsAsync<JsonException>(() => DrainAsync(HttpJsonResponseReaders.JsonArray(context.Int32), response));
+    }
+
+    [Theory]
+    [InlineData("/*leading*/ [1]")]
+    [InlineData("//leading\n[1]")]
+    public async Task JsonArray_DefaultOptionsRejectLeadingComments(string json)
+    {
+        using var response = Response(json);
+        await Assert.ThrowsAsync<JsonException>(() => DrainAsync(HttpJsonResponseReaders.JsonArray(TestJsonContext.Default.Int32), response));
+    }
+
+    [Theory]
+    [InlineData(false, "[1]", 3)]
+    [InlineData(true, "1\n", 2)]
+    public async Task Readers_CountOnlyRemainingPositionedBodyBytes(bool ndjson, string body, int budget)
+    {
+        var reader = ndjson
+            ? HttpJsonResponseReaders.Ndjson(TestJsonContext.Default.Int32, new HttpNdjsonOptions { MaxUnframedBytes = budget })
+            : HttpJsonResponseReaders.JsonArray(TestJsonContext.Default.Int32, new HttpJsonArrayOptions { MaxUnframedBytes = budget });
+        foreach (var suffix in new[] { "", " " })
+        {
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes("prefix" + body + suffix)) { Position = 6 };
+            using var response = Response(stream);
+            Assert.Equal(budget + suffix.Length, response.Content.Headers.ContentLength);
+            if (suffix.Length == 0)
+                Assert.Equal([1], await ReadAllAsync(reader, response));
+            else
+                Assert.Contains($"{budget}-byte limit", (await Assert.ThrowsAsync<JsonException>(() => DrainAsync(reader, response))).Message);
+        }
+    }
+
+    [Fact]
+    public async Task Readers_EmptyContentHasArrayErrorAndEmptyNdjsonSequence()
+    {
+        using var response = new HttpResponseMessage(HttpStatusCode.OK);
+        var array = HttpJsonResponseReaders.JsonArray(TestJsonContext.Default.Int32)(response, default);
+        await Assert.ThrowsAsync<JsonException>(async () => { await foreach (var _ in array) { } });
+        Assert.Empty(await ReadAllAsync(HttpJsonResponseReaders.Ndjson(TestJsonContext.Default.Int32), response));
+    }
+
+    [Fact]
+    public async Task Ndjson_ThrowRejectsKnownNonblankOversizeBeforeWaitingForLf()
+    {
+        var stream = new PrefixThenBlockingStream("12345"u8.ToArray());
+        using var response = Response(stream);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        var reader = HttpJsonResponseReaders.Ndjson(TestJsonContext.Default.Int32,
+            new HttpNdjsonOptions { MaxRecordSizeBytes = 4 });
+        await using var values = reader(response, cancellation.Token).GetAsyncEnumerator(cancellation.Token);
+        await Assert.ThrowsAsync<JsonException>(() => values.MoveNextAsync().AsTask());
+        Assert.False(stream.DiscardReadStarted.Task.IsCompleted);
+    }
+
+    [Theory]
+    [InlineData("     ")]
+    [InlineData("\uFEFF     ")]
+    public async Task Ndjson_ThrowWaitsForNonblankContentBeforeRejectingOversize(string prefix)
+    {
+        var stream = new ChunkGateStream(Encoding.UTF8.GetBytes(prefix), "\n1\n"u8.ToArray());
+        using var response = Response(stream);
+        var reader = HttpJsonResponseReaders.Ndjson(TestJsonContext.Default.Int32,
+            new HttpNdjsonOptions { MaxRecordSizeBytes = 3 });
+        await using var values = reader(response, default).GetAsyncEnumerator();
+        var move = values.MoveNextAsync().AsTask();
+        Assert.False(move.IsCompleted);
+        stream.ReleaseSecondChunk();
+        Assert.True(await move.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(1, values.Current);
+        Assert.False(await values.MoveNextAsync());
     }
 
     [Fact]
