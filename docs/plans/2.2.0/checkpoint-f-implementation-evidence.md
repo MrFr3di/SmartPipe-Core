@@ -13,7 +13,7 @@ Local verification: 2026-09-30, SDK 10.0.303 / runtime 10.0.11, Linux x64.
 - PostgreSQL channel duplicate detection uses an ordinal HashSet after complete blank validation. Ordering, defensive copy, case sensitivity and exception precedence remain unchanged.
 - Package consumers use two bounded workers by default and a NativeAOT limit of one, preserving manifest result order. Failure cancels and drains workers before rethrowing the initiating exception. `--max-parallelism 1` supports serial execution.
 - PostgreSQL consumers download the package producer's immutable artifact ID from the same workflow run. The validator checks schema/mode, graph inventory/order, exact version, safe paths, symlinks, SHA-256, nuspec identity and extra archives before consumption or publishing credentials.
-- Release publication depends on PostgreSQL 18.6/17.11 validation and seven PostgreSQL consumers using that artifact. PR integration lanes keep their existing names and run independently. Windows JSON/baseline jobs restore their own project closures.
+- Release publication depends on PostgreSQL 18.6/17.11 validation and seven PostgreSQL consumers using that artifact. PR integration lanes keep their existing names and run independently. Windows JSON uses a targeted restore. The baseline lane retains a full solution locked restore because its lock-file suite verifies repository-wide project.assets.json evidence.
 
 ## Verification
 
@@ -25,7 +25,7 @@ Local verification: 2026-09-30, SDK 10.0.303 / runtime 10.0.11, Linux x64.
 | HTTP / HTTP.Json / Json test projects | 39 / 38 / 255 passed |
 | Polly test project | 53 passed |
 | PostgreSQL Unit namespace | 167 passed |
-| RepositoryChecks: CommandLineParser / ConsumerScenarioRunner / ConsumerScenarioScheduler classes | 54 / 39 / 4 passed |
+| RepositoryChecks: CommandLineParser / ConsumerScenarioRunner / ConsumerScenarioScheduler / LockFilePolicy classes | 54 / 39 / 4 / 5 passed |
 | Workflow contracts, including RED mutation checks | Passed |
 | PowerShell package artifact fixtures | Passed: valid, missing/tampered archive, wrong version, path escape/absolute path, duplicate ID, missing graph package, extra archive, wrong nuspec version with updated hash, symlink |
 | BenchmarkDotNet Dry smoke | All 15 framing cases executed |
@@ -83,3 +83,7 @@ One prior-candidate baseline is available: [CI run 36676656439](https://github.c
 - Obtain three comparable CI runs and stable BenchmarkDotNet before/after runs for performance conclusions beyond the measured allocation/scaling changes.
 - Confirm required-check configuration before merge. No branch protection changes were made.
 - SP220-18 final release validation remains unchecked: the release tag's exact artifacts and publication authorization are separate gates.
+
+## First candidate CI feedback
+
+[Run 36706227929](https://github.com/MrFr3di/SmartPipe-Core/actions/runs/36706227929), head `65f3e82`, passed both PostgreSQL integration versions and Windows JSON. Windows baseline ran 625 tests: 624 passed; `RepositoryLockFiles_AreCompleteAndReconciled` failed because the narrowed restore omitted assets evidence for unrelated projects. The follow-up restores the full solution in that lane and adds a rejecting workflow mutation. Targeted JSON restore and PostgreSQL artifact reuse remain. These first-candidate results do not replace the follow-up's exact-head CI evidence.

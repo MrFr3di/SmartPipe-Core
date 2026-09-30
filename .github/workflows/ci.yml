@@ -240,7 +240,7 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
 
       - name: Restore locked
-        run: dotnet restore tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true
+        run: dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true
 
       - name: Build repository checks
         run: dotnet build tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj --configuration Release --no-restore -warnaserror

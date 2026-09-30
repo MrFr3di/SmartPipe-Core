@@ -1391,8 +1391,8 @@ def validate(documents: dict[str, dict]) -> None:
             and checkout.get("with", {}).get("persist-credentials") is False,
             "Windows baseline contract checkout must pin SHA and disable credentials.")
     baseline_runs = runs(baseline_windows_steps)
-    require("dotnet restore tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true" in baseline_runs,
-            "Windows baseline contract lane must disable the SDK library-packs source during locked restore.")
+    require("dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true" in baseline_runs,
+            "Windows baseline contract lane must restore the whole solution for repository-wide lock-file evidence.")
     build = named_step(baseline_windows_steps, "Build repository checks")
     require("-warnaserror" in str(build.get("run", "")),
             "Windows baseline contract build must treat warnings as errors.")
@@ -1791,6 +1791,13 @@ def _make_windows_offline_network_capable(documents: dict[str, dict]) -> None:
     step = named_step(job["steps"], "Verify 2.1.2 baseline offline")
     step["shell"] = "pwsh"
     step["run"] += f"\n{NATIVE_FAIL_FAST_GUARD}\nInvoke-WebRequest https://example.test"
+
+
+def _narrow_windows_baseline_restore(documents: dict[str, dict]) -> None:
+    job = documents["ci.yml"]["jobs"]["baseline-contract-windows"]
+    step = named_step(job["steps"], "Restore locked")
+    step["run"] = str(step["run"]).replace(
+        "SmartPipe.Core.slnx", "tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj")
 
 
 def _remove_repository_test_minimum(documents: dict[str, dict]) -> None:
@@ -2386,6 +2393,11 @@ def main() -> int:
         lambda docs: docs["ci.yml"]["jobs"]["baseline-contract-windows"].__setitem__(
             "runs-on", "ubuntu-latest"),
         "Windows baseline contract lane must use the event-aware runner expression",
+    )
+    assert_mutation_rejected(
+        documents,
+        _narrow_windows_baseline_restore,
+        "repository-wide lock-file evidence",
     )
     assert_mutation_rejected(
         documents,
