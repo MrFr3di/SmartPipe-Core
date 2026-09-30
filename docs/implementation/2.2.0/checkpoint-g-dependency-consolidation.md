@@ -109,3 +109,25 @@ substitutes for final-head validation.
 
 SP220-17/SP220-18 remain future acceptance work. Dependabot's default-branch
 target configuration is a separate follow-up.
+
+## CI-discovered PostgreSQL measurement correction
+
+The first follow-up head `894b6d11367e174d92f325aaa93b5caa4e2349de`
+failed the bounded-memory test on PostgreSQL 18.6 in the PR run and on 17.11
+in the Linux dispatch, while the opposite legs passed. Both failures sampled
+about 81 MB against the unchanged 40 MiB ceiling. `GC.GetTotalMemory(false)`
+counts transient dead row strings until the runtime happens to collect them;
+this is not evidence that the source retains the result set.
+
+The test now collects before each 5,000-row retained-heap sample. The isolated
+collection, heap ceiling, cumulative per-row budget, and early-break budget
+remain intact. A controlled no-GC probe measured discarded 50 MiB as 52,477,424
+bytes before collection and 48,592 afterward; retained 50 MiB remained
+52,483,240 bytes after collection. This distinguishes dead allocation from
+live buffering without raising the limit. The reader returns lengths rather
+than strings, so the comments now correctly identify early-break allocation
+as the eager-materialisation check.
+
+All 237 PostgreSQL tests passed with zero skips in five consecutive full runs
+against a local PostgreSQL 18.6 container after the correction. Fresh CI on
+both server versions and both validation runners remains the final gate.
