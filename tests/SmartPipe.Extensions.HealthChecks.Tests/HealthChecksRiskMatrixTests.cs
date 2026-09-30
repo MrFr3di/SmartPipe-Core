@@ -76,6 +76,46 @@ public sealed class HealthChecksRiskMatrixTests
         Assert.Equal(HealthStatus.Degraded, result.Status);
     }
 
+    [Theory]
+    [InlineData(SmartPipeReadinessRunRequirement.ActiveOrSuccessfulCompletion, PipelineRunState.Completed, true)]
+    [InlineData(SmartPipeReadinessRunRequirement.ActiveOrSuccessfulCompletion, PipelineRunState.Faulted, false)]
+    [InlineData(SmartPipeReadinessRunRequirement.ActiveOrSuccessfulCompletion, PipelineRunState.Cancelled, false)]
+    [InlineData(SmartPipeReadinessRunRequirement.RegistrationOnly, PipelineRunState.Completed, true)]
+    [InlineData(SmartPipeReadinessRunRequirement.RegistrationOnly, PipelineRunState.Aborted, true)]
+    [InlineData(SmartPipeReadinessRunRequirement.RegistrationOnly, PipelineRunState.Faulted, false)]
+    [InlineData(SmartPipeReadinessRunRequirement.ActiveRunRequired, PipelineRunState.Completed, false)]
+    public void FinishingRunIsEvaluatedAsItsTerminalOutcomeBeforeCleanupPublishesIt(
+        SmartPipeReadinessRunRequirement requirement,
+        PipelineRunState finishingState,
+        bool healthy)
+    {
+        // Cleanup has not yet published the terminal observation, so the latest terminal is older.
+        var result = new SmartPipeReadinessPolicy().Evaluate(
+            Observation(
+                "orders",
+                [Run("orders", finishingState)],
+                Terminal("orders", SmartPipeRunObservationOutcome.Completed)),
+            Readiness(requirement),
+            DateTimeOffset.UnixEpoch,
+            HealthStatus.Unhealthy);
+
+        Assert.Equal(healthy ? HealthStatus.Healthy : HealthStatus.Unhealthy, result.Status);
+    }
+
+    [Fact]
+    public void FinishingRunIsIgnoredWhileAnotherRunIsLive()
+    {
+        var result = new SmartPipeReadinessPolicy().Evaluate(
+            Observation(
+                "orders",
+                [Run("orders", PipelineRunState.Faulted), Run("orders", PipelineRunState.Running)]),
+            Readiness(),
+            DateTimeOffset.UnixEpoch,
+            HealthStatus.Unhealthy);
+
+        Assert.Equal(HealthStatus.Healthy, result.Status);
+    }
+
     [Fact]
     public void LivenessIgnoresQueueAndStaleSignalsForRunningRun()
     {

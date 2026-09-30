@@ -14,18 +14,34 @@ internal sealed class SmartPipeReadinessPolicy :
         HealthStatus hardFailureStatus)
     {
         SmartPipeHealthObservationValidation.Validate(observation);
-        var active = observation.ActiveRuns;
         var status = HealthStatus.Healthy;
         var problemRuns = 0;
         string? problemRule = null;
-        if (active.Count == 0)
+
+        // A run that reached a terminal state stays registered until its cleanup publishes the terminal
+        // observation. Treat it as that terminal outcome so a finishing batch run does not briefly
+        // report a "non-running state" failure.
+        var live = new List<SmartPipeRunSnapshot>(observation.ActiveRuns.Count);
+        SmartPipeRunObservationOutcome? finishing = null;
+        foreach (var run in observation.ActiveRuns)
         {
-            (status, problemRule) = EvaluateAbsentRun(observation.LatestTerminal, options, hardFailureStatus);
+            if (ToTerminalOutcome(run.State) is { } outcome)
+                finishing = outcome;
+            else
+                live.Add(run);
+        }
+
+        if (live.Count == 0)
+        {
+            (status, problemRule) = EvaluateAbsentRun(
+                finishing ?? observation.LatestTerminal?.Outcome,
+                options,
+                hardFailureStatus);
             problemRuns = status == HealthStatus.Healthy ? 0 : 1;
         }
         else
         {
-            foreach (var run in active)
+            foreach (var run in live)
             {
                 var (runStatus, runRule) = EvaluateRun(run, options, nowUtc, hardFailureStatus);
                 if (runStatus != HealthStatus.Healthy
@@ -53,23 +69,32 @@ internal sealed class SmartPipeReadinessPolicy :
     }
 
     private static (HealthStatus Status, string? Rule) EvaluateAbsentRun(
-        SmartPipeTerminalRunObservation? terminal,
+        SmartPipeRunObservationOutcome? latestOutcome,
         SmartPipeReadinessOptionsSnapshot options,
         HealthStatus hardFailureStatus) => options.RunRequirement switch
         {
             SmartPipeReadinessRunRequirement.RegistrationOnly =>
                 options.FailOnLatestFailure
-                    && terminal?.Outcome is SmartPipeRunObservationOutcome.Faulted
+                    && latestOutcome is SmartPipeRunObservationOutcome.Faulted
                         or SmartPipeRunObservationOutcome.ActivationFailed
                     ? (hardFailureStatus, "latest failure")
                     : (HealthStatus.Healthy, null),
             SmartPipeReadinessRunRequirement.ActiveRunRequired => (hardFailureStatus, "active run required"),
             SmartPipeReadinessRunRequirement.ActiveOrSuccessfulCompletion =>
-                terminal?.Outcome == SmartPipeRunObservationOutcome.Completed
+                latestOutcome == SmartPipeRunObservationOutcome.Completed
                     ? (HealthStatus.Healthy, null)
                     : (hardFailureStatus, "successful completion required"),
             _ => throw new InvalidOperationException("Readiness run requirement is invalid."),
         };
+
+    private static SmartPipeRunObservationOutcome? ToTerminalOutcome(PipelineRunState state) => state switch
+    {
+        PipelineRunState.Completed => SmartPipeRunObservationOutcome.Completed,
+        PipelineRunState.Cancelled => SmartPipeRunObservationOutcome.Cancelled,
+        PipelineRunState.Aborted => SmartPipeRunObservationOutcome.Aborted,
+        PipelineRunState.Faulted => SmartPipeRunObservationOutcome.Faulted,
+        _ => null,
+    };
 
     private static (HealthStatus Status, string? Rule) EvaluateRun(
         SmartPipeRunSnapshot run,
