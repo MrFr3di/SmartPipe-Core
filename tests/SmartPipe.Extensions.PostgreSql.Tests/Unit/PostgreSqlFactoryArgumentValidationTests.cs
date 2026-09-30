@@ -17,6 +17,28 @@ public sealed class PostgreSqlFactoryArgumentValidationTests
     }
 
     [Fact]
+    public void BinaryCopySource_Multiplexing_IsRejectedBeforeProviderWork()
+    {
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(
+            PostgreSqlUnitTestSupport.UnreachableConnectionString + ";Multiplexing=true");
+        var originalSettings = dataSource.ConnectionString;
+
+        var error = Assert.Throws<ArgumentException>(() =>
+            PostgreSqlPipelineComponents.BinaryCopySource<int>(
+                dataSource,
+                PostgreSqlUnitTestSupport.CopyToCommand,
+                PostgreSqlUnitTestSupport.RowReader,
+                new PostgreSqlBinaryCopySourceOptions()));
+
+        Assert.Equal("dataSource", error.ParamName);
+        Assert.Contains("COPY", error.Message, StringComparison.Ordinal);
+        Assert.Contains("multiplexing", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(originalSettings, dataSource.ConnectionString);
+        using var connection = dataSource.CreateConnection();
+        Assert.Equal(System.Data.ConnectionState.Closed, connection.State);
+    }
+
+    [Fact]
     public void BinaryCopySource_NullCopyToCommand_IsRejected()
     {
         using var dataSource = PostgreSqlUnitTestSupport.CreateUnreachableDataSource();
@@ -95,6 +117,28 @@ public sealed class PostgreSqlFactoryArgumentValidationTests
     }
 
     [Fact]
+    public void BinaryCopyBatchSink_Multiplexing_IsRejectedBeforeProviderWork()
+    {
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(
+            PostgreSqlUnitTestSupport.UnreachableConnectionString + ";Multiplexing=true");
+        var originalSettings = dataSource.ConnectionString;
+
+        var error = Assert.Throws<ArgumentException>(() =>
+            PostgreSqlPipelineComponents.BinaryCopyBatchSink<int>(
+                dataSource,
+                PostgreSqlUnitTestSupport.CopyFromCommand,
+                PostgreSqlUnitTestSupport.RowWriter,
+                new PostgreSqlBinaryCopySinkOptions()));
+
+        Assert.Equal("dataSource", error.ParamName);
+        Assert.Contains("COPY", error.Message, StringComparison.Ordinal);
+        Assert.Contains("multiplexing", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(originalSettings, dataSource.ConnectionString);
+        using var connection = dataSource.CreateConnection();
+        Assert.Equal(System.Data.ConnectionState.Closed, connection.State);
+    }
+
+    [Fact]
     public void BinaryCopyBatchSink_NullCopyFromCommand_IsRejected()
     {
         using var dataSource = PostgreSqlUnitTestSupport.CreateUnreachableDataSource();
@@ -157,6 +201,54 @@ public sealed class PostgreSqlFactoryArgumentValidationTests
                 null!));
 
         Assert.Equal("options", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CopyFactories_DisposedMultiplexingDataSource_IsRejectedBeforeAnyOpen(bool sink)
+    {
+        var dataSource = Npgsql.NpgsqlDataSource.Create(
+            PostgreSqlUnitTestSupport.UnreachableConnectionString + ";Multiplexing=true");
+        dataSource.Dispose();
+
+        // A disposed data source traps a connection open; composition must instead report the configuration error.
+        var error = Assert.Throws<ArgumentException>(() => ComposeCopy(dataSource, sink));
+
+        Assert.Equal("dataSource", error.ParamName);
+        Assert.Contains("multiplexing", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CopyFactories_NonMultiplexingDataSource_IsAcceptedWithoutChangingBorrowedSettings(bool sink)
+    {
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(
+            PostgreSqlUnitTestSupport.UnreachableConnectionString + ";Multiplexing=false");
+        var originalSettings = dataSource.ConnectionString;
+
+        ComposeCopy(dataSource, sink);
+
+        Assert.Equal(originalSettings, dataSource.ConnectionString);
+        using var connection = dataSource.CreateConnection();
+        Assert.Equal(System.Data.ConnectionState.Closed, connection.State);
+    }
+
+    private static void ComposeCopy(Npgsql.NpgsqlDataSource dataSource, bool sink)
+    {
+        if (sink)
+            PostgreSqlPipelineComponents.BinaryCopyBatchSink<int>(
+                dataSource,
+                PostgreSqlUnitTestSupport.CopyFromCommand,
+                PostgreSqlUnitTestSupport.RowWriter,
+                new PostgreSqlBinaryCopySinkOptions());
+        else
+            PostgreSqlPipelineComponents.BinaryCopySource<int>(
+                dataSource,
+                PostgreSqlUnitTestSupport.CopyToCommand,
+                PostgreSqlUnitTestSupport.RowReader,
+                new PostgreSqlBinaryCopySourceOptions());
     }
 
     [Fact]
@@ -230,6 +322,30 @@ public sealed class PostgreSqlFactoryArgumentValidationTests
 
         Assert.StartsWith(Internal.PostgreSqlErrorMessages.ChannelDuplicate, exception.Message, StringComparison.Ordinal);
         Assert.Equal("channels", exception.ParamName);
+    }
+
+    [Fact]
+    public void NotificationSource_CaseSensitiveChannels_AreAccepted()
+    {
+        using var dataSource = PostgreSqlUnitTestSupport.CreateUnreachableDataSource();
+
+        var descriptor = PostgreSqlPipelineComponents.NotificationSource(
+            dataSource, ["events", "Events"], new PostgreSqlNotificationSourceOptions());
+
+        Assert.Equal(Core.PipelineComponentOwnership.RuntimeOwned, descriptor.Ownership);
+    }
+
+    [Fact]
+    public void NotificationSource_DuplicateBeforeBlank_ReportsBlankIndex()
+    {
+        using var dataSource = PostgreSqlUnitTestSupport.CreateUnreachableDataSource();
+
+        var error = Assert.Throws<ArgumentException>(() =>
+            PostgreSqlPipelineComponents.NotificationSource(
+                dataSource, ["events", "events", " "], new PostgreSqlNotificationSourceOptions()));
+
+        Assert.StartsWith(Internal.PostgreSqlErrorMessages.ChannelEntryBlank, error.Message, StringComparison.Ordinal);
+        Assert.Equal("channels[2]", error.ParamName);
     }
 
     [Fact]

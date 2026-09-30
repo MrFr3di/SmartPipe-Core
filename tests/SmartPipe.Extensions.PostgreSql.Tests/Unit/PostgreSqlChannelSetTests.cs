@@ -72,6 +72,42 @@ public sealed class PostgreSqlChannelSetTests
         Assert.Equal("channels[0]", exception.ParamName);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData(null)]
+    public void Create_DuplicateBeforeBlank_ReportsBlankIndex(string? blank)
+    {
+        var error = Assert.Throws<ArgumentException>(() =>
+            PostgreSqlChannelSet.Create(new[] { "events", "events", blank! }));
+
+        Assert.StartsWith(PostgreSqlErrorMessages.ChannelEntryBlank, error.Message, StringComparison.Ordinal);
+        Assert.Equal("channels[2]", error.ParamName);
+    }
+
+    [Fact]
+    public void Create_TenThousandChannels_PreservesOrderAndCopiesTheInputArray()
+    {
+        var channels = Enumerable.Range(0, 10_000).Select(i => $"events_{i}").ToArray();
+        var expected = channels.ToArray();
+
+        var set = PostgreSqlChannelSet.Create(channels);
+        Array.Fill(channels, "mutated");
+
+        Assert.Equal(expected, set.Channels);
+    }
+
+    [Fact]
+    public void Create_TenThousandChannelsWithDuplicateAtEnd_IsRejected()
+    {
+        var channels = Enumerable.Range(0, 10_000).Select(i => $"events_{i}").Append("events_9999").ToArray();
+
+        var error = Assert.Throws<ArgumentException>(() => PostgreSqlChannelSet.Create(channels));
+
+        Assert.StartsWith(PostgreSqlErrorMessages.ChannelDuplicate, error.Message, StringComparison.Ordinal);
+        Assert.Equal("channels", error.ParamName);
+    }
+
     [Fact]
     public void Create_ExactOrdinalDuplicate_IsRejected()
     {

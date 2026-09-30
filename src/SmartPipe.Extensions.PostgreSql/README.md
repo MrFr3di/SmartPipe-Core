@@ -16,11 +16,17 @@ SmartPipe.Extensions.PostgreSql
     └── NpgsqlDataSource        → application-owned provider boundary
 ```
 
-`LISTEN` requires an application-owned data source with `Multiplexing=false` (the Npgsql default).
-A multiplexing data source is rejected when the notification descriptor is composed, before any connection
-is opened or `LISTEN` is registered: Npgsql does not support `WaitAsync` in multiplexing mode.
-Use a separate non-multiplexing data source for notifications if other application work uses multiplexing.
-SmartPipe never changes the borrowed data source settings.
+Binary COPY sources, binary COPY batch sinks and `LISTEN` notification sources require an
+application-owned data source with `Multiplexing=false` (the Npgsql default). All three factories reject
+multiplexing when the descriptor is composed, before opening a connection or starting protocol work.
+Use a separate non-multiplexing data source for COPY and LISTEN if other application work uses multiplexing.
+SmartPipe never changes or disposes the borrowed data source.
+
+In the pinned Npgsql 10.0.3 provider, starting COPY on a multiplexing connection synchronously binds a
+physical connector with an infinite timeout and no cancellation token. If the pool is occupied, this
+binding can block despite caller cancellation or the configured connection timeout. The composition
+check prevents this configuration from reaching that provider path. Npgsql also does not support
+`WaitAsync` for LISTEN in multiplexing mode.
 
 ## What this package adds beyond Dapper and EF Core
 

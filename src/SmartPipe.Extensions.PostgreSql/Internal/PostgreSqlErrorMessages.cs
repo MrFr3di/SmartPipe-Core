@@ -12,6 +12,8 @@ internal static class PostgreSqlErrorMessages
     internal const string CopyCommandRequired = "COPY command is required.";
     internal const string CopyCommandBlank = "COPY command cannot be empty or whitespace.";
     internal const string DataSourceRequired = "An NpgsqlDataSource is required.";
+    internal const string CopyMultiplexingUnsupported =
+        "Binary COPY requires a non-multiplexing NpgsqlDataSource so connection acquisition can be cancelled.";
     internal const string NotificationMultiplexingUnsupported =
         "LISTEN requires a non-multiplexing NpgsqlDataSource with a dedicated connection.";
     internal const string RowReaderRequired = "A row reader callback is required.";

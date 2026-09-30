@@ -34,13 +34,12 @@ internal sealed class PostgreSqlChannelSet
             index++;
         }
 
-        for (var i = 0; i < copy.Length; i++)
+        // Validate every blank entry first to preserve error precedence over duplicates.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var channel in copy)
         {
-            for (var j = i + 1; j < copy.Length; j++)
-            {
-                if (string.Equals(copy[i], copy[j], StringComparison.Ordinal))
-                    throw new ArgumentException(PostgreSqlErrorMessages.ChannelDuplicate, nameof(channels));
-            }
+            if (!seen.Add(channel))
+                throw new ArgumentException(PostgreSqlErrorMessages.ChannelDuplicate, nameof(channels));
         }
 
         return new PostgreSqlChannelSet(copy);

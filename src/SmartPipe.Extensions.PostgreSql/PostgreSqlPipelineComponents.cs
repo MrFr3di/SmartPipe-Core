@@ -32,7 +32,7 @@ public static class PostgreSqlPipelineComponents
         PostgreSqlBinaryCopySourceOptions options,
         ILoggerFactory? loggerFactory = null)
     {
-        var validatedDataSource = PostgreSqlArguments.DataSource(dataSource);
+        var validatedDataSource = PostgreSqlArguments.NonMultiplexingDataSource(dataSource, PostgreSqlErrorMessages.CopyMultiplexingUnsupported);
         var validatedCommand = PostgreSqlArguments.CopyCommand(copyToCommand, nameof(copyToCommand));
         ArgumentNullException.ThrowIfNull(rowReader, nameof(rowReader));
         var snapshot = PostgreSqlBinaryCopySourceOptionsSnapshot.Create(options);
@@ -66,7 +66,7 @@ public static class PostgreSqlPipelineComponents
         PostgreSqlBinaryCopySinkOptions options,
         ILoggerFactory? loggerFactory = null)
     {
-        var validatedDataSource = PostgreSqlArguments.DataSource(dataSource);
+        var validatedDataSource = PostgreSqlArguments.NonMultiplexingDataSource(dataSource, PostgreSqlErrorMessages.CopyMultiplexingUnsupported);
         var validatedCommand = PostgreSqlArguments.CopyCommand(copyFromCommand, nameof(copyFromCommand));
         ArgumentNullException.ThrowIfNull(rowWriter, nameof(rowWriter));
         var snapshot = PostgreSqlBinaryCopySinkOptionsSnapshot.Create(options);
@@ -97,9 +97,7 @@ public static class PostgreSqlPipelineComponents
         PostgreSqlNotificationSourceOptions options,
         ILoggerFactory? loggerFactory = null)
     {
-        var validatedDataSource = PostgreSqlArguments.DataSource(dataSource);
-        if (new NpgsqlConnectionStringBuilder(validatedDataSource.ConnectionString).Multiplexing)
-            throw new ArgumentException(PostgreSqlErrorMessages.NotificationMultiplexingUnsupported, nameof(dataSource));
+        var validatedDataSource = PostgreSqlArguments.NonMultiplexingDataSource(dataSource, PostgreSqlErrorMessages.NotificationMultiplexingUnsupported);
         var channelSet = PostgreSqlChannelSet.Create(channels);
         var snapshot = PostgreSqlNotificationSourceOptionsSnapshot.Create(options);
 
