@@ -40,6 +40,7 @@ internal sealed class HostedPipelineController
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(descriptor);
+        ObserveCompletionFault(run);
         var errors = new HostedExceptionCollector();
 
         LogOperation(LogLevel.Warning, "Abort", descriptor, run);
@@ -77,6 +78,7 @@ internal sealed class HostedPipelineController
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(descriptor);
+        ObserveCompletionFault(run);
         var errors = new HostedExceptionCollector();
         var isTerminal = run.Completion.IsCompleted
             || run.State is PipelineRunState.Completed
@@ -201,12 +203,45 @@ internal sealed class HostedPipelineController
         }
     }
 
+    // The orchestrator's monitor normally observes run completion, but BackgroundService starts it
+    // with the stopping token, so a stop that arrives right after startup can cancel it before it
+    // runs. A run stopped here may also fault after StopAsync returned (abandoned disposal).
+    // Stop and rollback report their own errors; this only keeps a late completion fault from
+    // surfacing as an unobserved task exception.
+    private static void ObserveCompletionFault(IHostedPipelineRun run)
+    {
+        var completion = run.Completion;
+        if (completion.IsCompleted)
+        {
+            _ = completion.Exception;
+            return;
+        }
+
+        _ = completion.ContinueWith(
+            static task => _ = task.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
     private void ObserveAbandonedDispose(
         Task dispose,
         HostedPipelineDescriptor descriptor,
         IHostedPipelineRun run) =>
         _ = dispose.ContinueWith(
-            task => LogOperation(LogLevel.Error, "Dispose", descriptor, run, task.Exception),
+            task =>
+            {
+                // Best effort: the host may already have disposed its logging providers, and a
+                // failure here must not surface as an unobserved task exception.
+                try
+                {
+                    LogOperation(LogLevel.Error, "Dispose", descriptor, run, task.Exception);
+                }
+                catch (Exception)
+                {
+                    // Nothing else can observe an abandoned disposal once logging is gone.
+                }
+            },
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
