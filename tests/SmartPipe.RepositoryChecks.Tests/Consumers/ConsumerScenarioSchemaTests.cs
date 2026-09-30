@@ -77,82 +77,9 @@ public sealed class ConsumerScenarioSchemaTests
         var root = RepositoryRoot();
         var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
         var document = await new ConsumerScenarioLoader().LoadAsync(root, "eng/consumer-scenarios.json", graph, TestContext.Current.CancellationToken);
-        var expectedIds = new HashSet<string>(StringComparer.Ordinal)
-        {
-                "csv-direct",
-                "csv-di-composition",
-                "csv-facade-source",
-                "csv-facade-binary-2.1.2",
-                "csv-trim-diagnostic",
-                "core-direct",
-                "testing-direct",
-                "json-direct",
-                "extensions-meta",
-                "legacy-binary-2.1.2",
-                "core-trim",
-                "core-nativeaot",
-                "json-nativeaot",
-                "json-trim",
-                "json-dependency-injection-direct",
-                "dependency-injection-direct",
-                "dependency-injection-keyed",
-                "dependency-injection-from-keyed-services",
-                "dependency-injection-facade-source",
-                "dependency-injection-facade-binary-2.1.2",
-                "dependency-injection-trim",
-                "dependency-injection-nativeaot",
-                "hosting-direct",
-                "hosting-facade-source",
-                "hosting-facade-binary-2.1.2",
-                "hosting-trim",
-                "hosting-nativeaot",
-                "health-checks-direct",
-                "health-checks-aspnet",
-                "health-checks-trim",
-                "health-checks-nativeaot",
-                "opentelemetry-direct",
-                "opentelemetry-otlp",
-                "opentelemetry-facade",
-                "opentelemetry-trim",
-                "opentelemetry-nativeaot",
-                "channels-direct",
-                "transforms-direct",
-                "logging-direct",
-                "data-annotations-direct",
-                "data-annotations-runtime",
-                "dapper-direct",
-                "dapper-di-composition",
-                "dapper-facade-source",
-                "dapper-facade-binary-2.1.2",
-                "dapper-trim-diagnostic",
-                "entity-framework-core-direct",
-                "entity-framework-core-di-composition",
-                "entity-framework-core-facade-source",
-                "entity-framework-core-facade-binary-2.1.2",
-                "entity-framework-core-trim-diagnostic",
-                "mapster-direct",
-                "mapster-facade-binary-2.1.2",
-                "mapster-trim-diagnostic",
-                "http-direct",
-                "http-trim",
-                "http-nativeaot",
-                "http-json-direct",
-                "http-json-trim",
-                "http-json-nativeaot",
-                "polly-direct",
-                "polly-trim",
-                "polly-nativeaot",
-                "postgresql-direct",
-                "postgresql-dapper-composition",
-                "postgresql-efcore-composition",
-                "postgresql-di-composition",
-                "postgresql-opentelemetry-composition",
-                "postgresql-trim",
-                "postgresql-nativeaot",
-        };
         var actualIds = document.Scenarios.Select(scenario => scenario.Id).ToArray();
         Assert.Equal(actualIds.Length, actualIds.Distinct(StringComparer.Ordinal).Count());
-        Assert.Subset(expectedIds, actualIds.ToHashSet(StringComparer.Ordinal));
+        AssertRequiredScenarioCoverage(actualIds);
         var testing = Assert.Single(document.Scenarios, scenario => scenario.Id == "testing-direct");
         Assert.Equal("current", testing.Set);
         Assert.Equal(["SmartPipe.Testing"], testing.PackageIds);
@@ -349,6 +276,104 @@ public sealed class ConsumerScenarioSchemaTests
             ConsumerScenarios = package.Id == "SmartPipe.Core" ? ids : [],
         }).ToArray(),
     };
+
+    [Fact]
+    public void RequiredScenarioCoverage_RejectsDeletionOfPollyConsumer()
+    {
+        var ids = ReadCurrentScenarioIds().Where(id => id != "polly-direct");
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertRequiredScenarioCoverage(ids));
+    }
+
+    [Fact]
+    public void RequiredScenarioCoverage_AllowsAdditionalConsumer()
+    {
+        AssertRequiredScenarioCoverage(ReadCurrentScenarioIds().Append("future-direct"));
+    }
+
+    private static string[] ReadCurrentScenarioIds()
+    {
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(RepositoryRoot(), "eng/consumer-scenarios.json")));
+        return manifest.RootElement.GetProperty("scenarios").EnumerateArray()
+            .Select(scenario => scenario.GetProperty("id").GetString()!).ToArray();
+    }
+
+    private static void AssertRequiredScenarioCoverage(IEnumerable<string> actualIds)
+    {
+        var expectedIds = new HashSet<string>(StringComparer.Ordinal)
+        {
+                "csv-direct",
+                "csv-di-composition",
+                "csv-facade-source",
+                "csv-facade-binary-2.1.2",
+                "csv-trim-diagnostic",
+                "core-direct",
+                "testing-direct",
+                "json-direct",
+                "extensions-meta",
+                "legacy-binary-2.1.2",
+                "core-trim",
+                "core-nativeaot",
+                "json-nativeaot",
+                "json-trim",
+                "json-dependency-injection-direct",
+                "dependency-injection-direct",
+                "dependency-injection-keyed",
+                "dependency-injection-from-keyed-services",
+                "dependency-injection-facade-source",
+                "dependency-injection-facade-binary-2.1.2",
+                "dependency-injection-trim",
+                "dependency-injection-nativeaot",
+                "hosting-direct",
+                "hosting-facade-source",
+                "hosting-facade-binary-2.1.2",
+                "hosting-trim",
+                "hosting-nativeaot",
+                "health-checks-direct",
+                "health-checks-aspnet",
+                "health-checks-trim",
+                "health-checks-nativeaot",
+                "opentelemetry-direct",
+                "opentelemetry-otlp",
+                "opentelemetry-facade",
+                "opentelemetry-trim",
+                "opentelemetry-nativeaot",
+                "channels-direct",
+                "transforms-direct",
+                "logging-direct",
+                "data-annotations-direct",
+                "data-annotations-runtime",
+                "dapper-direct",
+                "dapper-di-composition",
+                "dapper-facade-source",
+                "dapper-facade-binary-2.1.2",
+                "dapper-trim-diagnostic",
+                "entity-framework-core-direct",
+                "entity-framework-core-di-composition",
+                "entity-framework-core-facade-source",
+                "entity-framework-core-facade-binary-2.1.2",
+                "entity-framework-core-trim-diagnostic",
+                "mapster-direct",
+                "mapster-facade-binary-2.1.2",
+                "mapster-trim-diagnostic",
+                "http-direct",
+                "http-trim",
+                "http-nativeaot",
+                "http-json-direct",
+                "http-json-trim",
+                "http-json-nativeaot",
+                "polly-direct",
+                "polly-trim",
+                "polly-nativeaot",
+                "postgresql-direct",
+                "postgresql-dapper-composition",
+                "postgresql-efcore-composition",
+                "postgresql-di-composition",
+                "postgresql-opentelemetry-composition",
+                "postgresql-trim",
+                "postgresql-nativeaot",
+        };
+        Assert.Superset(expectedIds, actualIds.ToHashSet(StringComparer.Ordinal));
+    }
 
     private static string ValidJson() => "{\n  \"schemaVersion\": 1,\n  \"requiredAtRelease\": [],\n  \"scenarios\": [\n" + Scenario("fixture") + "\n  ]\n}\n";
     private static string ManifestJson(IEnumerable<string> ids) => "{\n  \"schemaVersion\": 1,\n  \"requiredAtRelease\": [],\n  \"scenarios\": [\n" + string.Join(",\n", ids.Select(Scenario)) + "\n  ]\n}\n";

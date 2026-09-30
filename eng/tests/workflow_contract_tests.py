@@ -106,6 +106,7 @@ POLLY_TEST_PROJECT = (
     "tests/SmartPipe.Extensions.Polly.Tests/"
     "SmartPipe.Extensions.Polly.Tests.csproj"
 )
+TESTING_TEST_PROJECT = "tests/SmartPipe.Testing.Tests/SmartPipe.Testing.Tests.csproj"
 POSTGRESQL_TEST_PROJECT = (
     "tests/SmartPipe.Extensions.PostgreSql.Tests/"
     "SmartPipe.Extensions.PostgreSql.Tests.csproj"
@@ -861,6 +862,11 @@ def assert_csv_integration_contract(ci: dict, reusable: dict) -> None:
         f"dotnet test --project {POLLY_TEST_PROJECT} --configuration Release --no-build "
         "--minimum-expected-tests 1"
     ), "Reusable validation must run the complete Polly test project with a non-empty gate.")
+    testing_step = named_step(reusable_steps, "Testing helper tests")
+    require(" ".join(str(testing_step.get("run", "")).split()) == (
+        f"dotnet test --project {TESTING_TEST_PROJECT} --configuration Release --no-build "
+        "--minimum-expected-tests 1"
+    ), "Reusable validation must run the complete Testing test project with a non-empty gate.")
     correctness = str(named_step(reusable_steps, "Extensions correctness regressions").get("run", ""))
     require("HttpSelectorTests" not in correctness
             and f"--project {HTTP_TEST_PROJECT} --no-build -c Release "
@@ -2325,6 +2331,18 @@ def main() -> int:
             if workflow_name == "codeql.yml"
             else f"{workflow_name} restore-heavy setup-dotnet",
         )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Testing helper tests"),
+        "Testing helper tests",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: named_step(
+            docs["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
+            "Testing helper tests").update({"run": "dotnet test --project " + TESTING_TEST_PROJECT}),
+        "complete Testing test project with a non-empty gate",
+    )
     assert_mutation_rejected(
         documents,
         _remove_ci_runner_override,
