@@ -123,7 +123,7 @@ public class ReleaseHardeningCsvEncodingBenchmarks
 
 /// <summary>
 /// Closed-state circuit breaker cost per item with a steady-state sliding window, previous versus
-/// current window accounting. Each operation is one failed and one successful item (permit plus
+/// current window accounting. Each operation is one successful and one failed item (permit plus
 /// record), one clock tick apart, so the window holds exactly <see cref="WindowSamples"/> samples
 /// and a stable 50% failure ratio below the 1.0 threshold.
 /// </summary>
@@ -161,8 +161,8 @@ public class ReleaseHardeningCircuitBreakerBenchmarks
             LegacyItemPair();
         }
 
-        if (_current.State != CircuitState.Closed)
-            throw new InvalidOperationException("The current breaker must stay closed during the benchmark.");
+        if (_current.State != CircuitState.Closed || _legacy.IsOpen)
+            throw new InvalidOperationException("Both breakers must stay closed during the benchmark.");
     }
 
     [Benchmark(Baseline = true)]
@@ -184,22 +184,22 @@ public class ReleaseHardeningCircuitBreakerBenchmarks
     private void CurrentItemPair()
     {
         _time.Advance();
-        using (var failed = _current.AcquirePermit())
-            failed.RecordFailure();
+        using (var succeeded = _current.AcquirePermit())
+            succeeded.RecordSuccess();
 
         _time.Advance();
-        using var succeeded = _current.AcquirePermit();
-        succeeded.RecordSuccess();
+        using var failed = _current.AcquirePermit();
+        failed.RecordFailure();
     }
 
     private void LegacyItemPair()
     {
         _time.Advance();
         _legacy.AcquirePermit();
-        _legacy.RecordFailure();
+        _legacy.RecordSuccess();
         _time.Advance();
         _legacy.AcquirePermit();
-        _legacy.RecordSuccess();
+        _legacy.RecordFailure();
     }
 
     private static void RunContended(Action itemPair)

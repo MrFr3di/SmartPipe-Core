@@ -53,19 +53,34 @@ so a sink that once wrote a large record retains that buffer until disposal.
 
 ## Circuit breaker window (`ReleaseHardeningCircuitBreakerBenchmarks`)
 
-One `RecordFailure` plus one `RecordSuccess` on a closed breaker whose sliding
-window already holds `WindowSamples` samples.
+Controlled old-versus-new comparison. The baseline, `LegacyClosedStateCircuitBreaker`, is a
+benchmark-local copy of the previous closed-state path: `AcquirePermit` pruned the window under
+the lock, samples were stamped outside the lock, and every failure counted the window by
+enumerating it under the lock. Half-open handling is left out because the breaker never leaves
+the closed state here. Both implementations use the same configuration: failure ratio 1.0,
+minimum throughput 1, and a sampling duration of `WindowSamples` ticks.
 
-| Window samples | Median | Allocated |
-| ---: | ---: | ---: |
-| 1,000 | 289 ns | 48 B |
-| 100,000 | 499 ns | 48 B |
+Each operation is one successful and one failed item (permit plus record), advancing a manual
+clock one tick per item. With the window prefilled, every new sample expires exactly one old
+sample, so the window stays at `WindowSamples` samples with a steady 50% failure ratio. Setup
+throws if either breaker would open. The four-thread variants run 256 item pairs per thread per
+invocation on a shared breaker; their per-operation time includes starting four threads,
+amortized over 1,024 pairs.
 
-A 100× larger window costs well under 2× more per call; the difference is
-within the run's noise. The previous implementation counted failures by
-scanning the whole window under the lock on every failure, so its cost grew
-linearly with the number of samples (100,000 iterations per failure in the
-second row). No old-code baseline is included for this row.
+Run: `--inProcess --warmupCount 5 --iterationCount 15`, with no other load on the machine.
+
+| Window samples | Variant | Previous | Current | Time ratio | Allocated per pair (old → new) |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1,000 | single thread | 8,803 ns | 260 ns | 0.03 | 1,152 B → 48 B |
+| 1,000 | 4 threads | 28,343 ns | 3,107 ns | 0.11 | 1,257 B → 49 B |
+| 100,000 | single thread | 2,026,456 ns | 249 ns | 0.0001 | 1,161 B → 48 B |
+| 100,000 | 4 threads | 2,848,550 ns | 3,137 ns | 0.001 | 1,284 B → 49 B |
+
+The current cost does not depend on the window size, and the previous cost grows with it. The
+previous per-failure enumeration of a `ConcurrentQueue` is also what allocated about 1.1 KB per
+pair. Under contention, the current breaker is about 12× slower per pair than single-threaded
+because all threads serialize on the window lock; the lock is held only for the enqueue, the
+expiry of one sample and an O(1) count. The remaining 48 B per pair is the permit lease objects.
 
 ## Pipeline metric tag (`ReleaseHardeningMetricsBenchmarks`)
 
@@ -80,3 +95,29 @@ with the `smartpipe.pipeline_id` tag.
 The single-tag overload does not allocate, and the cost difference is within
 noise. OpenTelemetry SDK aggregation and export costs are outside this
 measurement.
+
+## OpenTelemetry SDK (`ReleaseHardeningOpenTelemetryBenchmarks`)
+
+The pipeline-tag measurements above use a bare `MeterListener`. This benchmark measures the same
+`RecordProcessed` call (one counter plus one histogram) with the OpenTelemetry SDK 1.17 aggregating
+through a `MeterProvider` with the in-memory exporter. The tagged benchmark rotates across
+`PipelineCount` recorders with stable ids. Setup verifies the exported cardinality: exactly one
+`smartpipe.items.processed` point per id plus the untagged series, otherwise it throws.
+`CollectAndExport` measures one forced collection and in-memory export of all SmartPipe
+instruments.
+
+Run: `--inProcess --warmupCount 5 --iterationCount 15`, with no other load on the machine.
+
+| Pipeline ids | Untagged record | Tagged record | Time ratio | Collect + export | Allocated |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 122 ns | 207 ns | 1.71 | 834 ns | 0 B per record, 256 B per collect |
+| 10 | 117 ns | 204 ns | 1.74 | 1,156 ns | 0 B per record, 256 B per collect |
+| 100 | 120 ns | 209 ns | 1.75 | 4,202 ns | 0 B per record, 256 B per collect |
+
+With the SDK aggregating, a tagged measurement costs about 85 ns more than an untagged one, because
+the SDK looks up the series for the tag. That extra cost does not grow from 1 to 100 ids. Collection
+cost grows with the number of series, as expected; at 100 pipelines one collection takes about 4 µs.
+The exporter is in memory, so real exporter serialization and network costs are not included. With
+the SDK's default cardinality limit of 2,000 series per instrument, stable per-pipeline ids stay
+well below the point where overflow aggregation starts.
+
