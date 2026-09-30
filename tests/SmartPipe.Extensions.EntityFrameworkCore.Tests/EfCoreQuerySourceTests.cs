@@ -2,6 +2,7 @@
 
 using FluentAssertions;
 using SmartPipe.Core;
+using SmartPipe.Testing;
 using SmartPipe.Extensions.EntityFrameworkCore.Runtime;
 
 namespace SmartPipe.Extensions.EntityFrameworkCore.Tests;
@@ -35,7 +36,7 @@ public sealed class EfCoreQuerySourceTests
             "stream");
         await using var source = CreateSource(factory, (context, activation) => queryable);
 
-        var items = await SourceReader.ReadAllAsync(source);
+        var items = (await SourceReader.ReadEnvelopesAsync(source, 1024)).Select(envelope => envelope.Payload).ToList();
 
         items.Select(item => item.Name).Should().Equal("Ada", "Grace");
         queryable.EnumeratorCount.Should().Be(1);
@@ -72,8 +73,8 @@ public sealed class EfCoreQuerySourceTests
             factory,
             (context, activation) => new RecordingQueryable<TestRow>([], "single-enumeration"));
 
-        await SourceReader.ReadAllAsync(source);
-        var act = async () => await SourceReader.ReadAllAsync(source);
+        await SourceReader.ReadEnvelopesAsync(source, 1024);
+        var act = async () => await SourceReader.ReadEnvelopesAsync(source, 1024);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
@@ -87,7 +88,7 @@ public sealed class EfCoreQuerySourceTests
             (context, activation) => new RecordingQueryable<TestRow>([], "after-disposal"));
 
         await source.DisposeAsync();
-        var act = async () => await SourceReader.ReadAllAsync(source);
+        var act = async () => await SourceReader.ReadEnvelopesAsync(source, 1024);
 
         await act.Should().ThrowAsync<ObjectDisposedException>();
         factory.CallCount.Should().Be(0);
@@ -119,7 +120,7 @@ public sealed class EfCoreQuerySourceTests
         };
         await using var source = CreateSource(factory, (context, activation) => queryable);
 
-        var act = async () => await SourceReader.ReadAllAsync(source);
+        var act = async () => await SourceReader.ReadEnvelopesAsync(source, 1024);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         factory.Contexts[0].DisposeCount.Should().Be(1);
@@ -165,7 +166,7 @@ public sealed class EfCoreQuerySourceTests
         };
         await using var source = CreateSource(factory, (context, activation) => queryable);
 
-        var act = async () => await SourceReader.ReadAllAsync(source);
+        var act = async () => await SourceReader.ReadEnvelopesAsync(source, 1024);
 
         var exception = await act.Should().ThrowAsync<AggregateException>();
         exception.Which.InnerExceptions.Should().HaveCount(2);
@@ -209,7 +210,7 @@ public sealed class EfCoreQuerySourceTests
             new EfCoreQueryOptions { OperationName = "safe-logging" },
             loggerFactory);
 
-        await SourceReader.ReadAllAsync(source);
+        await SourceReader.ReadEnvelopesAsync(source, 1024);
 
         loggerFactory.Messages.Should().NotBeEmpty();
         loggerFactory.Messages.Should().Contain(message => message.Contains("safe-logging", StringComparison.Ordinal));
@@ -244,7 +245,7 @@ public sealed class EfCoreQuerySourceTests
         };
         await using var source = CreateSource(factory, (context, activation) => queryable);
 
-        var act = async () => await SourceReader.ReadAllAsync(source);
+        var act = async () => await SourceReader.ReadEnvelopesAsync(source, 1024);
 
         var exception = await act.Should().ThrowAsync<AggregateException>();
         exception.Which.InnerExceptions.Should().HaveCount(2);
@@ -262,7 +263,7 @@ public sealed class EfCoreQuerySourceTests
             factory.CreateAsync,
             queryFactory,
             EfCoreOptionsSnapshot.Create(options ?? new EfCoreQueryOptions { OperationName = "query-source" }),
-            TestActivation.Create(),
+            TestActivation.Create("sp220-11-tests"),
             loggerFactory,
             activationToken);
 }

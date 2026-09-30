@@ -80,11 +80,23 @@ closure. See [Channels](channels.md), [Transforms](transforms.md),
 
 Important selector and streaming contracts:
 
-- `HttpSelector<T>` logs request URIs without userinfo, query strings, or
-  fragments. Malformed absolute URIs are logged as `[unparseable-uri]`.
-  Reflection JSON constructors are annotated for trimming and NativeAOT risk;
-  prefer the `JsonTypeInfo<List<T>>` buffered overload or `JsonTypeInfo<T>`
-  streaming overload in trimmed or NativeAOT applications.
+- `SmartPipe.Extensions.Http` sources and sinks (`HttpPipelineComponents`,
+  `FromHttp`, `ToHttp`) borrow a direct `HttpClient` and own factory-created
+  clients, requests, and responses for exactly one operation. They stream with
+  `ResponseHeadersRead`, never retry implicitly, report non-success status
+  without reading the body unless a bounded preview is opted in, and log no
+  request URIs, headers, or bodies. `SmartPipe.Extensions.Http.Json` supplies
+  bounded root-array and NDJSON readers and JSON request content over
+  source-generated `JsonTypeInfo<T>`. These replace the removed 2.1.2
+  `HttpSelector<T>`, `HttpClientFactorySelector<T>`, `HttpSink<T>`, and
+  `HttpClientFactorySink<T>`.
+- `SmartPipe.Extensions.Polly` (`PollyTransformDecorator<TInput,TOutput>`,
+  `PollyPipelineComponents.Decorate`) runs the real inner transform once per
+  attempt of an application-owned `ResiliencePipeline<StageResult<TOutput>>`,
+  returns the final result unchanged, and rethrows the final exception with its
+  identity unless an opt-in mapper handles it. Inner ownership (`Borrowed` or
+  `Owned`) is explicit. It replaces the removed 2.1.2 no-op
+  `PollyResilienceTransform<T>`.
 - `EfCoreSelector<T>` (forwarded from `SmartPipe.Extensions.EntityFrameworkCore`) reads with
   `AsNoTracking()` by default. Use `.WithTracking()` to opt into EF Core change tracking for returned
   entities. New code uses `EfCorePipelineComponents.QuerySource`/`CompiledQuerySource` or the typed
@@ -113,6 +125,17 @@ Important selector and streaming contracts:
   preformed `IReadOnlyList<T>` envelope as a single bounded parameter sequence
   with an explicit `PerBatch` or `None` transaction mode. The entry points carry
   `RequiresUnreferencedCode` and `RequiresDynamicCode` annotations.
+- `SmartPipe.Extensions.PostgreSql` adds PostgreSQL-native components over an
+  application-owned `NpgsqlDataSource` that SmartPipe never constructs,
+  configures, mutates or disposes and never accepts as a connection string:
+  `PostgreSqlPipelineDefinitionBuilder.FromBinaryCopy<T>` streams a binary
+  `COPY … TO STDOUT (FORMAT BINARY)` result, `ToPostgreSqlBinaryCopy` writes one
+  complete binary `COPY … FROM STDIN (FORMAT BINARY)` per batch envelope so a
+  successful `WriteAsync` means `CompleteAsync` already succeeded, and
+  `FromNotifications` emits `PostgreSqlNotification` records from
+  `LISTEN`/`NOTIFY` with no reconnect, no retry and no durability guarantee.
+  Every component rejects an ambient `System.Transactions.Transaction.Current`.
+  See the [PostgreSQL subsystem reference](postgresql.md).
 - `JsonFileSink<T>` writes newline-delimited JSON batches: each flush appends
   one UTF-8 JSON array followed by a newline. Path-backed files use append
   semantics, checkpoint seekable stream length and position before each batch,

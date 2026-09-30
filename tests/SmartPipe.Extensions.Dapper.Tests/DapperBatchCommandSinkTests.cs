@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using SmartPipe.Core;
+using SmartPipe.Testing;
 
 namespace SmartPipe.Extensions.Dapper.Tests;
 
@@ -24,7 +25,7 @@ public sealed class DapperBatchCommandSinkTests
         });
         var sink = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await sink.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.Single(connections);
 
@@ -54,7 +55,7 @@ public sealed class DapperBatchCommandSinkTests
         });
         var sink = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await sink.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.Single(connections);
 
@@ -87,7 +88,7 @@ public sealed class DapperBatchCommandSinkTests
         });
         var sink = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await sink.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.Single(connections);
 
@@ -131,7 +132,7 @@ public sealed class DapperBatchCommandSinkTests
         });
         var sink = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await sink.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.Single(connections);
 
@@ -154,7 +155,7 @@ public sealed class DapperBatchCommandSinkTests
         });
         var sink = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await sink.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.Single(connections);
 
@@ -202,7 +203,7 @@ public sealed class DapperBatchCommandSinkTests
             });
         var sink = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await sink.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.Single(connections);
         IReadOnlyList<TestPerson> payload =
@@ -246,7 +247,7 @@ public sealed class DapperBatchCommandSinkTests
             });
         var sink = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await sink.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.Single(connections);
         IReadOnlyList<TestPerson> payload =
@@ -277,7 +278,7 @@ public sealed class DapperBatchCommandSinkTests
         });
         var sink = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await sink.InitializeAsync(TestContext.Current.CancellationToken);
 
         await sink.WriteAsync(
@@ -323,8 +324,8 @@ public sealed class DapperBatchCommandSinkTests
                 OperationName = "batch",
                 TransactionMode = DapperBatchTransactionMode.PerBatch,
             });
-        var first = await DapperTestActivation.ActivateAsync(descriptor, DapperTestActivation.CreateContext("run-1"));
-        var second = await DapperTestActivation.ActivateAsync(descriptor, DapperTestActivation.CreateContext("run-2"));
+        var first = await DapperTestActivation.ActivateAsync(descriptor, TestActivation.Create("run-1"));
+        var second = await DapperTestActivation.ActivateAsync(descriptor, TestActivation.Create("run-2"));
 
         await Task.WhenAll(
             first.InitializeAsync(TestContext.Current.CancellationToken).AsTask(),
@@ -357,7 +358,7 @@ public sealed class DapperBatchCommandSinkTests
         });
         var sink = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await sink.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.Single(connections);
         var executeFailure = new RecordingTestFailure("execute");
@@ -394,7 +395,7 @@ public sealed class DapperBatchCommandSinkTests
         });
         var sink = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await sink.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.Single(connections);
         var commitFailure = new RecordingTestFailure("commit");
@@ -427,7 +428,7 @@ public sealed class DapperBatchCommandSinkTests
         });
         var sink = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await sink.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.Single(connections);
         var executeFailure = new RecordingTestFailure("execute");
@@ -463,7 +464,7 @@ public sealed class DapperBatchCommandSinkTests
         });
         var sink = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
         await sink.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.Single(connections);
         var disposeFailure = new RecordingTestFailure("transaction-dispose");
@@ -490,7 +491,7 @@ public sealed class DapperBatchCommandSinkTests
         });
         var sink = await DapperTestActivation.ActivateAsync(
             descriptor,
-            DapperTestActivation.CreateContext());
+            TestActivation.Create("dapper-test"));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => sink.WriteAsync(
             DapperTestActivation.Envelope<IReadOnlyList<Dictionary<string, object?>>>([]),
@@ -542,7 +543,7 @@ public sealed class DapperBatchCommandSinkTests
                 TransactionMode = DapperBatchTransactionMode.PerBatch,
             },
             loggerFactory: loggerFactory);
-        var context = DapperTestActivation.CreateContext("batch-log-pipeline");
+        var context = TestActivation.Create("batch-log-pipeline");
         var sink = await DapperTestActivation.ActivateAsync(descriptor, context);
         await sink.InitializeAsync(TestContext.Current.CancellationToken);
         var connection = Assert.Single(connections);

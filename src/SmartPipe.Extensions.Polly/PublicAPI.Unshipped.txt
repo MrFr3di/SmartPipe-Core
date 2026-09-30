@@ -1,0 +1,27 @@
+#nullable enable
+SmartPipe.Extensions.Polly.PollyInnerTransformOwnership
+SmartPipe.Extensions.Polly.PollyInnerTransformOwnership.Borrowed = 0 -> SmartPipe.Extensions.Polly.PollyInnerTransformOwnership
+SmartPipe.Extensions.Polly.PollyInnerTransformOwnership.Owned = 1 -> SmartPipe.Extensions.Polly.PollyInnerTransformOwnership
+SmartPipe.Extensions.Polly.PollyPipelineComponents
+static SmartPipe.Extensions.Polly.PollyPipelineComponents.Decorate<TInput, TOutput>(System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<SmartPipe.Core.IPipelineTransformer<TInput, TOutput>!>>! innerFactory, Polly.ResiliencePipeline<SmartPipe.Core.StageResult<TOutput>>! pipeline, SmartPipe.Extensions.Polly.PollyInnerTransformOwnership innerOwnership, SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions? options = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineTransformer<TInput, TOutput>!>!
+static SmartPipe.Extensions.Polly.PollyPipelineComponents.Decorate<TInput, TOutput>(System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<SmartPipe.Core.IPipelineTransformer<TInput, TOutput>!>>! innerFactory, System.Func<SmartPipe.Core.PipelineActivationContext!, Polly.ResiliencePipeline<SmartPipe.Core.StageResult<TOutput>>!>! pipelineFactory, SmartPipe.Extensions.Polly.PollyInnerTransformOwnership innerOwnership, SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions? options = null) -> SmartPipe.Core.PipelineComponent<SmartPipe.Core.IPipelineTransformer<TInput, TOutput>!>!
+SmartPipe.Extensions.Polly.PollyTransformDecorator<TInput, TOutput>
+SmartPipe.Extensions.Polly.PollyTransformDecorator<TInput, TOutput>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Polly.PollyTransformDecorator<TInput, TOutput>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Polly.PollyTransformDecorator<TInput, TOutput>.PollyTransformDecorator(SmartPipe.Core.IPipelineTransformer<TInput, TOutput>! inner, Polly.ResiliencePipeline<SmartPipe.Core.StageResult<TOutput>>! pipeline, SmartPipe.Extensions.Polly.PollyInnerTransformOwnership innerOwnership, SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions? options = null) -> void
+SmartPipe.Extensions.Polly.PollyTransformDecorator<TInput, TOutput>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<TInput>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<TOutput>>
+SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions
+SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions.<Clone>$() -> SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions!
+override SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions.Equals(object? obj) -> bool
+SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions.Equals(SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions? other) -> bool
+SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions.ExceptionMapper.get -> SmartPipe.Extensions.Polly.PollyTransformExceptionMapper?
+SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions.ExceptionMapper.init -> void
+override SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions.GetHashCode() -> int
+SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions.OperationKey.get -> string?
+SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions.OperationKey.init -> void
+static SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions.operator !=(SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions? left, SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions? right) -> bool
+static SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions.operator ==(SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions? left, SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions? right) -> bool
+SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions.PollyTransformDecoratorOptions() -> void
+override SmartPipe.Extensions.Polly.PollyTransformDecoratorOptions.ToString() -> string!
+SmartPipe.Extensions.Polly.PollyTransformExceptionMapper
+virtual SmartPipe.Extensions.Polly.PollyTransformExceptionMapper.Invoke(System.Exception! exception) -> SmartPipe.Core.SmartPipeError?

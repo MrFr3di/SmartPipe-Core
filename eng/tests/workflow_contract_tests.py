@@ -28,6 +28,7 @@ FILES = {
         "dependency-review.yml",
         "reusable-release-validation.yml",
         "publish-nuget.yml",
+        "reusable-postgresql-validation.yml",
     )
 }
 SHA_REF = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
@@ -93,6 +94,37 @@ EFCORE_TEST_PROJECT = (
 MAPSTER_TEST_PROJECT = (
     "tests/SmartPipe.Extensions.Mapster.Tests/"
     "SmartPipe.Extensions.Mapster.Tests.csproj"
+)
+HTTP_TEST_PROJECT = (
+    "tests/SmartPipe.Extensions.Http.Tests/"
+    "SmartPipe.Extensions.Http.Tests.csproj"
+)
+HTTP_JSON_TEST_PROJECT = (
+    "tests/SmartPipe.Extensions.Http.Json.Tests/"
+    "SmartPipe.Extensions.Http.Json.Tests.csproj"
+)
+POLLY_TEST_PROJECT = (
+    "tests/SmartPipe.Extensions.Polly.Tests/"
+    "SmartPipe.Extensions.Polly.Tests.csproj"
+)
+TESTING_TEST_PROJECT = "tests/SmartPipe.Testing.Tests/SmartPipe.Testing.Tests.csproj"
+POSTGRESQL_TEST_PROJECT = (
+    "tests/SmartPipe.Extensions.PostgreSql.Tests/"
+    "SmartPipe.Extensions.PostgreSql.Tests.csproj"
+)
+POSTGRESQL_INTEGRATION_NAME = "PostgreSQL integration (${{ matrix.postgres-version }})"
+POSTGRESQL_INTEGRATION_MATRIX = (
+    "${{ fromJSON('{\"postgres-version\":[\"18.6\",\"17.11\"]}') }}"
+)
+POSTGRESQL_PRIMARY_VERSION = "18.6"
+POSTGRESQL_COMPATIBILITY_VERSION = "17.11"
+POSTGRESQL_SERVICE_IMAGE = "postgres:${{ matrix.postgres-version }}"
+POSTGRESQL_SERVICE_PORT = "5432:5432"
+POSTGRESQL_PASSWORD_EXPRESSION = "${{ format('smartpipe-{0}-{1}', github.run_id, github.run_attempt) }}"
+POSTGRESQL_CONNECTION_STRING = (
+    "Host=127.0.0.1;Port=5432;Username=postgres;Password="
+    + POSTGRESQL_PASSWORD_EXPRESSION
+    + ";Database=smartpipe"
 )
 LYCHEE_URL = (
     "https://github.com/lycheeverse/lychee/releases/download/"
@@ -654,8 +686,9 @@ def assert_consumer_schema_contract(schema: dict | None = None) -> None:
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
     properties = schema.get("properties", {})
     scenarios = properties.get("scenarios", {})
-    require(scenarios.get("minItems") == 53 and scenarios.get("maxItems") == 53,
-            "Consumer scenario schema must require exactly fifty-three scenarios.")
+    maximum = scenarios.get("maxItems")
+    require(maximum is None or maximum >= 54,
+            "Consumer scenario schema must allow at least fifty-four scenarios.")
     required_pattern = properties.get("requiredAtRelease", {}).get("items", {}).get("pattern")
     require(required_pattern == SCENARIO_ID_PATTERN,
             "Consumer scenario schema must use the safe dotted ID grammar.")
@@ -682,6 +715,8 @@ def assert_consumer_contract(document: dict | None = None) -> None:
         "entity-framework-core-facade-source", "entity-framework-core-facade-binary-2.1.2",
         "entity-framework-core-trim-diagnostic",
         "mapster-direct", "mapster-facade-binary-2.1.2", "mapster-trim-diagnostic",
+        "http-direct", "http-trim", "http-nativeaot",
+        "http-json-direct", "http-json-trim", "http-json-nativeaot",
         "core-direct", "json-direct", "extensions-meta", "legacy-binary-2.1.2",
         "core-trim", "core-nativeaot", "json-nativeaot", "json-trim",
         "json-dependency-injection-direct",
@@ -698,23 +733,30 @@ def assert_consumer_contract(document: dict | None = None) -> None:
         "channels-direct", "transforms-direct", "logging-direct", "data-annotations-direct",
         "data-annotations-runtime",
     }
-    require(len(current) == 53 and {scenario["id"] for scenario in current} == expected,
-            "Current consumer set must contain the exact fifty-three scenarios.")
+    current_ids = [scenario["id"] for scenario in current]
+    require(len(current_ids) == len(set(current_ids)),
+            "Current consumer scenario IDs must be unique.")
+    current_id_set = set(current_ids)
+    require(expected <= current_id_set,
+            "Current consumer set must retain all established scenarios.")
     hosting = [scenario for scenario in current if scenario.get("category") == "hosting"]
-    require({scenario["id"] for scenario in hosting} == {
+    require({
         "hosting-direct", "hosting-facade-source", "hosting-facade-binary-2.1.2",
         "hosting-trim", "hosting-nativeaot",
-    }, "Hosting consumer category must contain the exact five Hosting scenarios.")
+    } <= {scenario["id"] for scenario in hosting},
+            "Hosting consumer category must retain its established scenarios.")
     health_checks = [scenario for scenario in current if scenario.get("category") == "health-checks"]
-    require({scenario["id"] for scenario in health_checks} == {
+    require({
         "health-checks-direct", "health-checks-aspnet", "health-checks-trim",
         "health-checks-nativeaot",
-    }, "HealthChecks consumer category must contain the exact four HealthChecks scenarios.")
+    } <= {scenario["id"] for scenario in health_checks},
+            "HealthChecks consumer category must retain its established scenarios.")
     opentelemetry = [scenario for scenario in current if scenario.get("category") == "opentelemetry"]
-    require({scenario["id"] for scenario in opentelemetry} == {
+    require({
         "opentelemetry-direct", "opentelemetry-otlp", "opentelemetry-facade",
         "opentelemetry-trim", "opentelemetry-nativeaot",
-    }, "OpenTelemetry consumer category must contain the exact five OpenTelemetry scenarios.")
+    } <= {scenario["id"] for scenario in opentelemetry},
+            "OpenTelemetry consumer category must retain its established scenarios.")
     meta = next(scenario for scenario in current if scenario["id"] == "extensions-meta")
     require(meta["packageIds"] == ["SmartPipe.Extensions"],
             "extensions-meta must directly reference only the facade package.")
@@ -806,6 +848,236 @@ def assert_csv_integration_contract(ci: dict, reusable: dict) -> None:
         f"dotnet test --project {MAPSTER_TEST_PROJECT} --configuration Release --no-build "
         "--minimum-expected-tests 1"
     ), "Reusable validation must run the complete Mapster test project with a non-empty gate.")
+    http_step = named_step(reusable_steps, "HTTP Extensions tests")
+    require(" ".join(str(http_step.get("run", "")).split()) == (
+        f"dotnet test --project {HTTP_TEST_PROJECT} --configuration Release --no-build "
+        "--minimum-expected-tests 1"
+    ), "Reusable validation must run the complete HTTP test project with a non-empty gate.")
+    http_json_step = named_step(reusable_steps, "HTTP JSON Extensions tests")
+    require(" ".join(str(http_json_step.get("run", "")).split()) == (
+        f"dotnet test --project {HTTP_JSON_TEST_PROJECT} --configuration Release --no-build "
+        "--minimum-expected-tests 1"
+    ), "Reusable validation must run the complete HTTP JSON test project with a non-empty gate.")
+    polly_step = named_step(reusable_steps, "Polly Extensions tests")
+    require(" ".join(str(polly_step.get("run", "")).split()) == (
+        f"dotnet test --project {POLLY_TEST_PROJECT} --configuration Release --no-build "
+        "--minimum-expected-tests 1"
+    ), "Reusable validation must run the complete Polly test project with a non-empty gate.")
+    testing_step = named_step(reusable_steps, "Testing helper tests")
+    require(" ".join(str(testing_step.get("run", "")).split()) == (
+        f"dotnet test --project {TESTING_TEST_PROJECT} --configuration Release --no-build "
+        "--minimum-expected-tests 1"
+    ), "Reusable validation must run the complete Testing test project with a non-empty gate.")
+    correctness = str(named_step(reusable_steps, "Extensions correctness regressions").get("run", ""))
+    require("HttpSelectorTests" not in correctness
+            and f"--project {HTTP_TEST_PROJECT} --no-build -c Release "
+            "--filter-class SmartPipe.Extensions.Http.Tests.HttpPipelineComponentsTests "
+            "--minimum-expected-tests 1" in correctness,
+            "Extensions correctness regressions must target the HTTP leaf tests, not removed legacy HTTP tests.")
+
+
+def assert_postgresql_integration_contract(ci: dict) -> None:
+    job = ci["jobs"].get("postgresql-integration")
+    require(isinstance(job, dict),
+            "CI must define the real-PostgreSQL service-container job.")
+    require(job.get("name") == POSTGRESQL_INTEGRATION_NAME,
+            "PostgreSQL integration must use the stable matrix check name.")
+    require_ci_normal_job_guard(job, "PostgreSQL integration")
+    require(job.get("runs-on") == "ubuntu-latest",
+            "PostgreSQL integration must use hosted Linux because service containers are Linux-only.")
+    strategy = job.get("strategy")
+    require(isinstance(strategy, dict)
+            and strategy.get("fail-fast") is False
+            and strategy.get("matrix") == POSTGRESQL_INTEGRATION_MATRIX
+            and POSTGRESQL_PRIMARY_VERSION in str(strategy.get("matrix"))
+            and POSTGRESQL_COMPATIBILITY_VERSION in str(strategy.get("matrix")),
+            "PostgreSQL integration must use the fixed primary/compatibility version matrix.")
+
+    services = job.get("services")
+    require(isinstance(services, dict) and set(services) == {"postgres"},
+            "PostgreSQL integration must define exactly one PostgreSQL service container.")
+    service = services["postgres"]
+    require(service.get("image") == POSTGRESQL_SERVICE_IMAGE,
+            "PostgreSQL service container must track the matrix server version.")
+    require([str(port) for port in service.get("ports", [])] == [POSTGRESQL_SERVICE_PORT],
+            "PostgreSQL service container must publish the connection port to the runner.")
+    options = str(service.get("options", ""))
+    require("--health-cmd" in options and "pg_isready" in options
+            and "--health-interval" in options and "--health-retries" in options,
+            "PostgreSQL service container must gate the job on a pg_isready health check.")
+    credentials = service.get("env")
+    require(isinstance(credentials, dict)
+            and credentials.get("POSTGRES_USER") == "postgres"
+            and credentials.get("POSTGRES_PASSWORD") == POSTGRESQL_PASSWORD_EXPRESSION
+            and credentials.get("POSTGRES_DB") == "smartpipe"
+            and credentials.get("POSTGRES_HOST_AUTH_METHOD") != "trust"
+            and POSTGRESQL_CONNECTION_STRING.endswith(
+                "Username=" + str(credentials.get("POSTGRES_USER"))
+                + ";Password=" + str(credentials.get("POSTGRES_PASSWORD"))
+                + ";Database=" + str(credentials.get("POSTGRES_DB"))),
+            "PostgreSQL service credentials must match the connection string.")
+
+    job_steps = steps(job, "postgresql-integration")
+    checkouts = [step for step in job_steps
+                 if str(step.get("uses", "")).startswith("actions/checkout")]
+    require(len(checkouts) == 1
+            and checkouts[0].get("with", {}).get("persist-credentials") is False,
+            "PostgreSQL integration checkout must be pinned and credential-free.")
+    setups = [step for step in job_steps
+              if str(step.get("uses", "")).startswith("actions/setup-dotnet")]
+    require(len(setups) == 1
+            and setups[0].get("with", {}).get("global-json-file") == "global.json"
+            and setups[0].get("with", {}).get("cache") is True
+            and setups[0].get("with", {}).get("cache-dependency-path") == "**/packages.lock.json",
+            "PostgreSQL integration setup-dotnet must use the standard lock-file cache.")
+    restore = named_step(job_steps, "Restore locked")
+    require(str(restore.get("run", "")).strip() ==
+            f"dotnet restore {POSTGRESQL_TEST_PROJECT} --locked-mode "
+            "-p:DisableImplicitLibraryPacksFolder=true",
+            "PostgreSQL integration must perform one locked PostgreSQL test-project restore.")
+    build = named_step(job_steps, "Build PostgreSQL test project")
+    require(" ".join(str(build.get("run", "")).split()) ==
+            f"dotnet build {POSTGRESQL_TEST_PROJECT} --configuration Release "
+            "--no-restore -warnaserror",
+            "PostgreSQL integration must build the PostgreSQL test project in Release with warnings as errors.")
+    tests = named_step(job_steps, "PostgreSQL integration tests")
+    require(" ".join(str(tests.get("run", "")).split()) ==
+            f"dotnet test --project {POSTGRESQL_TEST_PROJECT} --configuration Release "
+            "--no-build --minimum-expected-tests 1",
+            "PostgreSQL integration tests must set --minimum-expected-tests 1.")
+    environment = tests.get("env")
+    require(isinstance(environment, dict)
+            and environment.get("SMARTPIPE_POSTGRES_CONNECTION_STRING") == POSTGRESQL_CONNECTION_STRING
+            and POSTGRESQL_PASSWORD_EXPRESSION in str(environment.get("SMARTPIPE_POSTGRES_CONNECTION_STRING")),
+            "PostgreSQL integration must expose SMARTPIPE_POSTGRES_CONNECTION_STRING with the same per-run authenticated service connection.")
+    require(environment.get("SMARTPIPE_POSTGRES_OPTIONAL") != "1",
+            "PostgreSQL integration must fail, not skip, when the server is unavailable.")
+    require(job_steps.index(restore) < job_steps.index(build) < job_steps.index(tests),
+            "PostgreSQL integration must restore, build, then run the real-server tests.")
+
+
+def assert_postgresql_consumer_partition_contract(reusable: dict, ci: dict) -> None:
+    manifest = json.loads((ROOT / "eng" / "consumer-scenarios.json").read_text(encoding="utf-8"))
+    current = [scenario for scenario in manifest["scenarios"] if scenario["set"] == "current"]
+    postgresql = [scenario for scenario in current if scenario.get("category") == "postgresql"]
+    without_postgresql = [scenario for scenario in current if scenario.get("category") != "postgresql"]
+    current_ids = {scenario["id"] for scenario in current}
+    postgresql_ids = {scenario["id"] for scenario in postgresql}
+    without_postgresql_ids = {scenario["id"] for scenario in without_postgresql}
+    require(len(postgresql) == 7,
+            "The current consumer manifest must contain all seven PostgreSQL scenarios.")
+    require(len(current_ids) == len(current)
+            and len(postgresql_ids) == len(postgresql)
+            and len(without_postgresql_ids) == len(without_postgresql)
+            and postgresql_ids.isdisjoint(without_postgresql_ids)
+            and postgresql_ids | without_postgresql_ids == current_ids,
+            "PostgreSQL and non-PostgreSQL consumer partitions must be disjoint and cover current.")
+
+    reusable_steps = steps(reusable["jobs"]["build-test-pack"], "reusable release validation")
+    reusable_consumers = named_step(reusable_steps, "Run current consumers")
+    require("--exclude-category postgresql" in str(reusable_consumers.get("run", "")),
+            "Reusable current consumers must exclude the PostgreSQL category.")
+
+    require("needs" not in ci["jobs"]["postgresql-integration"],
+            "CI PostgreSQL integration must remain independent of validation.")
+    require("pack-packages" not in str(ci["jobs"]["postgresql-integration"]),
+            "CI PostgreSQL integration must not repack consumer packages.")
+
+
+def assert_downloaded_postgresql_contract(documents: dict[str, dict]) -> None:
+    ci = documents["ci.yml"]["jobs"]
+    publish = documents["publish-nuget.yml"]["jobs"]
+    reusable = documents["reusable-postgresql-validation.yml"]
+    for caller, needs, version in (
+        (ci.get("postgresql-consumers"), "validation", "${{ needs.validation.outputs.package-version }}"),
+        (publish.get("postgresql-validation"), ["version", "validation"], "${{ needs.version.outputs.package-version }}"),
+    ):
+        require(isinstance(caller, dict), "A PostgreSQL artifact gate must exist in CI and release.")
+        require(caller.get("needs") == needs and caller.get("uses") == "./.github/workflows/reusable-postgresql-validation.yml",
+                "PostgreSQL artifact gate must depend on its producer and use the reusable workflow.")
+        require(caller.get("with", {}).get("package-version") == version
+                and caller.get("with", {}).get("artifact-id") == "${{ needs.validation.outputs.artifact-id }}",
+                "PostgreSQL artifact gate must use producer artifact ID and exact version.")
+        require("if" not in caller or caller["if"] == CI_NORMAL_GUARD,
+                "PostgreSQL artifact gate cannot bypass producer success.")
+        require(not caller.get("continue-on-error"), "PostgreSQL artifact gate must be required.")
+    require_ci_normal_job_guard(ci["postgresql-consumers"], "PostgreSQL consumers")
+    require(ci["postgresql-consumers"]["with"].get("run-integration") is False,
+            "CI artifact consumers must not duplicate the independent integration matrix.")
+    require("run-integration" not in publish["postgresql-validation"]["with"],
+            "Release artifact gate must retain both integration versions.")
+    jobs = reusable["jobs"]
+    integration = copy.deepcopy(jobs["postgresql-integration"])
+    require(integration.get("if") == f"({SAME_REPOSITORY_PR_GUARD}) && inputs.run-integration",
+            "Reusable integration must require trusted events and enabled integration.")
+    require(integration.get("name") == "Release " + POSTGRESQL_INTEGRATION_NAME, "Release integration must retain a distinct stable matrix check name.")
+    integration["name"] = POSTGRESQL_INTEGRATION_NAME
+    integration["if"] = CI_NORMAL_GUARD
+    assert_postgresql_integration_contract({"jobs": {"postgresql-integration": integration}})
+    for job in jobs.values():
+        require(not job.get("continue-on-error") and not job.get("strategy", {}).get("continue-on-error"),
+                "PostgreSQL validation jobs must be required.")
+        require(not any(step.get("continue-on-error") or step.get("if") for step in job.get("steps", [])),
+                "PostgreSQL validation steps must be unconditional and required.")
+    consumer = jobs["postgresql-consumers"]
+    require(consumer.get("if") == SAME_REPOSITORY_PR_GUARD and consumer.get("runs-on") == "ubuntu-latest",
+            "Downloaded PostgreSQL consumers must use trusted Linux runners.")
+    require(consumer.get("services", {}).get("postgres", {}).get("image") == "postgres:18.6",
+            "Downloaded PostgreSQL consumers require primary PostgreSQL 18.6.")
+    job_steps = steps(consumer, "downloaded PostgreSQL consumers")
+    download = named_step(job_steps, "Download validated packages")
+    require(download.get("with") == {"artifact-ids": "${{ inputs.artifact-id }}", "path": "downloaded", "merge-multiple": True},
+            "Consumers must download the same-run immutable artifact ID into an explicit root.")
+    integrity = named_step(job_steps, "Validate downloaded package artifact")
+    require(integrity.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot downloaded -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json'
+            and integrity.get("env", {}).get("PACKAGE_VERSION") == "${{ inputs.package-version }}"
+            and not integrity.get("if") and not integrity.get("continue-on-error"),
+            "Consumers must fail closed on artifact integrity and exact version before running.")
+    consumers = named_step(job_steps, "Run PostgreSQL consumer scenarios")
+    command = " ".join(str(consumers.get("run", "")).split())
+    require("run-consumers --set current --category postgresql" in command
+            and "--package-directory downloaded/artifacts/packages" in command
+            and '--package-version "$env:PACKAGE_VERSION"' in command and "--scenario" not in command,
+            "Downloaded consumers must run all seven PostgreSQL scenarios including NativeAOT.")
+    require(consumers.get("env", {}).get("SMARTPIPE_POSTGRES_OPTIONAL") == "0"
+            and consumers.get("env", {}).get("SMARTPIPE_POSTGRES_CONNECTION_STRING") == POSTGRESQL_CONNECTION_STRING
+            and consumers.get("env", {}).get("PACKAGE_VERSION") == "${{ inputs.package-version }}",
+            "Downloaded consumers require the real server and caller package version.")
+    require(job_steps.index(download) < job_steps.index(integrity) < job_steps.index(consumers),
+            "Artifact integrity must precede consumers.")
+    require(not any(token in str(consumer) for token in ("pack-packages", "dotnet pack", "SmartPipe.Core.slnx")),
+            "Downloaded consumers must never restore/build the solution or repack.")
+    checks_restore = named_step(job_steps, "Restore repository checks")
+    checks_build = named_step(job_steps, "Build repository checks")
+    require(checks_restore.get("run") == "dotnet restore eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true"
+            and checks_build.get("run") == "dotnet build eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-restore -warnaserror",
+            "Artifact consumers must build only RepositoryChecks with locked restore and warning gate.")
+    require(job_steps.index(integrity) < job_steps.index(checks_restore) < job_steps.index(checks_build) < job_steps.index(consumers),
+            "Consumer tool build must follow integrity and precede consumers.")
+    producer = documents["reusable-release-validation.yml"]
+    require(producer["on"]["workflow_call"].get("outputs", {}).get("artifact-id", {}).get("value") == "${{ jobs.build-test-pack.outputs.artifact-id }}",
+            "Producer must export its immutable uploaded artifact ID.")
+    producer_job = producer["jobs"]["build-test-pack"]
+    require(producer_job.get("outputs") == {"artifact-id": "${{ steps.packages.outputs.artifact-id }}", "package-version": "${{ steps.version.outputs.package-version }}"}
+            and named_step(producer_job["steps"], "Upload immutable packages and reports").get("id") == "packages"
+            and named_step(producer_job["steps"], "Set package version").get("id") == "version",
+            "Producer outputs must bind directly to version and immutable upload steps.")
+    publication = publish["publish"]
+    require(not publication.get("if") and not publication.get("continue-on-error"),
+            "Publishing must require successful validation gates.")
+    publication_steps = publication["steps"]
+    validation = named_step(publication_steps, "Validate downloaded package artifact")
+    require(validation.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json'
+            and validation.get("env", {}).get("PACKAGE_VERSION") == "${{ needs.version.outputs.package-version }}"
+            and not validation.get("if") and not validation.get("continue-on-error"),
+            "Publisher must independently verify the exact version and artifact integrity.")
+    require(publication_steps.index(named_step(publication_steps, "Download validated packages")) < publication_steps.index(validation)
+            < publication_steps.index(named_step(publication_steps, "NuGet login")),
+            "Publisher integrity must precede credential acquisition.")
+    require(reusable.get("permissions") == {"contents": "read"}
+            and all(job.get("permissions", {"contents": "read"}) == {"contents": "read"} for job in jobs.values())
+            and publication.get("permissions") == {"contents": "read", "id-token": "write"},
+            "Only publisher may acquire NuGet OIDC credentials.")
 
 
 def validate(documents: dict[str, dict]) -> None:
@@ -822,7 +1094,7 @@ def validate(documents: dict[str, dict]) -> None:
         ("dependency-review.yml", dependency_review),
     ):
         branches = workflow.get("on", {}).get("pull_request", {}).get("branches", [])
-        for checkpoint in ("c", "d", "e"):
+        for checkpoint in ("c", "d", "e", "f"):
             require(f"sp220/checkpoint-{checkpoint}" in branches,
                     f"{workflow_name} pull_request must include sp220/checkpoint-{checkpoint}.")
 
@@ -832,8 +1104,9 @@ def validate(documents: dict[str, dict]) -> None:
                 f"CI {event} must include release/2.2.0.")
     for workflow_name in ("ci.yml", "codeql.yml"):
         branches = documents[workflow_name].get("on", {}).get("push", {}).get("branches", [])
-        require("sp220/checkpoint-e" in branches,
-                f"{workflow_name} push must include sp220/checkpoint-e.")
+        for checkpoint in ("e", "f"):
+            require(f"sp220/checkpoint-{checkpoint}" in branches,
+                    f"{workflow_name} push must include sp220/checkpoint-{checkpoint}.")
     assert_diagnostic_contract(ci)
 
     expected_triggers = {
@@ -860,18 +1133,18 @@ def validate(documents: dict[str, dict]) -> None:
                     },
                 },
             },
-            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e"]},
+            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e", "sp220/checkpoint-f"]},
             "pull_request": {
-                "branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e"]
+                "branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f"]
             },
         },
         "codeql.yml": {
-            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e"]},
-            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e"]},
+            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e", "sp220/checkpoint-f"]},
+            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f"]},
             "schedule": [{"cron": "27 3 * * 1"}],
         },
         "dependency-review.yml": {
-            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e"]},
+            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f"]},
         },
     }
     for workflow_name, expected in expected_triggers.items():
@@ -998,8 +1271,9 @@ def validate(documents: dict[str, dict]) -> None:
     ]
     require(len(current_consumers) == 1
             and "--category" not in current_consumers[0]
-            and "--scenario" not in current_consumers[0],
-            "Reusable validation must execute exactly one full current consumer run.")
+            and "--scenario" not in current_consumers[0]
+            and "--exclude-category postgresql" in current_consumers[0],
+            "Reusable validation must run all current consumers while excluding the PostgreSQL category.")
     concurrency_job = reusable["jobs"].get("health-checks-concurrency")
     require(isinstance(concurrency_job, dict),
             "Reusable validation must define the HealthChecks concurrency OS matrix.")
@@ -1038,12 +1312,12 @@ def validate(documents: dict[str, dict]) -> None:
             and "--report artifacts/audit/vulnerable.json" in audit_policy_run,
             "Reusable validation must enforce the direct production audit policy from the vulnerable JSON report.")
     upload = named_step(reusable_steps, "Upload immutable packages and reports")
-    require(upload.get("if") == "github.event_name != 'pull_request'",
-            "Reusable validation artifact upload must skip only pull_request events and remain required for non-PR events.")
+    require(upload.get("if") == SAME_REPOSITORY_PR_GUARD,
+            "Reusable validation artifact upload must allow trusted pull requests and reject forks.")
     require(upload.get("with", {}).get("name") == "${{ inputs.artifact-name }}",
             "Reusable validation must upload the caller-selected artifact name.")
     require(upload.get("with", {}).get("retention-days") ==
-            "${{ inputs.artifact-name == 'packages' && 7 || 90 }}",
+            "${{ github.event_name == 'pull_request' && 1 || inputs.artifact-name == 'packages' && 7 || 90 }}",
             "Reusable validation must retain generic CI packages for seven days and versioned artifacts for the existing policy.")
     upload_path = str(upload.get("with", {}).get("path", ""))
     require("artifacts/packages" in upload_path
@@ -1090,11 +1364,11 @@ def validate(documents: dict[str, dict]) -> None:
     require_ci_normal_job_guard(windows, "Windows JSON lane")
     windows_steps = steps(windows, "json-file-windows")
     windows_runs = runs(windows_steps)
-    windows_restores = [command for command in windows_runs if "dotnet restore SmartPipe.Core.slnx" in command]
+    windows_restores = [command for command in windows_runs if "dotnet restore " in command]
     require(windows_restores == [
-        "dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true",
+        "dotnet restore tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true",
     ],
-            "Windows JSON lane must perform exactly one locked-mode solution restore.")
+            "Windows JSON lane must perform exactly one locked-mode targeted restore.")
     require(not any("Category=Stress" in command for command in windows_runs),
             "Windows JSON lane must not execute the stress suite.")
     for name in ("Build JSON test project", "JSON file source, path, open, and share tests",
@@ -1118,7 +1392,7 @@ def validate(documents: dict[str, dict]) -> None:
             "Windows baseline contract checkout must pin SHA and disable credentials.")
     baseline_runs = runs(baseline_windows_steps)
     require("dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true" in baseline_runs,
-            "Windows baseline contract lane must disable the SDK library-packs source during locked restore.")
+            "Windows baseline contract lane must restore the whole solution for repository-wide lock-file evidence.")
     build = named_step(baseline_windows_steps, "Build repository checks")
     require("-warnaserror" in str(build.get("run", "")),
             "Windows baseline contract build must treat warnings as errors.")
@@ -1166,6 +1440,9 @@ def validate(documents: dict[str, dict]) -> None:
     assert_persist_credentials_disabled(documents)
     assert_setup_dotnet_uses_global_json(documents)
     assert_csv_integration_contract(ci, reusable)
+    assert_postgresql_integration_contract(ci)
+    assert_postgresql_consumer_partition_contract(reusable, ci)
+    assert_downloaded_postgresql_contract(documents)
     assert_link_check_exclusion_scoped()
     assert_private_repository_docs_links_are_local()
     assert_consumer_contract()
@@ -1184,13 +1461,13 @@ def validate(documents: dict[str, dict]) -> None:
         "package-version": "${{ needs.version.outputs.package-version }}",
         "artifact-name": "${{ needs.version.outputs.artifact-name }}",
     }, "Publish validation must pass version outputs as the reusable workflow inputs.")
-    require(publication.get("needs") == ["version", "validation"],
-            "Publish job must depend exactly on version and validation.")
+    require(publication.get("needs") == ["version", "validation", "postgresql-validation"],
+            "Publish job must depend exactly on version and validation and PostgreSQL validation.")
     require(publication.get("environment") == "nuget-production",
             "Publish job must use nuget-production.")
     publish_steps = steps(publication, "publish")
     download = named_step(publish_steps, "Download validated packages")
-    require(download.get("with", {}).get("name") == "${{ needs.version.outputs.artifact-name }}",
+    require(download.get("with", {}).get("artifact-ids") == "${{ needs.validation.outputs.artifact-id }}",
             "Publish must download the same artifact name produced by validation.")
     publish_runs = runs(publish_steps)
     require(not any("dotnet pack" in command for command in publish_runs), "Publish job must never repack.")
@@ -1199,7 +1476,7 @@ def validate(documents: dict[str, dict]) -> None:
     require(not any(package_id in command for command in version_runs + publish_runs
                     for package_id in hard_coded_ids),
             "Publish version, push, and availability logic must not hard-code package IDs.")
-    require(download.get("with", {}).get("path") == "artifacts",
+    require(download.get("with", {}).get("path") == ".",
             "Publish download layout must preserve manifest repository-relative paths.")
     push = named_step(publish_steps, "Publish packages in dependency order")
     push_run = str(push.get("run", ""))
@@ -1230,8 +1507,15 @@ def _remove_csv_scenario(document: dict) -> None:
     ]
 
 
-def _relax_schema_scenario_count(schema: dict) -> None:
-    schema["properties"]["scenarios"]["maxItems"] = 49
+def _reintroduce_schema_scenario_cap(schema: dict) -> None:
+    schema["properties"]["scenarios"]["maxItems"] = 53
+
+
+def _duplicate_current_scenario(document: dict) -> None:
+    duplicate = copy.deepcopy(next(
+        scenario for scenario in document["scenarios"] if scenario["id"] == "csv-direct"
+    ))
+    document["scenarios"].append(duplicate)
 
 
 def _relax_schema_scenario_id_pattern(schema: dict) -> None:
@@ -1264,6 +1548,26 @@ def _remove_codeql_checkpoint_e_branch(documents: dict[str, dict]) -> None:
 
 def _remove_dependency_review_checkpoint_e_branch(documents: dict[str, dict]) -> None:
     documents["dependency-review.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-e")
+
+
+def _remove_ci_checkpoint_f_push_branch(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["on"]["push"]["branches"].remove("sp220/checkpoint-f")
+
+
+def _remove_ci_checkpoint_f_branch(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-f")
+
+
+def _remove_codeql_checkpoint_f_push_branch(documents: dict[str, dict]) -> None:
+    documents["codeql.yml"]["on"]["push"]["branches"].remove("sp220/checkpoint-f")
+
+
+def _remove_codeql_checkpoint_f_branch(documents: dict[str, dict]) -> None:
+    documents["codeql.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-f")
+
+
+def _remove_dependency_review_checkpoint_f_branch(documents: dict[str, dict]) -> None:
+    documents["dependency-review.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-f")
 
 
 def _remove_csv_integration_job(documents: dict[str, dict]) -> None:
@@ -1333,6 +1637,88 @@ def _strip_csv_reusable_minimum(documents: dict[str, dict]) -> None:
         "CSV Extensions tests",
     )
     step["run"] = str(step["run"]).replace(" --minimum-expected-tests 1", "")
+
+
+def _remove_postgresql_integration_job(documents: dict[str, dict]) -> None:
+    del documents["ci.yml"]["jobs"]["postgresql-integration"]
+
+
+def _change_postgresql_integration_name(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["jobs"]["postgresql-integration"]["name"] = "PostgreSQL integration"
+
+
+def _drop_postgresql_compatibility_leg(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["jobs"]["postgresql-integration"]["strategy"]["matrix"] = (
+        "${{ fromJSON('{\"postgres-version\":[\"18.6\"]}') }}"
+    )
+
+
+def _make_postgresql_runner_windows(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["jobs"]["postgresql-integration"]["runs-on"] = HOSTED_WINDOWS
+
+
+def _remove_postgresql_service(documents: dict[str, dict]) -> None:
+    del documents["ci.yml"]["jobs"]["postgresql-integration"]["services"]
+
+
+def _make_postgresql_lane_optional(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["postgresql-integration"]["steps"],
+        "PostgreSQL integration tests",
+    )
+    step["env"]["SMARTPIPE_POSTGRES_OPTIONAL"] = "1"
+
+
+def _drop_postgresql_connection_string(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["postgresql-integration"]["steps"],
+        "PostgreSQL integration tests",
+    )
+    step["env"].pop("SMARTPIPE_POSTGRES_CONNECTION_STRING", None)
+
+
+def _change_postgresql_restore(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["postgresql-integration"]["steps"],
+        "Restore locked",
+    )
+    step["run"] = str(step["run"]).replace("--locked-mode", "")
+
+
+def _change_postgresql_build(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["postgresql-integration"]["steps"],
+        "Build PostgreSQL test project",
+    )
+    step["run"] = str(step["run"]).replace("-warnaserror", "")
+
+
+def _strip_postgresql_test_minimum(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["ci.yml"]["jobs"]["postgresql-integration"]["steps"],
+        "PostgreSQL integration tests",
+    )
+    step["run"] = str(step["run"]).replace(" --minimum-expected-tests 1", "")
+
+
+def _drop_current_consumer_exclusion(documents: dict[str, dict]) -> None:
+    step = named_step(
+        documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
+        "Run current consumers",
+    )
+    step["run"] = str(step["run"]).replace("--exclude-category postgresql", "")
+
+
+def _remove_postgresql_consumer_step(documents: dict[str, dict]) -> None:
+    job = documents["reusable-postgresql-validation.yml"]["jobs"]["postgresql-consumers"]
+    job["steps"] = [step for step in job["steps"]
+                    if step.get("name") != "Run PostgreSQL consumer scenarios"]
+
+
+def _remove_postgresql_consumer_pack_step(documents: dict[str, dict]) -> None:
+    job = documents["ci.yml"]["jobs"]["postgresql-integration"]
+    job["steps"] = [step for step in job["steps"]
+                    if step.get("name") != "Pack current packages for PostgreSQL consumers"]
 
 
 def _revert_windows_lifecycle_namespace(documents: dict[str, dict]) -> None:
@@ -1405,6 +1791,13 @@ def _make_windows_offline_network_capable(documents: dict[str, dict]) -> None:
     step = named_step(job["steps"], "Verify 2.1.2 baseline offline")
     step["shell"] = "pwsh"
     step["run"] += f"\n{NATIVE_FAIL_FAST_GUARD}\nInvoke-WebRequest https://example.test"
+
+
+def _narrow_windows_baseline_restore(documents: dict[str, dict]) -> None:
+    job = documents["ci.yml"]["jobs"]["baseline-contract-windows"]
+    step = named_step(job["steps"], "Restore locked")
+    step["run"] = str(step["run"]).replace(
+        "SmartPipe.Core.slnx", "tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj")
 
 
 def _remove_repository_test_minimum(documents: dict[str, dict]) -> None:
@@ -1714,14 +2107,44 @@ def assert_mutation_rejected(documents: dict[str, dict], mutate, expected: str) 
 def main() -> int:
     documents = load_workflows()
     validate(documents)
+    def artifact_consumer(docs):
+        return docs["reusable-postgresql-validation.yml"]["jobs"]["postgresql-consumers"]
+
+    for mutate, expected in (
+        (lambda d: d["publish-nuget.yml"]["jobs"].pop("postgresql-validation"), "artifact gate must exist"),
+        (lambda d: d["ci.yml"]["jobs"]["postgresql-integration"].update(needs="validation"), "remain independent"),
+        (lambda d: d["publish-nuget.yml"]["jobs"]["postgresql-validation"].update({"continue-on-error": True}), "must be required"),
+        (lambda d: d["publish-nuget.yml"]["jobs"]["publish"].update({"if": "always()"}), "require successful validation"),
+        (lambda d: d["publish-nuget.yml"]["jobs"]["postgresql-validation"]["with"].update({"package-version": "2.1.2"}), "exact version"),
+        (lambda d: d["ci.yml"]["jobs"]["postgresql-consumers"]["with"].update({"artifact-id": "other"}), "producer artifact ID"),
+        (lambda d: d["ci.yml"]["jobs"]["postgresql-consumers"].update({"if": "always()"}), "cannot bypass"),
+        (lambda d: named_step(artifact_consumer(d)["steps"], "Download validated packages")["with"].update({"run-id": 1}), "same-run immutable"),
+        (lambda d: named_step(artifact_consumer(d)["steps"], "Download validated packages")["with"].update({"path": "artifacts"}), "explicit root"),
+        (lambda d: named_step(artifact_consumer(d)["steps"], "Validate downloaded package artifact").update({"run": "echo skipped"}), "fail closed"),
+        (lambda d: named_step(artifact_consumer(d)["steps"], "Validate downloaded package artifact").update({"continue-on-error": True}), "unconditional and required"),
+        (lambda d: artifact_consumer(d)["steps"].append({"run": "dotnet pack"}), "never restore/build"),
+        (lambda d: artifact_consumer(d)["steps"].reverse(), "integrity must precede"),
+        (lambda d: named_step(artifact_consumer(d)["steps"], "Run PostgreSQL consumer scenarios")["env"].update({"SMARTPIPE_POSTGRES_OPTIONAL": "1"}), "require the real server"),
+        (lambda d: named_step(artifact_consumer(d)["steps"], "Run PostgreSQL consumer scenarios").update({"run": "run-consumers --scenario postgresql-direct"}), "all seven"),
+        (lambda d: d["reusable-postgresql-validation.yml"]["jobs"]["postgresql-integration"]["strategy"].update({"matrix": "18.6"}), "primary/compatibility"),
+        (lambda d: d["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["outputs"].update({"artifact-id": "123"}), "bind directly"),
+        (lambda d: named_step(d["publish-nuget.yml"]["jobs"]["publish"]["steps"], "Validate downloaded package artifact").update({"run": "echo skipped"}), "independently verify"),
+        (lambda d: d["reusable-postgresql-validation.yml"].update({"permissions": {"id-token": "write"}}), "Only publisher"),
+    ):
+        assert_mutation_rejected(documents, mutate, expected)
     manifest = json.loads((ROOT / "eng" / "consumer-scenarios.json").read_text(encoding="utf-8"))
     schema = json.loads((ROOT / "eng" / "consumer-scenarios.schema.json").read_text(encoding="utf-8"))
     assert_document_mutation_rejected(
-        manifest, _remove_csv_scenario, assert_consumer_contract, "exact fifty-three scenarios"
+        manifest, _remove_csv_scenario, assert_consumer_contract,
+        "retain all established scenarios",
     )
     assert_document_mutation_rejected(
-        schema, _relax_schema_scenario_count, assert_consumer_schema_contract,
-        "exactly fifty-three scenarios",
+        manifest, _duplicate_current_scenario, assert_consumer_contract,
+        "Current consumer scenario IDs must be unique",
+    )
+    assert_document_mutation_rejected(
+        schema, _reintroduce_schema_scenario_cap, assert_consumer_schema_contract,
+        "allow at least fifty-four scenarios",
     )
     assert_document_mutation_rejected(
         schema, _relax_schema_scenario_id_pattern, assert_consumer_schema_contract,
@@ -1737,6 +2160,12 @@ def main() -> int:
         (_remove_codeql_checkpoint_e_branch, "codeql.yml pull_request must include sp220/checkpoint-e"),
         (_remove_dependency_review_checkpoint_e_branch,
          "dependency-review.yml pull_request must include sp220/checkpoint-e"),
+        (_remove_ci_checkpoint_f_push_branch, "ci.yml push must include sp220/checkpoint-f"),
+        (_remove_ci_checkpoint_f_branch, "ci.yml pull_request must include sp220/checkpoint-f"),
+        (_remove_codeql_checkpoint_f_push_branch, "codeql.yml push must include sp220/checkpoint-f"),
+        (_remove_codeql_checkpoint_f_branch, "codeql.yml pull_request must include sp220/checkpoint-f"),
+        (_remove_dependency_review_checkpoint_f_branch,
+         "dependency-review.yml pull_request must include sp220/checkpoint-f"),
     ):
         assert_mutation_rejected(documents, mutate, expected)
     for mutate, expected in (
@@ -1750,6 +2179,28 @@ def main() -> int:
         (_strip_csv_test_minimum, "CSV strict source tests must set --minimum-expected-tests 1"),
         (_remove_csv_reusable_step, "exactly one step named 'CSV Extensions tests'"),
         (_strip_csv_reusable_minimum, "complete CSV test project with a non-empty gate"),
+    ):
+        assert_mutation_rejected(documents, mutate, expected)
+    for mutate, expected in (
+        (_remove_postgresql_integration_job, "define the real-PostgreSQL service-container job"),
+        (_change_postgresql_integration_name, "stable matrix check name"),
+        (_drop_postgresql_compatibility_leg, "fixed primary/compatibility version matrix"),
+        (_make_postgresql_runner_windows, "hosted Linux because service containers are Linux-only"),
+        (_remove_postgresql_service, "exactly one PostgreSQL service container"),
+        (_make_postgresql_lane_optional, "must fail, not skip, when the server is unavailable"),
+        (_drop_postgresql_connection_string, "must expose SMARTPIPE_POSTGRES_CONNECTION_STRING"),
+        (_change_postgresql_restore, "locked PostgreSQL test-project restore"),
+        (_change_postgresql_build, "build the PostgreSQL test project in Release"),
+        (_strip_postgresql_test_minimum,
+         "PostgreSQL integration tests must set --minimum-expected-tests 1"),
+    ):
+        assert_mutation_rejected(documents, mutate, expected)
+    for mutate, expected in (
+        (_drop_current_consumer_exclusion,
+         "Reusable validation must run all current consumers while excluding the PostgreSQL category"),
+
+        (_remove_postgresql_consumer_step,
+         "Expected exactly one step named 'Run PostgreSQL consumer scenarios'"),
     ):
         assert_mutation_rejected(documents, mutate, expected)
     assert_mutation_rejected(
@@ -1833,11 +2284,11 @@ def main() -> int:
     assert_mutation_rejected(
         documents,
         lambda docs: docs["publish-nuget.yml"]["jobs"]["publish"].update({"needs": ["version"]}),
-        "depend exactly on version and validation",
+        "depend exactly on version and validation and PostgreSQL validation",
     )
     assert_mutation_rejected(
         documents,
-        lambda docs: docs["publish-nuget.yml"]["jobs"]["publish"]["steps"][0]["with"].update({"name": "wrong"}),
+        lambda docs: named_step(docs["publish-nuget.yml"]["jobs"]["publish"]["steps"], "Download validated packages")["with"].update({"artifact-ids": "wrong"}),
         "same artifact name",
     )
     assert_mutation_rejected(
@@ -1945,6 +2396,11 @@ def main() -> int:
     )
     assert_mutation_rejected(
         documents,
+        _narrow_windows_baseline_restore,
+        "repository-wide lock-file evidence",
+    )
+    assert_mutation_rejected(
+        documents,
         _make_codeql_substitute_name,
         "official public check name",
     )
@@ -1971,6 +2427,18 @@ def main() -> int:
             if workflow_name == "codeql.yml"
             else f"{workflow_name} restore-heavy setup-dotnet",
         )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: _remove_reusable_step(docs, "Testing helper tests"),
+        "Testing helper tests",
+    )
+    assert_mutation_rejected(
+        documents,
+        lambda docs: named_step(
+            docs["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
+            "Testing helper tests").update({"run": "dotnet test --project " + TESTING_TEST_PROJECT}),
+        "complete Testing test project with a non-empty gate",
+    )
     assert_mutation_rejected(
         documents,
         _remove_ci_runner_override,
@@ -2068,12 +2536,12 @@ def main() -> int:
     assert_mutation_rejected(
         documents,
         _remove_upload_event_guard,
-        "skip only pull_request events and remain required for non-PR events",
+        "allow trusted pull requests and reject forks",
     )
     assert_mutation_rejected(
         documents,
         _restrict_upload_to_push,
-        "skip only pull_request events and remain required for non-PR events",
+        "allow trusted pull requests and reject forks",
     )
     assert_mutation_rejected(
         documents,

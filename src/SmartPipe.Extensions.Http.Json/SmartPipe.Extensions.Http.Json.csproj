@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SmartPipePackage>true</SmartPipePackage>
+  </PropertyGroup>
+  <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
+  <PropertyGroup>
+    <PackageId>SmartPipe.Extensions.Http.Json</PackageId>
+    <Description>Source-generated JSON codecs for streaming SmartPipe.Core HTTP pipelines.</Description>
+    <PackageTags>smartpipe;pipeline;http;json;system-text-json;ndjson;nativeaot;trimming</PackageTags>
+    <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <VerifyReferenceAotCompatibility>true</VerifyReferenceAotCompatibility>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SmartPipe.Extensions.Http\SmartPipe.Extensions.Http.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.Json\SmartPipe.Extensions.Json.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\JsonFraming\Utf8LineRecordReader.cs" Link="JsonFraming\Utf8LineRecordReader.cs" />
+    <Compile Include="..\Shared\JsonMetadataSnapshot.cs" Link="JsonMetadataSnapshot.cs" />
+    <Compile Include="..\Shared\UnframedInputLimitStream.cs" Link="UnframedInputLimitStream.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

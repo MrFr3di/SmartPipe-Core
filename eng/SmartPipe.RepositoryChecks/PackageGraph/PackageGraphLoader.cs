@@ -14,6 +14,7 @@ internal sealed class PackageGraphLoader
         "SmartPipe.Extensions.Mapster", "SmartPipe.Extensions.Polly", "SmartPipe.Extensions.Http", "SmartPipe.Testing",
         "SmartPipe.Extensions.Http.Json", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.OpenTelemetry",
         "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.HealthChecks", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions",
+        "SmartPipe.Extensions.PostgreSql",
     ];
     private readonly bool _enforceCanonicalCatalog;
     internal PackageGraphLoader(bool enforceCanonicalCatalog = true) => _enforceCanonicalCatalog = enforceCanonicalCatalog;
@@ -104,7 +105,7 @@ internal sealed class PackageGraphLoader
         }
         if (enforceCanonicalCatalog && (graph.Packages.Count != CanonicalPackageIds.Length
             || !graph.Packages.Select(x => x.Id).SequenceEqual(CanonicalPackageIds, StringComparer.Ordinal)))
-            throw new PackageGraphException("SPGRAPH016", "Package graph must contain the exact canonical 19 package IDs in publish order.");
+            throw new PackageGraphException("SPGRAPH016", "Package graph must contain the exact canonical 20 package IDs in publish order.");
         _ = TopologicalPackageSorter.Sort(graph.Packages.ToDictionary(
             x => x.Id,
             x => (IReadOnlyList<string>)x.CurrentDependencies.RequiredSmartPipePackages.Concat(x.CurrentDependencies.AllowedSmartPipePackages).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),

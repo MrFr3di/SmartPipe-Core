@@ -19,6 +19,14 @@ on:
         type: string
         default: '["ubuntu-latest"]'
 
+    outputs:
+      artifact-id:
+        description: Immutable package artifact ID
+        value: ${{ jobs.build-test-pack.outputs.artifact-id }}
+      package-version:
+        description: Exact validated package version
+        value: ${{ jobs.build-test-pack.outputs.package-version }}
+
 permissions:
   contents: read
 
@@ -29,6 +37,10 @@ jobs:
   build-test-pack:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ fromJSON(inputs.runner-labels) }}
+
+    outputs:
+      artifact-id: ${{ steps.packages.outputs.artifact-id }}
+      package-version: ${{ steps.version.outputs.package-version }}
 
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -66,6 +78,10 @@ jobs:
       shell: pwsh
       run: ./eng/tests/workflow-contract.Tests.ps1
 
+    - name: Test package artifact validation
+      shell: pwsh
+      run: ./eng/tests/validate-package-artifact.Tests.ps1
+
     - name: Format verify
       run: dotnet format SmartPipe.Core.slnx --verify-no-changes --no-restore
 
@@ -79,6 +95,7 @@ jobs:
       run: dotnet test --project tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
 
     - name: Set package version
+      id: version
       shell: pwsh
       env:
         REQUESTED_PACKAGE_VERSION: ${{ inputs.package-version }}
@@ -88,6 +105,7 @@ jobs:
           $packageVersion = dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         }
+        "package-version=$packageVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         "PACKAGE_VERSION=$packageVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Pack packages from graph
@@ -119,7 +137,7 @@ jobs:
 
     - name: Run current consumers
       shell: pwsh
-      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --package-directory artifacts/packages --package-version "$env:PACKAGE_VERSION"
+      run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- run-consumers --set current --exclude-category postgresql --package-directory artifacts/packages --package-version "$env:PACKAGE_VERSION"
 
     - name: Core correctness regressions
       run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-query /[Category=CorrectnessRegression] --minimum-expected-tests 1
@@ -142,7 +160,7 @@ jobs:
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         dotnet test --project tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sinks.JsonFileSinkTests --minimum-expected-tests 1
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Tests.Sources.HttpSelectorTests --minimum-expected-tests 1
+        dotnet test --project tests/SmartPipe.Extensions.Http.Tests/SmartPipe.Extensions.Http.Tests.csproj --no-build -c Release --filter-class SmartPipe.Extensions.Http.Tests.HttpPipelineComponentsTests --minimum-expected-tests 1
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: PR concurrency regression repeat
@@ -183,6 +201,18 @@ jobs:
 
     - name: Mapster Extensions tests
       run: dotnet test --project tests/SmartPipe.Extensions.Mapster.Tests/SmartPipe.Extensions.Mapster.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
+    - name: HTTP Extensions tests
+      run: dotnet test --project tests/SmartPipe.Extensions.Http.Tests/SmartPipe.Extensions.Http.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
+    - name: HTTP JSON Extensions tests
+      run: dotnet test --project tests/SmartPipe.Extensions.Http.Json.Tests/SmartPipe.Extensions.Http.Json.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
+    - name: Polly Extensions tests
+      run: dotnet test --project tests/SmartPipe.Extensions.Polly.Tests/SmartPipe.Extensions.Polly.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
+    - name: Testing helper tests
+      run: dotnet test --project tests/SmartPipe.Testing.Tests/SmartPipe.Testing.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
 
     - name: SP220-07 leaf tests
       shell: pwsh
@@ -274,11 +304,12 @@ jobs:
         if ($exitCode -ne 0) { exit $exitCode }
 
     - name: Upload immutable packages and reports
-      if: github.event_name != 'pull_request'
+      id: packages
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: ${{ inputs.artifact-name }}
-        retention-days: ${{ inputs.artifact-name == 'packages' && 7 || 90 }}
+        retention-days: ${{ github.event_name == 'pull_request' && 1 || inputs.artifact-name == 'packages' && 7 || 90 }}
         path: |
           artifacts/packages
           artifacts/consumers/**/result.json

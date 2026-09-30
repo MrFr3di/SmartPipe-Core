@@ -28,6 +28,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SmartPipe.Core\SmartPipe.Core.csproj" />
+    <ProjectReference Include="..\..\src\SmartPipe.Testing\SmartPipe.Testing.csproj" />
     <ProjectReference Include="..\..\src\SmartPipe.Extensions.EntityFrameworkCore\SmartPipe.Extensions.EntityFrameworkCore.csproj" />
   </ItemGroup>
 </Project>

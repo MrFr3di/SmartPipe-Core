@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="HttpProgram.cs" />
+    <Compile Include="LoopbackHttpServer.cs" />
+    <Compile Include="ConsumerHttpSupport.cs" />
+    <Compile Include="HttpConsumerChecks.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SmartPipe.Core" />
+    <PackageReference Include="SmartPipe.Extensions.Http" />
+  </ItemGroup>
+</Project>

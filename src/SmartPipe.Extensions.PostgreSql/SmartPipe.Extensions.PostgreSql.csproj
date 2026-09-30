@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SmartPipePackage>true</SmartPipePackage>
+  </PropertyGroup>
+  <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
+  <PropertyGroup>
+    <PackageId>SmartPipe.Extensions.PostgreSql</PackageId>
+    <Description>PostgreSQL-native SmartPipe components: binary COPY streaming source, binary COPY batch sink and LISTEN/NOTIFY notification source on an application-owned NpgsqlDataSource.</Description>
+    <PackageTags>smartpipe;pipeline;postgresql;npgsql;copy;listen;notify;integration</PackageTags>
+    <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <VerifyReferenceAotCompatibility>true</VerifyReferenceAotCompatibility>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SmartPipe.Core\SmartPipe.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SmartPipe.Extensions.PostgreSql.Tests" />
+  </ItemGroup>
+</Project>

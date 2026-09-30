@@ -16,11 +16,16 @@
     <Project Path="src/SmartPipe.Extensions.HealthChecks/SmartPipe.Extensions.HealthChecks.csproj" />
     <Project Path="src/SmartPipe.Extensions.DataAnnotations/SmartPipe.Extensions.DataAnnotations.csproj" />
     <Project Path="src/SmartPipe.Extensions.Hosting/SmartPipe.Extensions.Hosting.csproj" />
+    <Project Path="src/SmartPipe.Extensions.Http/SmartPipe.Extensions.Http.csproj" />
+    <Project Path="src/SmartPipe.Extensions.Http.Json/SmartPipe.Extensions.Http.Json.csproj" />
     <Project Path="src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj" />
     <Project Path="src/SmartPipe.Extensions.Csv/SmartPipe.Extensions.Csv.csproj" />
     <Project Path="src/SmartPipe.Extensions.Dapper/SmartPipe.Extensions.Dapper.csproj" />
     <Project Path="src/SmartPipe.Extensions.EntityFrameworkCore/SmartPipe.Extensions.EntityFrameworkCore.csproj" />
     <Project Path="src/SmartPipe.Extensions.Mapster/SmartPipe.Extensions.Mapster.csproj" />
+    <Project Path="src/SmartPipe.Extensions.Polly/SmartPipe.Extensions.Polly.csproj" />
+    <Project Path="src/SmartPipe.Extensions.PostgreSql/SmartPipe.Extensions.PostgreSql.csproj" />
+    <Project Path="src/SmartPipe.Testing/SmartPipe.Testing.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SmartPipe.RepositoryChecks.ProcessFixture/SmartPipe.RepositoryChecks.ProcessFixture.csproj" />
@@ -33,12 +38,17 @@
     <Project Path="tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.HealthChecks.Tests/SmartPipe.Extensions.HealthChecks.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj" />
+    <Project Path="tests/SmartPipe.Extensions.Http.Tests/SmartPipe.Extensions.Http.Tests.csproj" />
+    <Project Path="tests/SmartPipe.Extensions.Http.Json.Tests/SmartPipe.Extensions.Http.Json.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Csv.Tests/SmartPipe.Extensions.Csv.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Dapper.Tests/SmartPipe.Extensions.Dapper.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.EntityFrameworkCore.Tests/SmartPipe.Extensions.EntityFrameworkCore.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Mapster.Tests/SmartPipe.Extensions.Mapster.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.OpenTelemetry.Tests/SmartPipe.Extensions.OpenTelemetry.Tests.csproj" />
+    <Project Path="tests/SmartPipe.Extensions.Polly.Tests/SmartPipe.Extensions.Polly.Tests.csproj" />
+    <Project Path="tests/SmartPipe.Extensions.PostgreSql.Tests/SmartPipe.Extensions.PostgreSql.Tests.csproj" />
+    <Project Path="tests/SmartPipe.Testing.Tests/SmartPipe.Testing.Tests.csproj" />
     <Project Path="tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj" />
   </Folder>
 </Solution>

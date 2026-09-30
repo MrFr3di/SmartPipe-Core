@@ -20,6 +20,20 @@ hand-written or source-generated mapper passed to `PipelineTransformer.FromFunc`
 `mapster-trim-diagnostic` consumer publishes and runs that route under `TrimMode=link`. The forwarded
 legacy `MapsterTransform<TInput,TOutput>` keeps its shipped annotations.
 
+`SmartPipe.Extensions.Http` declares the `transport-full` contract: the transport is trimming- and
+NativeAOT-compatible, proven by the `http-trim` and `http-nativeaot` consumers that publish and run a
+direct-client source and a factory-client sink. Application request factories, response readers, and
+handlers stay outside the claim. `SmartPipe.Extensions.Http.Json` declares `full-json-type-info`: its
+array and NDJSON readers and JSON request content accept only source-generated `JsonTypeInfo<T>`, and the
+`http-json-trim` and `http-json-nativeaot` consumers publish and run that path with reflection
+serialization disabled.
+
+`SmartPipe.Extensions.Polly` declares the `verified` contract for the decorator over `Polly.Core`: the
+`polly-trim` and `polly-nativeaot` consumers publish and run a Core pipeline whose stage is decorated with
+a Polly retry over an owned inner transform, plus a direct decorator with a borrowed inner transform and
+an exception mapper. Application strategies, callbacks, Polly registry packages, and other dynamic code
+stay outside the claim.
+
 Use source-generated JSON metadata as the primary path for JSON file and
 dead-letter helpers:
 
@@ -111,3 +125,14 @@ provider, compiled models, and generated query delegates are evaluated by the co
 legacy `EfCoreSelector<T>` resolves its entity set through `DbContext.Set<T>()`, which is
 trimming-unsafe; its narrow internal suppression documents that boundary, and the factory-based
 `EfCorePipelineComponents` sources are the supported alternative.
+
+`SmartPipe.Extensions.PostgreSql` declares the positive `IsAotCompatible`, trim-analyzer, and
+AOT-analyzer contract for the slim/static primitive path only: `NpgsqlSlimDataSourceBuilder`, built-in
+primitive mappings, static COPY callbacks, no dynamic JSON, no unmapped types, and no composite
+mapping. Binary COPY and `LISTEN` carry no `RequiresUnreferencedCode` or `RequiresDynamicCode`
+annotations, and Npgsql ships `IsAotCompatible` for `net8.0+`. Caller opt-ins such as
+`EnableDynamicJson`, `EnableRecordsAsTuples`, `EnableUnmappedTypes`, `MapComposite`, and
+`MapEnum(Type, …)` keep their own warnings; SmartPipe never suppresses them globally, and arbitrary
+application callbacks remain outside the claim. Transport security is off by default in the slim
+builder, so a TLS deployment must call `EnableTransportSecurity()` and select its own Npgsql SSL
+verification settings. See the [PostgreSQL subsystem reference](postgresql.md).

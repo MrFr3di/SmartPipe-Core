@@ -275,8 +275,17 @@ JSON file, transform, and JSON dead-letter integrations live in
 explicit-SQL integrations, and the Channels, Transforms, DataAnnotations, and
 Logging leaves are reachable through the bundle. The Entity Framework Core and
 Mapster leaves are active and their legacy identities are forwarded from the
-bundle; HTTP and Polly still live in `SmartPipe.Extensions` until their own leaf
-packages land.
+bundle. HTTP lives in the `SmartPipe.Extensions.Http` transport and
+`SmartPipe.Extensions.Http.Json` codec leaves; the 2.1.2 HTTP selector and sink
+types were removed by ADR-0004 and consumers recompile against those leaves.
+Polly lives in the `SmartPipe.Extensions.Polly` decorator leaf, which depends only on
+Core and `Polly.Core`; the 2.1.2 no-op `PollyResilienceTransform<T>` was removed by
+ADR-0004.
+PostgreSQL lives in `SmartPipe.Extensions.PostgreSql`, which streams binary `COPY` in
+both directions and exposes `LISTEN`/`NOTIFY` over an application-owned
+`NpgsqlDataSource`; it depends only on Core, `Npgsql`, and Logging.Abstractions,
+declares the positive `IsAotCompatible` contract for the slim/static primitive path,
+and is not part of the bundle.
 Some non-JSON integrations may not be AOT-friendly.
 
 ## Extensions Package Surface
@@ -287,8 +296,11 @@ and JSON dead-letter persistence without the broad Extensions dependency graph.
 moved public types are exposed from it through type forwarding, and the
 [ADR-0002](docs/adr/0002-smartpipe-2.2-legacy-compatibility-quarantine.md) legacy
 DI/Hosting/Health cluster stays there under `obsolete-wrapper` ownership for
-2.2.0. SP220-16 completes the remaining facade work. New JSON applications should
+2.2.0. SP220-17 completes the remaining facade work. New JSON applications should
 reference dedicated packages directly.
+`SmartPipe.Extensions.PostgreSql` is the PostgreSQL-native leaf and stays outside
+the bundle: it is an optional reference, and the facade neither forwards its
+types nor takes a package dependency on it.
 
 README examples are intentionally minimal. CI consumer smoke is the executable
 check for the public quick-start scenarios.
@@ -299,6 +311,7 @@ check for the public quick-start scenarios.
 - [Configuration](docs/configuration.md)
 - [Runtime contracts](docs/runtime-contracts.md)
 - [Resilience](docs/resilience.md)
+- [PostgreSQL](docs/postgresql.md)
 - [Architecture](docs/architecture.md)
 - [Observability](docs/observability.md)
 - [Observers](docs/observers.md)
@@ -318,6 +331,9 @@ check for the public quick-start scenarios.
 - `SmartPipe.Core` depends on `Microsoft.Extensions.Logging.Abstractions`.
 - `SmartPipe.Extensions.Json` adds System.Text.Json file, transform, and
   dead-letter integrations.
+- `SmartPipe.Extensions.PostgreSql` adds binary `COPY` sources and sinks and a
+  `LISTEN`/`NOTIFY` source over an application-owned `NpgsqlDataSource`. It needs
+  `Npgsql` 10.0.3 and is optional: it is not part of the bundle.
 - `SmartPipe.Extensions` is the convenience bundle and compatibility facade for
   the runtime integration dependencies.
 

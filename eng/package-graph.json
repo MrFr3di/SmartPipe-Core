@@ -79,7 +79,23 @@
         "entity-framework-core-trim-diagnostic",
         "mapster-direct",
         "mapster-facade-binary-2.1.2",
-        "mapster-trim-diagnostic"
+        "mapster-trim-diagnostic",
+        "http-direct",
+        "http-trim",
+        "http-nativeaot",
+        "http-json-direct",
+        "http-json-trim",
+        "http-json-nativeaot",
+        "polly-direct",
+        "polly-trim",
+        "polly-nativeaot",
+        "postgresql-direct",
+        "postgresql-dapper-composition",
+        "postgresql-efcore-composition",
+        "postgresql-di-composition",
+        "postgresql-opentelemetry-composition",
+        "postgresql-trim",
+        "postgresql-nativeaot"
       ]
     },
     {
@@ -313,7 +329,8 @@
       "consumerScenarios": [
         "dapper-direct",
         "dapper-di-composition",
-        "dapper-trim-diagnostic"
+        "dapper-trim-diagnostic",
+        "postgresql-dapper-composition"
       ]
     },
     {
@@ -355,7 +372,8 @@
       "consumerScenarios": [
         "entity-framework-core-direct",
         "entity-framework-core-di-composition",
-        "entity-framework-core-trim-diagnostic"
+        "entity-framework-core-trim-diagnostic",
+        "postgresql-efcore-composition"
       ]
     },
     {
@@ -400,9 +418,9 @@
     {
       "id": "SmartPipe.Extensions.Polly",
       "projectPath": "src/SmartPipe.Extensions.Polly/SmartPipe.Extensions.Polly.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-14",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 10,
       "baselineVersion": null,
       "aotContract": "verified",
@@ -412,7 +430,7 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Resilience"
+          "Polly.Core"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -424,7 +442,7 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Resilience"
+          "Polly.Core"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions"
@@ -432,15 +450,17 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "polly-direct"
+        "polly-direct",
+        "polly-trim",
+        "polly-nativeaot"
       ]
     },
     {
       "id": "SmartPipe.Extensions.Http",
       "projectPath": "src/SmartPipe.Extensions.Http/SmartPipe.Extensions.Http.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-13",
-      "scaffoldKind": "framework-integration",
+      "scaffoldKind": null,
       "publishOrder": 11,
       "baselineVersion": null,
       "aotContract": "transport-full",
@@ -450,7 +470,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Http"
+          "Microsoft.Extensions.Http",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions",
@@ -463,7 +484,8 @@
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
-          "Microsoft.Extensions.Http"
+          "Microsoft.Extensions.Http",
+          "Microsoft.Extensions.Logging.Abstractions"
         ],
         "forbiddenPackagePatterns": [
           "SmartPipe.Extensions",
@@ -472,15 +494,20 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "http-direct"
+        "http-direct",
+        "http-trim",
+        "http-nativeaot",
+        "http-json-direct",
+        "http-json-trim",
+        "http-json-nativeaot"
       ]
     },
     {
       "id": "SmartPipe.Testing",
       "projectPath": "src/SmartPipe.Testing/SmartPipe.Testing.csproj",
-      "lifecycle": "planned",
-      "activationEpic": "SP220-15",
-      "scaffoldKind": "testing",
+      "lifecycle": "active",
+      "activationEpic": "SP220-16",
+      "scaffoldKind": null,
       "publishOrder": 12,
       "baselineVersion": null,
       "aotContract": "not-runtime",
@@ -512,9 +539,9 @@
     {
       "id": "SmartPipe.Extensions.Http.Json",
       "projectPath": "src/SmartPipe.Extensions.Http.Json/SmartPipe.Extensions.Http.Json.csproj",
-      "lifecycle": "planned",
+      "lifecycle": "active",
       "activationEpic": "SP220-13",
-      "scaffoldKind": "composed-integration",
+      "scaffoldKind": null,
       "publishOrder": 13,
       "baselineVersion": null,
       "aotContract": "full-json-type-info",
@@ -544,7 +571,9 @@
       },
       "temporaryAllowances": [],
       "consumerScenarios": [
-        "http-json-direct"
+        "http-json-direct",
+        "http-json-trim",
+        "http-json-nativeaot"
       ]
     },
     {
@@ -600,7 +629,8 @@
         "health-checks-direct",
         "health-checks-aspnet",
         "health-checks-trim",
-        "health-checks-nativeaot"
+        "health-checks-nativeaot",
+        "postgresql-di-composition"
       ]
     },
     {
@@ -642,7 +672,8 @@
         "opentelemetry-otlp",
         "opentelemetry-facade",
         "opentelemetry-trim",
-        "opentelemetry-nativeaot"
+        "opentelemetry-nativeaot",
+        "postgresql-opentelemetry-composition"
       ]
     },
     {
@@ -783,7 +814,7 @@
       "id": "SmartPipe.Extensions",
       "projectPath": "src/SmartPipe.Extensions/SmartPipe.Extensions.csproj",
       "lifecycle": "compatibility-facade",
-      "activationEpic": "existing/SP220-16",
+      "activationEpic": "existing/SP220-17",
       "scaffoldKind": null,
       "publishOrder": 19,
       "baselineVersion": "2.1.2",
@@ -801,7 +832,10 @@
           "SmartPipe.Extensions.Csv",
           "SmartPipe.Extensions.Dapper",
           "SmartPipe.Extensions.EntityFrameworkCore",
-          "SmartPipe.Extensions.Mapster"
+          "SmartPipe.Extensions.Mapster",
+          "SmartPipe.Extensions.Http",
+          "SmartPipe.Extensions.Http.Json",
+          "SmartPipe.Extensions.Polly"
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
@@ -839,7 +873,6 @@
           "Microsoft.Extensions.Hosting.Abstractions",
           "Microsoft.Extensions.Http",
           "Microsoft.Extensions.Options",
-          "Microsoft.Extensions.Resilience",
           "Microsoft.Extensions.Logging.Abstractions",
           "CsvHelper",
           "Dapper",
@@ -850,23 +883,9 @@
       },
       "temporaryAllowances": [
         {
-          "dependency": "Microsoft.Extensions.Http",
-          "reason": "Legacy HTTP implementation remains embedded",
-          "ownerEpic": "SP220-13",
-          "expiresBeforeRelease": false,
-          "evidence": "legacy HTTP public surface"
-        },
-        {
-          "dependency": "Microsoft.Extensions.Resilience",
-          "reason": "Legacy resilience signatures remain embedded",
-          "ownerEpic": "SP220-13/SP220-14",
-          "expiresBeforeRelease": false,
-          "evidence": "legacy HTTP and Polly public surface"
-        },
-        {
           "dependency": "Microsoft.Extensions.Logging.Abstractions",
           "reason": "Compatibility facade public signatures require logging abstractions",
-          "ownerEpic": "SP220-16",
+          "ownerEpic": "SP220-17",
           "expiresBeforeRelease": false,
           "evidence": "public LoggerSink and logging extension signatures"
         },
@@ -907,6 +926,54 @@
         "entity-framework-core-facade-binary-2.1.2",
         "mapster-facade-binary-2.1.2",
         "opentelemetry-facade"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.PostgreSql",
+      "projectPath": "src/SmartPipe.Extensions.PostgreSql/SmartPipe.Extensions.PostgreSql.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-15",
+      "scaffoldKind": null,
+      "publishOrder": 20,
+      "baselineVersion": null,
+      "aotContract": "verified",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Logging.Abstractions",
+          "Npgsql"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions",
+          "SmartPipe.Extensions.Dapper"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Logging.Abstractions",
+          "Npgsql"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions",
+          "SmartPipe.Extensions.Dapper"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "postgresql-direct",
+        "postgresql-dapper-composition",
+        "postgresql-efcore-composition",
+        "postgresql-di-composition",
+        "postgresql-opentelemetry-composition",
+        "postgresql-trim",
+        "postgresql-nativeaot"
       ]
     }
   ]

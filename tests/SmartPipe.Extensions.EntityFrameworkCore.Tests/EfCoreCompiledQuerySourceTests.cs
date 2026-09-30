@@ -2,6 +2,7 @@
 
 using FluentAssertions;
 using SmartPipe.Core;
+using SmartPipe.Testing;
 using SmartPipe.Extensions.EntityFrameworkCore.Runtime;
 
 namespace SmartPipe.Extensions.EntityFrameworkCore.Tests;
@@ -16,7 +17,7 @@ public sealed class EfCoreCompiledQuerySourceTests
             factory,
             (context, activation, ct) => Counts(1, 2, 3));
 
-        var items = await SourceReader.ReadAllAsync(source);
+        var items = (await SourceReader.ReadEnvelopesAsync(source, 1024)).Select(envelope => envelope.Payload).ToList();
 
         items.Should().Equal(1, 2, 3);
         factory.Contexts[0].DisposeCount.Should().Be(1);
@@ -37,7 +38,7 @@ public sealed class EfCoreCompiledQuerySourceTests
         invocations.Should().Be(0);
         factory.CallCount.Should().Be(1);
 
-        await SourceReader.ReadAllAsync(source);
+        await SourceReader.ReadEnvelopesAsync(source, 1024);
         invocations.Should().Be(1);
     }
 
@@ -47,7 +48,7 @@ public sealed class EfCoreCompiledQuerySourceTests
         var factory = new RecordingContextFactory();
         await using var source = CreateSource<int>(factory, (context, activation, ct) => null!);
 
-        var act = async () => await SourceReader.ReadAllAsync(source);
+        var act = async () => await SourceReader.ReadEnvelopesAsync(source, 1024);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         factory.Contexts[0].DisposeCount.Should().Be(1);
@@ -61,7 +62,7 @@ public sealed class EfCoreCompiledQuerySourceTests
             factory,
             (context, activation, ct) => throw new InvalidOperationException("compiled delegate failed"));
 
-        var act = async () => await SourceReader.ReadAllAsync(source);
+        var act = async () => await SourceReader.ReadEnvelopesAsync(source, 1024);
 
         var exception = await act.Should().ThrowAsync<InvalidOperationException>();
         exception.Which.Message.Should().Be("compiled delegate failed");
@@ -74,8 +75,8 @@ public sealed class EfCoreCompiledQuerySourceTests
         var factory = new RecordingContextFactory();
         await using var source = CreateSource(factory, (context, activation, ct) => Counts(1));
 
-        await SourceReader.ReadAllAsync(source);
-        var act = async () => await SourceReader.ReadAllAsync(source);
+        await SourceReader.ReadEnvelopesAsync(source, 1024);
+        var act = async () => await SourceReader.ReadEnvelopesAsync(source, 1024);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
@@ -102,7 +103,7 @@ public sealed class EfCoreCompiledQuerySourceTests
             () => new TestDbContext(new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<TestDbContext>().Options, failOnDispose: true));
         await using var source = CreateSource(factory, (context, activation, ct) => Failing());
 
-        var act = async () => await SourceReader.ReadAllAsync(source);
+        var act = async () => await SourceReader.ReadEnvelopesAsync(source, 1024);
 
         var exception = await act.Should().ThrowAsync<AggregateException>();
         exception.Which.InnerExceptions[0].Message.Should().Be("sequence failed");
@@ -134,7 +135,7 @@ public sealed class EfCoreCompiledQuerySourceTests
             factory.CreateAsync,
             compiledQuery,
             EfCoreOptionsSnapshot.Create(new EfCoreCompiledQueryOptions { OperationName = "compiled-source" }),
-            TestActivation.Create(),
+            TestActivation.Create("sp220-11-tests"),
             loggerFactory: null,
             activationCancellationToken: default);
 

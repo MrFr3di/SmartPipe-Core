@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <Compile Include="..\Shared\JsonFraming\Utf8LineRecordReader.cs" Link="JsonFraming\Utf8LineRecordReader.cs" />
+    <Compile Include="..\Shared\JsonMetadataSnapshot.cs" Link="JsonMetadataSnapshot.cs" />
+    <Compile Include="..\Shared\UnframedInputLimitStream.cs" Link="UnframedInputLimitStream.cs" />
   </ItemGroup>
 
   <ItemGroup>

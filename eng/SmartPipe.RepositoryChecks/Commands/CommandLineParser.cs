@@ -93,7 +93,9 @@ internal sealed record RunConsumersCommandOptions(
     string PackageVersion,
     string ManifestPath,
     string? Category,
-    string? Scenario) : RepositoryCheckCommand(RepositoryRoot);
+    string? Scenario,
+    string? ExcludeCategory,
+    int MaxParallelism = 2) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record PackPackagesOptions(string RepositoryRoot, PackageGraphMode Mode, string Configuration, string PackageVersion, string OutputDirectory, string ManifestPath) : RepositoryCheckCommand(RepositoryRoot);
 
 internal sealed class CommandLineException(string message) : Exception(message);
@@ -193,7 +195,8 @@ internal static class CommandLineParser
 
     private static RunConsumersCommandOptions ParseRunConsumers(ReadOnlySpan<string> args)
     {
-        string? root = null; string? set = null; string? packages = null; string? version = null; string manifest = "eng/consumer-scenarios.json"; string? category = null; string? scenario = null;
+        var maxParallelism = 2;
+        string? root = null; string? set = null; string? packages = null; string? version = null; string manifest = "eng/consumer-scenarios.json"; string? category = null; string? scenario = null; string? excludeCategory = null;
         var seen = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < args.Length; i += 2)
         {
@@ -208,6 +211,12 @@ internal static class CommandLineParser
                 case "--manifest": manifest = args[i + 1]; break;
                 case "--category": category = args[i + 1]; break;
                 case "--scenario": scenario = args[i + 1]; break;
+                case "--exclude-category": excludeCategory = args[i + 1]; break;
+                case "--max-parallelism":
+                    if (!int.TryParse(args[i + 1], System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture, out maxParallelism) || maxParallelism <= 0)
+                        throw new CommandLineException("Option '--max-parallelism' must be a positive integer.");
+                    break;
                 default: throw new CommandLineException($"Unknown run-consumers option '{args[i]}'.");
             }
         }
@@ -220,6 +229,10 @@ internal static class CommandLineParser
             && (category.Length == 0
                 || category.Any(character => character is not (>= 'a' and <= 'z' or >= '0' and <= '9' or '-'))))
             throw new CommandLineException("Option '--category' must contain lowercase letters, digits, or hyphens.");
+        if (excludeCategory is not null
+            && (excludeCategory.Length == 0
+                || excludeCategory.Any(character => character is not (>= 'a' and <= 'z' or >= '0' and <= '9' or '-'))))
+            throw new CommandLineException("Option '--exclude-category' must contain lowercase letters, digits, or hyphens.");
         if (scenario is not null
             && (scenario.Length == 0
                 || scenario[0] == '.'
@@ -229,7 +242,7 @@ internal static class CommandLineParser
             throw new CommandLineException("Option '--scenario' must contain lowercase letters, digits, hyphens, or separated dot segments.");
         if (category is not null && scenario is not null)
             throw new CommandLineException("Options '--category' and '--scenario' are mutually exclusive.");
-        return new(root, set, ResolveWithinRoot(root, packages, "--package-directory"), version, Path.GetRelativePath(root, resolvedManifest).Replace('\\', '/'), category, scenario);
+        return new(root, set, ResolveWithinRoot(root, packages, "--package-directory"), version, Path.GetRelativePath(root, resolvedManifest).Replace('\\', '/'), category, scenario, excludeCategory, maxParallelism);
     }
 
     private static ScaffoldPackageOptions ParseScaffoldPackage(ReadOnlySpan<string> args)

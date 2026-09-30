@@ -68,6 +68,16 @@ coverage in the top-level `requiredAtRelease` list; release validation fails if
 one of those IDs has no scenario. Scenario workspaces restore from an isolated
 NuGet configuration that maps `SmartPipe.*` to the local package directory and
 maps each external package ID explicitly to nuget.org.
+When `templatePath` names a `.csproj`, that exact top-level project is run;
+`.cs` templates still use the sole top-level project in their directory. A
+shared template directory may contain multiple projects when each project
+explicitly lists the source files it compiles. PostgreSQL consumer projects
+explicitly link `Scenarios/_shared/PostgreSqlConsumerSupport.cs`; the runner
+copies that one file into the isolated workspace beside the selected scenario.
+
+Contained paths reject reparse points in every existing component below the
+supplied repository root before reading or copying; missing paths retain their
+existing caller-specific validation.
 
 ## Verification
 
@@ -88,6 +98,13 @@ dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.c
 dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-release-version --mode current --tag v2.2.0 --packages artifacts\packages
 dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- run-consumers --repository-root . --set current --package-directory artifacts\packages --package-version 2.2.0
 ```
+
+`run-consumers` runs at most two scenarios concurrently by default, with at most
+one NativeAOT scenario active. Use `--max-parallelism 1` for serial execution on
+memory-constrained machines, or another positive integer to change the overall
+limit. Each scenario keeps its own workspace, NuGet cache, and logs; results stay
+in manifest order. A failure stops scheduling new work, cancels active siblings,
+and waits for their process cleanup before reporting the initiating failure.
 
 Run the graph and all validators again with `--mode release` before a release.
 Release mode must have no unexpected violations: planned package work,

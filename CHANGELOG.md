@@ -7,6 +7,30 @@
   forwarding.
 - Added NativeAOT-safe channel, rule-transform, and safe logging paths; annotated
   the reflection-based DataAnnotations invocation boundary for trimming.
+- Added `SmartPipe.Extensions.Http`, a streaming transport with explicit
+  client, request, and response ownership, an optional body timeout, bounded
+  opt-in error previews, and no hidden retry. Added
+  `SmartPipe.Extensions.Http.Json`, which adds bounded source-generated JSON
+  array and NDJSON readers and JSON request content.
+- **Breaking:** removed `HttpSelector<T>`, `HttpClientFactorySelector<T>`,
+  `HttpSink<T>`, `HttpClientFactorySink<T>`, and `HttpSelectorStreamingMode` from
+  `SmartPipe.Extensions` per ADR-0004. There are no wrappers or forwarders;
+  migrate to the HTTP leaves and recompile.
+- Added `SmartPipe.Extensions.Polly`, a decorator that runs the real inner
+  transform once per attempt of an application-owned typed Polly pipeline, with
+  explicit inner ownership, single-flight lifecycle, final-outcome preservation,
+  and an opt-in final-exception mapper. It depends only on Core and
+  `Polly.Core` 8.8.0.
+- **Breaking:** removed the no-op `PollyResilienceTransform<T>` from
+  `SmartPipe.Extensions` per ADR-0004; it never ran an inner transform. There is
+  no wrapper or forwarder; migrate to `SmartPipe.Extensions.Polly` and
+  recompile. The facade no longer depends on `Microsoft.Extensions.Resilience`.
+- Added `SmartPipe.Extensions.PostgreSql`, a PostgreSQL-native package with
+  binary `COPY … TO STDOUT (FORMAT BINARY)` as a streaming source, binary
+  `COPY … FROM STDIN (FORMAT BINARY)` as a batch sink where one envelope is
+  one complete COPY, and `LISTEN`/`NOTIFY` as a notification source over an
+  application-owned `NpgsqlDataSource`. It depends only on Core, `Npgsql`
+  10.0.3, and `Microsoft.Extensions.Logging.Abstractions`.
 
 ## [2.2.0] — Development
 

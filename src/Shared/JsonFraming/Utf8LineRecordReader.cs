@@ -4,10 +4,18 @@ internal readonly record struct Utf8LineRecord(byte[] Bytes, bool TooLarge);
 
 internal static class Utf8LineRecordReader
 {
+    public static IAsyncEnumerable<Utf8LineRecord> ReadAsync(
+        Stream stream,
+        int maxRecordSizeBytes,
+        CancellationToken ct) => ReadAsync(stream, maxRecordSizeBytes, ct, null);
+
+    // File and dead-letter consumers drain the complete record before applying their policy.
+    // HTTP Throw can stop once the byte limit and nonblank content are both certain.
     public static async IAsyncEnumerable<Utf8LineRecord> ReadAsync(
         Stream stream,
         int maxRecordSizeBytes,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct,
+        Func<Exception>? earlyOversizeExceptionFactory)
     {
         var readBuffer = new byte[8192];
         using var record = new MemoryStream(Math.Min(maxRecordSizeBytes, 8192));
@@ -89,6 +97,8 @@ internal static class Utf8LineRecordReader
                 record.WriteByte(value);
             else
                 tooLarge = true;
+            if (tooLarge && hasNonWhitespace && earlyOversizeExceptionFactory is not null)
+                throw earlyOversizeExceptionFactory();
         }
     }
 
@@ -98,24 +108,25 @@ internal static class Utf8LineRecordReader
         bool hasNonWhitespace,
         ref bool firstRecord)
     {
-        var bytes = record.ToArray();
-        if (firstRecord)
-        {
-            firstRecord = false;
-            if (bytes.AsSpan().StartsWith("\uFEFF"u8))
-                bytes = bytes[3..];
-        }
+        var stripBom = firstRecord;
+        firstRecord = false;
+        if (!hasNonWhitespace)
+            return null;
+        if (tooLarge)
+            return new Utf8LineRecord(Array.Empty<byte>(), true);
 
-        var start = 0;
+        // Inspect the retained buffer before making the one owned output copy.
+        record.TryGetBuffer(out var buffer);
+        var bytes = buffer.AsSpan();
+        var start = stripBom && bytes.StartsWith("\uFEFF"u8) ? 3 : 0;
         var end = bytes.Length;
         while (start < end && IsHorizontalWhitespace(bytes[start]))
             start++;
         while (end > start && IsHorizontalWhitespace(bytes[end - 1]))
             end--;
-        var content = bytes.AsSpan(start, end - start);
-        if (!hasNonWhitespace || (content.IsEmpty && !tooLarge))
+        if (start == end)
             return null;
-        return new Utf8LineRecord(content.ToArray(), tooLarge);
+        return new Utf8LineRecord(bytes[start..end].ToArray(), false);
     }
 
     private static bool IsHorizontalWhitespace(byte value) =>

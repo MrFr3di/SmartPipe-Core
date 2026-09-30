@@ -1,0 +1,149 @@
+name: Reusable PostgreSQL validation
+
+on:
+  workflow_call:
+    inputs:
+      package-version:
+        description: Exact version from the package producer
+        required: true
+        type: string
+      artifact-id:
+        description: Immutable upload ID from this run's package producer
+        required: true
+        type: string
+      run-integration:
+        description: Run the release primary and compatibility integration matrix
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  postgresql-integration:
+    name: Release PostgreSQL integration (${{ matrix.postgres-version }})
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && inputs.run-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON('{"postgres-version":["18.6","17.11"]}') }}
+
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres-version }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: "${{ format('smartpipe-{0}-{1}', github.run_id, github.run_attempt) }}"
+          POSTGRES_DB: smartpipe
+        ports:
+          - '5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U postgres -d smartpipe"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore locked
+        run: dotnet restore tests/SmartPipe.Extensions.PostgreSql.Tests/SmartPipe.Extensions.PostgreSql.Tests.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true
+
+      - name: Build PostgreSQL test project
+        run: dotnet build tests/SmartPipe.Extensions.PostgreSql.Tests/SmartPipe.Extensions.PostgreSql.Tests.csproj --configuration Release --no-restore -warnaserror
+
+      - name: PostgreSQL integration tests
+        env:
+          SMARTPIPE_POSTGRES_CONNECTION_STRING: >-
+            Host=127.0.0.1;Port=5432;Username=postgres;Password=${{ format('smartpipe-{0}-{1}', github.run_id, github.run_attempt) }};Database=smartpipe
+          SMARTPIPE_POSTGRES_OPTIONAL: '0'
+        run: dotnet test --project tests/SmartPipe.Extensions.PostgreSql.Tests/SmartPipe.Extensions.PostgreSql.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
+  postgresql-consumers:
+    name: PostgreSQL package consumers (18.6)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:18.6
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: "${{ format('smartpipe-{0}-{1}', github.run_id, github.run_attempt) }}"
+          POSTGRES_DB: smartpipe
+        ports:
+          - '5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U postgres -d smartpipe"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Record build commit
+        run: git rev-parse HEAD
+
+      - name: Download validated packages
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          artifact-ids: ${{ inputs.artifact-id }}
+          path: downloaded
+          merge-multiple: true
+
+      - name: Validate downloaded package artifact
+        shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ inputs.package-version }}
+        run: ./eng/validate-package-artifact.ps1 -ArtifactRoot downloaded -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json
+
+      - name: Restore repository checks
+        run: dotnet restore eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true
+
+      - name: Build repository checks
+        run: dotnet build eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-restore -warnaserror
+
+      - name: Run PostgreSQL consumer scenarios
+        shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ inputs.package-version }}
+          SMARTPIPE_POSTGRES_CONNECTION_STRING: >-
+            Host=127.0.0.1;Port=5432;Username=postgres;Password=${{ format('smartpipe-{0}-{1}', github.run_id, github.run_attempt) }};Database=smartpipe
+          SMARTPIPE_POSTGRES_OPTIONAL: '0'
+        run: >
+          dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj
+          --configuration Release --no-build -- run-consumers --set current --category postgresql
+          --package-directory downloaded/artifacts/packages --package-version "$env:PACKAGE_VERSION"
+
+      - name: Upload PostgreSQL consumer results
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: postgresql-consumer-results
+          path: artifacts/consumers/**/result.json
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
+          if-no-files-found: error

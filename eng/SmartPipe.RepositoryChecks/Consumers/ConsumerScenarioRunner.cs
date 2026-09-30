@@ -20,7 +20,9 @@ internal sealed record RunConsumersOptions(
     string PackageVersion,
     string ManifestPath,
     string? Category = null,
-    string? Scenario = null);
+    string? Scenario = null,
+    string? ExcludeCategory = null,
+    int MaxParallelism = 2);
 
 internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner = null)
 {
@@ -29,14 +31,11 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
 
     public async Task<IReadOnlyList<ConsumerScenarioResult>> RunAsync(RunConsumersOptions options, CancellationToken ct)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxParallelism);
         var graph = await new PackageGraphLoader().LoadAsync(options.RepositoryRoot, "eng/package-graph.json", ct).ConfigureAwait(false);
         var document = await new ConsumerScenarioLoader().LoadAsync(options.RepositoryRoot, options.ManifestPath, graph, ct).ConfigureAwait(false);
-        var scenarios = document.Scenarios
-            .Where(scenario => scenario.Set == options.Set
-                && (options.Category is null || scenario.Category == options.Category)
-                && (options.Scenario is null || scenario.Id == options.Scenario))
-            .ToArray();
-        if (scenarios.Length == 0)
+        var scenarios = SelectScenarios(document.Scenarios, options);
+        if (scenarios.Count == 0)
         {
             var selection = options.Scenario is null
                 ? $"Consumer set '{options.Set}' is empty."
@@ -56,10 +55,22 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             .Where(static pair => !pair.Key.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase))
             .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         var externalPackageIds = await ReadExternalPackageIdsAsync(options.RepositoryRoot, ct).ConfigureAwait(false);
-        var results = new List<ConsumerScenarioResult>();
-        foreach (var scenario in scenarios) results.Add(await RunScenarioAsync(options, scenario, graph, externalPackageVersions, externalPackageIds, ct).ConfigureAwait(false));
-        return results;
+        return await ConsumerScenarioScheduler.RunAsync(
+            scenarios,
+            options.MaxParallelism,
+            (scenario, workerToken) => RunScenarioAsync(options, scenario, graph, externalPackageVersions, externalPackageIds, workerToken),
+            ct).ConfigureAwait(false);
     }
+
+    internal static IReadOnlyList<ConsumerScenario> SelectScenarios(
+        IReadOnlyList<ConsumerScenario> candidates,
+        RunConsumersOptions options) =>
+        candidates
+            .Where(scenario => scenario.Set == options.Set
+                && (options.Category is null || scenario.Category == options.Category)
+                && (options.ExcludeCategory is null || scenario.Category != options.ExcludeCategory)
+                && (options.Scenario is null || scenario.Id == options.Scenario))
+            .ToArray();
 
     private async Task<ConsumerScenarioResult> RunScenarioAsync(
         RunConsumersOptions options,
@@ -77,8 +88,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         var source = Path.Combine(workspace, "source");
         var logs = Path.Combine(workspace, "logs");
         Directory.CreateDirectory(source); Directory.CreateDirectory(logs);
-        CopyTemplateDirectory(options.RepositoryRoot, scenario.TemplatePath, source);
-        var project = Directory.EnumerateFiles(source, "*.csproj", SearchOption.TopDirectoryOnly).Single();
+        var project = CopyTemplateDirectory(options.RepositoryRoot, scenario.TemplatePath, source);
         var events = new List<ConsumerCommandEvent>();
         var feed = options.PackageDirectory;
         var version = options.PackageVersion;
@@ -577,7 +587,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         }
     }
 
-    internal static void CopyTemplateDirectory(string root, string templatePath, string destination)
+    internal static string CopyTemplateDirectory(string root, string templatePath, string destination)
     {
         var template = ConsumerScenarioLoader.ResolveContained(root, templatePath, "templatePath");
         var directory = Path.GetDirectoryName(template)!;
@@ -595,6 +605,61 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(file, target);
             }
         }
+
+        CopyPostgreSqlSharedSupportIfRequired(root, directory, destination);
+
+        return Path.GetExtension(template).Equals(".csproj", StringComparison.OrdinalIgnoreCase)
+            ? Path.Combine(destination, Path.GetFileName(template))
+            : Directory.EnumerateFiles(destination, "*.csproj", SearchOption.TopDirectoryOnly).Single();
+    }
+
+    private static void CopyPostgreSqlSharedSupportIfRequired(string root, string scenarioDirectory, string destination)
+    {
+        var relativeDirectory = Path.GetRelativePath(Path.GetFullPath(root), scenarioDirectory)
+            .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        var segments = relativeDirectory.Split(Path.DirectorySeparatorChar);
+        if (segments.Length != 4
+            || !segments[0].Equals("tests", StringComparison.OrdinalIgnoreCase)
+            || !segments[1].Equals("Consumers", StringComparison.OrdinalIgnoreCase)
+            || !segments[2].Equals("Scenarios", StringComparison.OrdinalIgnoreCase)
+            || !segments[3].StartsWith("postgresql-", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        const string sharedSupportPath = "tests/Consumers/Scenarios/_shared/PostgreSqlConsumerSupport.cs";
+        var sharedSource = ConsumerScenarioLoader.ResolveContained(root, sharedSupportPath, "PostgreSQL shared support");
+        var sharedSourceDirectory = Path.GetDirectoryName(sharedSource)!;
+        if (!File.Exists(sharedSource)
+            || (File.GetAttributes(sharedSourceDirectory) & FileAttributes.ReparsePoint) != 0
+            || (File.GetAttributes(sharedSource) & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new ConsumerScenarioException("SPCONS005", "PostgreSQL shared support must be a contained regular file.");
+        }
+
+        var workspace = Path.GetFullPath(Path.GetDirectoryName(destination)!);
+        var sharedDestinationDirectory = Path.GetFullPath(Path.Combine(workspace, "_shared"));
+        EnsureContained(workspace, sharedDestinationDirectory);
+        if ((File.GetAttributes(workspace) & FileAttributes.ReparsePoint) != 0
+            || (Directory.Exists(sharedDestinationDirectory)
+                && (File.GetAttributes(sharedDestinationDirectory) & FileAttributes.ReparsePoint) != 0))
+        {
+            throw new ConsumerScenarioException("SPCONS005", "PostgreSQL shared support destination contains a directory link.");
+        }
+
+        Directory.CreateDirectory(sharedDestinationDirectory);
+        if ((File.GetAttributes(sharedDestinationDirectory) & FileAttributes.ReparsePoint) != 0)
+            throw new ConsumerScenarioException("SPCONS005", "PostgreSQL shared support destination contains a directory link.");
+
+        var sharedDestination = Path.GetFullPath(Path.Combine(sharedDestinationDirectory, Path.GetFileName(sharedSource)));
+        EnsureContained(workspace, sharedDestination);
+        if (File.Exists(sharedDestination)
+            && (File.GetAttributes(sharedDestination) & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new ConsumerScenarioException("SPCONS005", "PostgreSQL shared support destination contains a file link.");
+        }
+
+        File.Copy(sharedSource, sharedDestination);
     }
 
     private static string RuntimeIdentifier() => OperatingSystem.IsWindows() ? "win-x64" : OperatingSystem.IsLinux() ? "linux-x64" : OperatingSystem.IsMacOS() ? "osx-x64" : throw new ConsumerScenarioException("SPCONS018", "NativeAOT/trim scenario is unsupported on this OS.");
