@@ -55,6 +55,57 @@ References: [xUnit 4.0.0 release notes](https://xunit.net/releases/v3/4.0.0),
 [VS adapter 4.0.0](https://xunit.net/releases/visualstudio/4.0.0),
 [SP220-17 analysis](../../plans/2.2.0/SP220-17-facade-and-migration-analysis.md).
 
-Local candidate checks (SDK 10.0.303): locked restore and Release solution build with warnings as errors passed; Core 1283/1283 passed. Seventeen test suites passed when invoked directly. The MTP orchestration and 27 RepositoryChecks tests are blocked by sandbox socket permission errors. PostgreSQL requires a configured database; the facade suite exceeded the local 180-second execution limit. Four OpenTelemetry export tests fail identically on the unmodified release base and candidate in this environment. Full GitHub Actions validation remains required.
+## Review follow-up validation
 
-Publication and closure of superseded PRs were explicitly authorized on 2026-09-30. Candidate acceptance still requires GitHub Actions validation.
+The review follow-up makes both EWMA tests await the complete worker aggregate.
+A deadline, test cancellation, or worker fault fails the test; cooperative
+workers are cancelled and drained before the failure escapes. Four regression
+tests cover deadline, cancellation, failure propagation, and successful completion.
+The six pipeline concurrency tests observe test cancellation at their external
+barriers and release controlled gates in `finally`, retaining their independent
+run cancellation and disposal assertions.
+
+The eight Dapper/EF consumer templates now reference
+`SQLitePCLRaw.bundle_e_sqlite3` rather than the legacy raw-package triplet.
+The three unused 2.1.12 central minima were removed after reference inventory.
+NuGet regenerated the three affected test locks: bundle/core/provider resolve
+to 3.0.5 and the native `SQLite` package to 3.53.4. Restore-generated content
+hashes and resolved versions remain unchanged; raw packages are transitive.
+
+Local validation uses SDK 10.0.303 on Linux and compares the accepted baseline
+`cf6f16d4b34db9fc4d090e94c26e364cae5192da` with the reviewed candidate:
+
+| Check | Accepted baseline | Reviewed candidate |
+|---|---:|---:|
+| MTP discovery across 21 test assemblies | 3291 | 3295 |
+| Core execution, including stress | 1283 passed; 0 skipped | 1287 passed; 0 skipped |
+| Core Cobertura | — | Valid XML; 91.3% line coverage |
+| Dapper suite | — | 53 passed; 0 skipped |
+| EntityFrameworkCore suite | — | 47 passed; 0 skipped |
+| Mapster suite | — | 21 passed; 0 skipped |
+| Facade suite | — | 199 passed; 0 skipped |
+
+Discovery comparison groups by test method and counts theory rows because
+xUnit 4 changes parameter display escaping/truncation. No previous methods or
+row counts were removed; the only additions are the four workload regression
+methods. Execution adds one dynamically expanded theory row in both versions.
+An intentionally blocked 32-start factory probe confirms that test cancellation
+now reaches the body cleanup; the original body remains waiting at its barrier.
+The probe deliberately fails on its one-second timeout and is not part of the
+committed passing suite.
+
+Locked solution restore, Release solution build with warnings as errors
+(zero warnings/errors), the `sp220-05` repository verification profile, and
+workflow contract tests pass. The graph pack succeeded, and all eight Dapper/EF packed consumers passed
+on Linux, including the old 2.1.2 binaries. Their generated lock files confirm
+bundle/core/provider 3.0.5 and native SQLite 3.53.4 with no legacy
+`SQLitePCLRaw.lib.e_sqlite3` or `SourceGear.sqlite3` package. A separate read-only
+review found no blocking issues. Full Windows PR validation and a normal Linux `CI` workflow dispatch
+must run against the final candidate; the PR records their immutable run URLs
+and head SHA. Those runs validate packed consumers, native SQLite loading,
+Dapper direct/old-binary compatibility, Mapster canonical/facade behavior,
+coverage, and PostgreSQL 18.6/17.11. Earlier baseline/candidate runs are not
+substitutes for final-head validation.
+
+SP220-17/SP220-18 remain future acceptance work. Dependabot's default-branch
+target configuration is a separate follow-up.
