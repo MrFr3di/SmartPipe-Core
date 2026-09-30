@@ -67,6 +67,13 @@ internal sealed class CsvBoundedRecordTextWriter : TextWriter
         }
     }
 
+    // TextWriter.Write(string) copies the string into a new char[] before writing.
+    public override void Write(string? value)
+    {
+        if (value is not null)
+            Write(value.AsSpan());
+    }
+
     public override Task WriteAsync(char[] buffer, int index, int count)
     {
         Write(buffer, index, count);
