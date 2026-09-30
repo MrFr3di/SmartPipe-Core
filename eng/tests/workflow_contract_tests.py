@@ -28,6 +28,7 @@ FILES = {
         "dependency-review.yml",
         "reusable-release-validation.yml",
         "publish-nuget.yml",
+        "reusable-postgresql-validation.yml",
     )
 }
 SHA_REF = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
@@ -977,48 +978,106 @@ def assert_postgresql_consumer_partition_contract(reusable: dict, ci: dict) -> N
     require("--exclude-category postgresql" in str(reusable_consumers.get("run", "")),
             "Reusable current consumers must exclude the PostgreSQL category.")
 
-    job_steps = steps(ci["jobs"]["postgresql-integration"], "postgresql-integration")
-    pg18_only = "matrix.postgres-version == '18.6'"
-    package_step_names = (
-        "Restore current package graph for consumers",
-        "Build current packages for consumers",
-        "Set package version for consumers",
-        "Pack current packages for PostgreSQL consumers",
-    )
-    package_steps = [named_step(job_steps, name) for name in package_step_names]
-    require(all(step.get("if") == pg18_only for step in package_steps),
-            "Only the PostgreSQL 18.6 job may restore, build, and pack current consumer packages.")
-    require("dotnet restore SmartPipe.Core.slnx --locked-mode" in str(package_steps[0].get("run", "")),
-            "PostgreSQL consumers must restore the current package graph in locked mode.")
-    require("dotnet build SmartPipe.Core.slnx" in str(package_steps[1].get("run", ""))
-            and "--no-restore" in str(package_steps[1].get("run", ""))
-            and "-warnaserror" in str(package_steps[1].get("run", "")),
-            "PostgreSQL consumers must use a warnings-as-errors Release package build.")
-    pack_run = " ".join(str(package_steps[3].get("run", "")).split())
-    require("pack-packages" in pack_run
-            and "--mode current" in pack_run
-            and '--package-version "$env:PACKAGE_VERSION"' in pack_run
-            and "--output artifacts/packages" in pack_run,
-            "PostgreSQL consumers must use the current graph package set.")
+    require("needs" not in ci["jobs"]["postgresql-integration"],
+            "CI PostgreSQL integration must remain independent of validation.")
+    require("pack-packages" not in str(ci["jobs"]["postgresql-integration"]),
+            "CI PostgreSQL integration must not repack consumer packages.")
 
+
+def assert_downloaded_postgresql_contract(documents: dict[str, dict]) -> None:
+    ci = documents["ci.yml"]["jobs"]
+    publish = documents["publish-nuget.yml"]["jobs"]
+    reusable = documents["reusable-postgresql-validation.yml"]
+    for caller, needs, version in (
+        (ci.get("postgresql-consumers"), "validation", "${{ needs.validation.outputs.package-version }}"),
+        (publish.get("postgresql-validation"), ["version", "validation"], "${{ needs.version.outputs.package-version }}"),
+    ):
+        require(isinstance(caller, dict), "A PostgreSQL artifact gate must exist in CI and release.")
+        require(caller.get("needs") == needs and caller.get("uses") == "./.github/workflows/reusable-postgresql-validation.yml",
+                "PostgreSQL artifact gate must depend on its producer and use the reusable workflow.")
+        require(caller.get("with", {}).get("package-version") == version
+                and caller.get("with", {}).get("artifact-id") == "${{ needs.validation.outputs.artifact-id }}",
+                "PostgreSQL artifact gate must use producer artifact ID and exact version.")
+        require("if" not in caller or caller["if"] == CI_NORMAL_GUARD,
+                "PostgreSQL artifact gate cannot bypass producer success.")
+        require(not caller.get("continue-on-error"), "PostgreSQL artifact gate must be required.")
+    require_ci_normal_job_guard(ci["postgresql-consumers"], "PostgreSQL consumers")
+    require(ci["postgresql-consumers"]["with"].get("run-integration") is False,
+            "CI artifact consumers must not duplicate the independent integration matrix.")
+    require("run-integration" not in publish["postgresql-validation"]["with"],
+            "Release artifact gate must retain both integration versions.")
+    jobs = reusable["jobs"]
+    integration = copy.deepcopy(jobs["postgresql-integration"])
+    require(integration.get("if") == f"({SAME_REPOSITORY_PR_GUARD}) && inputs.run-integration",
+            "Reusable integration must require trusted events and enabled integration.")
+    require(integration.get("name") == "Release " + POSTGRESQL_INTEGRATION_NAME, "Release integration must retain a distinct stable matrix check name.")
+    integration["name"] = POSTGRESQL_INTEGRATION_NAME
+    integration["if"] = CI_NORMAL_GUARD
+    assert_postgresql_integration_contract({"jobs": {"postgresql-integration": integration}})
+    for job in jobs.values():
+        require(not job.get("continue-on-error") and not job.get("strategy", {}).get("continue-on-error"),
+                "PostgreSQL validation jobs must be required.")
+        require(not any(step.get("continue-on-error") or step.get("if") for step in job.get("steps", [])),
+                "PostgreSQL validation steps must be unconditional and required.")
+    consumer = jobs["postgresql-consumers"]
+    require(consumer.get("if") == SAME_REPOSITORY_PR_GUARD and consumer.get("runs-on") == "ubuntu-latest",
+            "Downloaded PostgreSQL consumers must use trusted Linux runners.")
+    require(consumer.get("services", {}).get("postgres", {}).get("image") == "postgres:18.6",
+            "Downloaded PostgreSQL consumers require primary PostgreSQL 18.6.")
+    job_steps = steps(consumer, "downloaded PostgreSQL consumers")
+    download = named_step(job_steps, "Download validated packages")
+    require(download.get("with") == {"artifact-ids": "${{ inputs.artifact-id }}", "path": "downloaded", "merge-multiple": True},
+            "Consumers must download the same-run immutable artifact ID into an explicit root.")
+    integrity = named_step(job_steps, "Validate downloaded package artifact")
+    require(integrity.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot downloaded -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json'
+            and integrity.get("env", {}).get("PACKAGE_VERSION") == "${{ inputs.package-version }}"
+            and not integrity.get("if") and not integrity.get("continue-on-error"),
+            "Consumers must fail closed on artifact integrity and exact version before running.")
     consumers = named_step(job_steps, "Run PostgreSQL consumer scenarios")
-    consumer_run = " ".join(str(consumers.get("run", "")).split())
-    require(consumers.get("if") == pg18_only
-            and "run-consumers --set current --category postgresql" in consumer_run
-            and "--package-directory artifacts/packages" in consumer_run
-            and '--package-version "$env:PACKAGE_VERSION"' in consumer_run,
-            "PostgreSQL 18.6 must run every current PostgreSQL consumer scenario from packed current packages.")
-    environment = consumers.get("env")
-    require(isinstance(environment, dict)
-            and environment.get("SMARTPIPE_POSTGRES_CONNECTION_STRING") == POSTGRESQL_CONNECTION_STRING
-            and POSTGRESQL_PASSWORD_EXPRESSION in str(environment.get("SMARTPIPE_POSTGRES_CONNECTION_STRING"))
-            and environment.get("SMARTPIPE_POSTGRES_OPTIONAL") == "0",
-            "PostgreSQL consumer scenarios must use the same required per-run authenticated service connection.")
-    integration_tests = named_step(job_steps, "PostgreSQL integration tests")
-    require(job_steps.index(integration_tests) < job_steps.index(package_steps[0])
-            < job_steps.index(package_steps[1]) < job_steps.index(package_steps[2])
-            < job_steps.index(package_steps[3]) < job_steps.index(consumers),
-            "PostgreSQL consumer validation must follow integration tests and pack current packages first.")
+    command = " ".join(str(consumers.get("run", "")).split())
+    require("run-consumers --set current --category postgresql" in command
+            and "--package-directory downloaded/artifacts/packages" in command
+            and '--package-version "$env:PACKAGE_VERSION"' in command and "--scenario" not in command,
+            "Downloaded consumers must run all seven PostgreSQL scenarios including NativeAOT.")
+    require(consumers.get("env", {}).get("SMARTPIPE_POSTGRES_OPTIONAL") == "0"
+            and consumers.get("env", {}).get("SMARTPIPE_POSTGRES_CONNECTION_STRING") == POSTGRESQL_CONNECTION_STRING
+            and consumers.get("env", {}).get("PACKAGE_VERSION") == "${{ inputs.package-version }}",
+            "Downloaded consumers require the real server and caller package version.")
+    require(job_steps.index(download) < job_steps.index(integrity) < job_steps.index(consumers),
+            "Artifact integrity must precede consumers.")
+    require(not any(token in str(consumer) for token in ("pack-packages", "dotnet pack", "SmartPipe.Core.slnx")),
+            "Downloaded consumers must never restore/build the solution or repack.")
+    checks_restore = named_step(job_steps, "Restore repository checks")
+    checks_build = named_step(job_steps, "Build repository checks")
+    require(checks_restore.get("run") == "dotnet restore eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true"
+            and checks_build.get("run") == "dotnet build eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-restore -warnaserror",
+            "Artifact consumers must build only RepositoryChecks with locked restore and warning gate.")
+    require(job_steps.index(integrity) < job_steps.index(checks_restore) < job_steps.index(checks_build) < job_steps.index(consumers),
+            "Consumer tool build must follow integrity and precede consumers.")
+    producer = documents["reusable-release-validation.yml"]
+    require(producer["on"]["workflow_call"].get("outputs", {}).get("artifact-id", {}).get("value") == "${{ jobs.build-test-pack.outputs.artifact-id }}",
+            "Producer must export its immutable uploaded artifact ID.")
+    producer_job = producer["jobs"]["build-test-pack"]
+    require(producer_job.get("outputs") == {"artifact-id": "${{ steps.packages.outputs.artifact-id }}", "package-version": "${{ steps.version.outputs.package-version }}"}
+            and named_step(producer_job["steps"], "Upload immutable packages and reports").get("id") == "packages"
+            and named_step(producer_job["steps"], "Set package version").get("id") == "version",
+            "Producer outputs must bind directly to version and immutable upload steps.")
+    publication = publish["publish"]
+    require(not publication.get("if") and not publication.get("continue-on-error"),
+            "Publishing must require successful validation gates.")
+    publication_steps = publication["steps"]
+    validation = named_step(publication_steps, "Validate downloaded package artifact")
+    require(validation.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json'
+            and validation.get("env", {}).get("PACKAGE_VERSION") == "${{ needs.version.outputs.package-version }}"
+            and not validation.get("if") and not validation.get("continue-on-error"),
+            "Publisher must independently verify the exact version and artifact integrity.")
+    require(publication_steps.index(named_step(publication_steps, "Download validated packages")) < publication_steps.index(validation)
+            < publication_steps.index(named_step(publication_steps, "NuGet login")),
+            "Publisher integrity must precede credential acquisition.")
+    require(reusable.get("permissions") == {"contents": "read"}
+            and all(job.get("permissions", {"contents": "read"}) == {"contents": "read"} for job in jobs.values())
+            and publication.get("permissions") == {"contents": "read", "id-token": "write"},
+            "Only publisher may acquire NuGet OIDC credentials.")
 
 
 def validate(documents: dict[str, dict]) -> None:
@@ -1253,12 +1312,12 @@ def validate(documents: dict[str, dict]) -> None:
             and "--report artifacts/audit/vulnerable.json" in audit_policy_run,
             "Reusable validation must enforce the direct production audit policy from the vulnerable JSON report.")
     upload = named_step(reusable_steps, "Upload immutable packages and reports")
-    require(upload.get("if") == "github.event_name != 'pull_request'",
-            "Reusable validation artifact upload must skip only pull_request events and remain required for non-PR events.")
+    require(upload.get("if") == SAME_REPOSITORY_PR_GUARD,
+            "Reusable validation artifact upload must allow trusted pull requests and reject forks.")
     require(upload.get("with", {}).get("name") == "${{ inputs.artifact-name }}",
             "Reusable validation must upload the caller-selected artifact name.")
     require(upload.get("with", {}).get("retention-days") ==
-            "${{ inputs.artifact-name == 'packages' && 7 || 90 }}",
+            "${{ github.event_name == 'pull_request' && 1 || inputs.artifact-name == 'packages' && 7 || 90 }}",
             "Reusable validation must retain generic CI packages for seven days and versioned artifacts for the existing policy.")
     upload_path = str(upload.get("with", {}).get("path", ""))
     require("artifacts/packages" in upload_path
@@ -1305,11 +1364,11 @@ def validate(documents: dict[str, dict]) -> None:
     require_ci_normal_job_guard(windows, "Windows JSON lane")
     windows_steps = steps(windows, "json-file-windows")
     windows_runs = runs(windows_steps)
-    windows_restores = [command for command in windows_runs if "dotnet restore SmartPipe.Core.slnx" in command]
+    windows_restores = [command for command in windows_runs if "dotnet restore " in command]
     require(windows_restores == [
-        "dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true",
+        "dotnet restore tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true",
     ],
-            "Windows JSON lane must perform exactly one locked-mode solution restore.")
+            "Windows JSON lane must perform exactly one locked-mode targeted restore.")
     require(not any("Category=Stress" in command for command in windows_runs),
             "Windows JSON lane must not execute the stress suite.")
     for name in ("Build JSON test project", "JSON file source, path, open, and share tests",
@@ -1332,7 +1391,7 @@ def validate(documents: dict[str, dict]) -> None:
             and checkout.get("with", {}).get("persist-credentials") is False,
             "Windows baseline contract checkout must pin SHA and disable credentials.")
     baseline_runs = runs(baseline_windows_steps)
-    require("dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true" in baseline_runs,
+    require("dotnet restore tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true" in baseline_runs,
             "Windows baseline contract lane must disable the SDK library-packs source during locked restore.")
     build = named_step(baseline_windows_steps, "Build repository checks")
     require("-warnaserror" in str(build.get("run", "")),
@@ -1383,6 +1442,7 @@ def validate(documents: dict[str, dict]) -> None:
     assert_csv_integration_contract(ci, reusable)
     assert_postgresql_integration_contract(ci)
     assert_postgresql_consumer_partition_contract(reusable, ci)
+    assert_downloaded_postgresql_contract(documents)
     assert_link_check_exclusion_scoped()
     assert_private_repository_docs_links_are_local()
     assert_consumer_contract()
@@ -1401,13 +1461,13 @@ def validate(documents: dict[str, dict]) -> None:
         "package-version": "${{ needs.version.outputs.package-version }}",
         "artifact-name": "${{ needs.version.outputs.artifact-name }}",
     }, "Publish validation must pass version outputs as the reusable workflow inputs.")
-    require(publication.get("needs") == ["version", "validation"],
-            "Publish job must depend exactly on version and validation.")
+    require(publication.get("needs") == ["version", "validation", "postgresql-validation"],
+            "Publish job must depend exactly on version and validation and PostgreSQL validation.")
     require(publication.get("environment") == "nuget-production",
             "Publish job must use nuget-production.")
     publish_steps = steps(publication, "publish")
     download = named_step(publish_steps, "Download validated packages")
-    require(download.get("with", {}).get("name") == "${{ needs.version.outputs.artifact-name }}",
+    require(download.get("with", {}).get("artifact-ids") == "${{ needs.validation.outputs.artifact-id }}",
             "Publish must download the same artifact name produced by validation.")
     publish_runs = runs(publish_steps)
     require(not any("dotnet pack" in command for command in publish_runs), "Publish job must never repack.")
@@ -1416,7 +1476,7 @@ def validate(documents: dict[str, dict]) -> None:
     require(not any(package_id in command for command in version_runs + publish_runs
                     for package_id in hard_coded_ids),
             "Publish version, push, and availability logic must not hard-code package IDs.")
-    require(download.get("with", {}).get("path") == "artifacts",
+    require(download.get("with", {}).get("path") == ".",
             "Publish download layout must preserve manifest repository-relative paths.")
     push = named_step(publish_steps, "Publish packages in dependency order")
     push_run = str(push.get("run", ""))
@@ -1650,7 +1710,7 @@ def _drop_current_consumer_exclusion(documents: dict[str, dict]) -> None:
 
 
 def _remove_postgresql_consumer_step(documents: dict[str, dict]) -> None:
-    job = documents["ci.yml"]["jobs"]["postgresql-integration"]
+    job = documents["reusable-postgresql-validation.yml"]["jobs"]["postgresql-consumers"]
     job["steps"] = [step for step in job["steps"]
                     if step.get("name") != "Run PostgreSQL consumer scenarios"]
 
@@ -2040,6 +2100,31 @@ def assert_mutation_rejected(documents: dict[str, dict], mutate, expected: str) 
 def main() -> int:
     documents = load_workflows()
     validate(documents)
+    def artifact_consumer(docs):
+        return docs["reusable-postgresql-validation.yml"]["jobs"]["postgresql-consumers"]
+
+    for mutate, expected in (
+        (lambda d: d["publish-nuget.yml"]["jobs"].pop("postgresql-validation"), "artifact gate must exist"),
+        (lambda d: d["ci.yml"]["jobs"]["postgresql-integration"].update(needs="validation"), "remain independent"),
+        (lambda d: d["publish-nuget.yml"]["jobs"]["postgresql-validation"].update({"continue-on-error": True}), "must be required"),
+        (lambda d: d["publish-nuget.yml"]["jobs"]["publish"].update({"if": "always()"}), "require successful validation"),
+        (lambda d: d["publish-nuget.yml"]["jobs"]["postgresql-validation"]["with"].update({"package-version": "2.1.2"}), "exact version"),
+        (lambda d: d["ci.yml"]["jobs"]["postgresql-consumers"]["with"].update({"artifact-id": "other"}), "producer artifact ID"),
+        (lambda d: d["ci.yml"]["jobs"]["postgresql-consumers"].update({"if": "always()"}), "cannot bypass"),
+        (lambda d: named_step(artifact_consumer(d)["steps"], "Download validated packages")["with"].update({"run-id": 1}), "same-run immutable"),
+        (lambda d: named_step(artifact_consumer(d)["steps"], "Download validated packages")["with"].update({"path": "artifacts"}), "explicit root"),
+        (lambda d: named_step(artifact_consumer(d)["steps"], "Validate downloaded package artifact").update({"run": "echo skipped"}), "fail closed"),
+        (lambda d: named_step(artifact_consumer(d)["steps"], "Validate downloaded package artifact").update({"continue-on-error": True}), "unconditional and required"),
+        (lambda d: artifact_consumer(d)["steps"].append({"run": "dotnet pack"}), "never restore/build"),
+        (lambda d: artifact_consumer(d)["steps"].reverse(), "integrity must precede"),
+        (lambda d: named_step(artifact_consumer(d)["steps"], "Run PostgreSQL consumer scenarios")["env"].update({"SMARTPIPE_POSTGRES_OPTIONAL": "1"}), "require the real server"),
+        (lambda d: named_step(artifact_consumer(d)["steps"], "Run PostgreSQL consumer scenarios").update({"run": "run-consumers --scenario postgresql-direct"}), "all seven"),
+        (lambda d: d["reusable-postgresql-validation.yml"]["jobs"]["postgresql-integration"]["strategy"].update({"matrix": "18.6"}), "primary/compatibility"),
+        (lambda d: d["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["outputs"].update({"artifact-id": "123"}), "bind directly"),
+        (lambda d: named_step(d["publish-nuget.yml"]["jobs"]["publish"]["steps"], "Validate downloaded package artifact").update({"run": "echo skipped"}), "independently verify"),
+        (lambda d: d["reusable-postgresql-validation.yml"].update({"permissions": {"id-token": "write"}}), "Only publisher"),
+    ):
+        assert_mutation_rejected(documents, mutate, expected)
     manifest = json.loads((ROOT / "eng" / "consumer-scenarios.json").read_text(encoding="utf-8"))
     schema = json.loads((ROOT / "eng" / "consumer-scenarios.schema.json").read_text(encoding="utf-8"))
     assert_document_mutation_rejected(
@@ -2106,8 +2191,7 @@ def main() -> int:
     for mutate, expected in (
         (_drop_current_consumer_exclusion,
          "Reusable validation must run all current consumers while excluding the PostgreSQL category"),
-        (_remove_postgresql_consumer_pack_step,
-         "Expected exactly one step named 'Pack current packages for PostgreSQL consumers'"),
+
         (_remove_postgresql_consumer_step,
          "Expected exactly one step named 'Run PostgreSQL consumer scenarios'"),
     ):
@@ -2193,11 +2277,11 @@ def main() -> int:
     assert_mutation_rejected(
         documents,
         lambda docs: docs["publish-nuget.yml"]["jobs"]["publish"].update({"needs": ["version"]}),
-        "depend exactly on version and validation",
+        "depend exactly on version and validation and PostgreSQL validation",
     )
     assert_mutation_rejected(
         documents,
-        lambda docs: docs["publish-nuget.yml"]["jobs"]["publish"]["steps"][0]["with"].update({"name": "wrong"}),
+        lambda docs: named_step(docs["publish-nuget.yml"]["jobs"]["publish"]["steps"], "Download validated packages")["with"].update({"artifact-ids": "wrong"}),
         "same artifact name",
     )
     assert_mutation_rejected(
@@ -2440,12 +2524,12 @@ def main() -> int:
     assert_mutation_rejected(
         documents,
         _remove_upload_event_guard,
-        "skip only pull_request events and remain required for non-PR events",
+        "allow trusted pull requests and reject forks",
     )
     assert_mutation_rejected(
         documents,
         _restrict_upload_to_push,
-        "skip only pull_request events and remain required for non-PR events",
+        "allow trusted pull requests and reject forks",
     )
     assert_mutation_rejected(
         documents,

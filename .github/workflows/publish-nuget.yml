@@ -61,8 +61,17 @@ jobs:
       package-version: ${{ needs.version.outputs.package-version }}
       artifact-name: ${{ needs.version.outputs.artifact-name }}
 
-  publish:
+  postgresql-validation:
     needs: [version, validation]
+    uses: ./.github/workflows/reusable-postgresql-validation.yml
+    permissions:
+      contents: read
+    with:
+      package-version: ${{ needs.version.outputs.package-version }}
+      artifact-id: ${{ needs.validation.outputs.artifact-id }}
+
+  publish:
+    needs: [version, validation, postgresql-validation]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -70,11 +79,22 @@ jobs:
     environment: nuget-production
 
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
       - name: Download validated packages
         uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
-          name: ${{ needs.version.outputs.artifact-name }}
-          path: artifacts
+          artifact-ids: ${{ needs.validation.outputs.artifact-id }}
+          path: .
+          merge-multiple: true
+
+      - name: Validate downloaded package artifact
+        shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
+        run: ./eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json
 
       - name: NuGet login
         id: nuget-login

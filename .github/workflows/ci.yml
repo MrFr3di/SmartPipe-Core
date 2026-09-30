@@ -152,43 +152,16 @@ jobs:
           SMARTPIPE_POSTGRES_OPTIONAL: '0'
         run: dotnet test --project tests/SmartPipe.Extensions.PostgreSql.Tests/SmartPipe.Extensions.PostgreSql.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
 
-      - name: Restore current package graph for consumers
-        if: matrix.postgres-version == '18.6'
-        run: dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true
-
-      - name: Build current packages for consumers
-        if: matrix.postgres-version == '18.6'
-        run: dotnet build SmartPipe.Core.slnx --configuration Release --no-restore -warnaserror
-
-      - name: Set package version for consumers
-        if: matrix.postgres-version == '18.6'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $packageVersion = (dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo).Trim()
-          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($packageVersion)) { throw 'Unable to determine the package version.' }
-          "PACKAGE_VERSION=$packageVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Pack current packages for PostgreSQL consumers
-        if: matrix.postgres-version == '18.6'
-        shell: pwsh
-        run: >
-          dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj
-          --configuration Release --no-build -- pack-packages
-          --mode current --configuration Release --package-version "$env:PACKAGE_VERSION"
-          --output artifacts/packages --manifest artifacts/packages/manifest.json
-
-      - name: Run PostgreSQL consumer scenarios
-        if: matrix.postgres-version == '18.6'
-        shell: pwsh
-        env:
-          SMARTPIPE_POSTGRES_CONNECTION_STRING: >-
-            Host=127.0.0.1;Port=5432;Username=postgres;Password=${{ format('smartpipe-{0}-{1}', github.run_id, github.run_attempt) }};Database=smartpipe
-          SMARTPIPE_POSTGRES_OPTIONAL: '0'
-        run: >
-          dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj
-          --configuration Release --no-build -- run-consumers --set current --category postgresql
-          --package-directory artifacts/packages --package-version "$env:PACKAGE_VERSION"
+  postgresql-consumers:
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_dispatch' || (inputs.diagnostic-sha == '' && inputs.diagnostic-scenario == '' && inputs.diagnostic-repeat == ''))
+    needs: validation
+    uses: ./.github/workflows/reusable-postgresql-validation.yml
+    permissions:
+      contents: read
+    with:
+      package-version: ${{ needs.validation.outputs.package-version }}
+      artifact-id: ${{ needs.validation.outputs.artifact-id }}
+      run-integration: false
 
   json-file-windows:
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_dispatch' || (inputs.diagnostic-sha == '' && inputs.diagnostic-scenario == '' && inputs.diagnostic-repeat == ''))
@@ -208,7 +181,7 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
 
       - name: Restore locked
-        run: dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true
+        run: dotnet restore tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true
 
       - name: Build JSON test project
         run: dotnet build tests/SmartPipe.Extensions.Json.Tests/SmartPipe.Extensions.Json.Tests.csproj --configuration Release --no-restore -warnaserror
@@ -267,7 +240,7 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
 
       - name: Restore locked
-        run: dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true
+        run: dotnet restore tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true
 
       - name: Build repository checks
         run: dotnet build tests/SmartPipe.RepositoryChecks.Tests/SmartPipe.RepositoryChecks.Tests.csproj --configuration Release --no-restore -warnaserror
