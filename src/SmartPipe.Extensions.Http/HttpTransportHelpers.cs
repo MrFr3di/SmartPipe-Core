@@ -22,6 +22,12 @@ internal static class HttpRequestValidation
         }
 
         ValidateHeaders(request.Headers);
+        // HttpClient merges defaults at SendAsync; explicit request headers shadow them.
+        foreach (var header in client.DefaultRequestHeaders)
+        {
+            if (!request.Headers.Contains(header.Key))
+                ValidateHeader(header.Key, header.Value);
+        }
         if (request.Content is not null)
             ValidateHeaders(request.Content.Headers);
     }
@@ -81,17 +87,20 @@ internal static class HttpRequestValidation
     private static void ValidateHeaders(HttpHeaders headers)
     {
         foreach (var header in headers)
-        {
-            if (!IsToken(header.Key))
-                throw new InvalidOperationException("The request contains an invalid HTTP header name.");
+            ValidateHeader(header.Key, header.Value);
+    }
 
-            foreach (var value in header.Value)
+    private static void ValidateHeader(string name, IEnumerable<string> values)
+    {
+        if (!IsToken(name))
+            throw new InvalidOperationException("The request contains an invalid HTTP header name.");
+
+        foreach (var value in values)
+        {
+            foreach (var character in value)
             {
-                foreach (var character in value)
-                {
-                    if ((character < 0x20 && character != '\t') || character == 0x7f)
-                        throw new InvalidOperationException("The request contains an invalid HTTP header value.");
-                }
+                if ((character < 0x20 && character != '\t') || character == 0x7f)
+                    throw new InvalidOperationException("The request contains an invalid HTTP header value.");
             }
         }
     }

@@ -60,11 +60,11 @@ internal sealed class HttpPipelineSink<T> : IPipelineSink<T>
             ct.ThrowIfCancellationRequested();
             request = await _requestFactory(envelope, ct).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("The HTTP request factory returned null.");
-            HttpRequestValidation.Validate(request, client);
             HttpRequestValidation.AddIdempotencyKey(
                 request,
                 _options.IdempotencyHeaderName,
                 idempotencyKey);
+            HttpRequestValidation.Validate(request, client);
 
             ct.ThrowIfCancellationRequested();
             response = await client.SendAsync(
