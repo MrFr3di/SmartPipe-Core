@@ -162,6 +162,36 @@ public sealed class CsvStrictSinkTests
     }
 
     [Fact]
+    public async Task FileSink_UnencodableRecordAfterBufferGrowthIsRejectedAndSinkRecovers()
+    {
+        var path = CreatePath();
+        var large = new string('é', 3_000);
+        try
+        {
+            var sink = await ActivateSinkAsync(
+                CsvPipelineComponents.FileSink<Person>(
+                    path,
+                    new CsvSinkOptions { Encoding = new UTF8Encoding(false, true) }));
+            await sink.InitializeAsync();
+            await sink.WriteAsync(ProcessingEnvelope<Person>.Create(new Person { Name = large, Age = 1 }));
+
+            await Assert.ThrowsAsync<InvalidDataException>(async () =>
+                await sink.WriteAsync(ProcessingEnvelope<Person>.Create(
+                    new Person { Name = large + large + "\uD800", Age = 2 })));
+            await sink.WriteAsync(ProcessingEnvelope<Person>.Create(new Person { Name = "Bob", Age = 3 }));
+            await sink.DisposeAsync();
+
+            Assert.Equal(
+                new UTF8Encoding(false).GetBytes($"Name,Age\r\n{large},1\r\nBob,3\r\n"),
+                await File.ReadAllBytesAsync(path));
+        }
+        finally
+        {
+            DeleteIfPresent(path);
+        }
+    }
+
+    [Fact]
     public async Task FileSink_OversizeRecordDoesNotPublishPartialBytes()
     {
         var path = CreatePath();
