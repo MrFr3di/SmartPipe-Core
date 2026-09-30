@@ -14,6 +14,61 @@ namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 public sealed class ConsumerScenarioRunnerTests
 {
     [Fact]
+    public async Task RunConsumers_DefaultStartsTwoIsolatedProcessesAndDrainsCancellation()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var process = new GatedConsumerProcessRunner();
+        var run = new ConsumerScenarioRunner(new DotNetProcessRunner(process)).RunAsync(
+            new(root, "current", Path.Combine(root, "artifacts/packages"), "2.2.0",
+                "eng/consumer-scenarios.json", Category: "hosting"), cancellation.Token);
+        try
+        {
+            await process.TwoStarted.Task.WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+        }
+        catch (TimeoutException) { }
+        finally
+        {
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+        }
+
+        try
+        {
+            Assert.Equal(2, process.Requests.Count);
+            Assert.Equal(0, process.Active);
+            Assert.Equal(2, process.Requests.Select(request => request.WorkingDirectory).Distinct().Count());
+            Assert.Equal(2, process.Requests.Select(request => request.OutputLogDirectory).Distinct().Count());
+            Assert.Equal(2, process.Requests.Select(request => request.Arguments[request.Arguments.ToList().IndexOf("--packages") + 1]).Distinct().Count());
+        }
+        finally
+        {
+            foreach (var request in process.Requests)
+                Directory.Delete(Path.GetDirectoryName(request.WorkingDirectory!)!, recursive: true);
+        }
+    }
+
+    private sealed class GatedConsumerProcessRunner : IProcessRunner
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<ProcessRequest> Requests { get; } = new();
+        public TaskCompletionSource TwoStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _active;
+        public int Active => Volatile.Read(ref _active);
+
+        public async Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken)
+        {
+            Requests.Enqueue(request);
+            if (Interlocked.Increment(ref _active) == 2) TwoStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("A gated process must be canceled.");
+            }
+            finally { Interlocked.Decrement(ref _active); }
+        }
+    }
+
+    [Fact]
     public void NativeAotLibraryPreflight_IsNoOpOutsideWindows()
     {
         using var fixture = new RepositoryTestDirectory();

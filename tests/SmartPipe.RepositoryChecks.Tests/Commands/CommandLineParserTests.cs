@@ -322,6 +322,42 @@ public sealed class CommandLineParserTests
         Assert.Null(command.Scenario);
     }
 
+    [Theory]
+    [InlineData("1")]
+    [InlineData("4")]
+    [InlineData("2147483647")]
+    public void Parse_RunConsumersAcceptsParallelismOverride(string value)
+    {
+        using var repository = new CommandRepository();
+        var command = Assert.IsType<RunConsumersCommandOptions>(CommandLineParser.Parse(
+        [
+            "run-consumers", "--repo-root", repository.Path, "--set", "current",
+            "--package-directory", "packages", "--package-version", "2.2.0",
+            "--max-parallelism", value,
+        ]));
+        Assert.Equal("current", command.Set);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("1.5")]
+    [InlineData("abc")]
+    [InlineData("2147483648")]
+    [InlineData("")]
+    [InlineData(" 2")]
+    public void Parse_RunConsumersRejectsNonpositiveOrMalformedParallelism(string value)
+    {
+        using var repository = new CommandRepository();
+        var error = Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+        [
+            "run-consumers", "--repo-root", repository.Path, "--set", "current",
+            "--package-directory", "packages", "--package-version", "2.2.0",
+            "--max-parallelism", value,
+        ]));
+        Assert.Equal("Option '--max-parallelism' must be a positive integer.", error.Message);
+    }
+
     [Fact]
     public void Parse_RunConsumersAcceptsExcludedCategory()
     {

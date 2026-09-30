@@ -21,7 +21,8 @@ internal sealed record RunConsumersOptions(
     string ManifestPath,
     string? Category = null,
     string? Scenario = null,
-    string? ExcludeCategory = null);
+    string? ExcludeCategory = null,
+    int MaxParallelism = 2);
 
 internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner = null)
 {
@@ -30,6 +31,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
 
     public async Task<IReadOnlyList<ConsumerScenarioResult>> RunAsync(RunConsumersOptions options, CancellationToken ct)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxParallelism);
         var graph = await new PackageGraphLoader().LoadAsync(options.RepositoryRoot, "eng/package-graph.json", ct).ConfigureAwait(false);
         var document = await new ConsumerScenarioLoader().LoadAsync(options.RepositoryRoot, options.ManifestPath, graph, ct).ConfigureAwait(false);
         var scenarios = SelectScenarios(document.Scenarios, options);
@@ -53,9 +55,11 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             .Where(static pair => !pair.Key.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase))
             .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         var externalPackageIds = await ReadExternalPackageIdsAsync(options.RepositoryRoot, ct).ConfigureAwait(false);
-        var results = new List<ConsumerScenarioResult>();
-        foreach (var scenario in scenarios) results.Add(await RunScenarioAsync(options, scenario, graph, externalPackageVersions, externalPackageIds, ct).ConfigureAwait(false));
-        return results;
+        return await ConsumerScenarioScheduler.RunAsync(
+            scenarios,
+            options.MaxParallelism,
+            (scenario, workerToken) => RunScenarioAsync(options, scenario, graph, externalPackageVersions, externalPackageIds, workerToken),
+            ct).ConfigureAwait(false);
     }
 
     internal static IReadOnlyList<ConsumerScenario> SelectScenarios(
