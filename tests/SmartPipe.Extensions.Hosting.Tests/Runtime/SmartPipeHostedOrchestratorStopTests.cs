@@ -76,6 +76,38 @@ public sealed class SmartPipeHostedOrchestratorStopTests
     }
 
     [Fact]
+    public async Task StopAsync_StoppingTokenBoundsHungDisposalAndStillAttemptsEveryRun()
+    {
+        var calls = new List<string>();
+        var hungDispose = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var disposeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var a = CreateRun("a", calls);
+        var b = CreateRun("b", calls);
+        b.PendingDispose = hungDispose.Task;
+        b.CallObserver = call =>
+        {
+            calls.Add(call);
+            if (call == "b:dispose")
+                disposeStarted.TrySetResult();
+        };
+        using var lifetime = new RecordingHostApplicationLifetime();
+        using var orchestrator = CreateOrchestrator(lifetime, [a, b]);
+        await orchestrator.StartAsync(TestContext.Current.CancellationToken);
+        using var stopping = new CancellationTokenSource();
+
+        var stop = orchestrator.StopAsync(stopping.Token);
+        await disposeStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        Assert.False(stop.IsCompleted);
+        await stopping.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            stop.WaitAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(["b:drain", "b:dispose", "a:abort", "a:dispose"], calls);
+        Assert.Equal(HostedOrchestratorState.Faulted, orchestrator.State);
+        hungDispose.SetResult();
+    }
+
+    [Fact]
     public async Task StopAsync_PassesInfiniteDrainTimeoutExactly()
     {
         var run = new ControlledHostedRun("orders");

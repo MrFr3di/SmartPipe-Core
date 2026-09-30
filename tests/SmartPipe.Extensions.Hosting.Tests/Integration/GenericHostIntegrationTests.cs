@@ -244,7 +244,7 @@ public sealed class GenericHostIntegrationTests
     }
 
     [Fact]
-    public async Task Host_CancelledShutdownTokenAbortsBeforeDisposingScope()
+    public async Task Host_CancelledShutdownTokenAbortsAndDoesNotWaitForUncooperativeStage()
     {
         var probes = new ConcurrentBag<ScopedProbe>();
         var source = new ControlledSource("orders") { IgnoreReadCancellation = true };
@@ -263,12 +263,14 @@ public sealed class GenericHostIntegrationTests
 
         var stop = host.StopAsync(cancellation.Token);
         await source.ReadCancellationObserved.Task.WaitAsync(TestContext.Current.CancellationToken);
-        Assert.All(probes, probe => Assert.False(probe.IsDisposed));
-        source.AllowReadCompletion.SetResult();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stop);
 
-        Assert.Single(probes);
-        Assert.All(probes, probe => Assert.True(probe.IsDisposed));
+        // The source still ignores cancellation, so stopping must not wait for its disposal.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stop);
+        var probe = Assert.Single(probes);
+        Assert.False(probe.IsDisposed);
+
+        source.AllowReadCompletion.SetResult();
+        await probe.Disposed.Task.WaitAsync(TestContext.Current.CancellationToken);
     }
 
     private static HostApplicationBuilder CreateBuilder()
@@ -390,10 +392,14 @@ public sealed class GenericHostIntegrationTests
 
         internal bool IsDisposed { get; private set; }
 
+        internal TaskCompletionSource Disposed { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public ValueTask DisposeAsync()
         {
             IsDisposed = true;
             disposalOrder.Enqueue(Key);
+            Disposed.TrySetResult();
             return ValueTask.CompletedTask;
         }
     }

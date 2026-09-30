@@ -346,11 +346,12 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
         lock (_gate)
             started = _started.ToArray();
 
+        var disposeAbandoned = false;
         for (var index = started.Length - 1; index >= 0; index--)
         {
             try
             {
-                await _controller.StopAsync(
+                disposeAbandoned |= await _controller.StopAsync(
                     started[index].Run,
                     started[index].Descriptor,
                     cancellationToken).ConfigureAwait(false);
@@ -363,6 +364,13 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
             {
                 cleanupErrors.Add(error);
             }
+        }
+
+        // Runs whose disposal outlived the stopping token were abandoned, not stopped.
+        if (disposeAbandoned
+            && !monitorErrors.Any(static error => error is OperationCanceledException))
+        {
+            monitorErrors.Add(new OperationCanceledException(cancellationToken));
         }
 
         if (ExecuteTask?.IsFaulted == true)

@@ -303,6 +303,61 @@ public sealed class HostedPipelineControllerTests
         Assert.Equal(["drain", "abort", "dispose"], run.Calls);
     }
 
+    [Fact]
+    public async Task StopAsync_DisposeOutlivingStoppingTokenIsAbandonedAndLateFailureLogged()
+    {
+        var pendingDispose = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var run = new ControlledHostedRun("orders") { PendingDispose = pendingDispose.Task };
+        var lateFailureLogged = new TaskCompletionSource<Exception?>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var logger = new RecordingLogger<SmartPipeHostedOrchestrator>
+        {
+            EntryObserver = entry =>
+            {
+                if (entry.Level == LogLevel.Error && Equals(entry.Properties["Operation"], "Dispose"))
+                    lateFailureLogged.TrySetResult(entry.Exception);
+            },
+        };
+        using var stopping = new CancellationTokenSource();
+
+        var stop = new HostedPipelineController(logger).StopAsync(
+            run,
+            CreateDescriptor("orders"),
+            stopping.Token);
+        Assert.False(stop.IsCompleted);
+
+        await stopping.CancelAsync();
+        var abandoned = await stop.WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(abandoned);
+        Assert.Equal(["drain", "dispose"], run.Calls);
+        Assert.Contains(logger.Entries, entry =>
+            entry.Level == LogLevel.Warning
+            && Equals(entry.Properties["Operation"], "DisposeAbandoned"));
+        Assert.DoesNotContain(logger.Entries, entry => Equals(entry.Properties["Operation"], "Stop"));
+
+        var lateError = new InvalidOperationException("late dispose");
+        pendingDispose.SetException(lateError);
+        var logged = await lateFailureLogged.Task.WaitAsync(TestContext.Current.CancellationToken);
+        Assert.Same(lateError, Assert.Single(Assert.IsType<AggregateException>(logged).InnerExceptions));
+    }
+
+    [Fact]
+    public async Task StopAsync_DisposeCompletingBeforeStoppingTokenIsNotAbandoned()
+    {
+        var pendingDispose = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var run = new ControlledHostedRun("orders") { PendingDispose = pendingDispose.Task };
+        using var stopping = new CancellationTokenSource();
+
+        var stop = new HostedPipelineController().StopAsync(
+            run,
+            CreateDescriptor("orders"),
+            stopping.Token);
+        pendingDispose.SetResult();
+
+        Assert.False(await stop.WaitAsync(TestContext.Current.CancellationToken));
+    }
+
     private static HostedPipelineDescriptor CreateDescriptor(
         string key,
         TimeSpan? drainTimeout = null) =>

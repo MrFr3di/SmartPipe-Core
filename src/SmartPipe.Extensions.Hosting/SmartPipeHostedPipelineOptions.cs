@@ -42,11 +42,12 @@ internal sealed record SmartPipeHostedPipelineOptionsSnapshot(
                 "Hosted pipeline completion behavior is invalid.");
 
         if (options.DrainTimeout != Timeout.InfiniteTimeSpan
-            && options.DrainTimeout <= TimeSpan.Zero)
+            && (options.DrainTimeout <= TimeSpan.Zero
+                || options.DrainTimeout.TotalMilliseconds > uint.MaxValue - 1d))
             throw new ArgumentOutOfRangeException(
                 nameof(options.DrainTimeout),
                 options.DrainTimeout,
-                "Hosted pipeline drain timeout must be positive or infinite.");
+                "Hosted pipeline drain timeout must be positive and at most 4294967294 milliseconds, or infinite.");
 
         return new(
             options.Order,

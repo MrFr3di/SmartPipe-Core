@@ -70,6 +70,14 @@ abort. Cleanup continues after individual failures and reports errors in reverse
 run order, then operation order. Host shutdown cancellation skips graceful drain
 but does not skip abort or disposal.
 
+Waiting for disposal is bounded by the host stopping token (for example, the
+host `ShutdownTimeout`). When the token is cancelled before a run finishes
+disposing — typically because a stage or source ignores cancellation — the
+orchestrator logs a `DisposeAbandoned` warning, moves on to the remaining runs,
+and `StopAsync` reports cancellation. The abandoned disposal keeps running in
+the background and a later failure is logged at `Error`. `DrainTimeout` must be
+positive and at most 4294967294 milliseconds, or `Timeout.InfiniteTimeSpan`.
+
 Start, stop, and disposal are idempotent under races. Natural completion is not
 an automatic restart signal: a hosted registration has at most one run for the
 lifetime of that orchestrator.

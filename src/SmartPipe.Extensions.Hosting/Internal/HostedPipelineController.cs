@@ -66,7 +66,11 @@ internal sealed class HostedPipelineController
         errors.ThrowIfAny();
     }
 
-    internal async Task StopAsync(
+    /// <returns>
+    /// <see langword="true"/> when the stopping token fired before the run finished disposing and the
+    /// remaining disposal was left to complete in the background.
+    /// </returns>
+    internal async Task<bool> StopAsync(
         IHostedPipelineRun run,
         HostedPipelineDescriptor descriptor,
         CancellationToken hostStoppingToken)
@@ -145,9 +149,21 @@ internal sealed class HostedPipelineController
             }
         }
 
+        // A stage that ignores cancellation can keep the run's disposal pending indefinitely; the host
+        // stopping token bounds how long shutdown waits for it, and disposal continues in the background.
+        Task? dispose = null;
+        var disposeAbandoned = false;
         try
         {
-            await run.DisposeAsync().ConfigureAwait(false);
+            dispose = run.DisposeAsync().AsTask();
+            await dispose.WaitAsync(hostStoppingToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (
+            dispose is { IsCompleted: false } && hostStoppingToken.IsCancellationRequested)
+        {
+            LogOperation(LogLevel.Warning, "DisposeAbandoned", descriptor, run);
+            ObserveAbandonedDispose(dispose, descriptor, run);
+            disposeAbandoned = true;
         }
         catch (Exception error)
         {
@@ -155,11 +171,22 @@ internal sealed class HostedPipelineController
             errors.Capture(error);
         }
 
-        if (!errors.HasErrors)
+        if (!errors.HasErrors && !disposeAbandoned)
             LogOperation(LogLevel.Information, "Stop", descriptor, run);
 
         errors.ThrowIfAny();
+        return disposeAbandoned;
     }
+
+    private void ObserveAbandonedDispose(
+        Task dispose,
+        HostedPipelineDescriptor descriptor,
+        IHostedPipelineRun run) =>
+        _ = dispose.ContinueWith(
+            task => LogOperation(LogLevel.Error, "Dispose", descriptor, run, task.Exception),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
 
     private void LogOperation(
         LogLevel level,
