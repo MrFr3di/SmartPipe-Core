@@ -1039,9 +1039,10 @@ public sealed class ObserverDispatcherTests
     public async Task InputDroppedEvent_BestEffortEmissionFailure_RecordsObserverDropAndDoesNotFaultRun()
     {
         var observer = new ThrowingOnEventTypeObserver(typeof(InputDroppedEvent));
-        var transformer = new BlockingTransformer<int>(expectedConcurrentCalls: 2);
+        var transformer = new BlockingTransformer<int>(expectedConcurrentCalls: 1);
 
-        var run = PipelineBuilder
+        // DropWrite may discard every item after the first before the second worker enters.
+        await using var run = PipelineBuilder
             .From(new EnumerableSource<int>(Enumerable.Range(0, 64).ToArray()))
             .Transform(transformer)
             .WithObserver(
@@ -1061,16 +1062,23 @@ public sealed class ObserverDispatcherTests
             })
             .Run();
 
-        await transformer.ExpectedConcurrentCallsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await observer.EventObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        transformer.Release();
+        try
+        {
+            await transformer.ExpectedConcurrentCallsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await observer.EventObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            transformer.Release();
 
-        _ = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromSeconds(5));
-        await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+            _ = await ReadOutputsAsync(run.Outputs).WaitAsync(TimeSpan.FromSeconds(5));
+            await run.Completion.WaitAsync(TimeSpan.FromSeconds(5));
 
-        run.State.Should().Be(PipelineRunState.Completed);
-        run.Metrics.ItemsDropped.Should().BeGreaterThan(0);
-        run.Metrics.ObserverEventsDropped.Should().BeGreaterThan(0);
+            run.State.Should().Be(PipelineRunState.Completed);
+            run.Metrics.ItemsDropped.Should().BeGreaterThan(0);
+            run.Metrics.ObserverEventsDropped.Should().BeGreaterThan(0);
+        }
+        finally
+        {
+            transformer.Release();
+        }
     }
 
     [Fact]

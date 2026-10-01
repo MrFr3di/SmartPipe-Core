@@ -258,7 +258,7 @@ public class EfCoreSelectorTests
             x => x.Log(
                 LogLevel.Information,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("EFCore source completed")),
+                It.Is<It.IsAnyType>((v, t) => v != null && v.ToString()!.Contains("EFCore source completed")),
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
