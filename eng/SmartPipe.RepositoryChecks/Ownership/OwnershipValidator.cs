@@ -1,4 +1,5 @@
 using SmartPipe.RepositoryChecks.PackageGraph;
+using SmartPipe.RepositoryChecks.NuGet;
 
 namespace SmartPipe.RepositoryChecks.Ownership;
 
@@ -58,17 +59,17 @@ internal sealed class OwnershipValidator
     private static void ValidateFacadeSurface(PackageGraphDocument graph, TypeOwnershipSnapshot current,
         IReadOnlyDictionary<string, OwnershipAssignment> resolved, PackageGraphMode mode, List<OwnershipViolation> errors)
     {
-        foreach (var facade in graph.Packages.Where(node => node.Lifecycle == PackageLifecycle.CompatibilityFacade))
+        foreach (var facadeId in graph.Packages.Where(node => node.Lifecycle == PackageLifecycle.CompatibilityFacade).Select(node => node.Id))
         {
-            var implementations = resolved.Where(pair => ImplementationOwner(pair.Value, graph.Packages, mode) == facade.Id)
+            var implementations = resolved.Where(pair => ImplementationOwner(pair.Value, graph.Packages, mode) == facadeId)
                 .Select(pair => pair.Key).ToHashSet(StringComparer.Ordinal);
             var forwarders = resolved.Where(pair => pair.Value.Strategy == OwnershipStrategy.TypeForward
-                    && pair.Value.CompatibilityAssembly == facade.Id
-                    && ImplementationOwner(pair.Value, graph.Packages, mode) != facade.Id)
+                    && pair.Value.CompatibilityAssembly == facadeId
+                    && ImplementationOwner(pair.Value, graph.Packages, mode) != facadeId)
                 .Select(pair => pair.Key).ToHashSet(StringComparer.Ordinal);
-            foreach (var type in current.Implementations.Where(pair => pair.Value.Contains(facade.Id)).Select(pair => pair.Key).Except(implementations))
+            foreach (var type in current.Implementations.Where(pair => pair.Value.Contains(facadeId)).Select(pair => pair.Key).Except(implementations))
                 errors.Add(new("SPOWN027", type, "unexpected facade public implementation"));
-            foreach (var type in current.Forwarders.Where(pair => pair.Value.Contains(facade.Id)).Select(pair => pair.Key).Except(forwarders))
+            foreach (var type in current.Forwarders.Where(pair => pair.Value.Contains(facadeId)).Select(pair => pair.Key).Except(forwarders))
                 errors.Add(new("SPOWN028", type, "unexpected facade forwarder"));
         }
     }
@@ -87,23 +88,37 @@ internal sealed class OwnershipValidator
                     errors.Add(new("SPOWN029", type, $"implementation missing in {asset.PackageId}:{assembly.AssetPath}"));
                 if (assignment.Strategy != OwnershipStrategy.TypeForward || owner == assignment.CompatibilityAssembly
                     || assignment.CompatibilityAssembly != asset.PackageId) continue;
-                if (!assembly.TypeForwarders.Contains(type, StringComparer.Ordinal))
-                {
-                    errors.Add(new("SPOWN029", type, $"forwarder missing in {asset.PackageId}:{assembly.AssetPath}"));
-                    continue;
-                }
-                if (!assembly.ForwarderDestinations.TryGetValue(type, out var destination) || destination != owner)
-                    errors.Add(new("SPOWN026", type, $"forwarder in {assembly.AssetPath} must target {owner}; observed {destination ?? "missing AssemblyRef"}"));
-                var targetAssets = assets.Where(target => target.PackageId == owner
-                    && target.Assembly.Name == owner && target.Assembly.TargetFramework == assembly.TargetFramework
-                    && target.Assembly.AssetFamily == assembly.AssetFamily).ToArray();
-                if (targetAssets.Length == 0 && assembly.AssetFamily == "ref")
-                    targetAssets = assets.Where(target => target.PackageId == owner && target.Assembly.Name == owner
-                        && target.Assembly.TargetFramework == assembly.TargetFramework && target.Assembly.AssetFamily == "lib").ToArray();
-                if (targetAssets.Length != 1 || !targetAssets[0].Assembly.ExportedTypes.Contains(type, StringComparer.Ordinal))
-                    errors.Add(new("SPOWN029", type, $"unique implementation asset for {owner} missing for {assembly.AssetPath}"));
+                ValidateForwarderAsset(asset, type, owner, assets, errors);
             }
         }
+    }
+
+    private static void ValidateForwarderAsset(OwnedAssemblySnapshot asset, string type, string? owner,
+        IReadOnlyList<OwnedAssemblySnapshot> assets, List<OwnershipViolation> errors)
+    {
+        var assembly = asset.Assembly;
+        if (!assembly.TypeForwarders.Contains(type, StringComparer.Ordinal))
+        {
+            errors.Add(new("SPOWN029", type, $"forwarder missing in {asset.PackageId}:{assembly.AssetPath}"));
+            return;
+        }
+        if (!assembly.ForwarderDestinations.TryGetValue(type, out var destination) || destination != owner)
+            errors.Add(new("SPOWN026", type, $"forwarder in {assembly.AssetPath} must target {owner}; observed {destination ?? "missing AssemblyRef"}"));
+        var targetAssets = FindImplementationAssets(assets, owner, assembly);
+        if (targetAssets.Length != 1 || !targetAssets[0].Assembly.ExportedTypes.Contains(type, StringComparer.Ordinal))
+            errors.Add(new("SPOWN029", type, $"unique implementation asset for {owner} missing for {assembly.AssetPath}"));
+    }
+
+    private static OwnedAssemblySnapshot[] FindImplementationAssets(IReadOnlyList<OwnedAssemblySnapshot> assets,
+        string? owner, PackageAssemblySnapshot assembly)
+    {
+        var targets = assets.Where(target => target.PackageId == owner
+            && target.Assembly.Name == owner && target.Assembly.TargetFramework == assembly.TargetFramework
+            && target.Assembly.AssetFamily == assembly.AssetFamily).ToArray();
+        if (targets.Length == 0 && assembly.AssetFamily == "ref")
+            return assets.Where(target => target.PackageId == owner && target.Assembly.Name == owner
+                && target.Assembly.TargetFramework == assembly.TargetFramework && target.Assembly.AssetFamily == "lib").ToArray();
+        return targets;
     }
 
     private static string? ImplementationOwner(OwnershipAssignment assignment, IEnumerable<PackageNode> nodes, PackageGraphMode mode)
