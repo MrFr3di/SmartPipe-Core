@@ -298,6 +298,9 @@ jobs:
     - name: HealthChecks tests
       run: dotnet test --project tests/SmartPipe.Extensions.HealthChecks.Tests/SmartPipe.Extensions.HealthChecks.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
 
+    - name: OpenTelemetry tests
+      run: dotnet test --project tests/SmartPipe.Extensions.OpenTelemetry.Tests/SmartPipe.Extensions.OpenTelemetry.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1
+
     - name: Hosting lifecycle regressions
       run: dotnet test --project tests/SmartPipe.Extensions.Hosting.Tests/SmartPipe.Extensions.Hosting.Tests.csproj --configuration Release --no-build --filter-query /[Category=HostingLifecycle] --minimum-expected-tests 1
 

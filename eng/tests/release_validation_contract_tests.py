@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 import unittest
 
-from workflow_contract_tests import load_workflows, named_step, require
+from workflow_contract_tests import ROOT, load_workflows, named_step, require
 
 REPLAY = "inputs.package-artifact-id != ''"
 PRODUCER = "inputs.package-artifact-id == ''"
@@ -95,11 +95,26 @@ def assert_ci_release_contract(documents: dict) -> None:
     require(ci['jobs']['postgresql-consumers']['with'].get('validation-mode') == CI_RELEASE_MODE, 'CI PostgreSQL must use producer mode')
 
 
+def assert_telemetry_test_contract(documents: dict) -> None:
+    step = named_step(documents['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'OpenTelemetry tests')
+    require(step.get('run') == 'dotnet test --project tests/SmartPipe.Extensions.OpenTelemetry.Tests/SmartPipe.Extensions.OpenTelemetry.Tests.csproj --configuration Release --no-build --minimum-expected-tests 1'
+            and not step.get('if') and not step.get('continue-on-error'), 'OpenTelemetry unit suite must run on both producer and Windows replay')
+
+
+def assert_fixture_runner_contract() -> None:
+    wrapper = (ROOT / 'eng/tests/workflow-contract.Tests.ps1').read_text()
+    require("$releaseTestScript = Join-Path $PSScriptRoot 'release_validation_contract_tests.py'" in wrapper
+            and 'python $releaseTestScript' in wrapper and wrapper.count('if ($LASTEXITCODE -ne 0)') == 2,
+            'CI wrapper must execute both workflow suites and enforce both exit codes')
+
+
 def assert_release_contract(documents: dict) -> None:
     assert_producer_contract(documents)
     assert_replay_contract(documents)
     assert_publication_contract(documents)
     assert_ci_release_contract(documents)
+    assert_telemetry_test_contract(documents)
+    assert_fixture_runner_contract()
 
 
 class ReleaseValidationContractTests(unittest.TestCase):
@@ -118,11 +133,25 @@ class ReleaseValidationContractTests(unittest.TestCase):
     def test_candidate_dispatch_covers_same_artifact_on_windows(self):
         assert_ci_release_contract(self.documents)
 
+    def test_telemetry_unit_suite_is_mandatory(self):
+        assert_telemetry_test_contract(self.documents)
+        for optional in ({'if': "inputs.validation-mode == 'release'"}, {'continue-on-error': True}):
+            modified = copy.deepcopy(self.documents)
+            named_step(modified['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'OpenTelemetry tests').update(optional)
+            with self.assertRaises(AssertionError):assert_telemetry_test_contract(modified)
+        modified = copy.deepcopy(self.documents)
+        modified['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'] = [step for step in modified['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'] if step.get('name') != 'OpenTelemetry tests']
+        with self.assertRaises(AssertionError):assert_telemetry_test_contract(modified)
+
+    def test_ci_executes_new_mutation_suite(self):
+        assert_fixture_runner_contract()
+
     def test_mutations_cannot_relax_release_gates(self):
         assert_release_contract(self.documents)
         mutations = [
             lambda d: d['publish-nuget.yml']['jobs']['validation']['with'].update({'validation-mode': 'current'}),
             lambda d: d['publish-nuget.yml']['jobs']['publish']['needs'].remove('windows-validation'),
+            lambda d: d['publish-nuget.yml']['jobs']['publish']['needs'].remove('postgresql-validation'),
             lambda d: d['publish-nuget.yml']['jobs']['windows-validation'].update({'continue-on-error': True}),
             lambda d: d['publish-nuget.yml']['jobs']['windows-validation']['with'].update({'package-artifact-id': 'old-artifact'}),
             lambda d: named_step(d['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'Pack packages from graph').pop('if'),
