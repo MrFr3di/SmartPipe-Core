@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using SmartPipe.Extensions;
+using SmartPipe.Consumers.ExtensionsMeta;
 using SmartPipe.Extensions.Sinks;
 using Mapster;
 using SmartPipe.Core;
