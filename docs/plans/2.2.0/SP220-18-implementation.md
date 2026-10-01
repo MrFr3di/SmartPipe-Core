@@ -54,20 +54,20 @@ Interfaces: reusable workflow `validation-mode` string (current/release, default
 
 Files: evidence and release readiness documentation, master plan acceptance references; existing audit commands/workflows.
 
-- [ ] Run vulnerability/deprecation scans and existing audit policy; report findings by scope without changing dependency versions silently.
-- [ ] Check README/migration links and package install examples; record package validation/first-release coverage.
-- [ ] Inspect release branch protection and nuget-production environment; record IDs/enforcement/checks and missing requirements. NuGet external publishing-policy state remains unverified unless authenticated evidence is available.
-- [ ] Document exact tag/version and immutable-artifact publication sequence. No tag/publish action in this task.
+- [x] Run vulnerability/deprecation scans and existing audit policy; report findings by scope without changing dependency versions silently.
+- [x] Check README/migration links and package install examples; record package validation/first-release coverage.
+- [x] Inspect release branch protection and nuget-production environment; record IDs/enforcement/checks and missing requirements. NuGet external publishing-policy state remains unverified unless authenticated evidence is available.
+- [x] Document exact tag/version and immutable-artifact publication sequence. No tag/publish action in this task.
 
 ## Task 4: Candidate verification
 
-- [ ] Run locked restore, Release build with warnings-as-errors, format, workflow/PowerShell fixtures and affected RepositoryChecks tests.
-- [ ] Pack one fresh final feed; baseline offline integrity and graph/ownership/metadata/version current+release checks.
-- [ ] Run63 non-PostgreSQL consumers; run7 PostgreSQL consumers with real18.6 when available and integration18.6/17.11. Record unavailable server/Windows gates honestly.
+- [x] Run locked restore, Release build with warnings-as-errors, format, workflow/PowerShell fixtures and affected RepositoryChecks tests.
+- [x] Pack one fresh final feed; baseline offline integrity and graph/ownership/metadata/version current+release checks.
+- [x] Run63 non-PostgreSQL consumers; run7 PostgreSQL consumers with real18.6 when available and integration18.6/17.11. Record unavailable server/Windows gates honestly.
 - [ ] Prepare/publish reviewable feature PRs and dispatch exact-head CI where credentials permit. Observe results; fix genuine failures with regression coverage.
 
 ## Task 5: Review and evidence
 
-- [ ] Fresh whole-branch read-only review, then fix Critical/Important findings and verify.
+- [x] Fresh whole-branch read-only review, then fix Critical/Important findings and verify.
 - [ ] Record commits, SDK/OS, command results, artifact hashes and GitHub run URLs/IDs. Clearly distinguish implementation done, local verified, remote verified and owner approval pending.
-- [ ] Handoff without marking SP220-18/checkpoint G accepted while required gates remain open.
+- [x] Handoff without marking SP220-18/checkpoint G accepted while required gates remain open.

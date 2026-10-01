@@ -1,6 +1,6 @@
 # SmartPipe.Extensions.PostgreSql
 
-PostgreSQL-native pipeline components for [SmartPipe.Core](../SmartPipe.Core/README.md), built on
+PostgreSQL-native pipeline components for [SmartPipe.Core](../../README.md), built on
 [Npgsql](https://www.npgsql.org/): binary `COPY` streaming in both directions, and `LISTEN`/`NOTIFY` as an asynchronous
 notification source.
 
