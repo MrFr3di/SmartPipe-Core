@@ -102,11 +102,13 @@ internal sealed class OwnershipValidator
             errors.Add(new("SPOWN029", type, $"forwarder missing in {asset.PackageId}:{assembly.AssetPath}"));
             return;
         }
-        if (!assembly.ForwarderDestinations.TryGetValue(type, out var destination) || destination != owner)
-            errors.Add(new("SPOWN026", type, $"forwarder in {assembly.AssetPath} must target {owner}; observed {destination ?? "missing AssemblyRef"}"));
+        if (!assembly.ForwarderDestinations.TryGetValue(type, out var destination) || destination.Name != owner)
+            errors.Add(new("SPOWN026", type, $"forwarder in {assembly.AssetPath} must target {owner}; observed {destination?.ToString() ?? "missing AssemblyRef"}"));
         var targetAssets = FindImplementationAssets(assets, owner, assembly);
         if (targetAssets.Length != 1 || !targetAssets[0].Assembly.ExportedTypes.Contains(type, StringComparer.Ordinal))
             errors.Add(new("SPOWN029", type, $"unique implementation asset for {owner} missing for {assembly.AssetPath}"));
+        else if (destination is not null && !destination.CanBindTo(targetAssets[0].Assembly))
+            errors.Add(new("SPOWN026", type, $"forwarder in {assembly.AssetPath} cannot bind to {owner}:{targetAssets[0].Assembly.AssetPath}; observed {destination}"));
     }
 
     private static OwnedAssemblySnapshot[] FindImplementationAssets(IReadOnlyList<OwnedAssemblySnapshot> assets,

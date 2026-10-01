@@ -21,11 +21,11 @@
 
 ## Review focus
 
-- Wrong forwarder destination must fail even if the expected implementation exists elsewhere.
+- Wrong forwarder destination must fail even if the expected implementation exists elsewhere. Preserve AssemblyRef name/version/culture/token; allow a higher implementation version, reject incompatible declared identity.
 - Missing packages and missing per-asset target types must fail explicitly.
 - Unknown facade public types/forwarders must fail; new canonical leaf types remain permitted.
 - Nested generic forwarders must resolve their parent ExportedType to AssemblyRef.
-- Bundle consumers must prove transitive access; old binary DLL hashes must stay unchanged.
+- Bundle consumers must prove transitive access; old binary DLL hashes must stay unchanged. Current restored assets and deps.json must match the complete current SmartPipe closure/version; deploy external managed/native/resource dependencies without recompiling.
 
 ## Task 1: Compatibility inventory and acceptance
 

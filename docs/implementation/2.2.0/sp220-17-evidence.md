@@ -91,6 +91,18 @@ A fresh read-only reviewer inspected the complete implementation, inventory, bas
 
 ## Reproduction
 
+### Deep-review correction (2026-10-01)
+
+The earlier seven binary results proved execution of preserved API and unchanged Consumer.dll. They did not prove a complete current deployment: both OpenTelemetry external DLLs were absent. Treat their runtime completeness claim as superseded by the following verification.
+
+Ownership now retains complete AssemblyRef identity (including nested forwarders). Regression tests reject version99, culture/token mismatches and permit equal/lower reference versions. All157 baseline types pass the stricter check against the unchanged packed candidate. Baseline files and JSON shape remain unchanged.
+
+Binary deployment now uses pinned SDK `GenerateBuildDependencyFile;_CopyFilesMarkedCopyLocal` targets, with project-reference builds disabled and unchanged-file skipping disabled. A real local-package regression checks replacement of a stale transitive DLL, native assets for both Linux/Windows, satellite resources, and a CoreCompile target that fails on any recompilation. Restore and final deps identities are checked independently; missing runtime/native/resource/RID assets fail before execution.
+
+Local verification: RepositoryChecks618/618 passed with the existing30 ProcessRunnerTests excluded; those lifecycle tests still require full CI. Initial profile-path fixture failed because the managed profile was read-only; rerunning with write access scoped to its temporary test directory passed. All80 consumer-runner tests passed before the additional stale-deps regression, which is included in the618-test run. Release ownership157/157 passed. Artifact and workflow mutation fixtures passed; Windows/full-suite exact-head CI must be recorded on the PR after upload.
+
+All seven old-binary consumers were rebuilt once against the immutable2.1.2 baseline and then executed with the fixed CLI and unchanged production package payloads from the SP220-18 `fcbab31` candidate. Each output contains the complete18-ID SmartPipe2.2.0 closure and both OpenTelemetry external DLLs; post-execution Consumer.dll SHA256 equals its recorded baseline hash. The new inventory, file paths and hashes are preserved in `artifacts/review/checkpoint-g/binary-deployment-fixed.json`. These local protocol results are not a new source-SHA package artifact or final-head CI evidence.
+
 Use SDK pinned in `global.json`. All commands run from the repository root. Provision immutable 2.1.2 baseline packages as required by the existing workflow. Choose a fresh output directory for every pack; existing manifests/artifacts cannot be overwritten.
 
 ```sh

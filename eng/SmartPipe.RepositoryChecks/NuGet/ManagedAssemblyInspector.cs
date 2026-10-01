@@ -160,7 +160,7 @@ internal static class ManagedAssemblyInspector
         return typeNamespace.Length == 0 ? name : $"{typeNamespace}.{name}";
     }
 
-    private static string? GetForwarderDestination(MetadataReader metadata, ExportedTypeHandle handle)
+    private static AssemblyReferenceIdentity? GetForwarderDestination(MetadataReader metadata, ExportedTypeHandle handle)
     {
         var visited = new HashSet<ExportedTypeHandle>();
         while (true)
@@ -176,7 +176,9 @@ internal static class ManagedAssemblyInspector
             if (definition.Implementation.Kind != HandleKind.AssemblyReference)
                 throw InvalidPackage("type forwarder must resolve to an AssemblyRef");
             var reference = metadata.GetAssemblyReference((AssemblyReferenceHandle)definition.Implementation);
-            return metadata.GetString(reference.Name);
+            return new(metadata.GetString(reference.Name), reference.Version,
+                reference.Culture.IsNil ? string.Empty : metadata.GetString(reference.Culture),
+                GetPublicKeyToken(metadata.GetBlobBytes(reference.PublicKeyOrToken), (reference.Flags & AssemblyFlags.PublicKey) != 0));
         }
     }
 
