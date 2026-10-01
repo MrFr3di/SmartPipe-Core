@@ -53,9 +53,17 @@ public sealed class FacadeSurfaceContractTests
         var policy = new DependencyPolicy { RequiredSmartPipePackages = [], AllowedSmartPipePackages = [], AllowedExternalPackages = [], ForbiddenPackagePatterns = [] };
         PackageNode Node(string id, int order) => new()
         {
-            Id = id, ProjectPath = $"src/{id}/{id}.csproj", Lifecycle = id == "SmartPipe.Extensions" ? PackageLifecycle.CompatibilityFacade : PackageLifecycle.Active,
-            ActivationEpic = "existing", ScaffoldKind = null, PublishOrder = order, AotContract = PackageAotContract.Full,
-            CurrentDependencies = policy, ReleaseDependencies = policy, TemporaryAllowances = [], ConsumerScenarios = [],
+            Id = id,
+            ProjectPath = $"src/{id}/{id}.csproj",
+            Lifecycle = id == "SmartPipe.Extensions" ? PackageLifecycle.CompatibilityFacade : PackageLifecycle.Active,
+            ActivationEpic = "existing",
+            ScaffoldKind = null,
+            PublishOrder = order,
+            AotContract = PackageAotContract.Full,
+            CurrentDependencies = policy,
+            ReleaseDependencies = policy,
+            TemporaryAllowances = [],
+            ConsumerScenarios = [],
         };
         return new() { SchemaVersion = 1, ReleaseVersion = "2.2.0", Packages = [Node("SmartPipe.Extensions.Json", 1), Node("SmartPipe.Extensions", 2)] };
     }

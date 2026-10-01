@@ -44,7 +44,7 @@ using var restoredStream = new MemoryStream();
 await decompressor.CopyToAsync(restoredStream);
 if (!conditionalResult.IsSuccess || !restoredStream.ToArray().SequenceEqual(new byte[] { 20, 22 })) return 1;
 
-// Preserve the facade's original AssemblyRef to the JSON-forwarded identities.
+// Verify the original JSON-forwarded identities still resolve to their Json implementation.
 Type[] jsonIdentities =
 [
     typeof(SmartPipe.Extensions.Selectors.JsonFileSource<>),
