@@ -760,9 +760,9 @@ public sealed class ConsumerScenarioRunnerTests
             ["SmartPipe.Core", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Csv", "SmartPipe.Extensions.Dapper", "SmartPipe.Extensions.Transforms",
              "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection",
              "SmartPipe.Extensions.EntityFrameworkCore",
-             "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Http", "SmartPipe.Extensions.Json",
+             "SmartPipe.Extensions.HealthChecks", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Http", "SmartPipe.Extensions.Json",
              "SmartPipe.Extensions.Http.Json",
-             "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.Mapster", "SmartPipe.Extensions.Polly", "SmartPipe.Extensions"],
+             "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.Mapster", "SmartPipe.Extensions.OpenTelemetry", "SmartPipe.Extensions.Polly", "SmartPipe.Extensions"],
             closure);
     }
 

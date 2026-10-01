@@ -13,6 +13,29 @@ namespace SmartPipe.RepositoryChecks.Tests.PackageGraph;
 public sealed class PackageGraphContractTests
 {
     [Fact]
+    public async Task FacadeBundleMatchesReleaseContractAndConsumersUseItTransitively()
+    {
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+        var facade = Assert.Single(graph.Packages, package => package.Id == "SmartPipe.Extensions");
+        Assert.Equal(17, facade.CurrentDependencies.RequiredSmartPipePackages.Count);
+        Assert.True(facade.CurrentDependencies.RequiredSmartPipePackages.ToHashSet().SetEquals(facade.ReleaseDependencies.RequiredSmartPipePackages));
+        Assert.Contains("SmartPipe.Extensions.HealthChecks", facade.CurrentDependencies.RequiredSmartPipePackages);
+        Assert.Contains("SmartPipe.Extensions.OpenTelemetry", facade.CurrentDependencies.RequiredSmartPipePackages);
+        Assert.DoesNotContain("SmartPipe.Testing", facade.CurrentDependencies.RequiredSmartPipePackages);
+        Assert.DoesNotContain("SmartPipe.Extensions.PostgreSql", facade.CurrentDependencies.RequiredSmartPipePackages);
+        Assert.DoesNotContain("Microsoft.Extensions.Http", facade.ReleaseDependencies.AllowedExternalPackages);
+
+        var direct = XDocument.Load(Path.Combine(root, facade.ProjectPath)).Descendants("ProjectReference")
+            .Select(element => ((string)element.Attribute("Include")!).Split('\\', '/')[^1].Replace(".csproj", "", StringComparison.Ordinal)).ToHashSet();
+        Assert.True(direct.SetEquals(facade.CurrentDependencies.RequiredSmartPipePackages));
+        var consumer = XDocument.Load(Path.Combine(root, "tests/Consumers/Scenarios/opentelemetry-facade/Consumer.csproj"));
+        var smartPipeReferences = consumer.Descendants("PackageReference").Select(element => (string)element.Attribute("Include")!)
+            .Where(id => id.StartsWith("SmartPipe.", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(["SmartPipe.Extensions"], smartPipeReferences);
+    }
+
+    [Fact]
     public async Task RepositoryGraph_HealthChecksPackageActivationIsComplete()
     {
         var root = RepositoryRoot();

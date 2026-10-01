@@ -75,4 +75,8 @@ internal sealed record PackageAssemblySnapshot
 
     [JsonPropertyOrder(8)]
     public required IReadOnlyList<string> TypeForwarders { get; init; }
+
+    // Runtime inspection evidence; immutable baseline JSON retains its original shape.
+    [JsonIgnore]
+    public IReadOnlyDictionary<string, string> ForwarderDestinations { get; init; } = new Dictionary<string, string>();
 }

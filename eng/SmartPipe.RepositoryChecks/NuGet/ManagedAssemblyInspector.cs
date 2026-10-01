@@ -81,10 +81,10 @@ internal static class ManagedAssemblyInspector
                 .Order(StringComparer.Ordinal)
                 .ToArray();
             var forwarders = metadata.ExportedTypes
-                .Select(handle => (Handle: handle, Definition: metadata.GetExportedType(handle)))
-                .Where(static pair => (pair.Definition.Attributes & (TypeAttributes)0x00200000) != 0)
-                .Select(pair => GetExportedTypeName(metadata, pair.Handle))
-                .Order(StringComparer.Ordinal)
+                .Select(handle => (Handle: handle, Destination: GetForwarderDestination(metadata, handle)))
+                .Where(static pair => pair.Destination is not null)
+                .Select(pair => (Name: GetExportedTypeName(metadata, pair.Handle), Destination: pair.Destination!))
+                .OrderBy(static pair => pair.Name, StringComparer.Ordinal)
                 .ToArray();
             return new PackageAssemblySnapshot
             {
@@ -98,7 +98,8 @@ internal static class ManagedAssemblyInspector
                 AssetPath = path,
                 TargetFramework = targetFramework,
                 ExportedTypes = exportedTypes,
-                TypeForwarders = forwarders,
+                TypeForwarders = forwarders.Select(static pair => pair.Name).ToArray(),
+                ForwarderDestinations = forwarders.ToDictionary(static pair => pair.Name, static pair => pair.Destination, StringComparer.Ordinal),
             };
         }
         catch (RepositoryCheckException)
@@ -157,6 +158,26 @@ internal static class ManagedAssemblyInspector
 
         var typeNamespace = metadata.GetString(definition.Namespace);
         return typeNamespace.Length == 0 ? name : $"{typeNamespace}.{name}";
+    }
+
+    private static string? GetForwarderDestination(MetadataReader metadata, ExportedTypeHandle handle)
+    {
+        var visited = new HashSet<ExportedTypeHandle>();
+        while (true)
+        {
+            if (!visited.Add(handle)) throw InvalidPackage("cyclic ExportedType parent chain");
+            var definition = metadata.GetExportedType(handle);
+            if (definition.Implementation.Kind == HandleKind.ExportedType)
+            {
+                handle = (ExportedTypeHandle)definition.Implementation;
+                continue;
+            }
+            if ((definition.Attributes & (TypeAttributes)0x00200000) == 0) return null;
+            if (definition.Implementation.Kind != HandleKind.AssemblyReference)
+                throw InvalidPackage("type forwarder must resolve to an AssemblyRef");
+            var reference = metadata.GetAssemblyReference((AssemblyReferenceHandle)definition.Implementation);
+            return metadata.GetString(reference.Name);
+        }
     }
 
     private static string GetPublicKeyToken(byte[] keyOrToken, bool containsFullPublicKey)
