@@ -3,6 +3,11 @@ name: CI
 on:
   workflow_dispatch:
     inputs:
+      release-validation:
+        description: Validate a release candidate and replay its immutable packages on Windows
+        required: false
+        type: boolean
+        default: false
       diagnostic-sha:
         description: Exact 40-character commit SHA for a single-consumer diagnostic
         required: false
@@ -36,7 +41,21 @@ jobs:
     permissions:
       contents: read
     with:
+      validation-mode: ${{ inputs.release-validation && 'release' || 'current' }}
       runner-labels: ${{ github.event_name == 'pull_request' && '["windows-latest"]' || '["ubuntu-latest"]' }}
+
+  release-windows-validation:
+    if: github.event_name == 'workflow_dispatch' && inputs.release-validation && inputs.diagnostic-sha == '' && inputs.diagnostic-scenario == '' && inputs.diagnostic-repeat == ''
+    needs: validation
+    uses: ./.github/workflows/reusable-release-validation.yml
+    permissions:
+      contents: read
+    with:
+      validation-mode: release
+      runner-labels: '["windows-latest"]'
+      package-version: ${{ needs.validation.outputs.package-version }}
+      package-artifact-id: ${{ needs.validation.outputs.artifact-id }}
+      artifact-name: windows-release-validation-reports
 
   hosting-integration:
     name: Hosting integration (${{ matrix.os == 'windows-latest' && 'Windows' || matrix.os }})
@@ -161,6 +180,7 @@ jobs:
     with:
       package-version: ${{ needs.validation.outputs.package-version }}
       artifact-id: ${{ needs.validation.outputs.artifact-id }}
+      validation-mode: ${{ inputs.release-validation && 'release' || 'current' }}
       run-integration: false
 
   json-file-windows:

@@ -58,8 +58,21 @@ jobs:
     permissions:
       contents: read
     with:
+      validation-mode: release
       package-version: ${{ needs.version.outputs.package-version }}
       artifact-name: ${{ needs.version.outputs.artifact-name }}
+
+  windows-validation:
+    needs: [version, validation]
+    uses: ./.github/workflows/reusable-release-validation.yml
+    permissions:
+      contents: read
+    with:
+      validation-mode: release
+      runner-labels: '["windows-latest"]'
+      package-version: ${{ needs.version.outputs.package-version }}
+      package-artifact-id: ${{ needs.validation.outputs.artifact-id }}
+      artifact-name: windows-release-validation-reports
 
   postgresql-validation:
     needs: [version, validation]
@@ -67,11 +80,12 @@ jobs:
     permissions:
       contents: read
     with:
+      validation-mode: release
       package-version: ${{ needs.version.outputs.package-version }}
       artifact-id: ${{ needs.validation.outputs.artifact-id }}
 
   publish:
-    needs: [version, validation, postgresql-validation]
+    needs: [version, validation, windows-validation, postgresql-validation]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -94,7 +108,7 @@ jobs:
         shell: pwsh
         env:
           PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
-        run: ./eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json
+        run: ./eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json -ExpectedMode release -ExpectedCommit (git rev-parse HEAD)
 
       - name: NuGet login
         id: nuget-login

@@ -234,9 +234,9 @@ def assert_hosted_restore_source_contract(documents: dict[str, dict]) -> None:
 def assert_diagnostic_contract(ci: dict) -> None:
     dispatch = ci.get("on", {}).get("workflow_dispatch", {})
     inputs = dispatch.get("inputs", {}) if isinstance(dispatch, dict) else {}
-    require(set(inputs) == {"diagnostic-sha", "diagnostic-scenario", "diagnostic-repeat"},
-            "CI diagnostic dispatch must expose exactly SHA, scenario, and repeat inputs.")
-    for name in inputs:
+    require(set(inputs) == {"release-validation", "diagnostic-sha", "diagnostic-scenario", "diagnostic-repeat"},
+            "CI diagnostic dispatch must expose exactly SHA, scenario, and repeat inputs plus the release-validation flag.")
+    for name in ("diagnostic-sha", "diagnostic-scenario", "diagnostic-repeat"):
         definition = inputs[name]
         require(definition.get("required") is False
                 and definition.get("type") == "string"
@@ -1029,7 +1029,7 @@ def assert_downloaded_postgresql_contract(documents: dict[str, dict]) -> None:
     require(download.get("with") == {"artifact-ids": "${{ inputs.artifact-id }}", "path": "downloaded", "merge-multiple": True},
             "Consumers must download the same-run immutable artifact ID into an explicit root.")
     integrity = named_step(job_steps, "Validate downloaded package artifact")
-    require(integrity.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot downloaded -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json'
+    require(integrity.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot downloaded -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json -ExpectedMode "$env:VALIDATION_MODE" -ExpectedCommit (git rev-parse HEAD)'
             and integrity.get("env", {}).get("PACKAGE_VERSION") == "${{ inputs.package-version }}"
             and not integrity.get("if") and not integrity.get("continue-on-error"),
             "Consumers must fail closed on artifact integrity and exact version before running.")
@@ -1067,7 +1067,7 @@ def assert_downloaded_postgresql_contract(documents: dict[str, dict]) -> None:
             "Publishing must require successful validation gates.")
     publication_steps = publication["steps"]
     validation = named_step(publication_steps, "Validate downloaded package artifact")
-    require(validation.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json'
+    require(validation.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json -ExpectedMode release -ExpectedCommit (git rev-parse HEAD)'
             and validation.get("env", {}).get("PACKAGE_VERSION") == "${{ needs.version.outputs.package-version }}"
             and not validation.get("if") and not validation.get("continue-on-error"),
             "Publisher must independently verify the exact version and artifact integrity.")
@@ -1113,6 +1113,12 @@ def validate(documents: dict[str, dict]) -> None:
         "ci.yml": {
             "workflow_dispatch": {
                 "inputs": {
+                    "release-validation": {
+                        "description": "Validate a release candidate and replay its immutable packages on Windows",
+                        "required": False,
+                        "type": "boolean",
+                        "default": False,
+                    },
                     "diagnostic-sha": {
                         "description": "Exact 40-character commit SHA for a single-consumer diagnostic",
                         "required": False,
@@ -1257,7 +1263,7 @@ def validate(documents: dict[str, dict]) -> None:
                 f"{name} must run before wide tests.")
     reusable_text = "\n".join(reusable_runs)
     pack_run = str(named_step(reusable_steps, "Pack packages from graph").get("run", ""))
-    for token in ("pack-packages", "--mode current", "--configuration Release",
+    for token in ("pack-packages", '--mode "$env:VALIDATION_MODE"', "--configuration Release",
                   "--package-version", "--output artifacts/packages",
                   "--manifest artifacts/packages/manifest.json"):
         require(token in pack_run, f"Graph-driven pack step must contain '{token}'.")
@@ -1312,7 +1318,7 @@ def validate(documents: dict[str, dict]) -> None:
             and "--report artifacts/audit/vulnerable.json" in audit_policy_run,
             "Reusable validation must enforce the direct production audit policy from the vulnerable JSON report.")
     upload = named_step(reusable_steps, "Upload immutable packages and reports")
-    require(upload.get("if") == SAME_REPOSITORY_PR_GUARD,
+    require(upload.get("if") == f"({SAME_REPOSITORY_PR_GUARD}) && inputs.package-artifact-id == ''",
             "Reusable validation artifact upload must allow trusted pull requests and reject forks.")
     require(upload.get("with", {}).get("name") == "${{ inputs.artifact-name }}",
             "Reusable validation must upload the caller-selected artifact name.")
@@ -1335,7 +1341,7 @@ def validate(documents: dict[str, dict]) -> None:
         "uses": "./.github/workflows/reusable-release-validation.yml",
         "permissions": {"contents": "read"},
         "if": CI_NORMAL_GUARD,
-        "with": {"runner-labels": CI_VALIDATION_RUNNER_INPUT},
+        "with": {"runner-labels": CI_VALIDATION_RUNNER_INPUT, "validation-mode": "${{ inputs.release-validation && 'release' || 'current' }}"},
     }, "CI validation must be the exact reusable workflow caller with read-only contents permission.")
     pull_request = ci.get("on", {}).get("pull_request", {})
     require("paths-ignore" not in pull_request,
@@ -1458,10 +1464,11 @@ def validate(documents: dict[str, dict]) -> None:
     require("runner-labels" not in validation.get("with", {}),
             "Publish validation must use reusable hosted Linux runner default.")
     require(validation.get("with") == {
+        "validation-mode": "release",
         "package-version": "${{ needs.version.outputs.package-version }}",
         "artifact-name": "${{ needs.version.outputs.artifact-name }}",
     }, "Publish validation must pass version outputs as the reusable workflow inputs.")
-    require(publication.get("needs") == ["version", "validation", "postgresql-validation"],
+    require(publication.get("needs") == ["version", "validation", "windows-validation", "postgresql-validation"],
             "Publish job must depend exactly on version and validation and PostgreSQL validation.")
     require(publication.get("environment") == "nuget-production",
             "Publish job must use nuget-production.")
@@ -1499,6 +1506,8 @@ def validate(documents: dict[str, dict]) -> None:
             "Availability checks must derive package IDs and versions from manifest.json.")
 
     assert_immutable_action_refs(documents)
+    from release_validation_contract_tests import assert_release_contract
+    assert_release_contract(documents)
 
 
 def _remove_csv_scenario(document: dict) -> None:

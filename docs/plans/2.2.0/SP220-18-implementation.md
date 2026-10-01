@@ -43,12 +43,12 @@ Files: `.github/workflows/reusable-release-validation.yml`, `publish-nuget.yml`,
 
 Interfaces: reusable workflow `validation-mode` string (current/release, default current), `package-artifact-id` string (empty means producer); existing package-version/artifact-name/runner-labels and artifact-id output retained.
 
-- [ ] Write contract tests for release-mode publisher, required Windows dependency, artifact replay download/integrity-before-consumers, mutually exclusive pack/package-upload versus report-only replay, release candidate dispatch inputs and mandatory release graph/metadata/ownership/version gates. Run RED against existing YAML.
-- [ ] Add optional release-mode checks and replay steps without relaxing ordinary CI. Validate inputs. Replay cannot repack; only consumer/audit reports are uploaded by replay.
-- [ ] Add required Windows caller consuming producer ID to publish DAG; retain PostgreSQL and OIDC/environment guard.
-- [ ] Add CI release-candidate dispatch route for exact feature-branch SHA and Windows replay; preserve diagnostic and same-repository guards.
-- [ ] Add rejecting artifact mode/planned-inventory fixtures; implement current/release validator support, retaining current compatibility for existing CI artifacts.
-- [ ] Run all workflow mutation tests and PowerShell artifact fixtures GREEN; commit.
+- [x] Write contract tests for release-mode publisher, required Windows dependency, artifact replay download/integrity-before-consumers, mutually exclusive pack/package-upload versus report-only replay, release candidate dispatch inputs and mandatory release graph/metadata/ownership/version gates. Run RED against existing YAML.
+- [x] Add optional release-mode checks and replay steps without relaxing ordinary CI. Validate inputs. Replay cannot repack; only consumer/audit reports are uploaded by replay.
+- [x] Add required Windows caller consuming producer ID to publish DAG; retain PostgreSQL and OIDC/environment guard.
+- [x] Add CI release-candidate dispatch route for exact feature-branch SHA and Windows replay; preserve diagnostic and same-repository guards.
+- [x] Add rejecting artifact mode/planned-inventory fixtures; implement current/release validator support, retaining current compatibility for existing CI artifacts. Release mode requires an explicit expected source commit, checked against every nupkg/snupkg repository entry.
+- [x] Run all workflow mutation tests and PowerShell artifact fixtures GREEN; commit.
 
 ## Task 3: Audits, docs and owner gates
 

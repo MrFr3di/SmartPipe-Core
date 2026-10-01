@@ -11,6 +11,11 @@ on:
         description: Immutable upload ID from this run's package producer
         required: true
         type: string
+      validation-mode:
+        description: Expected producer package manifest mode
+        required: false
+        type: string
+        default: current
       run-integration:
         description: Run the release primary and compatibility integration matrix
         required: false
@@ -120,7 +125,8 @@ jobs:
         shell: pwsh
         env:
           PACKAGE_VERSION: ${{ inputs.package-version }}
-        run: ./eng/validate-package-artifact.ps1 -ArtifactRoot downloaded -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json
+          VALIDATION_MODE: ${{ inputs.validation-mode }}
+        run: ./eng/validate-package-artifact.ps1 -ArtifactRoot downloaded -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json -ExpectedMode "$env:VALIDATION_MODE" -ExpectedCommit (git rev-parse HEAD)
 
       - name: Restore repository checks
         run: dotnet restore eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true

@@ -53,3 +53,6 @@ opencode.jsonc
 /agent_docs/project_progress.md
 /agent_docs/project_diary.md
 /agent_docs/latest_session_work.md
+
+# Python workflow contract imports
+/eng/tests/__pycache__/

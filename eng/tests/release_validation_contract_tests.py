@@ -1,0 +1,141 @@
+"""SP220-18 contracts: one package producer, strict release gates, Windows replay."""
+from __future__ import annotations
+
+import copy
+import unittest
+
+from workflow_contract_tests import load_workflows, named_step, require
+
+REPLAY = "inputs.package-artifact-id != ''"
+PRODUCER = "inputs.package-artifact-id == ''"
+RELEASE = "inputs.validation-mode == 'release'"
+CI_RELEASE_MODE = "${{ inputs.release-validation && 'release' || 'current' }}"
+DOWNLOAD = "actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3"
+
+
+def assert_producer_contract(documents: dict) -> None:
+    workflow = documents['reusable-release-validation.yml']
+    inputs = workflow['on']['workflow_call']['inputs']
+    require(inputs.get('validation-mode', {}).get('default') == 'current', 'validation-mode must default to current')
+    require(inputs.get('package-artifact-id', {}).get('default') == '', 'replay must be optional')
+    steps = workflow['jobs']['build-test-pack']['steps']
+    guard = named_step(steps, 'Validate package workflow inputs')
+    run = guard.get('run', '')
+    require("@('current', 'release')" in run and "^[1-9][0-9]*$" in run
+            and 'throw' in run, 'invalid mode/artifact ID must fail before work')
+    require(steps.index(guard) < steps.index(named_step(steps, 'Restore locked')), 'input validation must precede restore')
+    pack = named_step(steps, 'Pack packages from graph')
+    require(pack.get('if') == PRODUCER and '--mode "$env:VALIDATION_MODE"' in pack['run'], 'only producer may pack in selected mode')
+    upload = named_step(steps, 'Upload immutable packages and reports')
+    require(PRODUCER in upload.get('if', ''), 'replay must not upload another package artifact')
+    for command in ('graph', 'metadata', 'ownership'):
+        step = named_step(steps, 'Verify package ' + command + ' release')
+        require(step.get('if') == RELEASE and '--mode release' in step['run']
+                and not step.get('continue-on-error'), 'release ' + command + ' gate must be mandatory')
+    version = named_step(steps, 'Verify release versions release')
+    require(version.get('if') == RELEASE and '--mode release' in version['run'], 'release version gate must be mandatory')
+    consumers = named_step(steps, 'Run current consumers')
+    require(steps.index(named_step(steps, 'Verify package metadata release')) < steps.index(consumers), 'release metadata must precede consumers')
+
+
+def assert_replay_contract(documents: dict) -> None:
+    steps = documents['reusable-release-validation.yml']['jobs']['build-test-pack']['steps']
+    download = named_step(steps, 'Download producer package artifact')
+    require(download.get('if') == REPLAY and download.get('uses') == DOWNLOAD
+            and download.get('with') == {'artifact-ids': '${{ inputs.package-artifact-id }}', 'path': 'downloaded', 'merge-multiple': True}, 'replay must download exact producer ID into isolated root')
+    integrity = named_step(steps, 'Validate producer package artifact')
+    require(integrity.get('if') == REPLAY and '-ArtifactRoot downloaded' in integrity['run']
+            and '-ExpectedMode "$env:VALIDATION_MODE"' in integrity['run']
+            and '-ExpectedCommit (git rev-parse HEAD)' in integrity['run']
+            and not integrity.get('continue-on-error'), 'replay must validate mode, hashes, version and source commit')
+    directory = named_step(steps, 'Set package directory')
+    require('downloaded/artifacts/packages' in directory['run'] and 'PACKAGE_DIRECTORY' in directory['run'], 'replay must select downloaded feed')
+    consumers = named_step(steps, 'Run current consumers')
+    require('--package-directory "$env:PACKAGE_DIRECTORY"' in consumers['run'], 'consumers must use selected immutable feed')
+    require(steps.index(download) < steps.index(integrity) < steps.index(consumers), 'replay integrity must precede consumers')
+    reports = named_step(steps, 'Upload replay reports')
+    paths = reports['with']['path']
+    require(REPLAY in reports.get('if', '') and 'artifacts/consumers/**/result.json' in paths
+            and 'artifacts/packages' not in paths and 'downloaded' not in paths, 'replay upload must contain reports only')
+
+
+def assert_publication_contract(documents: dict) -> None:
+    jobs = documents['publish-nuget.yml']['jobs']
+    require(jobs['validation']['with'].get('validation-mode') == 'release', 'publication producer must select release mode')
+    windows = jobs.get('windows-validation')
+    require(isinstance(windows, dict) and windows.get('needs') == ['version', 'validation']
+            and windows.get('uses') == './.github/workflows/reusable-release-validation.yml', 'release must require Windows replay')
+    require(windows['with'].get('runner-labels') == '["windows-latest"]'
+            and windows['with'].get('validation-mode') == 'release'
+            and windows['with'].get('package-artifact-id') == '${{ needs.validation.outputs.artifact-id }}'
+            and not windows.get('if') and not windows.get('continue-on-error'), 'Windows release validation must consume producer ID and cannot be optional')
+    require(jobs['postgresql-validation']['with'].get('validation-mode') == 'release', 'PostgreSQL must validate release artifact mode')
+    require(set(jobs['publish']['needs']) == {'version', 'validation', 'windows-validation', 'postgresql-validation'}, 'publication must await both Windows and PostgreSQL')
+    integrity = named_step(jobs['publish']['steps'], 'Validate downloaded package artifact')
+    require('-ExpectedMode release' in integrity['run'] and '-ExpectedCommit (git rev-parse HEAD)' in integrity['run'], 'publisher must verify release mode and exact source commit')
+    require(jobs['publish'].get('environment') == 'nuget-production'
+            and jobs['publish'].get('permissions') == {'contents': 'read', 'id-token': 'write'}, 'publication retains protected OIDC environment')
+    for name, job in jobs.items():
+        if name != 'publish':require(job.get('permissions', {'contents': 'read'}) == {'contents': 'read'}, 'validation cannot request OIDC')
+
+
+def assert_ci_release_contract(documents: dict) -> None:
+    ci = documents['ci.yml']
+    flag = ci['on']['workflow_dispatch']['inputs'].get('release-validation')
+    require(isinstance(flag, dict) and flag.get('type') == 'boolean' and flag.get('default') is False, 'release dispatch must be explicit and default off')
+    require(ci['jobs']['validation']['with'].get('validation-mode') == CI_RELEASE_MODE, 'CI producer must select requested mode')
+    windows = ci['jobs'].get('release-windows-validation')
+    require(isinstance(windows, dict) and windows.get('needs') == 'validation'
+            and windows.get('with', {}).get('package-artifact-id') == '${{ needs.validation.outputs.artifact-id }}'
+            and windows['with'].get('runner-labels') == '["windows-latest"]'
+            and windows['with'].get('validation-mode') == 'release', 'release candidate dispatch requires full Windows replay')
+    require('inputs.release-validation' in windows.get('if', '')
+            and "inputs.diagnostic-sha == ''" in windows['if']
+            and not windows.get('continue-on-error'), 'release replay cannot be triggered by diagnostic mode or optional failure')
+    require(ci['jobs']['postgresql-consumers']['with'].get('validation-mode') == CI_RELEASE_MODE, 'CI PostgreSQL must use producer mode')
+
+
+def assert_release_contract(documents: dict) -> None:
+    assert_producer_contract(documents)
+    assert_replay_contract(documents)
+    assert_publication_contract(documents)
+    assert_ci_release_contract(documents)
+
+
+class ReleaseValidationContractTests(unittest.TestCase):
+    def setUp(self):
+        self.documents = load_workflows()
+
+    def test_producer_enforces_release_gates(self):
+        assert_producer_contract(self.documents)
+
+    def test_replay_uses_verified_producer_feed_without_repacking(self):
+        assert_replay_contract(self.documents)
+
+    def test_publication_requires_windows_and_release_artifact(self):
+        assert_publication_contract(self.documents)
+
+    def test_candidate_dispatch_covers_same_artifact_on_windows(self):
+        assert_ci_release_contract(self.documents)
+
+    def test_mutations_cannot_relax_release_gates(self):
+        assert_release_contract(self.documents)
+        mutations = [
+            lambda d: d['publish-nuget.yml']['jobs']['validation']['with'].update({'validation-mode': 'current'}),
+            lambda d: d['publish-nuget.yml']['jobs']['publish']['needs'].remove('windows-validation'),
+            lambda d: d['publish-nuget.yml']['jobs']['windows-validation'].update({'continue-on-error': True}),
+            lambda d: d['publish-nuget.yml']['jobs']['windows-validation']['with'].update({'package-artifact-id': 'old-artifact'}),
+            lambda d: named_step(d['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'Pack packages from graph').pop('if'),
+            lambda d: named_step(d['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'Verify package metadata release').update({'continue-on-error': True}),
+            lambda d: named_step(d['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'Upload replay reports')['with'].update({'path': 'downloaded/artifacts/packages'}),
+            lambda d: named_step(d['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'Validate producer package artifact').update({'run': 'echo unchecked'}),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                modified = copy.deepcopy(self.documents)
+                mutate(modified)
+                with self.assertRaises(AssertionError):assert_release_contract(modified)
+
+
+if __name__ == '__main__':
+    unittest.main()
