@@ -1,5 +1,6 @@
 namespace SmartPipe.Core.Tests.Resilience;
 
+/// <summary>Requires complete stress work and preserves its original failure after bounded best-effort cleanup.</summary>
 internal static class StressWorkload
 {
     internal static async Task WaitForCompletionAsync(
@@ -15,26 +16,48 @@ internal static class StressWorkload
         }
         catch
         {
-            await workers.CancelAsync();
+            Task cancellation;
             try
             {
-                // Ignore completed worker failures during cleanup, preserving the initiating error.
-                await work.WaitAsync(TimeSpan.FromSeconds(5));
+                cancellation = workers.CancelAsync();
             }
-            catch (Exception) when (work.IsCompleted)
+            catch (Exception)
             {
+                // A cancellation request failure must not replace the initiating error or skip worker cleanup.
+                cancellation = Task.CompletedTask;
+            }
+
+            var cleanup = Task.WhenAll(work, cancellation);
+            try
+            {
+                // Bound the whole cleanup, including non-cooperative cancellation callbacks.
+                await cleanup.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (Exception)
+            {
+                // Cleanup is best-effort; always rethrow the initiating failure below.
             }
             finally
             {
-                if (!work.IsCompleted)
-                {
-                    // A non-cooperative worker must not make the test wait forever or leave faults unobserved.
-                    _ = work.ContinueWith(static task => _ = task.Exception,
-                        CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-                        TaskScheduler.Default);
-                }
+                ObserveFault(work);
+                ObserveFault(cancellation);
+                ObserveFault(cleanup);
             }
             throw;
         }
+    }
+
+    private static void ObserveFault(Task task)
+    {
+        if (task.IsCompleted)
+        {
+            _ = task.Exception;
+            return;
+        }
+
+        // Non-cooperative tasks may finish after the test; observe any eventual faults without awaiting them forever.
+        _ = task.ContinueWith(static completed => _ = completed.Exception,
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 }

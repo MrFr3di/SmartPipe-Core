@@ -64,6 +64,60 @@ public sealed class StressWorkloadTests
         Assert.Same(original, error);
     }
 
+    [Fact(Timeout = 20000)]
+    public async Task NonCooperativeWorker_PreservesCallerCancellationAfterCleanupDeadline()
+    {
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        using var workers = new CancellationTokenSource();
+        var work = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        caller.Cancel();
+        try
+        {
+            var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => StressWorkload.WaitForCompletionAsync(
+                work.Task, workers, TimeSpan.FromMinutes(1), caller.Token));
+            Assert.Equal(caller.Token, error.CancellationToken);
+            Assert.True(workers.IsCancellationRequested);
+            Assert.False(work.Task.IsCompleted);
+        }
+        finally
+        {
+            work.TrySetResult(null);
+        }
+    }
+
+    [Fact]
+    public async Task WorkerFailure_IsPreservedWhenCancellationCallbackThrows()
+    {
+        using var workers = new CancellationTokenSource();
+        using var registration = workers.Token.Register(() => throw new InvalidOperationException("cleanup callback failed"));
+        var original = new InvalidOperationException("worker failed");
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => StressWorkload.WaitForCompletionAsync(
+            Task.FromException(original), workers, TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken));
+        Assert.Same(original, error);
+    }
+
+    [Fact(Timeout = 20000)]
+    public async Task NonCooperativeCancellationCallback_PreservesWorkerFailureWithinCleanupDeadline()
+    {
+        using var workers = new CancellationTokenSource();
+        using var release = new ManualResetEventSlim();
+        using var registration = workers.Token.Register(() => release.Wait());
+        var original = new InvalidOperationException("worker failed");
+        var wait = StressWorkload.WaitForCompletionAsync(
+            Task.FromException(original), workers, TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        try
+        {
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                wait.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+            Assert.Same(original, error);
+        }
+        finally
+        {
+            release.Set();
+            await Record.ExceptionAsync(() => wait);
+        }
+    }
+
     [Fact]
     public async Task CompletedWork_DoesNotCancelWorkers()
     {
