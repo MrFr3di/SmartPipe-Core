@@ -78,9 +78,7 @@ HOSTING_MATRIX = (
     "'{\"os\":[\"ubuntu-latest\",\"windows-latest\"]}') }}"
 )
 CSV_INTEGRATION_NAME = "CSV file integration (${{ matrix.os == 'windows-latest' && 'Windows' || matrix.os }})"
-CSV_INTEGRATION_MATRIX = (
-    "${{ fromJSON('{\"os\":[\"ubuntu-latest\",\"windows-latest\"]}') }}"
-)
+CSV_INTEGRATION_MATRIX = {"os": ["ubuntu-latest", "windows-latest"]}
 CSV_TEST_PROJECT = (
     "tests/SmartPipe.Extensions.Csv.Tests/SmartPipe.Extensions.Csv.Tests.csproj"
 )
@@ -113,9 +111,7 @@ POSTGRESQL_TEST_PROJECT = (
     "SmartPipe.Extensions.PostgreSql.Tests.csproj"
 )
 POSTGRESQL_INTEGRATION_NAME = "PostgreSQL integration (${{ matrix.postgres-version }})"
-POSTGRESQL_INTEGRATION_MATRIX = (
-    "${{ fromJSON('{\"postgres-version\":[\"18.6\",\"17.11\"]}') }}"
-)
+POSTGRESQL_INTEGRATION_MATRIX = {"postgres-version": ["18.6", "17.11"]}
 POSTGRESQL_PRIMARY_VERSION = "18.6"
 POSTGRESQL_COMPATIBILITY_VERSION = "17.11"
 POSTGRESQL_SERVICE_IMAGE = "postgres:${{ matrix.postgres-version }}"
