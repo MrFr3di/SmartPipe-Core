@@ -38,8 +38,9 @@ public sealed class BinaryDeploymentTests
 
         var exception = await Assert.ThrowsAsync<ConsumerScenarioException>(Inspect);
         Assert.Equal("SPCONS011", exception.Code);
-        var platformDeployed = deployed.Replace('/', Path.DirectorySeparatorChar);
-        Assert.Contains(platformDeployed, exception.Message, StringComparison.Ordinal);
+        var normalizedDeployed = deployed.Replace('\\', '/');
+        var normalizedMessage = exception.Message.Replace('\\', '/');
+        Assert.Contains(normalizedDeployed, normalizedMessage, StringComparison.Ordinal);
         fixture.Write(deployed, "runtime asset");
         await Inspect();
     }
