@@ -12,7 +12,7 @@
 
 ## Global constraints
 
-- Base `bfe755a` includes SP220-17, whose separate task PR targets `sp220/checkpoint-g`. SP220-18 is stacked until that dependency is accepted.
+- Final SP220-17 head `1941efbc11051f4947f63f305f2af88f7560dbcc` is an actual ancestor of SP220-18 through merge `01593c0821d92c8ea3560875f614c5128aad7fc5`. PR #114 remains a separate prerequisite and must be accepted into `sp220/checkpoint-g` before #115; no rebase/squash may erase that evidence.
 - Immutable 2.1.2 baseline files and six intentional-removal suppressions remain unchanged.
 - All 20 package IDs/version 2.2.0; facade inventory23/13/6 and bundle17direct18closure remain unchanged.
 - No dependency/SDK updates, runtime/API changes, new global suppressions or blanket AOT claims.
@@ -28,7 +28,9 @@
 - Release artifact inventory with planned IDs, downgraded/unknown mode, wrong hashes or version must fail closed.
 - Invalid workflow inputs and missing downloads must fail before any consumer or credential acquisition.
 - A release tag must point to accepted history: its SHA is contained in `main` and contains the current `release/2.2.0` head before release validation/publication proceeds.
-- A recoverable existing package must be proven equivalent to the immutable producer payload before OIDC login and recorded in recovery state; missing entries publish without duplicate suppression, so a post-preflight conflict fails closed and an existing primary cannot suppress recovery of its snupkg.
+- A recoverable existing package must be GET-downloaded and proven equivalent to the immutable producer payload before OIDC login and recorded in recovery state; missing entries publish without duplicate suppression, so a post-preflight conflict fails closed and an existing primary cannot suppress recovery of its snupkg.
+- Before any push, both nupkg and snupkg hashes must still match the immutable manifest. Post-publication verification uses one shared15-minute propagation deadline for the complete40-archive set rather than a per-package retry budget.
+- NuGet credentials remain environment-only; command-line arguments must not contain API-key values.
 
 ## Task 1: Package release metadata
 
@@ -52,6 +54,7 @@ Interfaces: reusable workflow `validation-mode` string (current/release, default
 - [x] Add rejecting artifact mode/planned-inventory fixtures; implement current/release validator support, retaining current compatibility for existing CI artifacts. Release mode requires an explicit expected source commit, checked against every nupkg/snupkg repository entry.
 - [x] Run all workflow mutation tests and PowerShell artifact fixtures GREEN; commit.
 - [x] Add post-publication payload equivalence checks and provenance-safe partial-release recovery for both nupkg and snupkg; lock the behavior with rejecting mutation/PowerShell fixtures.
+- [x] Harden recovery/publication with GET-based preflight response checks, state-driven fail-closed recovery, environment-only credentials, immediate primary/symbol hash revalidation, duplicate-signature rejection and one shared15-minute propagation window.
 - [ ] Re-run exact-head hosted validation after the recovery hardening and record the new SHA/run evidence.
 
 ## Task 3: Audits, docs and owner gates
@@ -60,7 +63,7 @@ Files: evidence and release readiness documentation, master plan acceptance refe
 
 - [x] Run vulnerability/deprecation scans and existing audit policy; report findings by scope without changing dependency versions silently.
 - [x] Check README/migration links and package install examples; record package validation/first-release coverage.
-- [x] Inspect release branch protection and nuget-production environment; record IDs/enforcement/checks and missing requirements. NuGet external publishing-policy state remains unverified unless authenticated evidence is available.
+- [x] Inspect release branch protection and nuget-production environment; record IDs/enforcement/checks and missing requirements. Recheck on2026-10-02 confirmed release ruleset approving-review count0 and no tag-target ruleset in repository ruleset inventory. NuGet external publishing-policy state remains unverified unless authenticated evidence is available.
 - [x] Document exact tag/version and immutable-artifact publication sequence. No tag/publish action in this task.
 
 ## Task 4: Candidate verification
