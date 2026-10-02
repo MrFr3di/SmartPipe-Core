@@ -98,7 +98,9 @@ jobs:
 
     - name: Test package artifact validation
       shell: pwsh
-      run: ./eng/tests/validate-package-artifact.Tests.ps1
+      run: |
+        ./eng/tests/validate-package-artifact.Tests.ps1
+        ./eng/tests/compare-nuget-package-payload.Tests.ps1
 
     - name: Format verify
       run: dotnet format SmartPipe.Core.slnx --verify-no-changes --no-restore
