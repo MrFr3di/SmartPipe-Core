@@ -69,6 +69,24 @@ try {
     }
     Assert-Comparison $expected $extra $false
 
+    $duplicateSignature = Join-Path $root 'published-duplicate-signature.nupkg'
+    New-TestPackage $duplicateSignature @{
+        'SmartPipe.Core.nuspec' = '<package><metadata><id>SmartPipe.Core</id><version>2.2.0</version></metadata></package>'
+        'lib/net10.0/SmartPipe.Core.dll' = 'validated payload'
+        '.signature.p7s' = 'first signature'
+    }
+    $zip = [IO.Compression.ZipFile]::Open($duplicateSignature, [IO.Compression.ZipArchiveMode]::Update)
+    try {
+        $entry = $zip.CreateEntry('.signature.p7s')
+        $writer = [IO.StreamWriter]::new($entry.Open())
+        try { $writer.Write('second signature') }
+        finally { $writer.Dispose() }
+    }
+    finally {
+        $zip.Dispose()
+    }
+    Assert-Comparison $expected $duplicateSignature $false
+
     Write-Output 'NuGet published payload comparison fixtures passed.'
 }
 finally {
