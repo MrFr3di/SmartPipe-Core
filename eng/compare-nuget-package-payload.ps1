@@ -14,11 +14,18 @@ function Get-PackagePayload([string]$Path) {
     }
 
     $entries = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
+    $signatureCount = 0
     $zip = [IO.Compression.ZipFile]::OpenRead($full)
     try {
         foreach ($entry in $zip.Entries) {
-            if ($entry.FullName -ceq '.signature.p7s' -or
-                $entry.FullName.EndsWith('/', [StringComparison]::Ordinal)) {
+            if ($entry.FullName -ceq '.signature.p7s') {
+                $signatureCount++
+                if ($signatureCount -gt 1) {
+                    throw "NuGet package contains multiple signature entries."
+                }
+                continue
+            }
+            if ($entry.FullName.EndsWith('/', [StringComparison]::Ordinal)) {
                 continue
             }
 
