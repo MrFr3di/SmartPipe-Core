@@ -1491,14 +1491,16 @@ def validate(documents: dict[str, dict]) -> None:
     require("awk '{print tolower($1)}'" in push_run
             and "toupper($1)" not in push_run,
             "Publish must normalize sha256sum output to lowercase before comparing it with the manifest hash.")
-    require(push_run.count("dotnet nuget push") == 2
-            and 'if [[ "$RECOVERABLE_RERUN" == "true" ]]' in push_run
+    require(push_run.count("dotnet nuget push") == 3
+            and 'if [[ "$RECOVERABLE_RERUN" != "true" ]]' in push_run
+            and 'recovery-state.json' in push_run
+            and '--skip-duplicate' not in push_run
             and '--no-symbols' in push_run
             and '.snupkgPath' in push_run
+            and 'primaryPublished' in push_run
+            and 'symbolsPublished' in push_run
             and 'dotnet nuget push "$symbol_package"' in push_run,
-            "Publish must use one ordered primary-package loop and only add the explicit symbol push in recoverable mode.")
-    require("skip_duplicate=(--skip-duplicate)" in push_run,
-            "Recoverable rerun must be the only source of --skip-duplicate.")
+            "Publish must use one ordered manifest loop, normal combined publication, and state-driven explicit primary/symbol recovery without duplicate suppression.")
     published_run = str(named_step(
         publish_steps, "Verify published package payloads").get("run", ""))
     require("Sort-Object publishOrder" in published_run
