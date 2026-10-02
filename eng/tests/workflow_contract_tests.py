@@ -1505,8 +1505,10 @@ def validate(documents: dict[str, dict]) -> None:
         publish_steps, "Verify published package payloads").get("run", ""))
     require("Sort-Object publishOrder" in published_run
             and ".id" in published_run and ".version" in published_run
+            and ".nupkgPath" in published_run and ".snupkgPath" in published_run
+            and "/api/v2/symbolpackage/" in published_run
             and "compare-nuget-package-payload.ps1" in published_run,
-            "Published-package checks must derive IDs/versions from manifest.json and verify producer payload equivalence.")
+            "Published-package checks must derive IDs/versions from manifest.json and verify primary/symbol producer payload equivalence.")
 
     assert_immutable_action_refs(documents)
     from release_validation_contract_tests import assert_release_contract
