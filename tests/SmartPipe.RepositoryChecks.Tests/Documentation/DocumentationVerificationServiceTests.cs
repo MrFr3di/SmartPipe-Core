@@ -93,12 +93,12 @@ public sealed class DocumentationVerificationServiceTests
         };
 
     private static DependencyPolicy Policy(IReadOnlyList<string> dependencies) => new()
-        {
-            RequiredSmartPipePackages = dependencies,
-            AllowedSmartPipePackages = [],
-            AllowedExternalPackages = [],
-            ForbiddenPackagePatterns = [],
-        };
+    {
+        RequiredSmartPipePackages = dependencies,
+        AllowedSmartPipePackages = [],
+        AllowedExternalPackages = [],
+        ForbiddenPackagePatterns = [],
+    };
 
     private static void WriteRequiredDocuments(RepositoryTestDirectory repository, PackageGraphDocument graph)
     {
