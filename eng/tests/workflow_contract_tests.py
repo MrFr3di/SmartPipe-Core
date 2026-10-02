@@ -1491,15 +1491,20 @@ def validate(documents: dict[str, dict]) -> None:
     require("awk '{print tolower($1)}'" in push_run
             and "toupper($1)" not in push_run,
             "Publish must normalize sha256sum output to lowercase before comparing it with the manifest hash.")
-    require(push_run.count("dotnet nuget push") == 1,
-            "Publish must use one manifest-driven push loop.")
+    require(push_run.count("dotnet nuget push") == 2
+            and 'if [[ "$RECOVERABLE_RERUN" == "true" ]]' in push_run
+            and '--no-symbols' in push_run
+            and '.snupkgPath' in push_run
+            and 'dotnet nuget push "$symbol_package"' in push_run,
+            "Publish must use one ordered primary-package loop and only add the explicit symbol push in recoverable mode.")
     require("skip_duplicate=(--skip-duplicate)" in push_run,
             "Recoverable rerun must be the only source of --skip-duplicate.")
-    availability_run = str(named_step(
-        publish_steps, "Verify published package versions are available").get("run", ""))
-    require("sort_by(.publishOrder)" in availability_run
-            and "[.id, .version]" in availability_run,
-            "Availability checks must derive package IDs and versions from manifest.json.")
+    published_run = str(named_step(
+        publish_steps, "Verify published package payloads").get("run", ""))
+    require("Sort-Object publishOrder" in published_run
+            and ".id" in published_run and ".version" in published_run
+            and "compare-nuget-package-payload.ps1" in published_run,
+            "Published-package checks must derive IDs/versions from manifest.json and verify producer payload equivalence.")
 
     assert_immutable_action_refs(documents)
     from release_validation_contract_tests import assert_release_contract
