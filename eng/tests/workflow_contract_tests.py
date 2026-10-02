@@ -439,19 +439,30 @@ def assert_all_multiline_native_fail_fast_contract(documents: dict[str, dict]) -
 
 def assert_lychee_contract(reusable_steps: list[dict]) -> None:
     linux = named_step(reusable_steps, "Docs link check")
+    linux_with = linux.get("with")
     require(linux.get("if") == "runner.os != 'Windows'"
-            and linux.get("uses") == "lycheeverse/lychee-action@a8c4c7cb88f0c7386610c35eb25108e448569cb0",
-            "Linux Docs link check must retain the pinned Lychee action.")
+            and linux.get("uses") == "lycheeverse/lychee-action@a8c4c7cb88f0c7386610c35eb25108e448569cb0"
+            and isinstance(linux_with, dict)
+            and linux_with.get("token") == "${{ github.token }}",
+            "Linux Docs link check must retain the pinned Lychee action and explicit ephemeral github.token.")
+    linux_args = str(linux_with.get("args", ""))
     windows = named_step(reusable_steps, "Docs link check (Windows)")
     run = str(windows.get("run", ""))
+    windows_env = windows.get("env")
     require(windows.get("if") == "runner.os == 'Windows'"
             and windows.get("shell") == "pwsh"
+            and isinstance(windows_env, dict)
+            and windows_env.get("GITHUB_TOKEN") == "${{ github.token }}"
             and LYCHEE_URL in run and LYCHEE_SHA256 in run
             and "Get-FileHash" in run and "SHA256" in run,
-            "Windows Docs link check must download the pinned Lychee binary and verify SHA256.")
+            "Windows Docs link check must use the pinned SHA-verified Lychee binary with ephemeral github.token.")
+    for option in ("--max-retries 5", "--retry-wait-time 2", "--max-concurrency 8"):
+        require(option in linux_args and option in run,
+                f"Docs link checks must retain bounded transient hardening: {option}.")
     lychee_text = json.dumps({"linux": linux, "windows": windows})
-    require("GITHUB_TOKEN" not in lychee_text and "github-token" not in lychee_text.lower(),
-            "Docs link check must not expose or require GITHUB_TOKEN.")
+    require("secrets." not in lychee_text.lower()
+            and "--github-token" not in lychee_text.lower(),
+            "Docs link checks must use only github.token through action input/environment, never a long-lived secret or CLI token.")
     require("lycheeverse/lychee-action" not in run,
             "Windows Docs link check must not use the hosted Lychee action.")
 
@@ -2054,11 +2065,19 @@ def _remove_windows_lychee_step(documents: dict[str, dict]) -> None:
 
 
 def _add_lychee_token(documents: dict[str, dict]) -> None:
-    linux = named_step(
-        documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
-        "Docs link check",
-    )
-    linux["env"] = {"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}
+    steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+    linux = named_step(steps, "Docs link check")
+    linux.setdefault("with", {})["token"] = "${{ secrets.GITHUB_TOKEN }}"
+    windows = named_step(steps, "Docs link check (Windows)")
+    windows["env"] = {"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}
+
+
+def _remove_lychee_transient_hardening(documents: dict[str, dict]) -> None:
+    steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+    linux = named_step(steps, "Docs link check")
+    linux["with"]["args"] = str(linux["with"].get("args", "")).replace("--max-retries 5 ", "")
+    windows = named_step(steps, "Docs link check (Windows)")
+    windows["run"] = str(windows.get("run", "")).replace("--max-retries 5 ", "")
 
 
 def _remove_reusable_pr_guard(documents: dict[str, dict]) -> None:
@@ -2561,7 +2580,12 @@ def main() -> int:
     assert_mutation_rejected(
         documents,
         _add_lychee_token,
-        "must not expose or require GITHUB_TOKEN",
+        "never a long-lived secret or CLI token",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_lychee_transient_hardening,
+        "bounded transient hardening",
     )
     assert_mutation_rejected(
         documents,

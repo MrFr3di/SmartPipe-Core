@@ -5,6 +5,12 @@ transport only: request acquisition, response status handling, response and
 stream lifetime, body timeouts, and cancellation. JSON codecs live in
 `SmartPipe.Extensions.Http.Json`.
 
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.Http --version 2.2.0
+```
+
 ## Package graph
 
 `SmartPipe.Extensions.Http` depends on `SmartPipe.Core`,

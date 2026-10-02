@@ -83,8 +83,8 @@ crash-atomic file replacement.
 ## Install
 
 ```bash
-dotnet add package SmartPipe.Core --version 2.2.0
-dotnet add package SmartPipe.Extensions.Json --version 2.2.0
+dotnet package add SmartPipe.Core --version 2.2.0
+dotnet package add SmartPipe.Extensions.Json --version 2.2.0
 ```
 
 For canonical 2.2 DI pipelines, `SmartPipe.Extensions.HealthChecks` adds exact-key liveness, readiness, aggregate, ASP.NET tag, trimming, and NativeAOT support. See [Health checks](docs/health-checks.md).
@@ -95,6 +95,35 @@ New applications should install the specific integration packages they use.
 `SmartPipe.Extensions` 2.2.0 is the compatibility bundle for applications that
 intentionally want its complete integration set, including HealthChecks and
 OpenTelemetry. See the [migration guide](docs/migration/2.2.0-integration-packages.md).
+
+### Package selection
+
+| Package | Use it for |
+|---|---|
+| `SmartPipe.Core` | Typed in-process pipeline runtime and definitions |
+| `SmartPipe.Extensions.DependencyInjection` | Keyed DI registration and per-run factories |
+| `SmartPipe.Extensions.Hosting` | .NET Generic Host lifecycle integration |
+| `SmartPipe.Extensions.HealthChecks` | Liveness/readiness for registered pipelines |
+| `SmartPipe.Extensions.OpenTelemetry` | Exporter-neutral registration of Core metrics/traces |
+| `SmartPipe.Extensions.Json` | JSON files, transforms, and dead-letter persistence |
+| `SmartPipe.Extensions.Csv` | Strict bounded CSV file sources/sinks |
+| `SmartPipe.Extensions.Dapper` | Explicit-SQL ADO.NET/Dapper sources and sinks |
+| `SmartPipe.Extensions.EntityFrameworkCore` | Provider-neutral EF Core query sources |
+| `SmartPipe.Extensions.Mapster` | Mapster transforms |
+| `SmartPipe.Extensions.Http` | Streaming HTTP transport |
+| `SmartPipe.Extensions.Http.Json` | Source-generated JSON codecs for HTTP |
+| `SmartPipe.Extensions.Polly` | Polly resilience decorator for transforms |
+| `SmartPipe.Extensions.Channels` | Channel merge primitives |
+| `SmartPipe.Extensions.Transforms` | Composable transforms |
+| `SmartPipe.Extensions.DataAnnotations` | DataAnnotations validation transforms |
+| `SmartPipe.Extensions.Logging` | Logging sinks |
+| `SmartPipe.Extensions.PostgreSql` | PostgreSQL binary COPY and LISTEN/NOTIFY; optional, outside the bundle |
+| `SmartPipe.Testing` | Framework-neutral test helpers; test projects only |
+| `SmartPipe.Extensions` | Broad 2.2 compatibility facade/bundle; prefer leaves for new applications |
+
+See the [2.2.0 release notes](docs/releases/2.2.0.md) for the release overview and
+the [2.1.2 → 2.2.0 compatibility matrix](docs/implementation/2.2.0/sp220-17-compatibility-matrix.md)
+for the exact moved, retained, and removed public identities.
 
 ## Canonical Definitions In 2.2
 
@@ -321,6 +350,10 @@ check for the public quick-start scenarios.
 - [Dependency injection](docs/dependency-injection.md)
 - [Hosting](docs/hosting.md)
 - [Health checks](docs/health-checks.md)
+- [AOT and trimming compatibility](docs/aot-compatibility.md)
+- [2.2.0 release notes](docs/releases/2.2.0.md)
+- [2.1.2 → 2.2.0 integration migration](docs/migration/2.2.0-integration-packages.md)
+- [2.1.2 → 2.2.0 compatibility matrix](docs/implementation/2.2.0/sp220-17-compatibility-matrix.md)
 - [API reference](docs/api-reference.md)
 - [Contributing](docs/contributing.md)
 - [Package authoring](docs/contributing/package-authoring.md)

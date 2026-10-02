@@ -38,7 +38,7 @@ Use source-generated JSON metadata as the primary path for JSON file and
 dead-letter helpers:
 
 ```bash
-dotnet add package SmartPipe.Extensions.Json --version 2.1.2
+dotnet package add SmartPipe.Extensions.Json --version 2.2.0
 ```
 
 ```csharp

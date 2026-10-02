@@ -2,8 +2,10 @@
 
 Key-based liveness and readiness checks for canonical SmartPipe DI registrations.
 
+## Installation
+
 ```bash
-dotnet add package SmartPipe.Extensions.HealthChecks
+dotnet package add SmartPipe.Extensions.HealthChecks --version 2.2.0
 ```
 
 ```csharp

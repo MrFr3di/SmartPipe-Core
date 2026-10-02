@@ -2,6 +2,12 @@
 
 Composable transforms for SmartPipe.Core without the broad extensions facade.
 
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.Transforms --version 2.2.0
+```
+
 - `CompositeTransform<T>` owns and sequences child transforms with deterministic rollback and disposal.
 - `ConditionalTransform<T>` applies an owned child only when its predicate matches.
 - `CompressionTransform` compresses byte arrays with Brotli or GZip.

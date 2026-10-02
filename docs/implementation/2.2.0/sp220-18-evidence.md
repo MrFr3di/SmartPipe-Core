@@ -47,6 +47,24 @@ Recovery records verified preflight state for primary and symbol packages, then 
 
 Regression coverage includes matching signed payload plus rejection of mutated payload, extra entries and multiple `.signature.p7s` entries. Workflow mutation tests reject removal of release-tag ancestry, recovery preflight, GET/response handling, environment-only credentials, symbol hash verification, explicit recovery symbol push, the shared propagation deadline or final primary/symbol payload verification. These changes require fresh exact-head hosted validation; the earlier `cefa0788` release dispatch is historical evidence and does not validate this follow-up.
 
+## Hosted link-check hardening
+
+Exact-head CI run `37008206113`, attempt2, completed all build, package, consumer,
+correctness, concurrency, coverage, stress, integration, audit and warning gates
+successfully before the Windows documentation link check. That final step failed
+only because four external `github.com/.../blob/...` references returned HTTP503
+in the same two-second Lychee pass. No repository link or test failure was
+reported.
+
+Review of the pinned Lychee action showed that its Linux path already supplies
+`${{ github.token }}` by default, while the Windows SHA-verified binary had no
+equivalent explicit authentication. The workflow now makes the boundary
+consistent and auditable: both lanes use only the ephemeral job-scoped
+`github.token` under the workflow's `contents: read` permission, never a
+long-lived secret or command-line token. Both lanes also use five retries,
+two-second retry waits and maximum concurrency eight to reduce transient
+GitHub-host failures without accepting HTTP503 as success.
+
 ## Final code review
 
 Fresh read-only whole-branch reviewer found no unresolved Critical/Important code finding after the implemented corrections. An Important omission of OpenTelemetry unit tests was fixed with a mandatory reusable step (local24/24 pass). The initially Minor omission of the new mutation suite from CI was treated as an acceptance gap and fixed in the wrapper with both exit codes enforced. New regressions RED3 failures → GREEN7/7 plus the prior workflow suite and actionlint; removal/optional telemetry step and removal of either Windows or PostgreSQL publication dependencies are rejected. Issue-level triage of the six Sonar findings reported below remains an independent acceptance item rather than being silently classified as nonblocking. Hosted execution and owner configuration remain separate evidence gates.

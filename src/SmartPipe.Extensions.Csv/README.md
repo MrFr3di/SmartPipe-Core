@@ -5,7 +5,7 @@ Strict, bounded CSV file sources and sinks for SmartPipe.Core, backed by CsvHelp
 ## Installation
 
 ```bash
-dotnet add package SmartPipe.Extensions.Csv --version 2.2.0
+dotnet package add SmartPipe.Extensions.Csv --version 2.2.0
 ```
 
 ## Strict file profile

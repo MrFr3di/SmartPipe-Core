@@ -3,6 +3,12 @@
 Bounded, source-generated JSON codecs for `SmartPipe.Extensions.Http`: streaming
 root-array and NDJSON response readers, and JSON request content for sinks.
 
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.Http.Json --version 2.2.0
+```
+
 ## Package graph
 
 `SmartPipe.Extensions.Http.Json` depends on `SmartPipe.Extensions.Http` and

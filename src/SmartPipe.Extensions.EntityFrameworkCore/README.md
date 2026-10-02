@@ -2,6 +2,12 @@
 
 Provider-neutral Entity Framework Core query sources for `SmartPipe.Core`.
 
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.EntityFrameworkCore --version 2.2.0
+```
+
 ## What this package owns
 
 - `EfCorePipelineComponents.QuerySource<TContext,TResult>` — a queryable source over either a borrowed

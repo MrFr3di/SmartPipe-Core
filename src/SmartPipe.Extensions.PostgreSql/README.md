@@ -4,6 +4,12 @@ PostgreSQL-native pipeline components for [SmartPipe.Core](../../README.md), bui
 [Npgsql](https://www.npgsql.org/): binary `COPY` streaming in both directions, and `LISTEN`/`NOTIFY` as an asynchronous
 notification source.
 
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.PostgreSql --version 2.2.0
+```
+
 The package is named after **PostgreSQL** because PostgreSQL capabilities are the product contract. It is implemented on
 **Npgsql** because Npgsql is the .NET data provider used to reach those capabilities. The application owns the
 `NpgsqlDataSource`; SmartPipe borrows it.

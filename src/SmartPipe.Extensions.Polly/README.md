@@ -5,6 +5,12 @@ attempt runs the real inner `IPipelineTransformer<TInput,TOutput>`, and the
 application owns the typed `ResiliencePipeline<StageResult<TOutput>>` that
 decides whether to retry, time out, break, hedge, or fall back.
 
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.Polly --version 2.2.0
+```
+
 ## Package graph
 
 `SmartPipe.Extensions.Polly` depends only on `SmartPipe.Core` and `Polly.Core`

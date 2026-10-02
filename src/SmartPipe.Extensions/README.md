@@ -129,7 +129,7 @@ token remains available.
 ## Installation
 
 ```bash
-dotnet add package SmartPipe.Extensions --version 2.2.0
+dotnet package add SmartPipe.Extensions --version 2.2.0
 ```
 
 For narrow SP220-07 integrations, install `SmartPipe.Extensions.Channels`,
@@ -140,7 +140,7 @@ existing public types and pulls these leaves only as a compatibility facade.
 For JSON-only integrations, prefer:
 
 ```bash
-dotnet add package SmartPipe.Extensions.Json --version 2.2.0
+dotnet package add SmartPipe.Extensions.Json --version 2.2.0
 ```
 
 ## JSON Package Migration
