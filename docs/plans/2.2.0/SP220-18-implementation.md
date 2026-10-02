@@ -27,6 +27,7 @@
 - Dropping Windows/PostgreSQL from publication dependencies must be rejected.
 - Release artifact inventory with planned IDs, downgraded/unknown mode, wrong hashes or version must fail closed.
 - Invalid workflow inputs and missing downloads must fail before any consumer or credential acquisition.
+- A recoverable duplicate must be proven equivalent to the immutable producer payload before OIDC login; a skipped primary package must not suppress recovery of its snupkg.
 
 ## Task 1: Package release metadata
 
@@ -49,6 +50,8 @@ Interfaces: reusable workflow `validation-mode` string (current/release, default
 - [x] Add CI release-candidate dispatch route for exact feature-branch SHA and Windows replay; preserve diagnostic and same-repository guards.
 - [x] Add rejecting artifact mode/planned-inventory fixtures; implement current/release validator support, retaining current compatibility for existing CI artifacts. Release mode requires an explicit expected source commit, checked against every nupkg/snupkg repository entry.
 - [x] Run all workflow mutation tests and PowerShell artifact fixtures GREEN; commit.
+- [x] Add post-publication payload equivalence checks and provenance-safe partial-release recovery for both nupkg and snupkg; lock the behavior with rejecting mutation/PowerShell fixtures.
+- [ ] Re-run exact-head hosted validation after the recovery hardening and record the new SHA/run evidence.
 
 ## Task 3: Audits, docs and owner gates
 
