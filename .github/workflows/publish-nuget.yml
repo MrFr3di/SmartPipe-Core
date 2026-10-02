@@ -217,6 +217,18 @@ jobs:
               exit 1
             fi
 
+            symbol_package="$(jq -r --arg path "$package" '.packages[] | select(.nupkgPath == $path) | .snupkgPath' "$manifest")"
+            expected_symbol_hash="$(jq -r --arg path "$package" '.packages[] | select(.nupkgPath == $path) | .snupkgSha256' "$manifest")"
+            if [[ -z "$symbol_package" || "$symbol_package" == "null" || ! -f "$symbol_package" || -z "$expected_symbol_hash" || "$expected_symbol_hash" == "null" ]]; then
+              echo "Symbol package is missing from immutable manifest/artifact: $package" >&2
+              exit 1
+            fi
+            actual_symbol_hash="$(sha256sum "$symbol_package" | awk '{print tolower($1)}')"
+            if [[ "$actual_symbol_hash" != "$expected_symbol_hash" ]]; then
+              echo "Symbol package hash does not match immutable manifest: $symbol_package" >&2
+              exit 1
+            fi
+
             if [[ "$RECOVERABLE_RERUN" != "true" ]]; then
               dotnet nuget push "$package" --source https://api.nuget.org/v3/index.json
               continue
@@ -237,11 +249,6 @@ jobs:
               dotnet nuget push "$package" --source https://api.nuget.org/v3/index.json --no-symbols
             fi
 
-            symbol_package="$(jq -r --arg path "$package" '.packages[] | select(.nupkgPath == $path) | .snupkgPath' "$manifest")"
-            if [[ -z "$symbol_package" || "$symbol_package" == "null" || ! -f "$symbol_package" ]]; then
-              echo "Symbol package is missing from immutable manifest/artifact for recovery: $package" >&2
-              exit 1
-            fi
             if [[ "$symbols_published" == "true" ]]; then
               echo "$package_id symbol package already matches the validated producer payload; skipping push."
             else
