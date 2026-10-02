@@ -104,11 +104,13 @@ def assert_publication_contract(documents: dict) -> None:
     published = named_step(publish_steps, 'Verify published package payloads')
     published_run = published.get('run', '')
     require('v3-flatcontainer' in published_run
+            and '/api/v2/symbolpackage/' in published_run
             and 'compare-nuget-package-payload.ps1' in published_run
             and 'nupkgPath' in published_run
+            and 'snupkgPath' in published_run
             and publish_steps.index(push) < publish_steps.index(published)
             and not published.get('continue-on-error'),
-            'published packages must be downloaded and compared with the immutable producer payload after push')
+            'published primary and symbol packages must be downloaded and compared with the immutable producer payload after push')
     require(jobs['publish'].get('environment') == 'nuget-production'
             and jobs['publish'].get('permissions') == {'contents': 'read', 'id-token': 'write'}, 'publication retains protected OIDC environment')
     for name, job in jobs.items():
