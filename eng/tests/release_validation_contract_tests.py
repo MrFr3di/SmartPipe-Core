@@ -82,10 +82,12 @@ def assert_publication_contract(documents: dict) -> None:
     recovery_run = recovery.get('run', '')
     require("inputs.recoverable-rerun" in recovery.get('if', '')
             and 'v3-flatcontainer' in recovery_run
+            and '/api/v2/symbolpackage/' in recovery_run
             and 'compare-nuget-package-payload.ps1' in recovery_run
             and 'nupkgPath' in recovery_run
+            and 'snupkgPath' in recovery_run
             and not recovery.get('continue-on-error'),
-            'recoverable publication must reject pre-existing packages that differ from the immutable producer payload before login')
+            'recoverable publication must reject pre-existing primary or symbol packages that differ from the immutable producer payload before login')
     push = named_step(publish_steps, 'Publish packages in dependency order')
     push_run = push.get('run', '')
     require('--skip-duplicate' in push_run
