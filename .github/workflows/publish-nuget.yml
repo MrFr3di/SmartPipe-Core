@@ -110,6 +110,42 @@ jobs:
           PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
         run: ./eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json -ExpectedMode release -ExpectedCommit (git rev-parse HEAD)
 
+      - name: Preflight recoverable published packages
+        if: github.event_name == 'workflow_dispatch' && inputs.recoverable-rerun
+        shell: pwsh
+        env:
+          PACKAGE_MANIFEST: artifacts/packages/manifest.json
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifest = Get-Content -LiteralPath $env:PACKAGE_MANIFEST -Raw | ConvertFrom-Json
+          $downloadRoot = Join-Path $env:RUNNER_TEMP ("nuget-recovery-preflight-" + [Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $downloadRoot | Out-Null
+          try {
+            foreach ($package in @($manifest.packages | Sort-Object publishOrder)) {
+              $id = [string]$package.id
+              $version = [string]$package.version
+              $lowerId = $id.ToLowerInvariant()
+              $lowerVersion = $version.ToLowerInvariant()
+              $url = "https://api.nuget.org/v3-flatcontainer/$lowerId/$lowerVersion/$lowerId.$lowerVersion.nupkg"
+              $head = Invoke-WebRequest -Uri $url -Method Head -SkipHttpErrorCheck
+              if ($head.StatusCode -eq 404) {
+                Write-Output "$id $version is not published yet; recovery may publish it."
+                continue
+              }
+              if ($head.StatusCode -ne 200) {
+                throw "Unable to establish recovery state for $id $version. HTTP $($head.StatusCode)."
+              }
+
+              $published = Join-Path $downloadRoot "$id.$version.nupkg"
+              Invoke-WebRequest -Uri $url -OutFile $published
+              ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.nupkgPath) -PublishedPackage $published
+              Remove-Item -LiteralPath $published -Force
+            }
+          }
+          finally {
+            Remove-Item -LiteralPath $downloadRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
       - name: NuGet login
         id: nuget-login
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
@@ -124,8 +160,10 @@ jobs:
           RECOVERABLE_RERUN: ${{ github.event_name == 'workflow_dispatch' && inputs.recoverable-rerun }}
         run: |
           skip_duplicate=()
+          primary_only=()
           if [[ "$RECOVERABLE_RERUN" == "true" ]]; then
             skip_duplicate=(--skip-duplicate)
+            primary_only=(--no-symbols)
           fi
           manifest="artifacts/packages/manifest.json"
           mapfile -t packages < <(jq -r '.packages | sort_by(.publishOrder)[] | .nupkgPath' "$manifest")
@@ -140,7 +178,19 @@ jobs:
               echo "Package hash does not match immutable manifest: $package" >&2
               exit 1
             fi
-            dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json "${skip_duplicate[@]}"
+
+            dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --symbol-api-key "$NUGET_API_KEY" \
+              --source https://api.nuget.org/v3/index.json "${skip_duplicate[@]}" "${primary_only[@]}"
+
+            if [[ "$RECOVERABLE_RERUN" == "true" ]]; then
+              symbol_package="$(jq -r --arg path "$package" '.packages[] | select(.nupkgPath == $path) | .snupkgPath' "$manifest")"
+              if [[ -z "$symbol_package" || "$symbol_package" == "null" || ! -f "$symbol_package" ]]; then
+                echo "Symbol package is missing from immutable manifest/artifact for recovery: $package" >&2
+                exit 1
+              fi
+              dotnet nuget push "$symbol_package" --api-key "$NUGET_API_KEY" --symbol-api-key "$NUGET_API_KEY" \
+                --source https://api.nuget.org/v3/index.json --skip-duplicate
+            fi
           done
 
       - name: Verify published package payloads
