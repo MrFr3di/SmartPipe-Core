@@ -140,6 +140,21 @@ jobs:
               Invoke-WebRequest -Uri $url -OutFile $published
               ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.nupkgPath) -PublishedPackage $published
               Remove-Item -LiteralPath $published -Force
+
+              $symbolUrl = "https://www.nuget.org/api/v2/symbolpackage/$id/$version"
+              $symbolHead = Invoke-WebRequest -Uri $symbolUrl -Method Head -SkipHttpErrorCheck
+              if ($symbolHead.StatusCode -eq 404) {
+                Write-Output "$id $version symbol package is not published yet; recovery may publish it."
+                continue
+              }
+              if ($symbolHead.StatusCode -ne 200) {
+                throw "Unable to establish symbol recovery state for $id $version. HTTP $($symbolHead.StatusCode)."
+              }
+
+              $publishedSymbol = Join-Path $downloadRoot "$id.$version.snupkg"
+              Invoke-WebRequest -Uri $symbolUrl -OutFile $publishedSymbol
+              ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.snupkgPath) -PublishedPackage $publishedSymbol
+              Remove-Item -LiteralPath $publishedSymbol -Force
             }
           }
           finally {
