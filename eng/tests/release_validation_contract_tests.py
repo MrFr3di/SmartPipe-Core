@@ -65,6 +65,15 @@ def assert_replay_contract(documents: dict) -> None:
 
 def assert_publication_contract(documents: dict) -> None:
     jobs = documents['publish-nuget.yml']['jobs']
+    version_steps = jobs['version']['steps']
+    accepted = named_step(version_steps, 'Require accepted release commit')
+    accepted_run = accepted.get('run', '')
+    require('refs/heads/main:refs/remotes/origin/main' in accepted_run
+            and 'refs/heads/release/2.2.0:refs/remotes/origin/release/2.2.0' in accepted_run
+            and 'merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main' in accepted_run
+            and 'merge-base --is-ancestor refs/remotes/origin/release/2.2.0 "$GITHUB_SHA"' in accepted_run
+            and not accepted.get('continue-on-error'),
+            'release tag must be bound to accepted main history containing the current release branch head')
     require(jobs['validation']['with'].get('validation-mode') == 'release', 'publication producer must select release mode')
     windows = jobs.get('windows-validation')
     require(isinstance(windows, dict) and windows.get('needs') == ['version', 'validation']
@@ -191,6 +200,7 @@ class ReleaseValidationContractTests(unittest.TestCase):
     def test_mutations_cannot_relax_release_gates(self):
         assert_release_contract(self.documents)
         mutations = [
+            lambda d: named_step(d['publish-nuget.yml']['jobs']['version']['steps'], 'Require accepted release commit').update({'run': 'echo unchecked'}),
             lambda d: d['publish-nuget.yml']['jobs']['validation']['with'].update({'validation-mode': 'current'}),
             lambda d: d['publish-nuget.yml']['jobs']['publish']['needs'].remove('windows-validation'),
             lambda d: d['publish-nuget.yml']['jobs']['publish']['needs'].remove('postgresql-validation'),
