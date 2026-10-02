@@ -27,6 +27,7 @@
 - Dropping Windows/PostgreSQL from publication dependencies must be rejected.
 - Release artifact inventory with planned IDs, downgraded/unknown mode, wrong hashes or version must fail closed.
 - Invalid workflow inputs and missing downloads must fail before any consumer or credential acquisition.
+- A release tag must point to accepted history: its SHA is contained in `main` and contains the current `release/2.2.0` head before release validation/publication proceeds.
 - A recoverable existing package must be proven equivalent to the immutable producer payload before OIDC login and recorded in recovery state; missing entries publish without duplicate suppression, so a post-preflight conflict fails closed and an existing primary cannot suppress recovery of its snupkg.
 
 ## Task 1: Package release metadata
