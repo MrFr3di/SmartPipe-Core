@@ -61,6 +61,7 @@ if ($expected.Count -ne $published.Count) {
 }
 
 foreach ($name in $expected.Keys) {
+    $actual = $null
     if (!$published.TryGetValue($name, [ref]$actual)) {
         throw "Published NuGet package is missing payload entry: $name"
     }
