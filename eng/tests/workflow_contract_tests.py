@@ -459,6 +459,8 @@ def assert_lychee_contract(reusable_steps: list[dict]) -> None:
     for option in ("--max-retries 5", "--retry-wait-time 2", "--max-concurrency 8"):
         require(option in linux_args and option in run,
                 f"Docs link checks must retain bounded transient hardening: {option}.")
+    require("CONTRIBUTING.md" in linux_args and "CONTRIBUTING.md" in run,
+            "Docs link checks must include the root CONTRIBUTING guide.")
     require("'src/**/README.md'" in linux_args and "'src/**/README.md'" in run,
             "Docs link checks must include package READMEs shipped from src.")
     lychee_text = json.dumps({"linux": linux, "windows": windows})

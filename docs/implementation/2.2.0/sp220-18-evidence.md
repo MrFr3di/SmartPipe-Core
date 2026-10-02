@@ -64,9 +64,10 @@ consistent and auditable: both lanes use only the ephemeral job-scoped
 long-lived secret or command-line token. Both lanes also use five retries,
 two-second retry waits and maximum concurrency eight to reduce transient
 GitHub-host failures without accepting HTTP503 as success. The same gate now
-checks `src/**/README.md` in addition to the root README and `docs/**/*.md`,
-so links in package READMEs that are packed into NuGet artifacts are covered by
-hosted CI rather than only ad-hoc/local documentation checks.
+checks the root `CONTRIBUTING.md` and `src/**/README.md` in addition to the
+root README and `docs/**/*.md`. Contributor guidance and package READMEs that
+are packed into NuGet artifacts are therefore covered by hosted CI rather than
+only ad-hoc/local documentation checks.
 
 ## Final code review
 
