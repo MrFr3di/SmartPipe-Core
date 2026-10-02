@@ -77,28 +77,28 @@ public sealed class DocumentationVerificationServiceTests
         int publishOrder,
         PackageAotContract aotContract,
         IReadOnlyList<string> dependencies) => new()
-    {
-        Id = id,
-        ProjectPath = projectPath,
-        Lifecycle = lifecycle,
-        ActivationEpic = "test",
-        ScaffoldKind = null,
-        PublishOrder = publishOrder,
-        BaselineVersion = null,
-        AotContract = aotContract,
-        CurrentDependencies = Policy(dependencies),
-        ReleaseDependencies = Policy(dependencies),
-        TemporaryAllowances = [],
-        ConsumerScenarios = [],
-    };
+        {
+            Id = id,
+            ProjectPath = projectPath,
+            Lifecycle = lifecycle,
+            ActivationEpic = "test",
+            ScaffoldKind = null,
+            PublishOrder = publishOrder,
+            BaselineVersion = null,
+            AotContract = aotContract,
+            CurrentDependencies = Policy(dependencies),
+            ReleaseDependencies = Policy(dependencies),
+            TemporaryAllowances = [],
+            ConsumerScenarios = [],
+        };
 
     private static DependencyPolicy Policy(IReadOnlyList<string> dependencies) => new()
-    {
-        RequiredSmartPipePackages = dependencies,
-        AllowedSmartPipePackages = [],
-        AllowedExternalPackages = [],
-        ForbiddenPackagePatterns = [],
-    };
+        {
+            RequiredSmartPipePackages = dependencies,
+            AllowedSmartPipePackages = [],
+            AllowedExternalPackages = [],
+            ForbiddenPackagePatterns = [],
+        };
 
     private static void WriteRequiredDocuments(RepositoryTestDirectory repository, PackageGraphDocument graph)
     {
