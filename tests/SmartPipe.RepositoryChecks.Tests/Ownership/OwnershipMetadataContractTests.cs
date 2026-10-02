@@ -17,7 +17,27 @@ public sealed class OwnershipMetadataContractTests
     private const string Leaf = "SmartPipe.Extensions.Json";
 
     [Theory]
+    [InlineData("1.0.0.0", "", false, true)]
+    [InlineData("2.0.0.0", "", false, true)]
+    [InlineData("99.0.0.0", "", false, false)]
+    [InlineData("2.0.0.0", "fr", false, false)]
+    [InlineData("2.0.0.0", "", true, false)]
+    public async Task ForwarderMustBindToTheImplementationIdentity(string version, string culture, bool signed, bool accepted)
+    {
+        using var fixture = new RepositoryTestDirectory();
+        WritePackage(fixture, Facade, [("lib/net10.0/Facade.dll", Assembly(Facade, forwardTo: Leaf,
+            referenceVersion: version, referenceCulture: culture, referenceToken: signed ? new byte[8] : null))]);
+        WritePackage(fixture, Leaf, [("lib/net10.0/Leaf.dll", Assembly(Leaf, implement: true))]);
+
+        var result = await ValidateAsync(fixture);
+
+        Assert.Equal(accepted, result.Success);
+        if (!accepted) Assert.Contains(result.Violations, violation => violation.Code == "SPOWN026" && violation.Type == TypeName);
+    }
+
+    [Theory]
     [InlineData(Leaf, true)]
+    [InlineData("smartpipe.extensions.json", true)]
     [InlineData("SmartPipe.Extensions.Wrong", false)]
     public async Task ForwarderMustPointToTheDeclaredImplementation(string destination, bool accepted)
     {
@@ -29,6 +49,18 @@ public sealed class OwnershipMetadataContractTests
 
         Assert.Equal(accepted, result.Success);
         if (!accepted) Assert.Contains(result.Violations, violation => violation.Code == "SPOWN026" && violation.Type == TypeName);
+    }
+
+    [Fact]
+    public async Task ImplementationAssemblyNameUsesRuntimeCaseInsensitiveBinding()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        WritePackage(fixture, Facade, [("lib/net10.0/Facade.dll", Assembly(Facade, forwardTo: Leaf))]);
+        WritePackage(fixture, Leaf, [("lib/net10.0/Leaf.dll", Assembly("smartpipe.extensions.json", implement: true))]);
+
+        var result = await ValidateAsync(fixture);
+
+        Assert.True(result.Success);
     }
 
     [Fact]
@@ -82,7 +114,8 @@ public sealed class OwnershipMetadataContractTests
         File.Copy(package.Path, Path.Combine(fixture.Path, id + ".2.2.0.nupkg"));
     }
 
-    private static byte[] Assembly(string name, bool implement = false, string? forwardTo = null, bool nested = false)
+    private static byte[] Assembly(string name, bool implement = false, string? forwardTo = null, bool nested = false,
+        string referenceVersion = "2.0.0.0", string referenceCulture = "", byte[]? referenceToken = null)
     {
         var metadata = new MetadataBuilder();
         metadata.AddModule(0, metadata.GetOrAddString(name + ".dll"), metadata.GetOrAddGuid(Guid.NewGuid()), default, default);
@@ -94,7 +127,8 @@ public sealed class OwnershipMetadataContractTests
                 MetadataTokens.FieldDefinitionHandle(1), MetadataTokens.MethodDefinitionHandle(1));
         if (forwardTo is not null)
         {
-            var reference = metadata.AddAssemblyReference(metadata.GetOrAddString(forwardTo), new Version(2, 0, 0, 0), default, default, 0, default);
+            var reference = metadata.AddAssemblyReference(metadata.GetOrAddString(forwardTo), Version.Parse(referenceVersion),
+                metadata.GetOrAddString(referenceCulture), referenceToken is null ? default : metadata.GetOrAddBlob(referenceToken), 0, default);
             var parent = metadata.AddExportedType(TypeAttributes.Public | (TypeAttributes)0x00200000,
                 metadata.GetOrAddString("SmartPipe.Extensions"), metadata.GetOrAddString("Moved`1"), reference, 0);
             if (nested)
