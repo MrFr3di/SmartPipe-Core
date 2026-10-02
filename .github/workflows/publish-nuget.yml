@@ -31,6 +31,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Require accepted release commit
+        shell: bash
+        run: |
+          git fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            +refs/heads/release/2.2.0:refs/remotes/origin/release/2.2.0
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "Release tag commit must already be contained in main." >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor refs/remotes/origin/release/2.2.0 "$GITHUB_SHA"; then
+            echo "Release tag commit must contain the accepted release/2.2.0 head." >&2
+            exit 1
+          fi
+
       - name: Setup .NET
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
