@@ -257,6 +257,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $manifest = Get-Content -LiteralPath $env:PACKAGE_MANIFEST -Raw | ConvertFrom-Json
           $downloadRoot = Join-Path $env:RUNNER_TEMP ("nuget-published-" + [Guid]::NewGuid().ToString('N'))
+          $pending = [Collections.Generic.List[object]]::new()
           New-Item -ItemType Directory -Path $downloadRoot | Out-Null
           try {
             foreach ($package in @($manifest.packages | Sort-Object publishOrder)) {
@@ -264,52 +265,60 @@ jobs:
               $version = [string]$package.version
               $lowerId = $id.ToLowerInvariant()
               $lowerVersion = $version.ToLowerInvariant()
-              $url = "https://api.nuget.org/v3-flatcontainer/$lowerId/$lowerVersion/$lowerId.$lowerVersion.nupkg"
-              $published = Join-Path $downloadRoot "$id.$version.nupkg"
-              $available = $false
+              $pending.Add([pscustomobject]@{
+                id = $id
+                version = $version
+                kind = 'nupkg'
+                url = "https://api.nuget.org/v3-flatcontainer/$lowerId/$lowerVersion/$lowerId.$lowerVersion.nupkg"
+                expected = [string]$package.nupkgPath
+                downloaded = Join-Path $downloadRoot "$id.$version.nupkg"
+              })
+              $pending.Add([pscustomobject]@{
+                id = $id
+                version = $version
+                kind = 'snupkg'
+                url = "https://www.nuget.org/api/v2/symbolpackage/$id/$version"
+                expected = [string]$package.snupkgPath
+                downloaded = Join-Path $downloadRoot "$id.$version.snupkg"
+              })
+            }
 
-              foreach ($attempt in 1..90) {
+            $deadline = [DateTimeOffset]::UtcNow.AddMinutes(15)
+            while ($pending.Count -gt 0 -and [DateTimeOffset]::UtcNow -lt $deadline) {
+              foreach ($item in @($pending)) {
+                if ([DateTimeOffset]::UtcNow -ge $deadline) { break }
+                Remove-Item -LiteralPath $item.downloaded -Force -ErrorAction SilentlyContinue
                 try {
-                  Invoke-WebRequest -Uri $url -OutFile $published -ErrorAction Stop
-                  $available = $true
-                  break
+                  $response = Invoke-WebRequest -Uri $item.url -OutFile $item.downloaded -SkipHttpErrorCheck -PassThru -TimeoutSec 15
                 }
                 catch {
-                  Remove-Item -LiteralPath $published -Force -ErrorAction SilentlyContinue
-                  Write-Output "Waiting for $id $version to become available (attempt $attempt/90)."
-                  if ($attempt -lt 12) { Start-Sleep -Seconds 10 }
+                  Write-Output "NuGet propagation check for $($item.id) $($item.kind) failed transiently: $($_.Exception.Message)"
+                  continue
+                }
+
+                if ($response.StatusCode -eq 200) {
+                  ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage $item.expected -PublishedPackage $item.downloaded
+                  Remove-Item -LiteralPath $item.downloaded -Force
+                  [void]$pending.Remove($item)
+                  continue
+                }
+
+                Remove-Item -LiteralPath $item.downloaded -Force -ErrorAction SilentlyContinue
+                if ($response.StatusCode -notin @(404, 408, 425, 429, 500, 502, 503, 504)) {
+                  throw "Unexpected NuGet response for $($item.id) $($item.kind): HTTP $($response.StatusCode)."
                 }
               }
 
-              if (!$available) {
-                throw "$id $version is not available from NuGet after publication."
+              if ($pending.Count -gt 0 -and [DateTimeOffset]::UtcNow -lt $deadline) {
+                $remaining = ($pending | ForEach-Object { "$($_.id):$($_.kind)" }) -join ', '
+                Write-Output "Waiting for NuGet propagation: $remaining"
+                Start-Sleep -Seconds 10
               }
+            }
 
-              ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.nupkgPath) -PublishedPackage $published
-              Remove-Item -LiteralPath $published -Force
-
-              $symbolUrl = "https://www.nuget.org/api/v2/symbolpackage/$id/$version"
-              $publishedSymbol = Join-Path $downloadRoot "$id.$version.snupkg"
-              $symbolsAvailable = $false
-              foreach ($attempt in 1..90) {
-                try {
-                  Invoke-WebRequest -Uri $symbolUrl -OutFile $publishedSymbol -ErrorAction Stop
-                  $symbolsAvailable = $true
-                  break
-                }
-                catch {
-                  Remove-Item -LiteralPath $publishedSymbol -Force -ErrorAction SilentlyContinue
-                  Write-Output "Waiting for $id $version symbols to become available (attempt $attempt/90)."
-                  if ($attempt -lt 12) { Start-Sleep -Seconds 10 }
-                }
-              }
-
-              if (!$symbolsAvailable) {
-                throw "$id $version symbol package is not available from NuGet after publication."
-              }
-
-              ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.snupkgPath) -PublishedPackage $publishedSymbol
-              Remove-Item -LiteralPath $publishedSymbol -Force
+            if ($pending.Count -gt 0) {
+              $missing = ($pending | ForEach-Object { "$($_.id) $($_.version) $($_.kind)" }) -join ', '
+              throw "NuGet publication did not become verifiable within the 15-minute propagation window: $missing"
             }
           }
           finally {
