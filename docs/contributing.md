@@ -1,4 +1,10 @@
-# Contributing
+# Contributing: validation reference
+
+The canonical contribution policy, decision tree, architecture/compatibility
+rules, PR expectations, and review criteria live in
+[../CONTRIBUTING.md](../CONTRIBUTING.md). This document is the technical
+validation reference for Microsoft Testing Platform, coverage, concurrency,
+performance, and hosted-CI operations.
 
 Before opening a change, run the validation tier that matches the affected
 surface.
