@@ -8,6 +8,7 @@ using SmartPipe.RepositoryChecks.PackageGraph;
 using SmartPipe.RepositoryChecks.Ownership;
 using SmartPipe.RepositoryChecks.Scaffolding;
 using SmartPipe.RepositoryChecks.Consumers;
+using SmartPipe.RepositoryChecks.Documentation;
 using SmartPipe.RepositoryChecks.Profiles;
 using SmartPipe.RepositoryChecks.Reporting;
 using System.Text.Json;
@@ -213,6 +214,20 @@ internal static class Program
                         ? "SP220_LOCK_FILES_OK"
                         : $"SP220_LOCK_FILES_FAILED code={ExitCodes.CentralPackagePolicyViolation} violations={lockResult.Errors.Count}");
                     return lockResult.Success ? ExitCodes.Success : ExitCodes.CentralPackagePolicyViolation;
+
+                case VerifyDocumentationOptions verifyDocs:
+                    var documentationResult = await new DocumentationVerificationService()
+                        .VerifyAsync(verifyDocs.RepositoryRoot, cancellation.Token)
+                        .ConfigureAwait(false);
+                    foreach (var violation in documentationResult.Violations)
+                    {
+                        Console.Error.WriteLine($"[{violation.Code}] path={violation.Path} rule={violation.Rule}");
+                    }
+
+                    Console.WriteLine(documentationResult.Success
+                        ? "SP220_DOCS_OK"
+                        : $"SP220_DOCS_FAILED code={ExitCodes.DocumentationViolation} violations={documentationResult.Violations.Count}");
+                    return documentationResult.Success ? ExitCodes.Success : ExitCodes.DocumentationViolation;
 
                 case VerifyNuGetAuditOptions verifyAudit:
                     var auditResult = new NuGetAuditPolicyValidator().Verify(verifyAudit.RepositoryRoot, verifyAudit.ReportPath);

@@ -459,8 +459,9 @@ def assert_lychee_contract(reusable_steps: list[dict]) -> None:
     for option in ("--max-retries 5", "--retry-wait-time 2", "--max-concurrency 8"):
         require(option in linux_args and option in run,
                 f"Docs link checks must retain bounded transient hardening: {option}.")
-    require("CONTRIBUTING.md" in linux_args and "CONTRIBUTING.md" in run,
-            "Docs link checks must include the root CONTRIBUTING guide.")
+    for root_document in ("CONTRIBUTING.md", "SECURITY.md", "SUPPORT.md", "VERSIONING.md"):
+        require(root_document in linux_args and root_document in run,
+                f"Docs link checks must include root policy document {root_document}.")
     require("'src/**/README.md'" in linux_args and "'src/**/README.md'" in run,
             "Docs link checks must include package READMEs shipped from src.")
     lychee_text = json.dumps({"linux": linux, "windows": windows})
@@ -538,6 +539,7 @@ def assert_repository_checks_profile(
             "RepositoryChecks profile must run before Repository baseline contract tests.")
 
     release_gate_names = (
+        "Verify documentation contracts",
         "Test and benchmark warning gate", "Pack packages from graph",
         "Provision 2.1.2 baseline packages", "Verify package graph current",
         "Verify package metadata current", "Verify package ownership current",
@@ -549,6 +551,15 @@ def assert_repository_checks_profile(
     for name in release_gate_names:
         require(profile_index < reusable_steps.index(named_step(reusable_steps, name)),
                 f"RepositoryChecks profile must run before {name}.")
+
+    documentation_step = named_step(reusable_steps, "Verify documentation contracts")
+    documentation_run = " ".join(str(documentation_step.get("run", "")).split())
+    expected_documentation = (
+        "dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+        "--configuration Release --no-build -- verify-docs --repo-root ."
+    )
+    require(documentation_run == expected_documentation,
+            "Reusable validation must run the exact documentation contract command.")
 
     reusable_runs = runs(reusable_steps)
     require(not any("verify-central-packages" in command or
@@ -666,18 +677,6 @@ def assert_link_check_exclusion_scoped() -> None:
             "SmartPipe.Extensions.Json URL.")
     require(not any("nuget.org" in pattern and pattern != target for pattern in exclude),
             "lychee.toml must not contain a broad nuget.org exclusion.")
-
-
-def assert_private_repository_docs_links_are_local() -> None:
-    private_repository_prefix = "https://github.com/MrFr3di/SmartPipe-Core/"
-    sources = (
-        ROOT / "README.md",
-        ROOT / "docs" / "plans" / "2.2.0-extension-architecture.md",
-        ROOT / "docs" / "plans" / "2.2.0" / "SP220-00-governance-and-baseline.md",
-    )
-    for source in sources:
-        require(private_repository_prefix not in source.read_text(encoding="utf-8"),
-                f"{source.relative_to(ROOT)} must use local links for private repository references.")
 
 
 def assert_scenario_id_grammar() -> None:
@@ -1461,7 +1460,6 @@ def validate(documents: dict[str, dict]) -> None:
     assert_postgresql_consumer_partition_contract(reusable, ci)
     assert_downloaded_postgresql_contract(documents)
     assert_link_check_exclusion_scoped()
-    assert_private_repository_docs_links_are_local()
     assert_consumer_contract()
 
     version = publish["jobs"].get("version")

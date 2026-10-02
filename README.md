@@ -318,6 +318,8 @@ eng/                         package graph, ownership, consumers, release valida
 eng/baselines/2.1.2/         immutable compatibility baseline
 agent_docs/                  repository orientation for coding agents
 CONTRIBUTING.md              contribution workflow
+SUPPORT.md                   release-line support policy
+VERSIONING.md                versioning and compatibility policy
 SECURITY.md                  vulnerability reporting
 ```
 
@@ -360,22 +362,19 @@ packed-package consumer validation. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Documentation
 
+Start with the [documentation index](docs/index.md).
+
 - [Getting started](docs/getting-started.md)
 - [Runtime contracts](docs/runtime-contracts.md)
-- [Configuration](docs/configuration.md)
-- [Resilience](docs/resilience.md)
 - [Architecture](docs/architecture.md)
-- [Dependency injection](docs/dependency-injection.md)
-- [Hosting](docs/hosting.md)
-- [Health checks](docs/health-checks.md)
-- [OpenTelemetry](docs/opentelemetry.md)
-- [PostgreSQL](docs/postgresql.md)
+- [Package reference](docs/reference/packages.md)
 - [AOT and trimming](docs/aot-compatibility.md)
-- [API reference](docs/api-reference.md)
 - [2.2.0 release notes](docs/releases/2.2.0.md)
 - [2.1.2 → 2.2.0 migration](docs/migration/2.2.0-integration-packages.md)
-- [Compatibility matrix](docs/implementation/2.2.0/sp220-17-compatibility-matrix.md)
-- [Package authoring](docs/contributing/package-authoring.md)
+- [Versioning and compatibility](VERSIONING.md)
+- [Support](SUPPORT.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
 - [Changelog](CHANGELOG.md)
 
 ## Contributing

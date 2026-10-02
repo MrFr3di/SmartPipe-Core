@@ -454,11 +454,22 @@ At minimum:
 - AOT/trimming claim -> package README + AOT guide + executable consumer;
 - release-facing change -> release notes/changelog when appropriate.
 
-Package READMEs are shipped with NuGet packages and are validated by hosted link
-checks together with the root README and `docs/**/*.md`.
+Package READMEs are shipped with NuGet packages. Hosted validation checks the
+root policy documents, `docs/**/*.md`, and `src/**/README.md` for links, while
+`verify-docs` checks package/document identity against the canonical package
+graph.
+
+Run the semantic documentation gate after documentation/package changes:
+
+```bash
+dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj \
+  -c Release --no-build -- verify-docs --repo-root .
+```
 
 Do not copy implementation detail into multiple documents when one normative
-source can be linked instead.
+source can be linked instead. Prefer machine-readable contracts such as
+`eng/package-graph.json`, `eng/package-ownership.json`, API baselines, and
+executable consumers as the source of truth.
 
 ## Claims policy
 
