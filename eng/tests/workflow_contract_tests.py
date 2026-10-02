@@ -2580,7 +2580,7 @@ def main() -> int:
     assert_mutation_rejected(
         documents,
         _add_lychee_token,
-        "never a long-lived secret or CLI token",
+        "explicit ephemeral github.token",
     )
     assert_mutation_rejected(
         documents,
