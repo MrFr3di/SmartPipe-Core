@@ -83,17 +83,18 @@ crash-atomic file replacement.
 ## Install
 
 ```bash
-dotnet add package SmartPipe.Core --version 2.1.2
-dotnet add package SmartPipe.Extensions.Json --version 2.1.2
+dotnet add package SmartPipe.Core --version 2.2.0
+dotnet add package SmartPipe.Extensions.Json --version 2.2.0
 ```
 
 For canonical 2.2 DI pipelines, `SmartPipe.Extensions.HealthChecks` adds exact-key liveness, readiness, aggregate, ASP.NET tag, trimming, and NativeAOT support. See [Health checks](docs/health-checks.md).
 
 For OpenTelemetry collection, `SmartPipe.Extensions.OpenTelemetry` registers the existing Core meter and activity source with the application's exporter-neutral OpenTelemetry builder. See [OpenTelemetry](docs/opentelemetry.md).
 
-Install `SmartPipe.Extensions` 2.1.2 for HTTP, database, CSV, mapping,
-resilience, hosting, and health-check integrations. JSON-only applications
-should reference `SmartPipe.Extensions.Json` directly.
+New applications should install the specific integration packages they use.
+`SmartPipe.Extensions` 2.2.0 is the compatibility bundle for applications that
+intentionally want its complete integration set, including HealthChecks and
+OpenTelemetry. See the [migration guide](docs/migration/2.2.0-integration-packages.md).
 
 ## Canonical Definitions In 2.2
 
@@ -296,8 +297,10 @@ and JSON dead-letter persistence without the broad Extensions dependency graph.
 moved public types are exposed from it through type forwarding, and the
 [ADR-0002](docs/adr/0002-smartpipe-2.2-legacy-compatibility-quarantine.md) legacy
 DI/Hosting/Health cluster stays there under `obsolete-wrapper` ownership for
-2.2.0. SP220-17 completes the remaining facade work. New JSON applications should
-reference dedicated packages directly.
+2.2.0. The exact baseline inventory is 23 forwarded, 13 retained and six removed
+identities; removed HTTP/Polly callers must migrate and recompile. The bundle has
+17 direct SmartPipe dependencies and 18 IDs including itself. New applications
+should reference dedicated packages directly.
 `SmartPipe.Extensions.PostgreSql` is the PostgreSQL-native leaf and stays outside
 the bundle: it is an optional reference, and the facade neither forwards its
 types nor takes a package dependency on it.
