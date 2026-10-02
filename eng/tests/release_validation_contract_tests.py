@@ -90,12 +90,15 @@ def assert_publication_contract(documents: dict) -> None:
             'recoverable publication must reject pre-existing primary or symbol packages that differ from the immutable producer payload before login')
     push = named_step(publish_steps, 'Publish packages in dependency order')
     push_run = push.get('run', '')
-    require('--skip-duplicate' in push_run
+    require('recovery-state.json' in push_run
+            and '--skip-duplicate' not in push_run
             and '--no-symbols' in push_run
             and '.snupkgPath' in push_run
+            and 'primaryPublished' in push_run
+            and 'symbolsPublished' in push_run
             and 'dotnet nuget push "$symbol_package"' in push_run
             and '--symbol-api-key "$NUGET_API_KEY"' in push_run,
-            'recoverable publication must push primary and symbol packages explicitly so a skipped duplicate can still recover symbols')
+            'recoverable publication must use verified preflight state, avoid duplicate suppression races, and push missing primary/symbol packages explicitly')
     require(publish_steps.index(recovery) < publish_steps.index(named_step(publish_steps, 'NuGet login')) < publish_steps.index(push),
             'recoverable duplicate provenance must be checked before obtaining publication credentials')
     published = named_step(publish_steps, 'Verify published package payloads')
