@@ -146,31 +146,29 @@ jobs:
 
               $primaryPublished = $false
               $url = "https://api.nuget.org/v3-flatcontainer/$lowerId/$lowerVersion/$lowerId.$lowerVersion.nupkg"
-              $head = Invoke-WebRequest -Uri $url -Method Head -SkipHttpErrorCheck
-              if ($head.StatusCode -eq 200) {
-                $published = Join-Path $downloadRoot "$id.$version.nupkg"
-                Invoke-WebRequest -Uri $url -OutFile $published
+              $published = Join-Path $downloadRoot "$id.$version.nupkg"
+              $response = Invoke-WebRequest -Uri $url -OutFile $published -SkipHttpErrorCheck
+              if ($response.StatusCode -eq 200) {
                 ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.nupkgPath) -PublishedPackage $published
-                Remove-Item -LiteralPath $published -Force
                 $primaryPublished = $true
               }
-              elseif ($head.StatusCode -ne 404) {
-                throw "Unable to establish recovery state for $id $version. HTTP $($head.StatusCode)."
+              elseif ($response.StatusCode -ne 404) {
+                throw "Unable to establish recovery state for $id $version. HTTP $($response.StatusCode)."
               }
+              Remove-Item -LiteralPath $published -Force -ErrorAction SilentlyContinue
 
               $symbolsPublished = $false
               $symbolUrl = "https://www.nuget.org/api/v2/symbolpackage/$id/$version"
-              $symbolHead = Invoke-WebRequest -Uri $symbolUrl -Method Head -SkipHttpErrorCheck
-              if ($symbolHead.StatusCode -eq 200) {
-                $publishedSymbol = Join-Path $downloadRoot "$id.$version.snupkg"
-                Invoke-WebRequest -Uri $symbolUrl -OutFile $publishedSymbol
+              $publishedSymbol = Join-Path $downloadRoot "$id.$version.snupkg"
+              $symbolResponse = Invoke-WebRequest -Uri $symbolUrl -OutFile $publishedSymbol -SkipHttpErrorCheck
+              if ($symbolResponse.StatusCode -eq 200) {
                 ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.snupkgPath) -PublishedPackage $publishedSymbol
-                Remove-Item -LiteralPath $publishedSymbol -Force
                 $symbolsPublished = $true
               }
-              elseif ($symbolHead.StatusCode -ne 404) {
-                throw "Unable to establish symbol recovery state for $id $version. HTTP $($symbolHead.StatusCode)."
+              elseif ($symbolResponse.StatusCode -ne 404) {
+                throw "Unable to establish symbol recovery state for $id $version. HTTP $($symbolResponse.StatusCode)."
               }
+              Remove-Item -LiteralPath $publishedSymbol -Force -ErrorAction SilentlyContinue
 
               $state.Add([pscustomobject]@{
                 id = $id
