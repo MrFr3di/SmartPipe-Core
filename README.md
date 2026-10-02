@@ -174,8 +174,9 @@ flowchart LR
     W --> X["Sequential typed stage chain"]
     X --> K{"Sink attached?"}
     K -->|yes| N["IPipelineSink<TOutput>"]
-    K -->|no| O["PipelineRun<T>.Outputs"]
-    N --> O
+    K -->|no| P["Output emitter"]
+    N --> P
+    P --> O["PipelineRun<T>.Outputs<br/>policy-gated"]
     X -. events .-> E["Observers"]
     X -. metrics / activities .-> D[".NET diagnostics"]
     X -. failure policy .-> F["retry / timeout / circuit breaker / dead-letter"]

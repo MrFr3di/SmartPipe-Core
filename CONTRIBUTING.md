@@ -86,6 +86,28 @@ repository/package checks before considering the change complete.
 Hosted CI is authoritative for merge/release evidence, and exact-head rules
 apply where the governance policy requires them.
 
+For Microsoft Testing Platform, coverage, hosted-CI operation, and the existing
+performance gate, see [docs/contributing.md](docs/contributing.md).
+
+## Code and API style
+
+- Keep nullable annotations accurate.
+- Add XML documentation for public and protected package APIs.
+- Prefer asynchronous APIs through library I/O and lifecycle paths.
+- Use `ConfigureAwait(false)` in library internals where the surrounding code
+  follows that convention and no captured context is required.
+- Use `ILogger<T>` or the package's established logging abstraction; do not add
+  direct console output to production library code.
+- Preserve the configured target framework, language version, analyzer policy,
+  and warnings-as-errors behavior unless the change explicitly owns that
+  repository policy.
+- Keep Core integration-agnostic. HTTP, databases, hosting, DI, serialization,
+  and provider-specific concerns belong in their owning leaf packages.
+- Avoid adding public abstractions or extension points for hypothetical future
+  substitution. Add them when an accepted use case requires them.
+- Keep public API changes minimal and intentional; update API baselines and
+  package consumers when the public surface changes.
+
 ## Choose the right contribution path
 
 | Change | Before coding | Expected validation |
