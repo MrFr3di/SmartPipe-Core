@@ -37,6 +37,14 @@ SP220-17 ancestor `bfe755a` passed Windows CI36863358246, Linux CI36863356844, C
 
 The final-head run IDs, exact head, producer artifact ID/digest and Windows/PostgreSQL reuse results are maintained in PR #115 to avoid treating a subsequent documentation commit as the previously tested SHA. Initial release dispatch36872841718 at `fcbab31` is historical evidence only. Required independent maintainer approval, release ruleset approval-count verification, environment/ref policy and external NuGet Trusted Publishing verification remain open. See the linked readiness report for observed state and owner actions.
 
+## Deep-review recovery hardening
+
+A later independent review found that `--skip-duplicate` alone was insufficient evidence for a recoverable publication: a 409 only proves that the ID/version already exists, and NuGet Client does not automatically continue to the symbol push when the primary package was skipped as a duplicate. Publication recovery now fails closed before OIDC login unless every already-published primary package matches the immutable producer ZIP payload entry-for-entry, ignoring only NuGet.org's repository-signature entry. If the corresponding symbol package already exists, the same payload comparison is applied to the producer snupkg.
+
+Recovery publishes primary and symbol packages as explicit operations: the primary uses `--no-symbols --skip-duplicate`, then the manifest-listed snupkg is pushed explicitly with `--skip-duplicate`. Normal first publication keeps the standard primary-package push. The post-publication gate downloads every primary package from NuGet.org and repeats the producer-payload comparison.
+
+Regression coverage includes matching signed payload, mutated payload and extra-entry rejection, plus workflow mutation tests that reject removal of recovery preflight, symbol provenance, explicit recovery symbol push or final published-payload verification. These changes require fresh exact-head hosted validation; the earlier `cefa0788` release dispatch is historical evidence and does not validate this follow-up.
+
 ## Final code review
 
 Fresh read-only whole-branch reviewer found no Critical issues. An Important omission of OpenTelemetry unit tests was fixed with a mandatory reusable step (local24/24 pass). The initially Minor omission of the new mutation suite from CI was treated as an acceptance gap and fixed in the wrapper with both exit codes enforced. New regressions RED3 failures → GREEN7/7 plus the prior workflow suite and actionlint; removal/optional telemetry step and removal of either Windows or PostgreSQL publication dependencies are rejected. No deferred review minors. Hosted execution and owner configuration were explicitly left for actual evidence.
