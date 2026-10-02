@@ -37,6 +37,7 @@ public sealed class OwnershipMetadataContractTests
 
     [Theory]
     [InlineData(Leaf, true)]
+    [InlineData("smartpipe.extensions.json", true)]
     [InlineData("SmartPipe.Extensions.Wrong", false)]
     public async Task ForwarderMustPointToTheDeclaredImplementation(string destination, bool accepted)
     {
@@ -48,6 +49,18 @@ public sealed class OwnershipMetadataContractTests
 
         Assert.Equal(accepted, result.Success);
         if (!accepted) Assert.Contains(result.Violations, violation => violation.Code == "SPOWN026" && violation.Type == TypeName);
+    }
+
+    [Fact]
+    public async Task ImplementationAssemblyNameUsesRuntimeCaseInsensitiveBinding()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        WritePackage(fixture, Facade, [("lib/net10.0/Facade.dll", Assembly(Facade, forwardTo: Leaf))]);
+        WritePackage(fixture, Leaf, [("lib/net10.0/Leaf.dll", Assembly("smartpipe.extensions.json", implement: true))]);
+
+        var result = await ValidateAsync(fixture);
+
+        Assert.True(result.Success);
     }
 
     [Fact]
