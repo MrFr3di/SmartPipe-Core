@@ -147,7 +147,7 @@ jobs:
               $primaryPublished = $false
               $url = "https://api.nuget.org/v3-flatcontainer/$lowerId/$lowerVersion/$lowerId.$lowerVersion.nupkg"
               $published = Join-Path $downloadRoot "$id.$version.nupkg"
-              $response = Invoke-WebRequest -Uri $url -OutFile $published -SkipHttpErrorCheck
+              $response = Invoke-WebRequest -Uri $url -OutFile $published -SkipHttpErrorCheck -PassThru
               if ($response.StatusCode -eq 200) {
                 ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.nupkgPath) -PublishedPackage $published
                 $primaryPublished = $true
@@ -160,7 +160,7 @@ jobs:
               $symbolsPublished = $false
               $symbolUrl = "https://www.nuget.org/api/v2/symbolpackage/$id/$version"
               $publishedSymbol = Join-Path $downloadRoot "$id.$version.snupkg"
-              $symbolResponse = Invoke-WebRequest -Uri $symbolUrl -OutFile $publishedSymbol -SkipHttpErrorCheck
+              $symbolResponse = Invoke-WebRequest -Uri $symbolUrl -OutFile $publishedSymbol -SkipHttpErrorCheck -PassThru
               if ($symbolResponse.StatusCode -eq 200) {
                 ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.snupkgPath) -PublishedPackage $publishedSymbol
                 $symbolsPublished = $true
