@@ -4,7 +4,7 @@ Status: implementation and local candidate validation complete; final-head hoste
 
 ## Scope and provenance
 
-SP220-18 is stacked on SP220-17 (draft PR [#114](https://github.com/MrFr3di/SmartPipe-Core/pull/114)); both target `sp220/checkpoint-g`. It adds package-specific release notes for the other19 IDs, strict release-mode gates, Windows replay of the Linux producer artifact, explicit artifact mode/source-commit verification and rejecting workflow/artifact fixtures. Normal CI remains current mode. No runtime/package dependency/SDK changes, baseline changes, new compatibility suppressions, tag or publication.
+SP220-18 includes the finalized SP220-17 head `1941efbc11051f4947f63f305f2af88f7560dbcc` as an actual ancestor through merge commit `01593c0821d92c8ea3560875f614c5128aad7fc5`; both task PRs target `sp220/checkpoint-g`. The synchronization preserved both histories and had no overlapping file changes. SP220-18 adds package-specific release notes for the other19 IDs, strict release-mode gates, Windows replay of the Linux producer artifact, explicit artifact mode/source-commit verification and rejecting workflow/artifact fixtures. Normal CI remains current mode. No runtime/package dependency/SDK changes, baseline changes, new compatibility suppressions, tag or publication.
 
 Pinned SDK:10.0.303, Linux x64. Local producer source commit: `fcbab31b23ebbc019c5305bbb9b527b642a07d9d`. Later documentation commits require their own exact-head CI; local artifact provenance remains this recorded source commit.
 
@@ -33,7 +33,7 @@ Final immutable20 nupkg/20 snupkg feed passed hash/mode/version/source-commit ve
 
 ## Remote evidence and acceptance boundary
 
-SP220-17 ancestor `bfe755a` passed Windows CI36863358246, Linux CI36863356844, CodeQL and Dependency Review. Its SonarCloud findings are addressed by follow-up `c505eaba99bc054853ad4392448cdb76e053683f`; Linux dispatch36872113511 succeeded at `c505eab`; SonarCloud is green. Windows PR CI36871988635 must also complete at that exact SHA. These ancestor runs are historical SP220-17 evidence, not SP220-18 candidate acceptance.
+Final SP220-17 head `1941efbc11051f4947f63f305f2af88f7560dbcc` passed exact-head CI36989255683, CodeQL36989255329 and Dependency Review36989255317 before synchronization. Earlier `bfe755a`/`c505eab` runs remain historical evidence only. After the merge synchronization, SP220-18 requires its own new exact-head CI and release-mode dispatch; no ancestor run is treated as acceptance for the combined candidate.
 
 The final-head run IDs, exact head, producer artifact ID/digest and Windows/PostgreSQL reuse results are maintained in PR #115 to avoid treating a subsequent documentation commit as the previously tested SHA. Initial release dispatch36872841718 at `fcbab31` is historical evidence only. Required independent maintainer approval, release ruleset approval-count verification, environment/ref policy and external NuGet Trusted Publishing verification remain open. See the linked readiness report for observed state and owner actions.
 
