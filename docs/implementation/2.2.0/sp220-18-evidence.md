@@ -39,6 +39,8 @@ The final-head run IDs, exact head, producer artifact ID/digest and Windows/Post
 
 ## Deep-review recovery hardening
 
+A later independent review also found that the tag-triggered workflow trusted tag placement procedurally. Publication now fetches `main` and `release/2.2.0` before build credentials are needed and rejects a tag SHA that is not already in `main` or does not contain the current accepted release-branch head. This converts the governance sequence (release PR to main, then tag) into a machine gate.
+
 A later independent review found that `--skip-duplicate` alone was insufficient evidence for a recoverable publication: a 409 only proves that the ID/version already exists, and NuGet Client does not automatically continue to the symbol push when the primary package was skipped as a duplicate. Publication recovery now fails closed before OIDC login unless every already-published primary package matches the immutable producer ZIP payload entry-for-entry, ignoring only NuGet.org's repository-signature entry. If the corresponding symbol package already exists, the same payload comparison is applied to the producer snupkg.
 
 Recovery records verified preflight state for primary and symbol packages, then skips only entries already proven equivalent. Missing primaries are pushed with `--no-symbols`, and missing manifest-listed snupkgs are pushed explicitly. No recovery push uses `--skip-duplicate`: a package appearing after preflight causes the push to fail rather than silently accepting a TOCTOU conflict. Normal first publication keeps the standard primary-package push. The post-publication gate downloads every primary and symbol package from NuGet.org and repeats the producer-payload comparison for both artifacts.
