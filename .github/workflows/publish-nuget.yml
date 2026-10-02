@@ -274,6 +274,30 @@ jobs:
               }
 
               ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.nupkgPath) -PublishedPackage $published
+              Remove-Item -LiteralPath $published -Force
+
+              $symbolUrl = "https://www.nuget.org/api/v2/symbolpackage/$id/$version"
+              $publishedSymbol = Join-Path $downloadRoot "$id.$version.snupkg"
+              $symbolsAvailable = $false
+              foreach ($attempt in 1..12) {
+                try {
+                  Invoke-WebRequest -Uri $symbolUrl -OutFile $publishedSymbol -ErrorAction Stop
+                  $symbolsAvailable = $true
+                  break
+                }
+                catch {
+                  Remove-Item -LiteralPath $publishedSymbol -Force -ErrorAction SilentlyContinue
+                  Write-Output "Waiting for $id $version symbols to become available (attempt $attempt/12)."
+                  if ($attempt -lt 12) { Start-Sleep -Seconds 10 }
+                }
+              }
+
+              if (!$symbolsAvailable) {
+                throw "$id $version symbol package is not available from NuGet after publication."
+              }
+
+              ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.snupkgPath) -PublishedPackage $publishedSymbol
+              Remove-Item -LiteralPath $publishedSymbol -Force
             }
           }
           finally {
