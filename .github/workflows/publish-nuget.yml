@@ -181,6 +181,7 @@ jobs:
         shell: bash
         env:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+          NUGET_SYMBOL_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
           PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
           RECOVERABLE_RERUN: ${{ github.event_name == 'workflow_dispatch' && inputs.recoverable-rerun }}
         run: |
@@ -204,8 +205,7 @@ jobs:
             fi
 
             if [[ "$RECOVERABLE_RERUN" != "true" ]]; then
-              dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --symbol-api-key "$NUGET_API_KEY" \
-                --source https://api.nuget.org/v3/index.json
+              dotnet nuget push "$package" --source https://api.nuget.org/v3/index.json
               continue
             fi
 
@@ -221,7 +221,7 @@ jobs:
             if [[ "$primary_published" == "true" ]]; then
               echo "$package_id primary package already matches the validated producer payload; skipping push."
             else
-              dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --no-symbols
+              dotnet nuget push "$package" --source https://api.nuget.org/v3/index.json --no-symbols
             fi
 
             symbol_package="$(jq -r --arg path "$package" '.packages[] | select(.nupkgPath == $path) | .snupkgPath' "$manifest")"
@@ -232,8 +232,7 @@ jobs:
             if [[ "$symbols_published" == "true" ]]; then
               echo "$package_id symbol package already matches the validated producer payload; skipping push."
             else
-              dotnet nuget push "$symbol_package" --api-key "$NUGET_API_KEY" --symbol-api-key "$NUGET_API_KEY" \
-                --source https://api.nuget.org/v3/index.json
+              dotnet nuget push "$symbol_package" --source https://api.nuget.org/v3/index.json
             fi
           done
 
