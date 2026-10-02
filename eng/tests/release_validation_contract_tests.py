@@ -26,6 +26,10 @@ def assert_producer_contract(documents: dict) -> None:
     require(steps.index(guard) < steps.index(named_step(steps, 'Restore locked')), 'input validation must precede restore')
     pack = named_step(steps, 'Pack packages from graph')
     require(pack.get('if') == PRODUCER and '--mode "$env:VALIDATION_MODE"' in pack['run'], 'only producer may pack in selected mode')
+    artifact_tests = named_step(steps, 'Test package artifact validation')
+    require('validate-package-artifact.Tests.ps1' in artifact_tests.get('run', '')
+            and 'compare-nuget-package-payload.Tests.ps1' in artifact_tests.get('run', '')
+            and not artifact_tests.get('continue-on-error'), 'package and published-payload fixtures must both be mandatory')
     upload = named_step(steps, 'Upload immutable packages and reports')
     require(PRODUCER in upload.get('if', ''), 'replay must not upload another package artifact')
     for command in ('graph', 'metadata', 'ownership'):
@@ -71,8 +75,18 @@ def assert_publication_contract(documents: dict) -> None:
             and not windows.get('if') and not windows.get('continue-on-error'), 'Windows release validation must consume producer ID and cannot be optional')
     require(jobs['postgresql-validation']['with'].get('validation-mode') == 'release', 'PostgreSQL must validate release artifact mode')
     require(set(jobs['publish']['needs']) == {'version', 'validation', 'windows-validation', 'postgresql-validation'}, 'publication must await both Windows and PostgreSQL')
-    integrity = named_step(jobs['publish']['steps'], 'Validate downloaded package artifact')
+    publish_steps = jobs['publish']['steps']
+    integrity = named_step(publish_steps, 'Validate downloaded package artifact')
     require('-ExpectedMode release' in integrity['run'] and '-ExpectedCommit (git rev-parse HEAD)' in integrity['run'], 'publisher must verify release mode and exact source commit')
+    push = named_step(publish_steps, 'Publish packages in dependency order')
+    published = named_step(publish_steps, 'Verify published package payloads')
+    published_run = published.get('run', '')
+    require('v3-flatcontainer' in published_run
+            and 'compare-nuget-package-payload.ps1' in published_run
+            and 'nupkgPath' in published_run
+            and publish_steps.index(push) < publish_steps.index(published)
+            and not published.get('continue-on-error'),
+            'published packages must be downloaded and compared with the immutable producer payload after push')
     require(jobs['publish'].get('environment') == 'nuget-production'
             and jobs['publish'].get('permissions') == {'contents': 'read', 'id-token': 'write'}, 'publication retains protected OIDC environment')
     for name, job in jobs.items():
@@ -158,6 +172,8 @@ class ReleaseValidationContractTests(unittest.TestCase):
             lambda d: named_step(d['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'Verify package metadata release').update({'continue-on-error': True}),
             lambda d: named_step(d['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'Upload replay reports')['with'].update({'path': 'downloaded/artifacts/packages'}),
             lambda d: named_step(d['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'Validate producer package artifact').update({'run': 'echo unchecked'}),
+            lambda d: named_step(d['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'Test package artifact validation').update({'run': './eng/tests/validate-package-artifact.Tests.ps1'}),
+            lambda d: named_step(d['publish-nuget.yml']['jobs']['publish']['steps'], 'Verify published package payloads').update({'run': 'echo available'}),
         ]
         for mutate in mutations:
             with self.subTest(mutation=mutate):
