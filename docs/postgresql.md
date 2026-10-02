@@ -7,7 +7,7 @@ Ordinary SQL stays with `SmartPipe.Extensions.Dapper`; ORM and `IQueryable` beha
 with `SmartPipe.Extensions.EntityFrameworkCore`.
 
 ```bash
-dotnet add package SmartPipe.Extensions.PostgreSql
+dotnet package add SmartPipe.Extensions.PostgreSql --version 2.2.0
 ```
 
 ```text

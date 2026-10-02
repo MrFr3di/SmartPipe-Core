@@ -4,6 +4,12 @@
 pipeline definitions. Its production dependency closure is limited to
 `SmartPipe.Core` and `Microsoft.Extensions.DependencyInjection.Abstractions`.
 
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.DependencyInjection --version 2.2.0
+```
+
 ```csharp
 PipelineDefinition<Order, OrderDto> definition = PipelineDefinitionBuilder
     .From(

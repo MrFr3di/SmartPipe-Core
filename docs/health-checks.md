@@ -2,6 +2,12 @@
 
 `SmartPipe.Extensions.HealthChecks` adds exact-key liveness and readiness checks to canonical pipelines registered with `SmartPipe.Extensions.DependencyInjection`.
 
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.HealthChecks --version 2.2.0
+```
+
 ```csharp
 var registration = services.AddSmartPipe().AddPipeline(orderDefinition);
 registration.AddLiveness();
@@ -40,7 +46,7 @@ Result data is bounded to primitive counts, exact strings, `Guid` strings, UTC I
 
 ## Legacy 2.1 behavior
 
-SmartPipe.Extensions provides typed health checks for DI-registered pipelines.
+The legacy `SmartPipe.Extensions` facade provides the 2.1 typed health-check API for DI-registered pipelines.
 Health checks read a typed run monitor; they do not require a singleton runtime
 instance.
 
