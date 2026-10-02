@@ -111,6 +111,8 @@ def assert_publication_contract(documents: dict) -> None:
             and '--skip-duplicate' not in push_run
             and '--no-symbols' in push_run
             and '.snupkgPath' in push_run
+            and '.snupkgSha256' in push_run
+            and 'actual_symbol_hash' in push_run
             and 'primaryPublished' in push_run
             and 'symbolsPublished' in push_run
             and 'dotnet nuget push "$symbol_package"' in push_run,
