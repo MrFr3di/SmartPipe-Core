@@ -143,26 +143,45 @@ jobs:
             dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json "${skip_duplicate[@]}"
           done
 
-      - name: Verify published package versions are available
-        shell: bash
+      - name: Verify published package payloads
+        shell: pwsh
         env:
           PACKAGE_MANIFEST: artifacts/packages/manifest.json
         run: |
-          while IFS=$'\t' read -r package_id package_version; do
-            package="${package_id,,}"
-            version="${package_version,,}"
-            url="https://api.nuget.org/v3-flatcontainer/${package}/${version}/${package}.${version}.nupkg"
-            available=false
-            for attempt in {1..12}; do
-              if curl --fail --silent --show-error --head "$url" >/dev/null; then
-                available=true
-                break
-              fi
-              echo "Waiting for $package_id $package_version to become available (attempt $attempt/12)."
-              sleep 10
-            done
-            if [[ "$available" != true ]]; then
-              echo "$package_id $package_version is not available from NuGet after publication." >&2
-              exit 1
-            fi
-          done < <(jq -r '.packages | sort_by(.publishOrder)[] | [.id, .version] | @tsv' "$PACKAGE_MANIFEST")
+          $ErrorActionPreference = 'Stop'
+          $manifest = Get-Content -LiteralPath $env:PACKAGE_MANIFEST -Raw | ConvertFrom-Json
+          $downloadRoot = Join-Path $env:RUNNER_TEMP ("nuget-published-" + [Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $downloadRoot | Out-Null
+          try {
+            foreach ($package in @($manifest.packages | Sort-Object publishOrder)) {
+              $id = [string]$package.id
+              $version = [string]$package.version
+              $lowerId = $id.ToLowerInvariant()
+              $lowerVersion = $version.ToLowerInvariant()
+              $url = "https://api.nuget.org/v3-flatcontainer/$lowerId/$lowerVersion/$lowerId.$lowerVersion.nupkg"
+              $published = Join-Path $downloadRoot "$id.$version.nupkg"
+              $available = $false
+
+              foreach ($attempt in 1..12) {
+                try {
+                  Invoke-WebRequest -Uri $url -OutFile $published -ErrorAction Stop
+                  $available = $true
+                  break
+                }
+                catch {
+                  Remove-Item -LiteralPath $published -Force -ErrorAction SilentlyContinue
+                  Write-Output "Waiting for $id $version to become available (attempt $attempt/12)."
+                  if ($attempt -lt 12) { Start-Sleep -Seconds 10 }
+                }
+              }
+
+              if (!$available) {
+                throw "$id $version is not available from NuGet after publication."
+              }
+
+              ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.nupkgPath) -PublishedPackage $published
+            }
+          }
+          finally {
+            Remove-Item -LiteralPath $downloadRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
