@@ -78,7 +78,24 @@ def assert_publication_contract(documents: dict) -> None:
     publish_steps = jobs['publish']['steps']
     integrity = named_step(publish_steps, 'Validate downloaded package artifact')
     require('-ExpectedMode release' in integrity['run'] and '-ExpectedCommit (git rev-parse HEAD)' in integrity['run'], 'publisher must verify release mode and exact source commit')
+    recovery = named_step(publish_steps, 'Preflight recoverable published packages')
+    recovery_run = recovery.get('run', '')
+    require("inputs.recoverable-rerun" in recovery.get('if', '')
+            and 'v3-flatcontainer' in recovery_run
+            and 'compare-nuget-package-payload.ps1' in recovery_run
+            and 'nupkgPath' in recovery_run
+            and not recovery.get('continue-on-error'),
+            'recoverable publication must reject pre-existing packages that differ from the immutable producer payload before login')
     push = named_step(publish_steps, 'Publish packages in dependency order')
+    push_run = push.get('run', '')
+    require('--skip-duplicate' in push_run
+            and '--no-symbols' in push_run
+            and '.snupkgPath' in push_run
+            and 'dotnet nuget push "$symbol_package"' in push_run
+            and '--symbol-api-key "$NUGET_API_KEY"' in push_run,
+            'recoverable publication must push primary and symbol packages explicitly so a skipped duplicate can still recover symbols')
+    require(publish_steps.index(recovery) < publish_steps.index(named_step(publish_steps, 'NuGet login')) < publish_steps.index(push),
+            'recoverable duplicate provenance must be checked before obtaining publication credentials')
     published = named_step(publish_steps, 'Verify published package payloads')
     published_run = published.get('run', '')
     require('v3-flatcontainer' in published_run
@@ -173,6 +190,8 @@ class ReleaseValidationContractTests(unittest.TestCase):
             lambda d: named_step(d['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'Upload replay reports')['with'].update({'path': 'downloaded/artifacts/packages'}),
             lambda d: named_step(d['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'Validate producer package artifact').update({'run': 'echo unchecked'}),
             lambda d: named_step(d['reusable-release-validation.yml']['jobs']['build-test-pack']['steps'], 'Test package artifact validation').update({'run': './eng/tests/validate-package-artifact.Tests.ps1'}),
+            lambda d: named_step(d['publish-nuget.yml']['jobs']['publish']['steps'], 'Preflight recoverable published packages').update({'run': 'echo unchecked'}),
+            lambda d: named_step(d['publish-nuget.yml']['jobs']['publish']['steps'], 'Publish packages in dependency order').update({'run': 'dotnet nuget push package.nupkg --skip-duplicate'}),
             lambda d: named_step(d['publish-nuget.yml']['jobs']['publish']['steps'], 'Verify published package payloads').update({'run': 'echo available'}),
         ]
         for mutate in mutations:
