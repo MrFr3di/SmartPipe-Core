@@ -119,6 +119,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $manifest = Get-Content -LiteralPath $env:PACKAGE_MANIFEST -Raw | ConvertFrom-Json
           $downloadRoot = Join-Path $env:RUNNER_TEMP ("nuget-recovery-preflight-" + [Guid]::NewGuid().ToString('N'))
+          $statePath = 'artifacts/recovery-state.json'
+          $state = [Collections.Generic.List[object]]::new()
           New-Item -ItemType Directory -Path $downloadRoot | Out-Null
           try {
             foreach ($package in @($manifest.packages | Sort-Object publishOrder)) {
@@ -126,36 +128,44 @@ jobs:
               $version = [string]$package.version
               $lowerId = $id.ToLowerInvariant()
               $lowerVersion = $version.ToLowerInvariant()
+
+              $primaryPublished = $false
               $url = "https://api.nuget.org/v3-flatcontainer/$lowerId/$lowerVersion/$lowerId.$lowerVersion.nupkg"
               $head = Invoke-WebRequest -Uri $url -Method Head -SkipHttpErrorCheck
-              if ($head.StatusCode -eq 404) {
-                Write-Output "$id $version is not published yet; recovery may publish it."
-                continue
+              if ($head.StatusCode -eq 200) {
+                $published = Join-Path $downloadRoot "$id.$version.nupkg"
+                Invoke-WebRequest -Uri $url -OutFile $published
+                ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.nupkgPath) -PublishedPackage $published
+                Remove-Item -LiteralPath $published -Force
+                $primaryPublished = $true
               }
-              if ($head.StatusCode -ne 200) {
+              elseif ($head.StatusCode -ne 404) {
                 throw "Unable to establish recovery state for $id $version. HTTP $($head.StatusCode)."
               }
 
-              $published = Join-Path $downloadRoot "$id.$version.nupkg"
-              Invoke-WebRequest -Uri $url -OutFile $published
-              ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.nupkgPath) -PublishedPackage $published
-              Remove-Item -LiteralPath $published -Force
-
+              $symbolsPublished = $false
               $symbolUrl = "https://www.nuget.org/api/v2/symbolpackage/$id/$version"
               $symbolHead = Invoke-WebRequest -Uri $symbolUrl -Method Head -SkipHttpErrorCheck
-              if ($symbolHead.StatusCode -eq 404) {
-                Write-Output "$id $version symbol package is not published yet; recovery may publish it."
-                continue
+              if ($symbolHead.StatusCode -eq 200) {
+                $publishedSymbol = Join-Path $downloadRoot "$id.$version.snupkg"
+                Invoke-WebRequest -Uri $symbolUrl -OutFile $publishedSymbol
+                ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.snupkgPath) -PublishedPackage $publishedSymbol
+                Remove-Item -LiteralPath $publishedSymbol -Force
+                $symbolsPublished = $true
               }
-              if ($symbolHead.StatusCode -ne 200) {
+              elseif ($symbolHead.StatusCode -ne 404) {
                 throw "Unable to establish symbol recovery state for $id $version. HTTP $($symbolHead.StatusCode)."
               }
 
-              $publishedSymbol = Join-Path $downloadRoot "$id.$version.snupkg"
-              Invoke-WebRequest -Uri $symbolUrl -OutFile $publishedSymbol
-              ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.snupkgPath) -PublishedPackage $publishedSymbol
-              Remove-Item -LiteralPath $publishedSymbol -Force
+              $state.Add([pscustomobject]@{
+                id = $id
+                version = $version
+                primaryPublished = $primaryPublished
+                symbolsPublished = $symbolsPublished
+              })
             }
+
+            $state | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $statePath -Encoding utf8
           }
           finally {
             Remove-Item -LiteralPath $downloadRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -174,13 +184,12 @@ jobs:
           PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
           RECOVERABLE_RERUN: ${{ github.event_name == 'workflow_dispatch' && inputs.recoverable-rerun }}
         run: |
-          skip_duplicate=()
-          primary_only=()
-          if [[ "$RECOVERABLE_RERUN" == "true" ]]; then
-            skip_duplicate=(--skip-duplicate)
-            primary_only=(--no-symbols)
-          fi
           manifest="artifacts/packages/manifest.json"
+          recovery_state="artifacts/recovery-state.json"
+          if [[ "$RECOVERABLE_RERUN" == "true" && ! -f "$recovery_state" ]]; then
+            echo "Recoverable publication requires preflight state." >&2
+            exit 1
+          fi
           mapfile -t packages < <(jq -r '.packages | sort_by(.publishOrder)[] | .nupkgPath' "$manifest")
           if (( ${#packages[@]} == 0 )); then
             echo "Package manifest contains no publishable packages." >&2
@@ -194,17 +203,37 @@ jobs:
               exit 1
             fi
 
-            dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --symbol-api-key "$NUGET_API_KEY" \
-              --source https://api.nuget.org/v3/index.json "${skip_duplicate[@]}" "${primary_only[@]}"
+            if [[ "$RECOVERABLE_RERUN" != "true" ]]; then
+              dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --symbol-api-key "$NUGET_API_KEY" \
+                --source https://api.nuget.org/v3/index.json
+              continue
+            fi
 
-            if [[ "$RECOVERABLE_RERUN" == "true" ]]; then
-              symbol_package="$(jq -r --arg path "$package" '.packages[] | select(.nupkgPath == $path) | .snupkgPath' "$manifest")"
-              if [[ -z "$symbol_package" || "$symbol_package" == "null" || ! -f "$symbol_package" ]]; then
-                echo "Symbol package is missing from immutable manifest/artifact for recovery: $package" >&2
-                exit 1
-              fi
+            package_id="$(jq -r --arg path "$package" '.packages[] | select(.nupkgPath == $path) | .id' "$manifest")"
+            primary_published="$(jq -r --arg id "$package_id" '.[] | select(.id == $id) | .primaryPublished' "$recovery_state")"
+            symbols_published="$(jq -r --arg id "$package_id" '.[] | select(.id == $id) | .symbolsPublished' "$recovery_state")"
+            if [[ "$primary_published" != "true" && "$primary_published" != "false" ]] || \
+               [[ "$symbols_published" != "true" && "$symbols_published" != "false" ]]; then
+              echo "Recovery state is missing or invalid for $package_id." >&2
+              exit 1
+            fi
+
+            if [[ "$primary_published" == "true" ]]; then
+              echo "$package_id primary package already matches the validated producer payload; skipping push."
+            else
+              dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --no-symbols
+            fi
+
+            symbol_package="$(jq -r --arg path "$package" '.packages[] | select(.nupkgPath == $path) | .snupkgPath' "$manifest")"
+            if [[ -z "$symbol_package" || "$symbol_package" == "null" || ! -f "$symbol_package" ]]; then
+              echo "Symbol package is missing from immutable manifest/artifact for recovery: $package" >&2
+              exit 1
+            fi
+            if [[ "$symbols_published" == "true" ]]; then
+              echo "$package_id symbol package already matches the validated producer payload; skipping push."
+            else
               dotnet nuget push "$symbol_package" --api-key "$NUGET_API_KEY" --symbol-api-key "$NUGET_API_KEY" \
-                --source https://api.nuget.org/v3/index.json --skip-duplicate
+                --source https://api.nuget.org/v3/index.json
             fi
           done
 
