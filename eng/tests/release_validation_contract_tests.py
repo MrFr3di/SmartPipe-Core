@@ -92,6 +92,9 @@ def assert_publication_contract(documents: dict) -> None:
     require("inputs.recoverable-rerun" in recovery.get('if', '')
             and 'v3-flatcontainer' in recovery_run
             and '/api/v2/symbolpackage/' in recovery_run
+            and '-OutFile $published -SkipHttpErrorCheck' in recovery_run
+            and '-OutFile $publishedSymbol -SkipHttpErrorCheck' in recovery_run
+            and '-Method Head' not in recovery_run
             and 'compare-nuget-package-payload.ps1' in recovery_run
             and 'nupkgPath' in recovery_run
             and 'snupkgPath' in recovery_run
