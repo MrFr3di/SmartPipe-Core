@@ -300,7 +300,9 @@ internal sealed class DocumentationVerificationService
             }
 
             var openParenthesis = closeBracket + 1;
-            if (openParenthesis >= content.Length || content[openParenthesis] != '(')
+            if (closeBracket == openBracket + 1
+                || openParenthesis >= content.Length
+                || content[openParenthesis] != '(')
             {
                 index = closeBracket + 1;
                 continue;
