@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using SmartPipe.RepositoryChecks.PackageGraph;
 
@@ -265,12 +266,23 @@ internal sealed class DocumentationVerificationService
                 RegexOptions.CultureInvariant | RegexOptions.Multiline);
             var currentHeading = currentHeadingRegex.Match(changelog);
 
-            if (currentHeadingCandidates.Count != 1 || !currentHeading.Success)
+            var releaseState = currentHeading.Success
+                ? currentHeading.Groups["state"].Value
+                : string.Empty;
+            var hasValidReleaseState = string.Equals(releaseState, "Development", StringComparison.Ordinal)
+                || DateOnly.TryParseExact(
+                    releaseState,
+                    "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out _);
+
+            if (currentHeadingCandidates.Count != 1 || !currentHeading.Success || !hasValidReleaseState)
             {
                 violations.Add(new(
                     "SPDOC014",
                     changelogRelativePath,
-                    $"current release changelog must contain exactly one heading '## [{releaseVersion}] — Development' or an ISO yyyy-MM-dd release date"));
+                    $"current release changelog must contain exactly one heading '## [{releaseVersion}] — Development' or a valid ISO yyyy-MM-dd release date"));
             }
             else
             {
