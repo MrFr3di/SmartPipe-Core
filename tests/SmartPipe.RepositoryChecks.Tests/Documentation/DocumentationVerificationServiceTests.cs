@@ -80,6 +80,29 @@ public sealed class DocumentationVerificationServiceTests
     }
 
     [Fact]
+    public async Task VerifyAsync_RejectsMissingSelfRepositoryBlobMainTarget()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "SUPPORT.md",
+            "# Support\n\n" +
+            "[Missing](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/missing.md)\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC012"
+            && violation.Path == "SUPPORT.md"
+            && violation.Rule.Contains("docs/missing.md", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task VerifyAsync_ReportsPackageAndReferenceDrift()
     {
         using var repository = new RepositoryTestDirectory();
