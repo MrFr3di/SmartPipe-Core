@@ -46,7 +46,7 @@ icon, repository metadata, XML documentation, symbols, Source Link, and API
 baselines in the package project or its template. Common properties come from
 `Directory.Build.props` and `eng/SmartPipe.Package.props`.
 README source paths use MSBuild path semantics on every supported operating
-system and must resolve to a file inside the repository. Every active package README must
+system and must resolve to a file inside the repository. Every non-planned release package README must
 state the package's owned capability and include a current installation example. For the
 .NET 10 release line, use the noun-first CLI form `dotnet package add <PACKAGE_ID>`.
 Package READMEs are packed into NuGet and therefore keep installation commands
