@@ -63,6 +63,9 @@ jobs:
       - name: Build
         run: dotnet build SmartPipe.Core.slnx --configuration Release --no-restore --warnaserror
 
+      - name: Verify documentation contracts
+        run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-docs --repo-root .
+
       - name: Restore documentation tool
         run: dotnet tool restore
 
