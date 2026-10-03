@@ -32,10 +32,12 @@ dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.c
 ```
 
 An entry in `eng/package-graph.json` is required before a package is published.
-The lifecycle is monotonic: `planned -> active -> published`. Planned entries
-have a scaffold kind and no baseline; active entries have a baseline and a
-project; published entries additionally require the release evidence defined by
-the release workflow. There is no automatic reverse transition.
+The normal package lifecycle is monotonic: `planned -> active -> published`.
+`compatibility-facade` is the explicit special lifecycle for the broad 2.x
+compatibility package and is not an intermediate activation state. Planned
+entries have a scaffold kind and no baseline; active entries have a baseline and
+a project; published entries additionally require the release evidence defined
+by the release workflow. There is no automatic reverse transition.
 
 Every package project must be represented exactly once in the graph and marked
 with `SmartPipePackage=true`. Keep package-specific description, tags, README,
