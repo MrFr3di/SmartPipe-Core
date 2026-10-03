@@ -226,8 +226,11 @@ public sealed class DocumentationVerificationServiceTests
         repository.Write(
             "docs/getting-started.md",
             "# Getting Started\n\n" +
+            "## Choose the integration package\n\n" +
             "`SmartPipe.Core`\n" +
-            "`SmartPipe.Extensions.Json`\n");
+            "`SmartPipe.Extensions.Json`\n\n" +
+            "## Extensions\n\n" +
+            "`SmartPipe.Extensions.Csv` is mentioned outside the package-selection section.\n");
 
         var result = await DocumentationVerificationService.VerifyAsync(
             repository.Path,
@@ -592,6 +595,7 @@ public sealed class DocumentationVerificationServiceTests
         repository.Write(
             "docs/getting-started.md",
             "# Getting Started\n\n" +
+            "## Choose the integration package\n\n" +
             "`SmartPipe.Core`\n" +
             "`SmartPipe.Extensions.Json`\n" +
             "`SmartPipe.Extensions.Csv`\n");
