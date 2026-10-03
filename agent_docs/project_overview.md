@@ -10,8 +10,9 @@ durable queue, crash-replay system, or exactly-once delivery system.
 ## Current release shape
 
 The repository release version is `2.2.0`. The canonical release inventory is
-`eng/package-graph.json`: 20 publishable SmartPipe package IDs are active for the
-2.2 candidate.
+`eng/package-graph.json`: 20 publishable/non-planned SmartPipe package IDs are in the
+2.2 candidate; the broad facade uses the dedicated `compatibility-facade`
+lifecycle while the remaining release packages are active.
 
 The package model is intentionally modular:
 
