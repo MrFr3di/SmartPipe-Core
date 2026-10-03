@@ -63,6 +63,8 @@ See the [compatibility reference](compatibility/README.md) and
 
 ## Generated API documentation
 
-The repository emits XML documentation for package builds. A later documentation
-site slice can project those XML comments into generated API pages without
-turning this overview into a second hand-maintained signature catalog.
+The documentation workflow already projects package XML documentation into
+generated DocFX API pages under the site's `api/` section. Those generated pages
+are a browsing surface, not a separate compatibility authority: source,
+`PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt`, package validation, and
+executable consumers remain the contracts used for release acceptance.
