@@ -22,6 +22,29 @@ internal sealed class DocumentationVerificationService
         "docs/architecture.md",
         "docs/runtime-contracts.md",
         "docs/reference/packages.md",
+        "docs/reference/api-overview.md",
+        "docs/reference/compatibility/README.md",
+        "docs/reference/compatibility/2.1.2-to-2.2.0.md",
+        "docs/adr/README.md",
+        "docs/maintainers/README.md",
+        "docs/maintainers/2.2.0/README.md",
+        "docs/maintainers/governance/2.2.0-branch-and-review-policy.md",
+    ];
+
+    private static readonly string[] LegacyDocumentationDirectories =
+    [
+        "docs/plans",
+        "docs/implementation",
+        "docs/governance",
+    ];
+
+    private static readonly string[] RequiredDocumentationIndexLinks =
+    [
+        "(reference/api-overview.md)",
+        "(reference/compatibility/2.1.2-to-2.2.0.md)",
+        "(maintainers/README.md)",
+        "(maintainers/2.2.0/README.md)",
+        "(adr/README.md)",
     ];
 
     private readonly PackageGraphLoader _graphLoader;
@@ -54,6 +77,17 @@ internal sealed class DocumentationVerificationService
             if (!File.Exists(Resolve(root, relativePath)))
             {
                 violations.Add(new("SPDOC001", relativePath, "required repository documentation is missing"));
+            }
+        }
+
+        foreach (var legacyDirectory in LegacyDocumentationDirectories)
+        {
+            if (Directory.Exists(Resolve(root, legacyDirectory)))
+            {
+                violations.Add(new(
+                    "SPDOC008",
+                    legacyDirectory,
+                    "legacy documentation layout is forbidden; use docs/maintainers or docs/reference"));
             }
         }
 
@@ -97,6 +131,19 @@ internal sealed class DocumentationVerificationService
                 if (!rootReadme.Contains($"({target})", StringComparison.Ordinal))
                 {
                     violations.Add(new("SPDOC006", "README.md", $"root README must link to {target}"));
+                }
+            }
+        }
+
+        var documentationIndexPath = Resolve(root, "docs/index.md");
+        if (File.Exists(documentationIndexPath))
+        {
+            var documentationIndex = await File.ReadAllTextAsync(documentationIndexPath, cancellationToken).ConfigureAwait(false);
+            foreach (var target in RequiredDocumentationIndexLinks)
+            {
+                if (!documentationIndex.Contains(target, StringComparison.Ordinal))
+                {
+                    violations.Add(new("SPDOC009", "docs/index.md", $"documentation index must link to {target[1..^1]}"));
                 }
             }
         }

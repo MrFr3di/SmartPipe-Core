@@ -1,6 +1,6 @@
 # SmartPipe.Core 2.2.0 — SP220-00 Governance and Baseline Implementation Plan
 
-Связанные нормативные документы: [ADR-0001](../../adr/0001-smartpipe-2.2-package-boundaries.md), [branch and review policy](../../governance/2.2.0-branch-and-review-policy.md), [master architecture plan](../2.2.0-extension-architecture.md).
+Связанные нормативные документы: [ADR-0001](../../../adr/0001-smartpipe-2.2-package-boundaries.md), [branch and review policy](../../governance/2.2.0-branch-and-review-policy.md), [master architecture plan](architecture-plan.md).
 
 > **Порядок исполнения:** используйте subagent-driven development (предпочтительно) либо последовательное исполнение утверждённого плана и выполняйте задачи строго по порядку. Все шаги имеют checkbox для фиксации выполнения.
 
@@ -419,9 +419,9 @@ internal static class ExitCodes
 | File | Responsibility |
 |---|---|
 | `docs/adr/0001-smartpipe-2.2-package-boundaries.md` | Нормативные package/layer decisions и запрещённые зависимости |
-| `docs/governance/2.2.0-branch-and-review-policy.md` | Branch/ruleset/PR/commit/reviewer policy |
-| `docs/plans/2.2.0-extension-architecture.md` | Полный master plan 2.2.0 |
-| `docs/plans/2.2.0/SP220-00-governance-and-baseline.md` | Этот детальный исполнимый план |
+| `docs/maintainers/governance/2.2.0-branch-and-review-policy.md` | Branch/ruleset/PR/commit/reviewer policy |
+| `docs/maintainers/2.2.0/plans/architecture-plan.md` | Полный master plan 2.2.0 |
+| `docs/maintainers/2.2.0/plans/SP220-00-governance-and-baseline.md` | Этот детальный исполнимый план |
 | `eng/baselines/baseline.schema.json` | JSON Schema manifest v1 |
 | `eng/baselines/2.1.2/manifest.json` | Canonical root baseline contract |
 | `eng/baselines/2.1.2/public-api.json` | Source + package exported API snapshot |
@@ -549,7 +549,7 @@ Record actual discovered/passed/skipped counts. Do not hard-code counts in perma
 
 **Files:**
 
-- Create: `docs/governance/2.2.0-branch-and-review-policy.md` later in Task 4.
+- Create: `docs/maintainers/governance/2.2.0-branch-and-review-policy.md` later in Task 4.
 
 **Consumes:** approved `MAIN_SHA` from Task 1.
 
@@ -627,7 +627,7 @@ and clean status.
 - Modify: `.github/workflows/ci.yml`
 - Modify: `.github/workflows/codeql.yml`
 - Modify: `.github/workflows/dependency-review.yml`
-- Create later: `docs/governance/2.2.0-branch-and-review-policy.md`
+- Create later: `docs/maintainers/governance/2.2.0-branch-and-review-policy.md`
 
 **Consumes:** `release/2.2.0` branch.
 
@@ -770,9 +770,9 @@ git commit -m "ci(baseline): validate the 2.2.0 integration branch"
 **Files:**
 
 - Create: `docs/adr/0001-smartpipe-2.2-package-boundaries.md`
-- Create: `docs/governance/2.2.0-branch-and-review-policy.md`
-- Create: `docs/plans/2.2.0-extension-architecture.md`
-- Create: `docs/plans/2.2.0/SP220-00-governance-and-baseline.md`
+- Create: `docs/maintainers/governance/2.2.0-branch-and-review-policy.md`
+- Create: `docs/maintainers/2.2.0/plans/architecture-plan.md`
+- Create: `docs/maintainers/2.2.0/plans/SP220-00-governance-and-baseline.md`
 - Modify: documentation index/README if the repository has one.
 
 **Consumes:** approved architecture plan and branch policy.
@@ -849,7 +849,7 @@ Must include:
 Place the previously approved plan at:
 
 ```text
-docs/plans/2.2.0-extension-architecture.md
+docs/maintainers/2.2.0/plans/architecture-plan.md
 ```
 
 Convert external chat-specific language into repository language, but do not remove requirements.
@@ -857,7 +857,7 @@ Convert external chat-specific language into repository language, but do not rem
 - [ ] **Step 6: place this detailed plan**
 
 ```text
-docs/plans/2.2.0/SP220-00-governance-and-baseline.md
+docs/maintainers/2.2.0/plans/SP220-00-governance-and-baseline.md
 ```
 
 - [ ] **Step 7: link documents**

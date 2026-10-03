@@ -176,5 +176,5 @@ Next links:
 - [Runtime contracts](runtime-contracts.md)
 - [Resilience](resilience.md)
 - [PostgreSQL](postgresql.md)
-- [API reference](api-reference.md)
+- [API reference](reference/api-overview.md)
 - [Migration guide](migration/legacy-to-typed.md)

@@ -219,7 +219,7 @@ local wrappers, aliases, or blanket ApiCompat suppression.
 For details, read:
 
 - [2.1.2 → 2.2.0 migration](docs/migration/2.2.0-integration-packages.md)
-- [Compatibility matrix](docs/implementation/2.2.0/sp220-17-compatibility-matrix.md)
+- [Compatibility matrix](docs/reference/compatibility/2.1.2-to-2.2.0.md)
 - [ADR-0004](docs/adr/0004-smartpipe-2.2-breaking-migration.md)
 
 ## Branches and release-train work
@@ -238,7 +238,7 @@ ci/<short-slug>
 ```
 
 SP220/2.2 maintainer work follows the stricter checkpoint graph in
-[2.2 branch and review policy](docs/governance/2.2.0-branch-and-review-policy.md):
+[2.2 branch and review policy](docs/maintainers/governance/2.2.0-branch-and-review-policy.md):
 
 ```text
 main
@@ -541,7 +541,7 @@ Before merge:
 
 For the 2.2 release train, follow the exact merge strategy and reviewer
 requirements in
-[docs/governance/2.2.0-branch-and-review-policy.md](docs/governance/2.2.0-branch-and-review-policy.md).
+[docs/maintainers/governance/2.2.0-branch-and-review-policy.md](docs/maintainers/governance/2.2.0-branch-and-review-policy.md).
 
 ## Need help?
 

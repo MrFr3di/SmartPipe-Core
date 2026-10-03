@@ -2,7 +2,7 @@
 % Архитектурный план декомпозиции, интеграции и реализации
 % 15 июля 2026
 
-Связанные нормативные документы: [ADR-0001](../adr/0001-smartpipe-2.2-package-boundaries.md), [branch and review policy](../governance/2.2.0-branch-and-review-policy.md). Детальные планы EPIC: [SP220-00 Governance and Baseline](2.2.0/SP220-00-governance-and-baseline.md).
+Связанные нормативные документы: [ADR-0001](../../../adr/0001-smartpipe-2.2-package-boundaries.md), [branch and review policy](../../governance/2.2.0-branch-and-review-policy.md). Детальные планы EPIC: [SP220-00 Governance and Baseline](SP220-00-governance-and-baseline.md).
 
 # Содержание
 
@@ -1680,7 +1680,7 @@ violating topological order, and it is deliberately absent from the facade bundl
 - [ ] Создать release branch `release/2.2.0` от актуальной `main`.
 - [ ] Повторно зафиксировать baseline SHA и успешный CI.
 - [ ] Добавить ADR package boundaries.
-- [ ] Добавить данный plan в `docs/plans/2.2.0-extension-architecture.md`.
+- [ ] Добавить данный plan в `docs/maintainers/2.2.0/plans/architecture-plan.md`.
 - [ ] Зафиксировать правило: новые framework-specific types не добавляются в broad package.
 - [ ] Сохранить 2.1.2 nupkg как baseline для ApiCompat и binary consumers.
 - [ ] Снять текущий package dependency graph и public API snapshots.
@@ -1958,8 +1958,8 @@ gates и миграционные примеры проходят на одно�
 ## EPIC SP220-18 — Release validation
 
 Implementation: [SP220-18 plan](2.2.0/SP220-18-implementation.md),
-[candidate evidence](../implementation/2.2.0/sp220-18-evidence.md),
-[owner gates and publication sequence](../implementation/2.2.0/sp220-18-release-readiness.md).
+[candidate evidence](../evidence/sp220-18-evidence.md),
+[owner gates and publication sequence](../readiness/sp220-18-release-readiness.md).
 The acceptance checklist remains open until exact-head remote evidence and owner approvals are recorded.
 
 **Зависимости:** все.

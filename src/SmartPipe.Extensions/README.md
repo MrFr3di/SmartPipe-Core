@@ -12,7 +12,7 @@ The facade DLL preserves 23 forwarded and 13 frozen legacy public identities
 from 2.1.2. Six HTTP/Polly identities were intentionally removed and require
 migration and recompilation. See the
 [2.1.2 → 2.2.0 migration guide](../../docs/migration/2.2.0-integration-packages.md)
-and [compatibility matrix](../../docs/implementation/2.2.0/sp220-17-compatibility-matrix.md).
+and [compatibility matrix](../../docs/reference/compatibility/2.1.2-to-2.2.0.md).
 
 ## Selectors (Data Sources)
 

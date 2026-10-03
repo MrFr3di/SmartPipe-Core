@@ -23,6 +23,41 @@ public sealed class DocumentationVerificationServiceTests
     }
 
     [Fact]
+    public async Task VerifyAsync_RejectsLegacyDocumentationLayout()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write("docs/plans/legacy.md", "# Legacy\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC008" && violation.Path == "docs/plans");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ReportsDocumentationIndexDrift()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write("docs/index.md", "# Documentation\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation => violation.Code == "SPDOC009");
+    }
+
+    [Fact]
     public async Task VerifyAsync_ReportsPackageAndReferenceDrift()
     {
         using var repository = new RepositoryTestDirectory();
@@ -110,9 +145,25 @@ public sealed class DocumentationVerificationServiceTests
         repository.Write("SECURITY.md", "# Security\n\n[Support](SUPPORT.md)\n");
         repository.Write("SUPPORT.md", "# Support\n");
         repository.Write("VERSIONING.md", "# Versioning\n");
-        repository.Write("docs/index.md", "# Documentation\n");
+        repository.Write(
+            "docs/index.md",
+            "# Documentation\n\n" +
+            "[API](reference/api-overview.md) " +
+            "[Compatibility](reference/compatibility/2.1.2-to-2.2.0.md) " +
+            "[Maintainers](maintainers/README.md) " +
+            "[2.2](maintainers/2.2.0/README.md) " +
+            "[ADR](adr/README.md)\n");
         repository.Write("docs/architecture.md", "# Architecture\n");
         repository.Write("docs/runtime-contracts.md", "# Runtime contracts\n");
+        repository.Write("docs/reference/api-overview.md", "# API overview\n");
+        repository.Write("docs/reference/compatibility/README.md", "# Compatibility reference\n");
+        repository.Write("docs/reference/compatibility/2.1.2-to-2.2.0.md", "# Compatibility matrix\n");
+        repository.Write("docs/adr/README.md", "# ADR index\n");
+        repository.Write("docs/maintainers/README.md", "# Maintainers\n");
+        repository.Write("docs/maintainers/2.2.0/README.md", "# 2.2 maintainer index\n");
+        repository.Write(
+            "docs/maintainers/governance/2.2.0-branch-and-review-policy.md",
+            "# 2.2 branch and review policy\n");
         repository.Write(
             "src/SmartPipe.Extensions.Json/README.md",
             "# SmartPipe.Extensions.Json\n\n```bash\ndotnet package add SmartPipe.Extensions.Json\n```\n");

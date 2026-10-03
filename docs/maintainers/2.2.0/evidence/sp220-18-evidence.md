@@ -1,6 +1,6 @@
 # SP220-18 candidate evidence
 
-Status: implementation and local candidate validation complete; final-head hosted evidence is recorded in draft PR [#115](https://github.com/MrFr3di/SmartPipe-Core/pull/115). Independent maintainer acceptance and owner publishing gates remain open. This report does not accept checkpoint G or authorize publication. [Owner gates and publication sequence](sp220-18-release-readiness.md) remain normative follow-up.
+Status: implementation and local candidate validation complete; final-head hosted evidence is recorded in draft PR [#115](https://github.com/MrFr3di/SmartPipe-Core/pull/115). Independent maintainer acceptance and owner publishing gates remain open. This report does not accept checkpoint G or authorize publication. [Owner gates and publication sequence](../readiness/sp220-18-release-readiness.md) remain normative follow-up.
 
 ## Scope and provenance
 

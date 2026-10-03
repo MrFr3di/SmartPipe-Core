@@ -261,7 +261,7 @@ compatibility is validated separately from source compatibility; namespace
 preservation alone is not treated as binary evidence.
 
 See the [2.1.2 → 2.2.0 migration guide](docs/migration/2.2.0-integration-packages.md),
-[compatibility matrix](docs/implementation/2.2.0/sp220-17-compatibility-matrix.md),
+[compatibility matrix](docs/reference/compatibility/2.1.2-to-2.2.0.md),
 and [ADR-0004](docs/adr/0004-smartpipe-2.2-breaking-migration.md).
 
 ## Lifecycle model
@@ -311,9 +311,8 @@ tests/Consumers/             packed-package source/binary/trim/NativeAOT consume
 benchmarks/                  BenchmarkDotNet release/performance evidence
 docs/                        runtime, architecture, migration and subsystem guides
 docs/adr/                    architecture decisions
-docs/governance/             branch/review/release governance
-docs/implementation/         implementation evidence and compatibility matrices
-docs/plans/                  2.2 architecture and EPIC plans
+docs/maintainers/            governance, release plans, evidence and readiness
+docs/reference/               package, API and compatibility reference
 eng/                         package graph, ownership, consumers, release validators
 eng/baselines/2.1.2/         immutable compatibility baseline
 agent_docs/                  repository orientation for coding agents
@@ -335,8 +334,8 @@ Start with:
 
 - [Architecture](docs/architecture.md)
 - [Runtime contracts](docs/runtime-contracts.md)
-- [2.2 architecture plan](docs/plans/2.2.0-extension-architecture.md)
-- [2.2 branch and review policy](docs/governance/2.2.0-branch-and-review-policy.md)
+- [2.2 architecture plan](docs/maintainers/2.2.0/plans/architecture-plan.md)
+- [2.2 branch and review policy](docs/maintainers/governance/2.2.0-branch-and-review-policy.md)
 - [Package authoring](docs/contributing/package-authoring.md)
 
 ## Building from source

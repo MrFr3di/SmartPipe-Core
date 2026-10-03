@@ -36,7 +36,7 @@ For the 2.2 transition:
 - 6 are intentionally removed and require migration/recompilation.
 
 See the
-[compatibility matrix](docs/implementation/2.2.0/sp220-17-compatibility-matrix.md)
+[compatibility matrix](docs/reference/compatibility/2.1.2-to-2.2.0.md)
 and [migration guide](docs/migration/2.2.0-integration-packages.md).
 
 ## Package version policy

@@ -100,7 +100,7 @@ The machine-readable ownership contract lives in
 See:
 
 - [Versioning and compatibility](../VERSIONING.md)
-- [2.1.2 → 2.2.0 compatibility matrix](implementation/2.2.0/sp220-17-compatibility-matrix.md)
+- [2.1.2 → 2.2.0 compatibility matrix](reference/compatibility/2.1.2-to-2.2.0.md)
 - [2.1.2 → 2.2.0 migration guide](migration/2.2.0-integration-packages.md)
 
 ## Backpressure and channels

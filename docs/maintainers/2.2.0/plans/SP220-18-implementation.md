@@ -8,7 +8,7 @@
 
 **Tech stack:** .NET SDK 10.0.303/net10.0, GitHub Actions, PowerShell, Python/ruamel.yaml 0.18.16, existing RepositoryChecks.
 
-**Spec:** [master plan SP220-18](../2.2.0-extension-architecture.md#epic-sp220-18--release-validation), [branch/review policy](../../governance/2.2.0-branch-and-review-policy.md), and the user-approved seven-step continuation in this session.
+**Spec:** [master plan SP220-18](architecture-plan.md#epic-sp220-18--release-validation), [branch/review policy](../../governance/2.2.0-branch-and-review-policy.md), and the user-approved seven-step continuation in this session.
 
 ## Global constraints
 
@@ -34,7 +34,7 @@
 
 ## Task 1: Package release metadata
 
-Files: `src/*/*.csproj`, `docs/implementation/2.2.0/sp220-18-evidence.md`.
+Files: `src/*/*.csproj`, `docs/maintainers/2.2.0/evidence/sp220-18-evidence.md`.
 
 - [x] Confirm final SP220-17 feed fails release metadata with19 SPMETA006 only.
 - [x] Add package-specific 2.2.0 notes for19 remaining packages, including first-release identities and AOT/compatibility boundaries where material.

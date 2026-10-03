@@ -8,7 +8,7 @@
 
 **Tech Stack:** .NET SDK 10.0.303, C# / net10.0, Npgsql 10.0.3, PostgreSQL 18.6 и 17.11, xUnit v3, BenchmarkDotNet, GitHub Actions, PowerShell, Python / ruamel.yaml 0.18.16.
 
-**Spec:** Раздел «Решения и ограничения» этого документа; исходные контракты — [master architecture plan](../2.2.0-extension-architecture.md), [branch/review policy](../../governance/2.2.0-branch-and-review-policy.md), SP220-15 и SP220-18.
+**Spec:** Раздел «Решения и ограничения» этого документа; исходные контракты — [master architecture plan](architecture-plan.md), [branch/review policy](../../governance/2.2.0-branch-and-review-policy.md), SP220-15 и SP220-18.
 
 **Status:** Исправления повторного ревью и реализация всех четырёх улучшений включены в PR #111, вместе с bounded consumer concurrency и targeted restores. Локальные проверки и контролируемые измерения описаны в [implementation evidence](checkpoint-f-implementation-evidence.md). Ниже отмечены выполненные этапы; remote CI, полная серия performance runs и финальная release validation остаются отдельными evidence gates.
 

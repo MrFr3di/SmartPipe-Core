@@ -7,7 +7,7 @@ Local implementation is ready for integration review. Release acceptance and che
 - Verification date: 2026-10-01; Linux x64; .NET SDK 10.0.303; net10.0.
 - Feed: `artifacts/sp220-17-final`; package version 2.2.0; 20 nupkg + 20 snupkg.
 - Pack uses the successful Release solution outputs (`--no-build --no-restore`) with native Package Validation enabled for every package. No baseline or compatibility suppression was changed. Later changes are test whitespace, a consumer comment and this evidence/plan.
-- [Compatibility inventory](sp220-17-compatibility-matrix.md): exactly 42 facade identities, classified 23 forwarded / 13 retained / 6 removed.
+- [Compatibility inventory](../../../reference/compatibility/2.1.2-to-2.2.0.md): exactly 42 facade identities, classified 23 forwarded / 13 retained / 6 removed.
 - Facade bundle: 17 direct SmartPipe dependencies, closure of 18 including facade; HealthChecks/OpenTelemetry included, Testing/PostgreSql excluded.
 
 ## Verification outcomes

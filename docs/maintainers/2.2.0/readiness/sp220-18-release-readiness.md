@@ -1,6 +1,6 @@
 # SP220-18 release readiness
 
-Implementation and candidate validation do not accept checkpoint G or authorize publication. Acceptance is governed by the [branch/review policy](../../governance/2.2.0-branch-and-review-policy.md). See [candidate evidence](sp220-18-evidence.md) and the [implementation plan](../../plans/2.2.0/SP220-18-implementation.md).
+Implementation and candidate validation do not accept checkpoint G or authorize publication. Acceptance is governed by the [branch/review policy](../../governance/2.2.0-branch-and-review-policy.md). See [candidate evidence](../evidence/sp220-18-evidence.md) and the [implementation plan](../plans/SP220-18-implementation.md).
 
 ## Owner verification (2026-10-02)
 

@@ -40,7 +40,7 @@ each package.
 ## Reference
 
 - [Configuration](configuration.md)
-- [API overview](api-reference.md)
+- [API overview](reference/api-overview.md)
 - [AOT and trimming](aot-compatibility.md)
 - [Observability](observability.md)
 - [Observers](observers.md)
@@ -52,7 +52,7 @@ each package.
 
 - [SmartPipe 2.2.0 release notes](releases/2.2.0.md)
 - [2.1.2 → 2.2.0 integration migration](migration/2.2.0-integration-packages.md)
-- [2.1.2 → 2.2.0 compatibility matrix](implementation/2.2.0/sp220-17-compatibility-matrix.md)
+- [2.1.2 → 2.2.0 compatibility matrix](reference/compatibility/2.1.2-to-2.2.0.md)
 - [Core definition model migration](migration/2.2.0-core-definition-model.md)
 
 ## Contributing
@@ -66,13 +66,10 @@ each package.
 
 ## Maintainer and release material
 
-The following directories are engineering history/evidence. They are not the
-primary consumer documentation surface:
+- [Maintainer documentation](maintainers/README.md)
+- [SmartPipe 2.2 maintainer index](maintainers/2.2.0/README.md)
+- [Architecture decision records](adr/README.md)
 
-- `adr/` — accepted architecture decisions.
-- `governance/` — branch, review, and release governance.
-- `plans/` — implementation plans and checkpoint work.
-- `implementation/` — compatibility/evidence/readiness records.
-
-A later information-architecture slice will move these under an explicit
-maintainer namespace without rewriting their historical content.
+Plans, exact-head evidence, readiness records, and release governance live under
+`maintainers/` so they remain available without competing with product/reference
+documentation.

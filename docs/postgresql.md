@@ -404,4 +404,4 @@ data loss, and never acknowledging grows the replication slot.
 - [SmartPipe 2.2 integration package migration](migration/2.2.0-integration-packages.md)
 - [Package ownership](package-ownership.md)
 - [AOT and trimming compatibility](aot-compatibility.md)
-- [Extension architecture plan](plans/2.2.0-extension-architecture.md)
+- [Architecture](architecture.md)
