@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using SmartPipe.RepositoryChecks.PackageGraph;
 
 namespace SmartPipe.RepositoryChecks.Documentation;
@@ -43,26 +42,6 @@ internal sealed class DocumentationVerificationService
         "docs/implementation",
         "docs/governance",
     ];
-
-    private static readonly Regex RelativeMarkdownTargetRegex = new(
-        @"!?\[[^\]]+\]\((?!https?://|mailto:|#)([^)]+)\)",
-        RegexOptions.CultureInvariant | RegexOptions.Compiled);
-
-    private static readonly Regex SelfRepositoryBlobMainTargetRegex = new(
-        @"https://github\.com/MrFr3di/SmartPipe-Core/blob/main/(?<path>[^)\s#?]+)(?:[?#][^)\s]+)?",
-        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    private static readonly Regex VersionHeadingRegex = new(
-        @"^## \[[^\]]+\] — .+$",
-        RegexOptions.CultureInvariant | RegexOptions.Multiline | RegexOptions.Compiled);
-
-    private static readonly Regex LevelTwoHeadingRegex = new(
-        @"^##\s+.+$",
-        RegexOptions.CultureInvariant | RegexOptions.Multiline | RegexOptions.Compiled);
-
-    private static readonly Regex ReleasePackageRowRegex = new(
-        @"^\|\s*`(?<id>[^`]+)`\s*\|",
-        RegexOptions.CultureInvariant | RegexOptions.Multiline | RegexOptions.Compiled);
 
     private static readonly string[] LinkCheckedRootDocuments =
     [
@@ -167,7 +146,7 @@ internal sealed class DocumentationVerificationService
                     "package README install commands must stay version-agnostic; release-specific versions belong in release/migration documentation"));
             }
 
-            if (RelativeMarkdownTargetRegex.IsMatch(content))
+            if (EnumerateRelativeMarkdownTargets(content).Any())
             {
                 violations.Add(new(
                     "SPDOC011",
@@ -406,9 +385,9 @@ internal sealed class DocumentationVerificationService
             var content = await File.ReadAllTextAsync(fullPath, cancellationToken).ConfigureAwait(false);
             var sourcePath = Path.GetRelativePath(root, fullPath).Replace('\\', '/');
 
-            foreach (Match match in SelfRepositoryBlobMainTargetRegex.Matches(content))
+            foreach (var rawTarget in EnumerateSelfRepositoryBlobMainTargets(content))
             {
-                var target = Uri.UnescapeDataString(match.Groups["path"].Value);
+                var target = Uri.UnescapeDataString(rawTarget);
                 var targetPath = Resolve(root, target);
 
                 if (!IsRepositoryLocalTarget(root, targetPath) || !File.Exists(targetPath))
@@ -420,9 +399,9 @@ internal sealed class DocumentationVerificationService
                 }
             }
 
-            foreach (Match match in RelativeMarkdownTargetRegex.Matches(content))
+            foreach (var rawTarget in EnumerateRelativeMarkdownTargets(content))
             {
-                var target = NormalizeRelativeMarkdownTarget(match.Groups[1].Value);
+                var target = NormalizeRelativeMarkdownTarget(rawTarget);
                 if (target.Length == 0)
                 {
                     continue;
@@ -440,11 +419,107 @@ internal sealed class DocumentationVerificationService
                     violations.Add(new(
                         "SPDOC013",
                         sourcePath,
-                        $"relative documentation link must resolve in the current checkout: {match.Groups[1].Value}"));
+                        $"relative documentation link must resolve in the current checkout: {rawTarget}"));
                 }
             }
         }
     }
+
+    private const string SelfRepositoryBlobMainPrefix =
+        "https://github.com/MrFr3di/SmartPipe-Core/blob/main/";
+
+    private static IEnumerable<string> EnumerateRelativeMarkdownTargets(string content)
+    {
+        foreach (var target in EnumerateMarkdownTargets(content))
+        {
+            var candidate = target.Trim();
+            if (candidate.Length == 0
+                || candidate[0] == '#'
+                || candidate.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                || candidate.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                || candidate.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            yield return target;
+        }
+    }
+
+    private static IEnumerable<string> EnumerateMarkdownTargets(string content)
+    {
+        var index = 0;
+        while (index < content.Length)
+        {
+            var openBracket = content.IndexOf('[', index);
+            if (openBracket < 0)
+            {
+                yield break;
+            }
+
+            var closeBracket = content.IndexOf(']', openBracket + 1);
+            if (closeBracket < 0)
+            {
+                yield break;
+            }
+
+            var openParenthesis = closeBracket + 1;
+            if (closeBracket == openBracket + 1
+                || openParenthesis >= content.Length
+                || content[openParenthesis] != '(')
+            {
+                index = closeBracket + 1;
+                continue;
+            }
+
+            var targetStart = openParenthesis + 1;
+            var closeParenthesis = content.IndexOf(')', targetStart);
+            if (closeParenthesis < 0)
+            {
+                yield break;
+            }
+
+            if (closeParenthesis > targetStart)
+            {
+                yield return content[targetStart..closeParenthesis];
+            }
+
+            index = closeParenthesis + 1;
+        }
+    }
+
+    private static IEnumerable<string> EnumerateSelfRepositoryBlobMainTargets(string content)
+    {
+        var index = 0;
+        while (index < content.Length)
+        {
+            var prefix = content.IndexOf(
+                SelfRepositoryBlobMainPrefix,
+                index,
+                StringComparison.OrdinalIgnoreCase);
+            if (prefix < 0)
+            {
+                yield break;
+            }
+
+            var targetStart = prefix + SelfRepositoryBlobMainPrefix.Length;
+            var targetEnd = targetStart;
+            while (targetEnd < content.Length && !IsSelfRepositoryTargetDelimiter(content[targetEnd]))
+            {
+                targetEnd++;
+            }
+
+            if (targetEnd > targetStart)
+            {
+                yield return content[targetStart..targetEnd];
+            }
+
+            index = targetEnd > prefix ? targetEnd : prefix + SelfRepositoryBlobMainPrefix.Length;
+        }
+    }
+
+    private static bool IsSelfRepositoryTargetDelimiter(char value) =>
+        value == ')' || value == '#' || value == '?' || char.IsWhiteSpace(value);
 
     private static string NormalizeRelativeMarkdownTarget(string target)
     {
