@@ -61,7 +61,7 @@ internal sealed class DocumentationVerificationService
         RegexOptions.CultureInvariant | RegexOptions.Multiline | RegexOptions.Compiled);
 
     private static readonly Regex ReleasePackageRowRegex = new(
-        @"^\|\s*`(?<id>SmartPipe(?:\.[A-Za-z0-9]+)*)`\s*\|",
+        @"^\|\s*`(?<id>[^`]+)`\s*\|",
         RegexOptions.CultureInvariant | RegexOptions.Multiline | RegexOptions.Compiled);
 
     private static readonly string[] LinkCheckedRootDocuments =
