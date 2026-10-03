@@ -75,4 +75,19 @@ internal sealed record PackageAssemblySnapshot
 
     [JsonPropertyOrder(8)]
     public required IReadOnlyList<string> TypeForwarders { get; init; }
+
+    // Runtime inspection evidence; immutable baseline JSON retains its original shape.
+    [JsonIgnore]
+    public IReadOnlyDictionary<string, AssemblyReferenceIdentity> ForwarderDestinations { get; init; } = new Dictionary<string, AssemblyReferenceIdentity>();
+}
+
+internal sealed record AssemblyReferenceIdentity(string Name, Version Version, string Culture, string PublicKeyToken)
+{
+    public bool CanBindTo(PackageAssemblySnapshot implementation) =>
+        string.Equals(Name, implementation.Name, StringComparison.OrdinalIgnoreCase)
+        && Version <= System.Version.Parse(implementation.Version)
+        && string.Equals(Culture, implementation.Culture, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(PublicKeyToken, implementation.PublicKeyToken, StringComparison.OrdinalIgnoreCase);
+
+    public override string ToString() => $"{Name}, Version={Version}, Culture={Culture}, PublicKeyToken={PublicKeyToken}";
 }

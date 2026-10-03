@@ -439,6 +439,38 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             var runtime = Directory.EnumerateFiles(output, "*.runtimeconfig.json").SingleOrDefault() ?? throw new ConsumerScenarioException("SPCONS011", "Consumer runtimeconfig.json is missing.");
             _ = await File.ReadAllTextAsync(deps, ct).ConfigureAwait(false);
             _ = await File.ReadAllTextAsync(runtime, ct).ConfigureAwait(false);
+            if (mode == ConsumerMode.BinaryCompatibility)
+                await ValidateBinaryRuntimeFilesAsync(output, deps, ct).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task ValidateBinaryRuntimeFilesAsync(string output, string depsPath, CancellationToken ct)
+    {
+        await using var stream = File.OpenRead(depsPath);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+        var targetName = document.RootElement.GetProperty("runtimeTarget").GetProperty("name").GetString()!;
+        var target = document.RootElement.GetProperty("targets").GetProperty(targetName);
+        foreach (var library in target.EnumerateObject())
+        {
+            foreach (var kind in new[] { "runtime", "native", "resources", "runtimeTargets" })
+            {
+                if (!library.Value.TryGetProperty(kind, out var assets)) continue;
+                foreach (var asset in assets.EnumerateObject())
+                {
+                    var name = Path.GetFileName(asset.Name);
+                    if (name == "_._") continue;
+                    var relative = kind switch
+                    {
+                        "runtimeTargets" => asset.Name,
+                        "resources" => Path.Combine(asset.Value.GetProperty("locale").GetString()!, name),
+                        _ => name,
+                    };
+                    var path = Path.GetFullPath(relative, output);
+                    EnsureContained(output, path);
+                    if (!File.Exists(path))
+                        throw new ConsumerScenarioException("SPCONS011", $"Binary deployment runtime asset is missing: {relative} ({library.Name}).");
+                }
+            }
         }
     }
 
@@ -495,9 +527,11 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             timeout,
             events,
             ct).ConfigureAwait(false);
+        await ValidateCurrentBinaryDependenciesAsync(Path.Combine(source, "obj", "project.assets.json"), currentPackageIds, currentPackageVersion, ct).ConfigureAwait(false);
         await RunRequiredAsync(
             "dotnet",
-            ["msbuild", project, "-t:GenerateBuildDependencyFile", "-p:Configuration=Release"],
+            // These pinned SDK targets resolve and copy managed/native/resource dependencies, without CoreCompile.
+            ["msbuild", project, "-t:GenerateBuildDependencyFile;_CopyFilesMarkedCopyLocal", "-p:Configuration=Release", "-p:BuildProjectReferences=false", "-p:SkipCopyUnchangedFiles=false"],
             source,
             logs,
             repositoryRoot,
@@ -508,6 +542,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         var afterHash = await Hashing.Sha256FileAsync(consumerAssembly, ct).ConfigureAwait(false);
         if (!string.Equals(beforeHash, afterHash, StringComparison.OrdinalIgnoreCase))
             throw new ConsumerScenarioException("SPCONS020", "Binary compatibility deployment metadata changed the consumer assembly.");
+        await ValidateCurrentBinaryDependenciesAsync(Path.Combine(outputDirectory, Path.GetFileNameWithoutExtension(project) + ".deps.json"), currentPackageIds, currentPackageVersion, ct).ConfigureAwait(false);
         events.Add(new(
             "binary-deployment-metadata",
             $"refresh-deps consumer-before-sha256={beforeHash} consumer-after-sha256={afterHash}",
@@ -516,6 +551,18 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             0,
             "",
             ""));
+    }
+
+    private static async Task ValidateCurrentBinaryDependenciesAsync(string assetsPath, IReadOnlyList<string> packageIds, string version, CancellationToken ct)
+    {
+        await using var stream = File.OpenRead(assetsPath);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+        var actual = document.RootElement.GetProperty("libraries").EnumerateObject()
+            .Select(library => library.Name).Where(name => name.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var expected = packageIds.Select(id => id + "/" + version).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!actual.SetEquals(expected))
+            throw new ConsumerScenarioException("SPCONS015", $"Binary current dependency identities differ. Expected=[{string.Join(',', expected.Order(StringComparer.Ordinal))}] Actual=[{string.Join(',', actual.Order(StringComparer.Ordinal))}].");
     }
 
     private static async Task<IReadOnlyList<ConsumerCommandEvent>> ReplaceRuntimeAssembliesWithoutBuildAsync(string output, string feed, string version, IReadOnlyList<string> packageIds, CancellationToken ct)

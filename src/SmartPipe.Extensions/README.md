@@ -1,7 +1,18 @@
 
 # SmartPipe.Extensions
 
-Ready-to-use integrations for SmartPipe.Core: file, HTTP, database, mapping, validation, resilience, hosting, and health check components.
+New applications should reference only the specific `SmartPipe.Extensions.*`
+packages they use. `SmartPipe.Extensions` is a compatibility bundle: it installs
+Core and 16 runtime integration leaves, including HealthChecks and OpenTelemetry.
+Its dependency closure contains 18 SmartPipe IDs including the facade itself.
+Optional `SmartPipe.Extensions.PostgreSql` and test-only `SmartPipe.Testing` are
+published separately and are excluded from this bundle.
+
+The facade DLL preserves 23 forwarded and 13 frozen legacy public identities
+from 2.1.2. Six HTTP/Polly identities were intentionally removed and require
+migration and recompilation. See the
+[2.1.2 → 2.2.0 migration guide](../../docs/migration/2.2.0-integration-packages.md)
+and [compatibility matrix](../../docs/implementation/2.2.0/sp220-17-compatibility-matrix.md).
 
 ## Selectors (Data Sources)
 
@@ -76,16 +87,28 @@ and explicit inner ownership, then recompile.
 
 | Component | Description |
 |-----------|-------------|
-| `SmartPipeLivenessCheck` | Is pipeline alive? (Kubernetes liveness probe) |
-| `SmartPipeReadinessCheck` | Can pipeline accept data? (Kubernetes readiness probe) |
+| `AddLiveness()` | Canonical key-based liveness, from `SmartPipe.Extensions.HealthChecks` |
+| `AddReadiness()` | Canonical key-based readiness, from `SmartPipe.Extensions.HealthChecks` |
+
+The legacy `SmartPipeHealthCheckOptions` and `SmartPipeRunHealthMonitor<TIn,TOut>`
+remain facade-owned for compatibility. New code uses canonical registration
+and the [HealthChecks leaf](../SmartPipe.Extensions.HealthChecks/README.md).
 
 ## Hosting
 
 | Component | Description |
 |-----------|-------------|
-| `SmartPipeHostedService` | ASP.NET Core BackgroundService |
-| `AddSmartPipe<TIn,TOut>()` | Typed definition/factory DI registration |
-| `AddSmartPipeHostedService<TIn,TOut>()` | Typed hosted-service registration |
+| `SmartPipeHostedService<TIn,TOut>` | Frozen legacy Generic Host adapter |
+| `AddSmartPipe<TIn,TOut>()` | Retained legacy definition/factory DI registration |
+| `AddSmartPipeHostedService<TIn,TOut>()` | Retained legacy hosted-service registration |
+
+Canonical keyed registration and orchestration live in the
+[DependencyInjection](../SmartPipe.Extensions.DependencyInjection/README.md) and
+[Hosting](../SmartPipe.Extensions.Hosting/README.md) leaves. Legacy synchronous
+factory `Start` retains its obsolete diagnostic and immediate-return behavior;
+prefer the canonical factory `StartAsync` for new applications. Do not combine
+similarly named legacy and canonical extension methods without choosing the
+appropriate namespace/API explicitly.
 
 `SmartPipeHostedServiceOptions` controls hosted fault behavior and drain
 timeout. The default fault behavior is `StopApplication`; use `Rethrow`,
@@ -106,7 +129,7 @@ token remains available.
 ## Installation
 
 ```bash
-dotnet add package SmartPipe.Extensions --version 2.1.2
+dotnet add package SmartPipe.Extensions --version 2.2.0
 ```
 
 For narrow SP220-07 integrations, install `SmartPipe.Extensions.Channels`,
@@ -117,7 +140,7 @@ existing public types and pulls these leaves only as a compatibility facade.
 For JSON-only integrations, prefer:
 
 ```bash
-dotnet add package SmartPipe.Extensions.Json --version 2.1.2
+dotnet add package SmartPipe.Extensions.Json --version 2.2.0
 ```
 
 ## JSON Package Migration
@@ -133,7 +156,7 @@ is planned for removal in SmartPipe 3.0.
 ## Requirements
 
 - .NET 10.0+
-- SmartPipe.Core 2.1.2 (included as dependency)
+- SmartPipe.Core 2.2.0 (included as dependency)
 - This package intentionally includes integration dependencies for the features below.
 - Individual features pull their own dependencies:
   - HTTP transport and codecs → `SmartPipe.Extensions.Http` / `SmartPipe.Extensions.Http.Json`
@@ -147,6 +170,10 @@ is planned for removal in SmartPipe 3.0.
   - Other components use platform APIs or dependencies already carried by this package.
 
 ### Trimming and NativeAOT
+
+The broad bundle has no blanket trimming or NativeAOT guarantee. Choose specific
+leaves and follow their verified consumer contracts. Forwarding compatibility
+does not make the transitive runtime integration set AOT-safe.
 
 `MapsterTransform<TIn,TOut>` uses Mapster runtime mapping metadata and runtime
 expression compilation. It is supported for normal runtime consumers, but is not

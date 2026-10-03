@@ -2,6 +2,13 @@
 
 The machine-readable authority is `eng/package-ownership.json`.
 
+For the 2.1.2 facade baseline, the exact contract is 23 forwarded, 13 retained
+and six removed public identities. The derived
+[compatibility matrix](implementation/2.2.0/sp220-17-compatibility-matrix.md)
+lists them without introducing another policy manifest. Packed ownership checks
+validate forwarder AssemblyRef destinations and each asset separately, reject
+unknown facade implementations/forwarders, and fail for a missing required nupkg.
+
 | Surface | Implementation package | Compatibility package | Strategy |
 |---|---|---|---|
 | Canonical observation contracts | `SmartPipe.Extensions.DependencyInjection` | none | new 2.2 API |
