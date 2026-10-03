@@ -100,10 +100,12 @@ regenerated to make a candidate pass.
 
 The active release-completion area is Checkpoint G:
 
-- SP220-17 — facade/type-forwarding/migration compatibility;
-- SP220-18 — immutable artifact and release validation;
-- 2.2.0 release-document finalization — changelog/release-note/package-doc
-  reconciliation and stronger documentation verification.
+- SP220-17 — facade/type-forwarding/migration compatibility, already true-merged;
+- SP220-18 — immutable artifact and release validation, already true-merged;
+- 2.2.0 release-document finalization — the active slice for changelog/release-note/package-doc
+  reconciliation and stronger documentation verification;
+- after finalization merges, run a fresh exact-head release-validation workflow on the
+  resulting Checkpoint G SHA before promotion.
 
 Old Checkpoint D / SP220-08 / paused SP220-09 state is historical and must not be
 used as the current repository handoff.
