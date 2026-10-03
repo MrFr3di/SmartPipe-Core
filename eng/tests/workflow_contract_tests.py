@@ -524,7 +524,13 @@ def assert_documentation_site_contract(document: dict) -> None:
     require(str(build.get("run", "")).strip() ==
             "dotnet build SmartPipe.Core.slnx --configuration Release --no-restore --warnaserror",
             "Documentation workflow must build the exact Release solution before API extraction.")
+    verify_docs = named_step(job_steps, "Verify documentation contracts")
+    require(str(verify_docs.get("run", "")).strip() ==
+            "dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-docs --repo-root .",
+            "Documentation workflow must run the exact branch-local documentation contract gate.")
     tool_restore = named_step(job_steps, "Restore documentation tool")
+    require(job_steps.index(build) < job_steps.index(verify_docs) < job_steps.index(tool_restore),
+            "Documentation contracts must run after the Release build and before DocFX tool restore.")
     require(str(tool_restore.get("run", "")).strip() == "dotnet tool restore",
             "Documentation workflow must restore the repository-local tool manifest.")
     docfx = named_step(job_steps, "Build documentation")
