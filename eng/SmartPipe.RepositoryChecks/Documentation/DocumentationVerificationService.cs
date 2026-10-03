@@ -234,11 +234,8 @@ internal sealed class DocumentationVerificationService
             {
                 var target = Uri.UnescapeDataString(match.Groups["path"].Value);
                 var targetPath = Resolve(root, target);
-                var relativeToRoot = Path.GetRelativePath(root, targetPath);
 
-                if (relativeToRoot.Equals("..", StringComparison.Ordinal)
-                    || relativeToRoot.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-                    || !File.Exists(targetPath))
+                if (!IsRepositoryLocalTarget(root, targetPath) || !File.Exists(targetPath))
                 {
                     violations.Add(new(
                         "SPDOC012",
@@ -246,7 +243,57 @@ internal sealed class DocumentationVerificationService
                         $"self-repository blob/main link must resolve in the current checkout: {target}"));
                 }
             }
+
+            foreach (Match match in RelativeMarkdownTargetRegex.Matches(content))
+            {
+                var target = NormalizeRelativeMarkdownTarget(match.Groups[1].Value);
+                if (target.Length == 0)
+                {
+                    continue;
+                }
+
+                var sourceDirectory = Path.GetDirectoryName(fullPath)
+                    ?? throw new InvalidOperationException($"Documentation path has no directory: {sourcePath}");
+                var targetPath = Path.GetFullPath(
+                    target.Replace('/', Path.DirectorySeparatorChar),
+                    sourceDirectory);
+
+                if (!IsRepositoryLocalTarget(root, targetPath)
+                    || (!File.Exists(targetPath) && !Directory.Exists(targetPath)))
+                {
+                    violations.Add(new(
+                        "SPDOC013",
+                        sourcePath,
+                        $"relative documentation link must resolve in the current checkout: {match.Groups[1].Value}"));
+                }
+            }
         }
+    }
+
+    private static string NormalizeRelativeMarkdownTarget(string target)
+    {
+        var normalized = target.Trim();
+        var fragmentIndex = normalized.IndexOf('#');
+        if (fragmentIndex >= 0)
+        {
+            normalized = normalized[..fragmentIndex];
+        }
+
+        var queryIndex = normalized.IndexOf('?');
+        if (queryIndex >= 0)
+        {
+            normalized = normalized[..queryIndex];
+        }
+
+        return Uri.UnescapeDataString(normalized.Trim());
+    }
+
+    private static bool IsRepositoryLocalTarget(string root, string targetPath)
+    {
+        var relativeToRoot = Path.GetRelativePath(root, targetPath);
+        return !relativeToRoot.Equals("..", StringComparison.Ordinal)
+            && !relativeToRoot.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+            && !Path.IsPathRooted(relativeToRoot);
     }
 
     private static IEnumerable<string> EnumerateLinkCheckedMarkdownFiles(string root)
