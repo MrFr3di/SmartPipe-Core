@@ -16,7 +16,7 @@ dotnet package add SmartPipe.Extensions.Json --version 2.2.0
 ```
 
 For integrations, prefer the narrow package that owns the capability. This table is
-kept aligned with the active package graph so a newly activated leaf cannot disappear
+kept aligned with the release package graph so a newly activated leaf cannot disappear
 from the primary package-selection path:
 
 | Capability | Package |
