@@ -47,6 +47,19 @@ internal sealed class DocumentationVerificationService
         @"!?\[[^\]]+\]\((?!https?://|mailto:|#)([^)]+)\)",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+    private static readonly Regex SelfRepositoryBlobMainTargetRegex = new(
+        @"https://github\.com/MrFr3di/SmartPipe-Core/blob/main/(?<path>[^)\\s#?]+)(?:[?#][^)\\s]+)?",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly string[] LinkCheckedRootDocuments =
+    [
+        "README.md",
+        "CONTRIBUTING.md",
+        "SECURITY.md",
+        "SUPPORT.md",
+        "VERSIONING.md",
+    ];
+
     private static readonly string[] RequiredDocumentationIndexLinks =
     [
         "reference/api-overview.md",
@@ -99,6 +112,8 @@ internal sealed class DocumentationVerificationService
                     "legacy documentation layout is forbidden; use docs/maintainers or docs/reference"));
             }
         }
+
+        await ValidateSelfRepositoryLinksAsync(root, violations, cancellationToken).ConfigureAwait(false);
 
         foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
         {
@@ -201,6 +216,71 @@ internal sealed class DocumentationVerificationService
         }
 
         return new(violations);
+    }
+
+    private static async Task ValidateSelfRepositoryLinksAsync(
+        string root,
+        List<DocumentationViolation> violations,
+        CancellationToken cancellationToken)
+    {
+        foreach (var fullPath in EnumerateLinkCheckedMarkdownFiles(root))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var content = await File.ReadAllTextAsync(fullPath, cancellationToken).ConfigureAwait(false);
+            var sourcePath = Path.GetRelativePath(root, fullPath).Replace('\\', '/');
+
+            foreach (Match match in SelfRepositoryBlobMainTargetRegex.Matches(content))
+            {
+                var target = Uri.UnescapeDataString(match.Groups["path"].Value);
+                var targetPath = Resolve(root, target);
+                var relativeToRoot = Path.GetRelativePath(root, targetPath);
+
+                if (relativeToRoot.Equals("..", StringComparison.Ordinal)
+                    || relativeToRoot.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                    || !File.Exists(targetPath))
+                {
+                    violations.Add(new(
+                        "SPDOC012",
+                        sourcePath,
+                        $"self-repository blob/main link must resolve in the current checkout: {target}"));
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<string> EnumerateLinkCheckedMarkdownFiles(string root)
+    {
+        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var relativePath in LinkCheckedRootDocuments)
+        {
+            var fullPath = Resolve(root, relativePath);
+            if (File.Exists(fullPath))
+            {
+                files.Add(fullPath);
+            }
+        }
+
+        var docsRoot = Resolve(root, "docs");
+        if (Directory.Exists(docsRoot))
+        {
+            foreach (var fullPath in Directory.EnumerateFiles(docsRoot, "*.md", SearchOption.AllDirectories))
+            {
+                files.Add(fullPath);
+            }
+        }
+
+        var sourceRoot = Resolve(root, "src");
+        if (Directory.Exists(sourceRoot))
+        {
+            foreach (var fullPath in Directory.EnumerateFiles(sourceRoot, "README.md", SearchOption.AllDirectories))
+            {
+                files.Add(fullPath);
+            }
+        }
+
+        return files.OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
     }
 
     internal static string BuildPackageReferenceRow(PackageNode package)
