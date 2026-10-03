@@ -80,6 +80,73 @@ public sealed class DocumentationVerificationServiceTests
     }
 
     [Fact]
+    public async Task VerifyAsync_AcceptsAbsoluteAndAnchorPackageReadmeTargets()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "src/SmartPipe.Extensions.Json/README.md",
+            "# SmartPipe.Extensions.Json\n\n" +
+            "```bash\ndotnet package add SmartPipe.Extensions.Json\n```\n\n" +
+            "[HTTPS](https://example.com/docs)\n" +
+            "[HTTP](HTTP://example.com/docs)\n" +
+            "[Mail](MAILTO:maintainer@example.com)\n" +
+            "[Anchor](#usage)\n" +
+            "![Image](https://example.com/logo.png)\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_RejectsRelativePackageReadmeImage()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "src/SmartPipe.Extensions.Json/README.md",
+            "# SmartPipe.Extensions.Json\n\n" +
+            "```bash\ndotnet package add SmartPipe.Extensions.Json\n```\n\n" +
+            "![Image](../../docs/logo.png)\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC011"
+            && violation.Path == "src/SmartPipe.Extensions.Json/README.md");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_AcceptsLargeMalformedMarkdownWithoutBacktracking()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "src/SmartPipe.Extensions.Json/README.md",
+            "# SmartPipe.Extensions.Json\n\n" +
+            "```bash\ndotnet package add SmartPipe.Extensions.Json\n```\n\n" +
+            new string('[', 200_000));
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
     public async Task VerifyAsync_RejectsMissingSelfRepositoryBlobMainTarget()
     {
         using var repository = new RepositoryTestDirectory();
