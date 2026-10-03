@@ -393,8 +393,10 @@ data loss, and never acknowledging grows the replication slot.
 
 - .NET 10 (`net10.0`).
 - `SmartPipe.Core` 2.2.0.
-- `Npgsql` 10.0.3, the latest stable release (no Npgsql 11 exists, not even a prerelease);
-  the provider behaviour above was reconned against the released v10.0.3 sources.
+- `Npgsql` 10.0.3, the repository-pinned provider version for this release
+  candidate; the provider behaviour above was checked against the released
+  v10.0.3 sources. This pin is not a claim about future or prerelease Npgsql
+  versions.
 - `Microsoft.Extensions.Logging.Abstractions`.
 - PostgreSQL 18.6 is the primary baseline and PostgreSQL 17.11 the compatibility baseline.
   Both were verified on 2026-09-26.
