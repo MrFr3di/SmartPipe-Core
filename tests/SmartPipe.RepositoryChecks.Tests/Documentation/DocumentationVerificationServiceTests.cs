@@ -149,6 +149,153 @@ public sealed class DocumentationVerificationServiceTests
         Assert.Contains(result.Violations, violation => violation.Code == "SPDOC007");
     }
 
+
+    [Fact]
+    public async Task VerifyAsync_RejectsMissingCurrentReleaseDocument()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        File.Delete(repository.Resolve("docs/releases/2.2.0.md"));
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC014"
+            && violation.Path == "docs/releases/2.2.0.md");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_RejectsMissingCurrentReleaseChangelogHeading()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write("CHANGELOG.md", "# Changelog\\n\\n## [2.1.2] — 2026-07-15\\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC014"
+            && violation.Path == "CHANGELOG.md");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_RejectsReleasePackageTableDrift()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "docs/releases/2.2.0.md",
+            "# SmartPipe 2.2.0 release notes\\n\\n" +
+            "## Package selection\\n\\n" +
+            "| Package | Primary purpose |\\n" +
+            "|---|---|\\n" +
+            "| `SmartPipe.Core` | Runtime |\\n" +
+            "| `SmartPipe.Extensions.Json` | JSON |\\n\\n" +
+            "## Breaking changes and migration\\n\\n" +
+            "[Migration](../migration/2.2.0-integration-packages.md)\\n" +
+            "[Compatibility](../reference/compatibility/2.1.2-to-2.2.0.md)\\n\\n" +
+            "## Detailed changes\\n\\n" +
+            "[CHANGELOG](../../CHANGELOG.md)\\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC015"
+            && violation.Path == "docs/releases/2.2.0.md");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_RejectsMissingFirstReleasePackageInChangelog()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "CHANGELOG.md",
+            "# Changelog\\n\\n" +
+            "## [2.2.0] — Development\\n\\n" +
+            "`SmartPipe.Core` and `SmartPipe.Extensions.Json` changes only.\\n\\n" +
+            "## [2.1.2] — 2026-07-15\\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC016"
+            && violation.Path == "CHANGELOG.md"
+            && violation.Rule.Contains("SmartPipe.Extensions.Csv", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task VerifyAsync_RejectsMissingReleaseCrossLinks()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "docs/releases/2.2.0.md",
+            "# SmartPipe 2.2.0 release notes\\n\\n" +
+            "## Package selection\\n\\n" +
+            "| Package | Primary purpose |\\n" +
+            "|---|---|\\n" +
+            "| `SmartPipe.Core` | Runtime |\\n" +
+            "| `SmartPipe.Extensions.Json` | JSON |\\n" +
+            "| `SmartPipe.Extensions.Csv` | CSV |\\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC017"
+            && violation.Path == "docs/releases/2.2.0.md");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_RejectsBrokenChangelogTarget()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "CHANGELOG.md",
+            "# Changelog\\n\\n" +
+            "## [2.2.0] — Development\\n\\n" +
+            "`SmartPipe.Extensions.Csv` first release. [Missing](docs/missing.md)\\n\\n" +
+            "## [2.1.2] — 2026-07-15\\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC013"
+            && violation.Path == "CHANGELOG.md"
+            && violation.Rule.Contains("docs/missing.md", StringComparison.Ordinal));
+    }
+
     private static PackageGraphDocument Graph() => new()
     {
         SchemaVersion = 1,
@@ -161,14 +308,24 @@ public sealed class DocumentationVerificationServiceTests
                 PackageLifecycle.Active,
                 1,
                 PackageAotContract.Full,
-                []),
+                [],
+                "2.1.2"),
             Package(
                 "SmartPipe.Extensions.Json",
                 "src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj",
                 PackageLifecycle.Active,
                 2,
                 PackageAotContract.FullJsonTypeInfo,
-                ["SmartPipe.Core"]),
+                ["SmartPipe.Core"],
+                "2.1.2"),
+            Package(
+                "SmartPipe.Extensions.Csv",
+                "src/SmartPipe.Extensions.Csv/SmartPipe.Extensions.Csv.csproj",
+                PackageLifecycle.Active,
+                3,
+                PackageAotContract.VerifiedNoBlanket,
+                ["SmartPipe.Core"],
+                null),
         ],
     };
 
@@ -178,7 +335,8 @@ public sealed class DocumentationVerificationServiceTests
         PackageLifecycle lifecycle,
         int publishOrder,
         PackageAotContract aotContract,
-        IReadOnlyList<string> dependencies) => new()
+        IReadOnlyList<string> dependencies,
+        string? baselineVersion) => new()
         {
             Id = id,
             ProjectPath = projectPath,
@@ -186,7 +344,7 @@ public sealed class DocumentationVerificationServiceTests
             ActivationEpic = "test",
             ScaffoldKind = null,
             PublishOrder = publishOrder,
-            BaselineVersion = null,
+            BaselineVersion = baselineVersion,
             AotContract = aotContract,
             CurrentDependencies = Policy(dependencies),
             ReleaseDependencies = Policy(dependencies),
@@ -229,6 +387,27 @@ public sealed class DocumentationVerificationServiceTests
             "[ADR](adr/README.md)\n");
         repository.Write("docs/architecture.md", "# Architecture\n");
         repository.Write("docs/runtime-contracts.md", "# Runtime contracts\n");
+        repository.Write(
+            "CHANGELOG.md",
+            "# Changelog\\n\\n" +
+            "## [2.2.0] — Development\\n\\n" +
+            "First release: `SmartPipe.Extensions.Csv`.\\n\\n" +
+            "## [2.1.2] — 2026-07-15\\n");
+        repository.Write(
+            "docs/releases/2.2.0.md",
+            "# SmartPipe 2.2.0 release notes\\n\\n" +
+            "## Package selection\\n\\n" +
+            "| Package | Primary purpose |\\n" +
+            "|---|---|\\n" +
+            "| `SmartPipe.Core` | Runtime |\\n" +
+            "| `SmartPipe.Extensions.Json` | JSON |\\n" +
+            "| `SmartPipe.Extensions.Csv` | CSV |\\n\\n" +
+            "## Breaking changes and migration\\n\\n" +
+            "[Migration](../migration/2.2.0-integration-packages.md)\\n" +
+            "[Compatibility](../reference/compatibility/2.1.2-to-2.2.0.md)\\n\\n" +
+            "## Detailed changes\\n\\n" +
+            "[CHANGELOG](../../CHANGELOG.md)\\n");
+        repository.Write("docs/migration/2.2.0-integration-packages.md", "# Migration\\n");
         repository.Write("docs/reference/api-overview.md", "# API overview\n");
         repository.Write("docs/reference/compatibility/README.md", "# Compatibility reference\n");
         repository.Write("docs/reference/compatibility/2.1.2-to-2.2.0.md", "# Compatibility matrix\n");
@@ -242,9 +421,13 @@ public sealed class DocumentationVerificationServiceTests
             "src/SmartPipe.Extensions.Json/README.md",
             "# SmartPipe.Extensions.Json\n\n```bash\ndotnet package add SmartPipe.Extensions.Json\n```\n");
         repository.Write(
+            "src/SmartPipe.Extensions.Csv/README.md",
+            "# SmartPipe.Extensions.Csv\n\n```bash\ndotnet package add SmartPipe.Extensions.Csv\n```\n");
+        repository.Write(
             "docs/reference/packages.md",
             "# Package reference\n\n" +
             DocumentationVerificationService.BuildPackageReferenceRow(graph.Packages[0]) + "\n" +
-            DocumentationVerificationService.BuildPackageReferenceRow(graph.Packages[1]) + "\n");
+            DocumentationVerificationService.BuildPackageReferenceRow(graph.Packages[1]) + "\n" +
+            DocumentationVerificationService.BuildPackageReferenceRow(graph.Packages[2]) + "\n");
     }
 }
