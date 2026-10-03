@@ -7,7 +7,7 @@ Ordinary SQL stays with `SmartPipe.Extensions.Dapper`; ORM and `IQueryable` beha
 with `SmartPipe.Extensions.EntityFrameworkCore`.
 
 ```bash
-dotnet add package SmartPipe.Extensions.PostgreSql
+dotnet package add SmartPipe.Extensions.PostgreSql --version 2.2.0
 ```
 
 ```text
@@ -30,7 +30,7 @@ timestamp, so none is invented: local receipt time belongs to pipeline telemetry
 payload is opaque and is never parsed, validated or logged by the package.
 
 The full package walk-through, including the `NpgsqlSlimDataSourceBuilder` setup for
-NativeAOT, lives in the [package README](../src/SmartPipe.Extensions.PostgreSql/README.md).
+NativeAOT, lives in the [package README](https://github.com/MrFr3di/SmartPipe-Core/blob/main/src/SmartPipe.Extensions.PostgreSql/README.md).
 
 Binary COPY sources, binary COPY batch sinks and `LISTEN` notification sources require an
 application-owned data source with `Multiplexing=false` (the Npgsql default). All three factories reject
@@ -404,4 +404,4 @@ data loss, and never acknowledging grows the replication slot.
 - [SmartPipe 2.2 integration package migration](migration/2.2.0-integration-packages.md)
 - [Package ownership](package-ownership.md)
 - [AOT and trimming compatibility](aot-compatibility.md)
-- [Extension architecture plan](plans/2.2.0-extension-architecture.md)
+- [Architecture](architecture.md)

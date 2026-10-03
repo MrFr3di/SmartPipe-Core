@@ -6,7 +6,7 @@ for SmartPipe.Core.
 ## Installation
 
 ```bash
-dotnet add package SmartPipe.Extensions.Json --version 2.1.2
+dotnet package add SmartPipe.Extensions.Json
 ```
 
 ## Package graph
@@ -95,8 +95,8 @@ result.
 
 ## Migration from SmartPipe.Extensions
 
-The public namespaces remain unchanged. `SmartPipe.Extensions` 2.1.2 retains
-type forwarders and a transitive dependency on this package so existing 2.x
+The public namespaces remain unchanged. `SmartPipe.Extensions` 2.2.0 retains
+type forwarders and a transitive dependency on this package so retained 2.x
 source and binary consumers continue to resolve the moved types. New
 applications should reference `SmartPipe.Extensions.Json` directly.
 

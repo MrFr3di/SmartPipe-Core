@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using SmartPipe.Extensions;
+using SmartPipe.Consumers.ExtensionsMeta;
 using SmartPipe.Extensions.Sinks;
 using Mapster;
 using SmartPipe.Core;
@@ -7,6 +8,13 @@ using SmartPipe.Extensions.Transforms;
 
 _ = typeof(PipelineBuilder);
 _ = typeof(JsonTransform<string, string>);
+FacadeChecks.Verify();
+
+// Preserve untyped null, typed default and named argument call sites.
+ExpectNullMetadata(() => new JsonFileSink<string>(path: "unused.json", batchTypeInfo: null!));
+ExpectNullMetadata(() => new JsonFileSink<string>("unused.json", default(System.Text.Json.Serialization.Metadata.JsonTypeInfo<List<string>>)!));
+_ = new SmartPipe.Extensions.Selectors.CsvFileSource<int>(path: "unused.csv", culture: null);
+await using var csvSink = new CsvFileSink<int>(path: "unused.csv", culture: default);
 
 var composite = new CompositeTransform<int>(new FilterTransform<int>(static value => value > 0));
 await composite.InitializeAsync();
@@ -44,6 +52,13 @@ if (!configuredResult.IsSuccess || configuredResult.Value?.DisplayName != "Bob")
 }
 
 Console.WriteLine("CONSUMER_OK extensions-meta");
+
+static void ExpectNullMetadata(Action call)
+{
+    try { call(); }
+    catch (ArgumentNullException error) when (error.ParamName == "batchTypeInfo") { return; }
+    throw new InvalidOperationException("Legacy JSON null/default metadata behavior changed.");
+}
 
 internal sealed class DefaultSource
 {

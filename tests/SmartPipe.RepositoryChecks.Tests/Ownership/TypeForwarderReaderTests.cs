@@ -6,6 +6,16 @@ namespace SmartPipe.RepositoryChecks.Tests.Ownership;
 public sealed class TypeForwarderReaderTests
 {
     [Fact]
+    public async Task MissingRequiredPackageIsAnExplicitFailure()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var error = await Assert.ThrowsAsync<OwnershipException>(() => new TypeForwarderReader().ReadPackagesAsync(
+            fixture.Path, ["SmartPipe.Extensions.Json"], "2.2.0", TestContext.Current.CancellationToken));
+        Assert.Equal("SPOWN030", error.Code);
+        Assert.Contains("SmartPipe.Extensions.Json.2.2.0.nupkg", error.Message);
+    }
+
+    [Fact]
     public async Task BaselineReaderPreservesImplementationsForwardersAndDuplicateImplementations()
     {
         using var fixture = new RepositoryTestDirectory();

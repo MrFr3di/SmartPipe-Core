@@ -205,6 +205,11 @@
         "resolved": "10.0.11",
         "contentHash": "SXcz+kF+4Oo9b1+55zntpJFYfwb1jw66ioxptyNOOTDc8g2FHnBFWjZpsWfCvZIhzr0x+4e2trVTs4OKwQfBtw=="
       },
+      "OpenTelemetry.Api": {
+        "type": "Transitive",
+        "resolved": "1.17.0",
+        "contentHash": "mSBxzomZgHIJu9CyVNqyDu/n2JHEtqVgfcCD1Br0cV5iLYogjZOMqhlVLt99PEp+0KGBNUR3GXgeOdN2GR3F9g=="
+      },
       "smartpipe.core": {
         "type": "Project",
         "dependencies": {
@@ -255,6 +260,16 @@
           "SmartPipe.Core": "[2.2.0, )"
         }
       },
+      "smartpipe.extensions.healthchecks": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.11, )",
+          "Microsoft.Extensions.Diagnostics.HealthChecks": "[10.0.11, )",
+          "Microsoft.Extensions.Options": "[10.0.11, )",
+          "SmartPipe.Core": "[2.2.0, )",
+          "SmartPipe.Extensions.DependencyInjection": "[2.2.0, )"
+        }
+      },
       "smartpipe.extensions.hosting": {
         "type": "Project",
         "dependencies": {
@@ -301,6 +316,13 @@
           "SmartPipe.Core": "[2.2.0, )"
         }
       },
+      "smartpipe.extensions.opentelemetry": {
+        "type": "Project",
+        "dependencies": {
+          "OpenTelemetry.Api.ProviderBuilderExtensions": "[1.17.0, )",
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
       "smartpipe.extensions.polly": {
         "type": "Project",
         "dependencies": {
@@ -341,6 +363,16 @@
           "Microsoft.Extensions.Logging": "10.0.11",
           "Microsoft.Extensions.Logging.Abstractions": "10.0.11",
           "Microsoft.Extensions.Options": "10.0.11"
+        }
+      },
+      "OpenTelemetry.Api.ProviderBuilderExtensions": {
+        "type": "CentralTransitive",
+        "requested": "[1.17.0, )",
+        "resolved": "1.17.0",
+        "contentHash": "Xgc3Qf9B9TFMFpx6exTdGqMWuYIT2miNzkdMPutVvT9YuMFaEovXWke1Gb6z8NxYaQbbGF38vYLuSg1JCeui5Q==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.0",
+          "OpenTelemetry.Api": "1.17.0"
         }
       },
       "Polly.Core": {

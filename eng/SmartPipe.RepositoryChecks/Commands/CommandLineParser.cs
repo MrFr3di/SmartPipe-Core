@@ -78,6 +78,7 @@ internal sealed record AgentEvidenceOptions(
 internal sealed record VerifyPackageProjectsOptions(
     string RepositoryRoot) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record VerifyLockFilesOptions(string RepositoryRoot) : RepositoryCheckCommand(RepositoryRoot);
+internal sealed record VerifyDocumentationOptions(string RepositoryRoot) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record VerifyNuGetAuditOptions(string RepositoryRoot, string ReportPath) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record VerifyPackageGraphOptions(string RepositoryRoot, string GraphPath, PackageGraphMode Mode, string? PackagesDirectory, bool SourceOnly) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record CanonicalizeJsonOptions(string RepositoryRoot, string InputPath, bool Check) : RepositoryCheckCommand(RepositoryRoot);
@@ -153,6 +154,7 @@ internal static class CommandLineParser
             "verify-central-packages" => ParseVerifyCentralPackages(args.AsSpan(1)),
             "verify-package-projects" => ParseVerifyPackageProjects(args.AsSpan(1)),
             "verify-lock-files" => ParseVerifyLockFiles(args.AsSpan(1)),
+            "verify-docs" => ParseVerifyDocumentation(args.AsSpan(1)),
             "verify-nuget-audit" => ParseVerifyNuGetAudit(args.AsSpan(1)),
             "verify-package-graph" => ParseVerifyPackageGraph(args.AsSpan(1)),
             "canonicalize-json" => ParseCanonicalizeJson(args.AsSpan(1)),
@@ -407,6 +409,18 @@ internal static class CommandLineParser
         if (string.IsNullOrWhiteSpace(root))
             throw new CommandLineException("Missing required option '--repository-root'.");
         return new VerifyLockFilesOptions(RequireRoot(new Dictionary<string, string?>(StringComparer.Ordinal) { ["--repo-root"] = root }));
+    }
+
+    private static VerifyDocumentationOptions ParseVerifyDocumentation(ReadOnlySpan<string> args)
+    {
+        var values = ParseOptions(args, new HashSet<string>(["--repository-root", "--repo-root"], StringComparer.Ordinal));
+        var root = values.TryGetValue("--repository-root", out var repositoryRoot)
+            ? repositoryRoot
+            : values.GetValueOrDefault("--repo-root");
+        if (string.IsNullOrWhiteSpace(root))
+            throw new CommandLineException("Missing required option '--repository-root'.");
+        return new VerifyDocumentationOptions(
+            RequireRoot(new Dictionary<string, string?>(StringComparer.Ordinal) { ["--repo-root"] = root }));
     }
 
     private static VerifyNuGetAuditOptions ParseVerifyNuGetAudit(ReadOnlySpan<string> args)

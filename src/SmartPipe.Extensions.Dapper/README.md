@@ -5,7 +5,7 @@ Explicit-SQL Dapper sources and sinks for SmartPipe.Core, backed by Dapper.
 ## Installation
 
 ```bash
-dotnet add package SmartPipe.Extensions.Dapper --version 2.2.0
+dotnet package add SmartPipe.Extensions.Dapper
 ```
 
 ## Explicit-SQL profile

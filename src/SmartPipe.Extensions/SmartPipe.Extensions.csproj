@@ -5,8 +5,9 @@
   <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
   <PropertyGroup>
     <PackageId>SmartPipe.Extensions</PackageId>
-    <Description>Integrations for SmartPipe.Core including HTTP, EF Core, Dapper, CSV, Mapster, Polly resilience, hosting, and health checks. The 2.2.0 line retains compatibility forwarding for JSON integrations moved to SmartPipe.Extensions.Json.</Description>
+    <Description>Compatibility facade and convenience bundle for SmartPipe.Core and its runtime integration packages. New applications should reference specific SmartPipe.Extensions.* packages. Retained 2.1.2 APIs use type forwarding or the frozen legacy DI/Hosting/Health cluster; removed HTTP/Polly APIs require migration and recompilation.</Description>
     <PackageTags>etl;pipeline;polly;efcore;dapper;mapster;csvhelper;json;compression</PackageTags>
+    <PackageReleaseNotes>2.2.0 completes the runtime integration bundle with HealthChecks and OpenTelemetry, preserves 23 forwarded and 13 legacy facade identities, and removes five HTTP identities and PollyResilienceTransform under ADR-0004. Removed API callers must migrate to the HTTP/HTTP.Json or Polly leaves and recompile. PostgreSql and Testing remain separate packages.</PackageReleaseNotes>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
     <PackageValidationBaselineVersion>2.1.2</PackageValidationBaselineVersion>
   </PropertyGroup>
@@ -25,6 +26,8 @@
     <ProjectReference Include="..\SmartPipe.Extensions.DataAnnotations\SmartPipe.Extensions.DataAnnotations.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.DependencyInjection\SmartPipe.Extensions.DependencyInjection.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Hosting\SmartPipe.Extensions.Hosting.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.HealthChecks\SmartPipe.Extensions.HealthChecks.csproj" />
+    <ProjectReference Include="..\SmartPipe.Extensions.OpenTelemetry\SmartPipe.Extensions.OpenTelemetry.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Json\SmartPipe.Extensions.Json.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Csv\SmartPipe.Extensions.Csv.csproj" />
     <ProjectReference Include="..\SmartPipe.Extensions.Dapper\SmartPipe.Extensions.Dapper.csproj" />

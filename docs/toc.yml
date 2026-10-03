@@ -1,0 +1,85 @@
+items:
+- name: Home
+  href: index.md
+- name: Getting started
+  href: getting-started.md
+- name: Guides
+  items:
+  - name: Bounded output
+    href: recipes/bounded-output.md
+  - name: Graceful shutdown
+    href: recipes/graceful-shutdown.md
+  - name: Retry, timeout, and dead-letter
+    href: recipes/retry-timeout-deadletter.md
+  - name: Testing pipelines
+    href: recipes/testing-pipelines.md
+- name: Integrations
+  items:
+  - name: Dependency injection
+    href: dependency-injection.md
+  - name: Hosting
+    href: hosting.md
+  - name: Health checks
+    href: health-checks.md
+  - name: OpenTelemetry
+    href: opentelemetry.md
+  - name: PostgreSQL
+    href: postgresql.md
+  - name: Channels
+    href: channels.md
+  - name: Transforms
+    href: transforms.md
+  - name: Data annotations
+    href: data-annotations.md
+  - name: Logging
+    href: logging.md
+- name: Concepts
+  items:
+  - name: Architecture
+    href: architecture.md
+  - name: Runtime contracts
+    href: runtime-contracts.md
+  - name: Resilience
+    href: resilience.md
+  - name: Observability
+    href: observability.md
+  - name: Observers
+    href: observers.md
+- name: Reference
+  items:
+  - name: Package reference
+    href: reference/packages.md
+  - name: API overview
+    href: reference/api-overview.md
+  - name: Generated API
+    href: api/
+  - name: Configuration
+    href: configuration.md
+  - name: AOT and trimming
+    href: aot-compatibility.md
+  - name: Package ownership
+    href: package-ownership.md
+  - name: Compatibility
+    href: reference/compatibility/README.md
+- name: Migration
+  items:
+  - name: 2.1.2 to 2.2.0
+    href: migration/2.2.0-integration-packages.md
+  - name: Core definition model
+    href: migration/2.2.0-core-definition-model.md
+  - name: CSV package split
+    href: migration/2.2.0-csv-package-split.md
+  - name: Health checks
+    href: migration/2.2.0-health-checks.md
+  - name: Hosting
+    href: migration/2.2.0-hosting.md
+  - name: Legacy to typed
+    href: migration/legacy-to-typed.md
+- name: Releases
+  items:
+  - name: SmartPipe 2.2.0
+    href: releases/2.2.0.md
+- name: Architecture decisions
+  href: adr/README.md
+- name: Maintainers
+  href: https://github.com/MrFr3di/SmartPipe-Core/tree/main/docs/maintainers

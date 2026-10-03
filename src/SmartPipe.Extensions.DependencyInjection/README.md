@@ -3,6 +3,12 @@
 Canonical keyed dependency-injection integration for SmartPipe typed pipeline
 definitions.
 
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.DependencyInjection
+```
+
 ```csharp
 ISmartPipeRegistrationBuilder<Order, OrderDto> registration = services
     .AddSmartPipe()

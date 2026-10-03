@@ -1,6 +1,8 @@
 # Changelog
 
-## 2.2.0
+## [2.2.0] — Development
+
+User-facing overview: [2.2.0 release notes](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/releases/2.2.0.md). Upgrade details: [2.1.2 → 2.2.0 integration migration](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md).
 
 - Extracted Channels, Transforms, Logging, and DataAnnotations implementations
   into narrow packages while preserving broad-facade type identities through
@@ -70,8 +72,6 @@
   stage, and the strict CSV sink encodes records directly into a pooled buffer
   with no per-record allocation. Measurements are in
   `benchmarks/SmartPipe.Benchmarks/ReleaseHardening-results.md`.
-
-## [2.2.0] — Development
 
 ### OpenTelemetry
 
