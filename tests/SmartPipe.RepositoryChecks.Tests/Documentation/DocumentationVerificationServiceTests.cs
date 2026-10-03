@@ -189,6 +189,98 @@ public sealed class DocumentationVerificationServiceTests
     }
 
     [Fact]
+    public async Task VerifyAsync_RejectsInvalidCurrentReleaseCalendarDate()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "CHANGELOG.md",
+            "# Changelog\n\n" +
+            "## [2.2.0] — 2026-99-99\n\n" +
+            "First release: `SmartPipe.Extensions.Csv`.\n\n" +
+            "## [2.1.2] — 2026-07-15\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC014"
+            && violation.Path == "CHANGELOG.md");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_RejectsUnknownReleasePackage()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "docs/releases/2.2.0.md",
+            "# SmartPipe 2.2.0 release notes\n\n" +
+            "## Package selection\n\n" +
+            "| Package | Primary purpose |\n" +
+            "|---|---|\n" +
+            "| `SmartPipe.Core` | Runtime |\n" +
+            "| `SmartPipe.Extensions.Json` | JSON |\n" +
+            "| `SmartPipe.Extensions.Csv` | CSV |\n" +
+            "| `SmartPipe.Extensions.Unknown` | Unknown |\n\n" +
+            "## Breaking changes and migration\n\n" +
+            "[Migration](../migration/2.2.0-integration-packages.md)\n" +
+            "[Compatibility](../reference/compatibility/2.1.2-to-2.2.0.md)\n\n" +
+            "## Detailed changes\n\n" +
+            "[CHANGELOG](../../CHANGELOG.md)\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC015"
+            && violation.Path == "docs/releases/2.2.0.md"
+            && violation.Rule.Contains("SmartPipe.Extensions.Unknown", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task VerifyAsync_RejectsDuplicateReleasePackage()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "docs/releases/2.2.0.md",
+            "# SmartPipe 2.2.0 release notes\n\n" +
+            "## Package selection\n\n" +
+            "| Package | Primary purpose |\n" +
+            "|---|---|\n" +
+            "| `SmartPipe.Core` | Runtime |\n" +
+            "| `SmartPipe.Extensions.Json` | JSON |\n" +
+            "| `SmartPipe.Extensions.Csv` | CSV |\n" +
+            "| `SmartPipe.Extensions.Csv` | Duplicate |\n\n" +
+            "## Breaking changes and migration\n\n" +
+            "[Migration](../migration/2.2.0-integration-packages.md)\n" +
+            "[Compatibility](../reference/compatibility/2.1.2-to-2.2.0.md)\n\n" +
+            "## Detailed changes\n\n" +
+            "[CHANGELOG](../../CHANGELOG.md)\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC015"
+            && violation.Path == "docs/releases/2.2.0.md"
+            && violation.Rule.Contains("SmartPipe.Extensions.Csv", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task VerifyAsync_RejectsReleasePackageTableDrift()
     {
         using var repository = new RepositoryTestDirectory();
