@@ -4,6 +4,8 @@ SmartPipe.Core has one runtime model: typed envelopes.
 
 ## Choose the integration package
 
+Install `SmartPipe.Core` for the runtime:
+
 ```bash
 dotnet package add SmartPipe.Core --version 2.2.0
 ```
