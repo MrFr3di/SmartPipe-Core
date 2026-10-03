@@ -128,6 +128,7 @@ LYCHEE_URL = (
     "lychee-v0.21.0/lychee-x86_64-windows.exe"
 )
 LYCHEE_SHA256 = "a1784c32c63ba46dccef0698ddf6be82a83a7d0455b0fd772423d601e3c70ab4"
+SELF_REPOSITORY_MAIN_URL_PATTERN = r"^https://github\.com/MrFr3di/SmartPipe-Core/blob/main/"
 NATIVE_FAIL_FAST_GUARD = "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
 REPOSITORY_CHECKS_PROFILE_COMMAND = (
     "dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
@@ -460,6 +461,9 @@ def assert_lychee_contract(reusable_steps: list[dict]) -> None:
     for option in ("--max-retries 5", "--retry-wait-time 2", "--max-concurrency 8"):
         require(option in linux_args and option in run,
                 f"Docs link checks must retain bounded transient hardening: {option}.")
+    self_link_exclusion = f"--exclude '{SELF_REPOSITORY_MAIN_URL_PATTERN}'"
+    require(self_link_exclusion in linux_args and self_link_exclusion in run,
+            "Docs link checks must leave self-repository blob/main targets to branch-local verify-docs validation.")
     for root_document in ("CONTRIBUTING.md", "SECURITY.md", "SUPPORT.md", "VERSIONING.md"):
         require(root_document in linux_args and root_document in run,
                 f"Docs link checks must include root policy document {root_document}.")
@@ -2151,6 +2155,15 @@ def _remove_lychee_transient_hardening(documents: dict[str, dict]) -> None:
     windows["run"] = str(windows.get("run", "")).replace("--max-retries 5 ", "")
 
 
+def _remove_self_repository_link_exclusion(documents: dict[str, dict]) -> None:
+    steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+    needle = f"--exclude '{SELF_REPOSITORY_MAIN_URL_PATTERN}' "
+    linux = named_step(steps, "Docs link check")
+    linux["with"]["args"] = str(linux["with"].get("args", "")).replace(needle, "")
+    windows = named_step(steps, "Docs link check (Windows)")
+    windows["run"] = str(windows.get("run", "")).replace(needle, "")
+
+
 def _remove_reusable_pr_guard(documents: dict[str, dict]) -> None:
     documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"].pop("if", None)
 
@@ -2657,6 +2670,11 @@ def main() -> int:
         documents,
         _remove_lychee_transient_hardening,
         "bounded transient hardening",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_self_repository_link_exclusion,
+        "branch-local verify-docs validation",
     )
     assert_mutation_rejected(
         documents,
