@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using SmartPipe.RepositoryChecks.PackageGraph;
 
 namespace SmartPipe.RepositoryChecks.Documentation;
@@ -37,6 +38,10 @@ internal sealed class DocumentationVerificationService
         "docs/implementation",
         "docs/governance",
     ];
+
+    private static readonly Regex RelativeMarkdownTargetRegex = new(
+        @"!?\[[^\]]+\]\((?!https?://|mailto:|#)([^)]+)\)",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly string[] RequiredDocumentationIndexLinks =
     [
@@ -120,6 +125,22 @@ internal sealed class DocumentationVerificationService
             {
                 violations.Add(new("SPDOC005", readmePath, "use the .NET 10 noun-first 'dotnet package add' form"));
             }
+
+            if (content.Contains($"{installCommand} --version ", StringComparison.Ordinal))
+            {
+                violations.Add(new(
+                    "SPDOC010",
+                    readmePath,
+                    "package README install commands must stay version-agnostic; release-specific versions belong in release/migration documentation"));
+            }
+
+            if (RelativeMarkdownTargetRegex.IsMatch(content))
+            {
+                violations.Add(new(
+                    "SPDOC011",
+                    readmePath,
+                    "package README links/images must use absolute URLs or in-document anchors so NuGet.org rendering is independent of repository-relative paths"));
+            }
         }
 
         var rootReadmePath = Resolve(root, "README.md");
@@ -128,7 +149,7 @@ internal sealed class DocumentationVerificationService
             var rootReadme = await File.ReadAllTextAsync(rootReadmePath, cancellationToken).ConfigureAwait(false);
             foreach (var target in new[] { "docs/index.md", "SUPPORT.md", "VERSIONING.md", "SECURITY.md" })
             {
-                if (!rootReadme.Contains($"({target})", StringComparison.Ordinal))
+                if (!rootReadme.Contains(target, StringComparison.Ordinal))
                 {
                     violations.Add(new("SPDOC006", "README.md", $"root README must link to {target}"));
                 }

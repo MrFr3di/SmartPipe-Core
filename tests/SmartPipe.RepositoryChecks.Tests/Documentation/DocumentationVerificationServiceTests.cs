@@ -58,6 +58,28 @@ public sealed class DocumentationVerificationServiceTests
     }
 
     [Fact]
+    public async Task VerifyAsync_RejectsVersionPinnedAndRelativePackageReadmeTargets()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "src/SmartPipe.Extensions.Json/README.md",
+            "# SmartPipe.Extensions.Json\n\n" +
+            "dotnet package add SmartPipe.Extensions.Json --version 2.2.0\n\n" +
+            "[Migration](../../docs/migration/2.2.0-integration-packages.md)\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation => violation.Code == "SPDOC010");
+        Assert.Contains(result.Violations, violation => violation.Code == "SPDOC011");
+    }
+
+    [Fact]
     public async Task VerifyAsync_ReportsPackageAndReferenceDrift()
     {
         using var repository = new RepositoryTestDirectory();
@@ -140,7 +162,10 @@ public sealed class DocumentationVerificationServiceTests
         repository.Write(
             "README.md",
             "# SmartPipe.Core\n\n```bash\ndotnet package add SmartPipe.Core\n```\n\n" +
-            "[Documentation](docs/index.md) [Support](SUPPORT.md) [Versioning](VERSIONING.md) [Security](SECURITY.md)\n");
+            "[Documentation](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/index.md) " +
+            "[Support](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SUPPORT.md) " +
+            "[Versioning](https://github.com/MrFr3di/SmartPipe-Core/blob/main/VERSIONING.md) " +
+            "[Security](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SECURITY.md)\n");
         repository.Write("CONTRIBUTING.md", "# Contributing\n");
         repository.Write("SECURITY.md", "# Security\n\n[Support](SUPPORT.md)\n");
         repository.Write("SUPPORT.md", "# Support\n");

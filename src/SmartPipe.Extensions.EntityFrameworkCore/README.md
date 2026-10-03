@@ -5,7 +5,7 @@ Provider-neutral Entity Framework Core query sources for `SmartPipe.Core`.
 ## Installation
 
 ```bash
-dotnet package add SmartPipe.Extensions.EntityFrameworkCore --version 2.2.0
+dotnet package add SmartPipe.Extensions.EntityFrameworkCore
 ```
 
 ## What this package owns

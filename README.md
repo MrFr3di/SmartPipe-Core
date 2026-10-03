@@ -52,22 +52,22 @@ idempotency to the caller.
 For the runtime only:
 
 ```bash
-dotnet package add SmartPipe.Core --version 2.2.0
+dotnet package add SmartPipe.Core
 ```
 
 Add only the integration packages your application needs:
 
 ```bash
-dotnet package add SmartPipe.Extensions.Json --version 2.2.0
-dotnet package add SmartPipe.Extensions.DependencyInjection --version 2.2.0
-dotnet package add SmartPipe.Extensions.Hosting --version 2.2.0
+dotnet package add SmartPipe.Extensions.Json
+dotnet package add SmartPipe.Extensions.DependencyInjection
+dotnet package add SmartPipe.Extensions.Hosting
 ```
 
 Existing applications that intentionally want the broad 2.2 compatibility
 bundle can reference:
 
 ```bash
-dotnet package add SmartPipe.Extensions --version 2.2.0
+dotnet package add SmartPipe.Extensions
 ```
 
 New applications should prefer the narrow leaf packages.
@@ -203,7 +203,7 @@ is not guaranteed.
 | Exactly-once | Not provided |
 | Durable queue / crash replay | Not provided by Core |
 
-See [Runtime contracts](docs/runtime-contracts.md) for the full lifecycle,
+See [Runtime contracts](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/runtime-contracts.md) for the full lifecycle,
 ownership, failure-precedence, observer, and channel semantics.
 
 ## Package ecosystem
@@ -260,9 +260,9 @@ Consumers using those identities must migrate and recompile. Retained binary
 compatibility is validated separately from source compatibility; namespace
 preservation alone is not treated as binary evidence.
 
-See the [2.1.2 → 2.2.0 migration guide](docs/migration/2.2.0-integration-packages.md),
-[compatibility matrix](docs/reference/compatibility/2.1.2-to-2.2.0.md),
-and [ADR-0004](docs/adr/0004-smartpipe-2.2-breaking-migration.md).
+See the [2.1.2 → 2.2.0 migration guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md),
+[compatibility matrix](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/reference/compatibility/2.1.2-to-2.2.0.md),
+and [ADR-0004](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/adr/0004-smartpipe-2.2-breaking-migration.md).
 
 ## Lifecycle model
 
@@ -295,7 +295,7 @@ caller-owned.
 | Runtime target | `net10.0` |
 | Repository SDK | pinned .NET SDK `10.0.303` |
 | Core NativeAOT / trimming | positive package contract |
-| Integration NativeAOT / trimming | package-specific; see package table and [AOT guide](docs/aot-compatibility.md) |
+| Integration NativeAOT / trimming | package-specific; see package table and [AOT guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/aot-compatibility.md) |
 | Input model | typed async sources over bounded runtime channels |
 | DI / Hosting | optional leaf packages |
 | Persistence | application/integration responsibility; Core is not a durable queue |
@@ -332,11 +332,11 @@ incidental implementation detail.
 
 Start with:
 
-- [Architecture](docs/architecture.md)
-- [Runtime contracts](docs/runtime-contracts.md)
-- [2.2 architecture plan](docs/maintainers/2.2.0/plans/architecture-plan.md)
-- [2.2 branch and review policy](docs/maintainers/governance/2.2.0-branch-and-review-policy.md)
-- [Package authoring](docs/contributing/package-authoring.md)
+- [Architecture](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/architecture.md)
+- [Runtime contracts](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/runtime-contracts.md)
+- [2.2 architecture plan](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/maintainers/2.2.0/plans/architecture-plan.md)
+- [2.2 branch and review policy](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/maintainers/governance/2.2.0-branch-and-review-policy.md)
+- [Package authoring](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/contributing/package-authoring.md)
 
 ## Building from source
 
@@ -357,28 +357,28 @@ dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Test
 ```
 
 Repository/package changes also use `eng/SmartPipe.RepositoryChecks` and
-packed-package consumer validation. See [CONTRIBUTING.md](CONTRIBUTING.md).
+packed-package consumer validation. See [CONTRIBUTING.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CONTRIBUTING.md).
 
 ## Documentation
 
-Start with the [documentation index](docs/index.md).
+Start with the [documentation index](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/index.md).
 
-- [Getting started](docs/getting-started.md)
-- [Runtime contracts](docs/runtime-contracts.md)
-- [Architecture](docs/architecture.md)
-- [Package reference](docs/reference/packages.md)
-- [AOT and trimming](docs/aot-compatibility.md)
-- [2.2.0 release notes](docs/releases/2.2.0.md)
-- [2.1.2 → 2.2.0 migration](docs/migration/2.2.0-integration-packages.md)
-- [Versioning and compatibility](VERSIONING.md)
-- [Support](SUPPORT.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security](SECURITY.md)
-- [Changelog](CHANGELOG.md)
+- [Getting started](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/getting-started.md)
+- [Runtime contracts](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/runtime-contracts.md)
+- [Architecture](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/architecture.md)
+- [Package reference](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/reference/packages.md)
+- [AOT and trimming](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/aot-compatibility.md)
+- [2.2.0 release notes](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/releases/2.2.0.md)
+- [2.1.2 → 2.2.0 migration](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md)
+- [Versioning and compatibility](https://github.com/MrFr3di/SmartPipe-Core/blob/main/VERSIONING.md)
+- [Support](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SUPPORT.md)
+- [Contributing](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CONTRIBUTING.md)
+- [Security](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SECURITY.md)
+- [Changelog](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CHANGELOG.md)
 
 ## Contributing
 
-Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Issues and pull requests are welcome. See [CONTRIBUTING.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CONTRIBUTING.md).
 
 Changes to Core lifecycle, public API, package boundaries, type forwarding,
 compatibility ownership, release workflows, security boundaries, or scoped
@@ -387,9 +387,9 @@ AOT/trimming claims require proportional review and evidence.
 ## Security
 
 Do not publish exploit details in a normal issue. Follow
-[SECURITY.md](SECURITY.md) and use the repository's private security reporting
+[SECURITY.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SECURITY.md) and use the repository's private security reporting
 path when available.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/MrFr3di/SmartPipe-Core/blob/main/LICENSE)

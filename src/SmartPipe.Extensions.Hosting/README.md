@@ -6,7 +6,7 @@ registrations.
 ## Installation
 
 ```bash
-dotnet package add SmartPipe.Extensions.Hosting --version 2.2.0
+dotnet package add SmartPipe.Extensions.Hosting
 ```
 
 ```csharp

@@ -5,7 +5,7 @@ Logging sinks for SmartPipe.Core.
 ## Installation
 
 ```bash
-dotnet package add SmartPipe.Extensions.Logging --version 2.2.0
+dotnet package add SmartPipe.Extensions.Logging
 ```
 
 `LoggerSink<T>(ILogger<LoggerSink<T>>)` remains the legacy raw-payload

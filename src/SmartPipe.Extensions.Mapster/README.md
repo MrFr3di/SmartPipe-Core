@@ -5,7 +5,7 @@ Mapster object-mapping transforms for `SmartPipe.Core` with composition-time con
 ## Installation
 
 ```bash
-dotnet package add SmartPipe.Extensions.Mapster --version 2.2.0
+dotnet package add SmartPipe.Extensions.Mapster
 ```
 
 ## What this package owns

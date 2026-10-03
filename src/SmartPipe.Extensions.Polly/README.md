@@ -8,7 +8,7 @@ decides whether to retry, time out, break, hedge, or fall back.
 ## Installation
 
 ```bash
-dotnet package add SmartPipe.Extensions.Polly --version 2.2.0
+dotnet package add SmartPipe.Extensions.Polly
 ```
 
 ## Package graph
@@ -202,7 +202,7 @@ var component = PollyPipelineComponents.Decorate<OrderRequest, Order>(
 
 `SmartPipe.Extensions.Transforms.PollyResilienceTransform<T>` was removed from
 `SmartPipe.Extensions` by
-[ADR-0004](../../docs/adr/0004-smartpipe-2.2-breaking-migration.md). Its
+[ADR-0004](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/adr/0004-smartpipe-2.2-breaking-migration.md). Its
 callback returned `StageResult<T>.Success(envelope.Payload)` without running any
 inner transform, so it never protected real work. There is no wrapper or
 forwarder; update the code and recompile.

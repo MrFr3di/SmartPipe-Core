@@ -6,7 +6,7 @@ definitions.
 ## Installation
 
 ```bash
-dotnet package add SmartPipe.Extensions.DependencyInjection --version 2.2.0
+dotnet package add SmartPipe.Extensions.DependencyInjection
 ```
 
 ```csharp

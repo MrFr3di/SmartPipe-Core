@@ -5,7 +5,7 @@ Composable transforms for SmartPipe.Core without the broad extensions facade.
 ## Installation
 
 ```bash
-dotnet package add SmartPipe.Extensions.Transforms --version 2.2.0
+dotnet package add SmartPipe.Extensions.Transforms
 ```
 
 - `CompositeTransform<T>` owns and sequences child transforms with deterministic rollback and disposal.

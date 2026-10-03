@@ -5,7 +5,7 @@ Exporter-neutral OpenTelemetry registration for SmartPipe pipeline diagnostics.
 ## Installation
 
 ```bash
-dotnet package add SmartPipe.Extensions.OpenTelemetry --version 2.2.0
+dotnet package add SmartPipe.Extensions.OpenTelemetry
 ```
 
 `SmartPipe.Core` owns its telemetry emission through the .NET diagnostics APIs:

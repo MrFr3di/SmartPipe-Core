@@ -6,7 +6,7 @@ for SmartPipe.Core.
 ## Installation
 
 ```bash
-dotnet package add SmartPipe.Extensions.Json --version 2.2.0
+dotnet package add SmartPipe.Extensions.Json
 ```
 
 ## Package graph

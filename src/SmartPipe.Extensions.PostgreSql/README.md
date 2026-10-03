@@ -1,13 +1,13 @@
 # SmartPipe.Extensions.PostgreSql
 
-PostgreSQL-native pipeline components for [SmartPipe.Core](../../README.md), built on
+PostgreSQL-native pipeline components for [SmartPipe.Core](https://github.com/MrFr3di/SmartPipe-Core/blob/main/README.md), built on
 [Npgsql](https://www.npgsql.org/): binary `COPY` streaming in both directions, and `LISTEN`/`NOTIFY` as an asynchronous
 notification source.
 
 ## Installation
 
 ```bash
-dotnet package add SmartPipe.Extensions.PostgreSql --version 2.2.0
+dotnet package add SmartPipe.Extensions.PostgreSql
 ```
 
 The package is named after **PostgreSQL** because PostgreSQL capabilities are the product contract. It is implemented on
@@ -427,14 +427,14 @@ acknowledging early risks data loss while never acknowledging grows the replicat
 ## Requirements
 
 - .NET 10 (`net10.0`)
-- `SmartPipe.Core` 2.2.0
+- `SmartPipe.Core` (package dependency)
 - Npgsql 10.0.3
 - PostgreSQL 18.6 (primary CI baseline) and 17.11 (compatibility baseline)
 
 ## Documentation
 
-- [SmartPipe 2.2 integration packages](../../docs/migration/2.2.0-integration-packages.md)
-- [PostgreSQL subsystem reference](../../docs/postgresql.md)
-- [AOT compatibility](../../docs/aot-compatibility.md)
-- [Extension architecture plan](../../docs/plans/2.2.0-extension-architecture.md)
-- [Package authoring](../../docs/contributing/package-authoring.md)
+- [SmartPipe 2.2 integration packages](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md)
+- [PostgreSQL subsystem reference](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/postgresql.md)
+- [AOT compatibility](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/aot-compatibility.md)
+- [Architecture](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/architecture.md)
+- [Package authoring](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/contributing/package-authoring.md)

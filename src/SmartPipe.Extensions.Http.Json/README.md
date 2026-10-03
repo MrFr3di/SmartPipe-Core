@@ -6,7 +6,7 @@ root-array and NDJSON response readers, and JSON request content for sinks.
 ## Installation
 
 ```bash
-dotnet package add SmartPipe.Extensions.Http.Json --version 2.2.0
+dotnet package add SmartPipe.Extensions.Http.Json
 ```
 
 ## Package graph

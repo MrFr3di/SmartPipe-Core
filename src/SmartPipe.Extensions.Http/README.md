@@ -8,7 +8,7 @@ stream lifetime, body timeouts, and cancellation. JSON codecs live in
 ## Installation
 
 ```bash
-dotnet package add SmartPipe.Extensions.Http --version 2.2.0
+dotnet package add SmartPipe.Extensions.Http
 ```
 
 ## Package graph
@@ -167,7 +167,7 @@ For JSON bodies use the readers and request factories from
 `HttpSelector<T>`, `HttpClientFactorySelector<T>`, `HttpSink<T>`,
 `HttpClientFactorySink<T>`, and `HttpSelectorStreamingMode` were removed from
 `SmartPipe.Extensions` by
-[ADR-0004](../../docs/adr/0004-smartpipe-2.2-breaking-migration.md). There are no
+[ADR-0004](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/adr/0004-smartpipe-2.2-breaking-migration.md). There are no
 wrappers or forwarders, so update the code and recompile:
 
 | 2.1.2 | 2.2.0 |
