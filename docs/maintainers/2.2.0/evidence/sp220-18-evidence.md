@@ -73,7 +73,7 @@ only ad-hoc/local documentation checks.
 
 ## Final code review
 
-Fresh read-only whole-branch reviewer found no unresolved Critical/Important code finding after the implemented corrections. An Important omission of OpenTelemetry unit tests was fixed with a mandatory reusable step (local24/24 pass). The initially Minor omission of the new mutation suite from CI was treated as an acceptance gap and fixed in the wrapper with both exit codes enforced. New regressions RED3 failures → GREEN7/7 plus the prior workflow suite and actionlint; removal/optional telemetry step and removal of either Windows or PostgreSQL publication dependencies are rejected. Issue-level triage of the six Sonar findings reported below remains an independent acceptance item rather than being silently classified as nonblocking. Hosted execution and owner configuration remain separate evidence gates.
+Fresh read-only whole-branch reviewer found no unresolved Critical/Important code finding after the implemented corrections. An Important omission of OpenTelemetry unit tests was fixed with a mandatory reusable step (local24/24 pass). The initially Minor omission of the new mutation suite from CI was treated as an acceptance gap and fixed in the wrapper with both exit codes enforced. New regressions RED3 failures → GREEN7/7 plus the prior workflow suite and actionlint; removal/optional telemetry step and removal of either Windows or PostgreSQL publication dependencies are rejected. Any Sonar issue-level findings remain subject to independent acceptance review rather than being silently classified as nonblocking from the aggregate gate. Hosted execution and owner configuration remain separate evidence gates.
 
 ## Reproduction and retained evidence
 
