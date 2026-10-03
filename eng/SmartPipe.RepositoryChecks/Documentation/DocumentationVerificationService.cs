@@ -51,6 +51,18 @@ internal sealed class DocumentationVerificationService
         @"https://github\.com/MrFr3di/SmartPipe-Core/blob/main/(?<path>[^)\s#?]+)(?:[?#][^)\s]+)?",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private static readonly Regex VersionHeadingRegex = new(
+        @"^## \[[^\]]+\] — .+$",
+        RegexOptions.CultureInvariant | RegexOptions.Multiline | RegexOptions.Compiled);
+
+    private static readonly Regex LevelTwoHeadingRegex = new(
+        @"^##\s+.+$",
+        RegexOptions.CultureInvariant | RegexOptions.Multiline | RegexOptions.Compiled);
+
+    private static readonly Regex ReleasePackageRowRegex = new(
+        @"^\|\s*`(?<id>SmartPipe(?:\.[A-Za-z0-9]+)*)`\s*\|",
+        RegexOptions.CultureInvariant | RegexOptions.Multiline | RegexOptions.Compiled);
+
     private static readonly string[] LinkCheckedRootDocuments =
     [
         "README.md",
@@ -58,6 +70,7 @@ internal sealed class DocumentationVerificationService
         "SECURITY.md",
         "SUPPORT.md",
         "VERSIONING.md",
+        "CHANGELOG.md",
     ];
 
     private static readonly string[] RequiredDocumentationIndexLinks =
@@ -215,7 +228,158 @@ internal sealed class DocumentationVerificationService
             }
         }
 
+        await ValidateReleaseDocumentationAsync(root, graph, violations, cancellationToken).ConfigureAwait(false);
+
         return new(violations);
+    }
+
+    private static async Task ValidateReleaseDocumentationAsync(
+        string root,
+        PackageGraphDocument graph,
+        List<DocumentationViolation> violations,
+        CancellationToken cancellationToken)
+    {
+        var releaseVersion = graph.ReleaseVersion;
+        var changelogRelativePath = "CHANGELOG.md";
+        var releaseRelativePath = $"docs/releases/{releaseVersion}.md";
+        var changelogPath = Resolve(root, changelogRelativePath);
+        var releasePath = Resolve(root, releaseRelativePath);
+
+        string? currentReleaseSection = null;
+        if (!File.Exists(changelogPath))
+        {
+            violations.Add(new(
+                "SPDOC014",
+                changelogRelativePath,
+                $"current release changelog is missing for {releaseVersion}"));
+        }
+        else
+        {
+            var changelog = await File.ReadAllTextAsync(changelogPath, cancellationToken).ConfigureAwait(false);
+            var currentHeadingRegex = new Regex(
+                $@"^## \[{Regex.Escape(releaseVersion)}\] — (?<state>Development|\d{{4}}-\d{{2}}-\d{{2}})\s*$",
+                RegexOptions.CultureInvariant | RegexOptions.Multiline);
+            var currentHeadingCandidates = Regex.Matches(
+                changelog,
+                $@"^## \[{Regex.Escape(releaseVersion)}\] — [^\r\n]+\s*$",
+                RegexOptions.CultureInvariant | RegexOptions.Multiline);
+            var currentHeading = currentHeadingRegex.Match(changelog);
+
+            if (currentHeadingCandidates.Count != 1 || !currentHeading.Success)
+            {
+                violations.Add(new(
+                    "SPDOC014",
+                    changelogRelativePath,
+                    $"current release changelog must contain exactly one heading '## [{releaseVersion}] — Development' or an ISO yyyy-MM-dd release date"));
+            }
+            else
+            {
+                currentReleaseSection = ExtractSectionAfterHeading(changelog, currentHeading, VersionHeadingRegex);
+
+                foreach (var package in graph.Packages.Where(package =>
+                             package.Lifecycle != PackageLifecycle.Planned
+                             && package.BaselineVersion is null))
+                {
+                    if (!currentReleaseSection.Contains($"\`{package.Id}\`", StringComparison.Ordinal))
+                    {
+                        violations.Add(new(
+                            "SPDOC016",
+                            changelogRelativePath,
+                            $"first-release package must be explicitly named in the current release section: {package.Id}"));
+                    }
+                }
+            }
+        }
+
+        if (!File.Exists(releasePath))
+        {
+            violations.Add(new(
+                "SPDOC014",
+                releaseRelativePath,
+                $"current release notes are missing for {releaseVersion}"));
+            return;
+        }
+
+        var releaseNotes = await File.ReadAllTextAsync(releasePath, cancellationToken).ConfigureAwait(false);
+        var packageSection = ExtractLevelTwoSection(releaseNotes, "## Package selection");
+        if (packageSection is null)
+        {
+            violations.Add(new(
+                "SPDOC015",
+                releaseRelativePath,
+                "release notes must contain a '## Package selection' section projected from the package graph"));
+        }
+        else
+        {
+            var expected = graph.Packages
+                .Where(package => package.Lifecycle != PackageLifecycle.Planned)
+                .Select(package => package.Id)
+                .ToHashSet(StringComparer.Ordinal);
+
+            var actual = ReleasePackageRowRegex.Matches(packageSection)
+                .Select(match => match.Groups["id"].Value)
+                .ToArray();
+            var actualSet = actual.ToHashSet(StringComparer.Ordinal);
+            var missing = expected.Except(actualSet, StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+            var unknown = actualSet.Except(expected, StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+            var duplicates = actual
+                .GroupBy(id => id, StringComparer.Ordinal)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .OrderBy(id => id, StringComparer.Ordinal)
+                .ToArray();
+
+            if (missing.Length != 0 || unknown.Length != 0 || duplicates.Length != 0)
+            {
+                violations.Add(new(
+                    "SPDOC015",
+                    releaseRelativePath,
+                    $"release package table must match the non-planned package graph exactly; missing=[{string.Join(",", missing)}] unknown=[{string.Join(",", unknown)}] duplicates=[{string.Join(",", duplicates)}]"));
+            }
+        }
+
+        var requiredCrossLinks = new List<string>
+        {
+            "../../CHANGELOG.md",
+            $"../migration/{releaseVersion}-integration-packages.md",
+        };
+        var baselineVersions = graph.Packages
+            .Select(package => package.BaselineVersion)
+            .Where(version => !string.IsNullOrWhiteSpace(version))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (baselineVersions.Length == 1)
+        {
+            requiredCrossLinks.Add($"../reference/compatibility/{baselineVersions[0]}-to-{releaseVersion}.md");
+        }
+
+        foreach (var target in requiredCrossLinks)
+        {
+            if (!releaseNotes.Contains($"({target})", StringComparison.Ordinal))
+            {
+                violations.Add(new(
+                    "SPDOC017",
+                    releaseRelativePath,
+                    $"release notes must cross-link release detail/migration/compatibility target: {target}"));
+            }
+        }
+    }
+
+    private static string? ExtractLevelTwoSection(string content, string heading)
+    {
+        var headingRegex = new Regex(
+            $"^{Regex.Escape(heading)}\\s*$",
+            RegexOptions.CultureInvariant | RegexOptions.Multiline);
+        var match = headingRegex.Match(content);
+        return match.Success ? ExtractSectionAfterHeading(content, match, LevelTwoHeadingRegex) : null;
+    }
+
+    private static string ExtractSectionAfterHeading(string content, Match heading, Regex nextHeadingRegex)
+    {
+        var start = heading.Index + heading.Length;
+        var remainder = content[start..];
+        var nextHeading = nextHeadingRegex.Match(remainder);
+        return nextHeading.Success ? remainder[..nextHeading.Index] : remainder;
     }
 
     private static async Task ValidateSelfRepositoryLinksAsync(
