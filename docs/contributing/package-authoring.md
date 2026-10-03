@@ -45,10 +45,12 @@ baselines in the package project or its template. Common properties come from
 README source paths use MSBuild path semantics on every supported operating
 system and must resolve to a file inside the repository. Every active package README must
 state the package's owned capability and include a current installation example. For the
-.NET10 release line, use the noun-first CLI form `dotnet package add <PACKAGE_ID> --version
-<RELEASE_VERSION>`; keep compatibility/migration links next to packages whose public
-surface moved from the broad facade. The root README is the package README for
-`SmartPipe.Core`.
+.NET 10 release line, use the noun-first CLI form `dotnet package add <PACKAGE_ID>`.
+Package READMEs are packed into NuGet and therefore keep installation commands
+version-agnostic; release- or migration-specific documents may pin
+`--version <RELEASE_VERSION>` when reproducing a particular release. Keep
+compatibility/migration links next to packages whose public surface moved from the broad
+facade. The root README is the package README for `SmartPipe.Core`.
 
 ## Dependency and ownership rules
 

@@ -15,10 +15,16 @@ dead-letter persistence:
 dotnet package add SmartPipe.Extensions.Json --version 2.2.0
 ```
 
-For integrations, prefer the narrow package that owns the capability:
+For integrations, prefer the narrow package that owns the capability. This table is
+kept aligned with the active package graph so a newly activated leaf cannot disappear
+from the primary package-selection path:
 
 | Capability | Package |
 |---|---|
+| Channel merge primitives | `SmartPipe.Extensions.Channels` |
+| Composable transforms | `SmartPipe.Extensions.Transforms` |
+| Logging sink | `SmartPipe.Extensions.Logging` |
+| DataAnnotations validation | `SmartPipe.Extensions.DataAnnotations` |
 | JSON files/transforms/dead-letter | `SmartPipe.Extensions.Json` |
 | CSV files | `SmartPipe.Extensions.Csv` |
 | Explicit SQL / Dapper | `SmartPipe.Extensions.Dapper` |
