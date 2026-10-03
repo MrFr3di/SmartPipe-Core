@@ -189,6 +189,27 @@ public sealed class DocumentationVerificationServiceTests
     }
 
     [Fact]
+    public async Task VerifyAsync_AcceptsValidCurrentReleaseCalendarDate()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "CHANGELOG.md",
+            "# Changelog\n\n" +
+            "## [2.2.0] — 2026-10-03\n\n" +
+            "First release: `SmartPipe.Extensions.Csv`.\n\n" +
+            "## [2.1.2] — 2026-07-15\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
     public async Task VerifyAsync_RejectsInvalidCurrentReleaseCalendarDate()
     {
         using var repository = new RepositoryTestDirectory();
@@ -227,7 +248,7 @@ public sealed class DocumentationVerificationServiceTests
             "| `SmartPipe.Core` | Runtime |\n" +
             "| `SmartPipe.Extensions.Json` | JSON |\n" +
             "| `SmartPipe.Extensions.Csv` | CSV |\n" +
-            "| `SmartPipe.Extensions.Unknown` | Unknown |\n\n" +
+            "| `Contoso.Unknown` | Unknown |\n\n" +
             "## Breaking changes and migration\n\n" +
             "[Migration](../migration/2.2.0-integration-packages.md)\n" +
             "[Compatibility](../reference/compatibility/2.1.2-to-2.2.0.md)\n\n" +
@@ -243,7 +264,7 @@ public sealed class DocumentationVerificationServiceTests
         Assert.Contains(result.Violations, violation =>
             violation.Code == "SPDOC015"
             && violation.Path == "docs/releases/2.2.0.md"
-            && violation.Rule.Contains("SmartPipe.Extensions.Unknown", StringComparison.Ordinal));
+            && violation.Rule.Contains("Contoso.Unknown", StringComparison.Ordinal));
     }
 
     [Fact]
