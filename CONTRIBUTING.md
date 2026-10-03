@@ -466,6 +466,19 @@ dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.c
   -c Release --no-build -- verify-docs --repo-root .
 ```
 
+Build the generated documentation site after public API or documentation changes:
+
+```bash
+dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true
+dotnet build SmartPipe.Core.slnx -c Release --no-restore --warnaserror
+dotnet tool restore
+dotnet tool run docfx -- docs/docfx.json --warningsAsErrors
+```
+
+The DocFX tool is repository-local and version-pinned in
+`.config/dotnet-tools.json`. Generated API YAML and site output stay under
+`docs/api/` and `docs/_site/` and are not committed.
+
 Do not copy implementation detail into multiple documents when one normative
 source can be linked instead. Prefer machine-readable contracts such as
 `eng/package-graph.json`, `eng/package-ownership.json`, API baselines, and

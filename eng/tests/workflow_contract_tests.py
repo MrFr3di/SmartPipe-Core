@@ -26,6 +26,7 @@ FILES = {
         "ci.yml",
         "codeql.yml",
         "dependency-review.yml",
+        "docs.yml",
         "reusable-release-validation.yml",
         "publish-nuget.yml",
         "reusable-postgresql-validation.yml",
@@ -218,7 +219,7 @@ def assert_setup_dotnet_cache_contract(workflow: dict, workflow_name: str) -> No
 
 
 def assert_hosted_restore_source_contract(documents: dict[str, dict]) -> None:
-    for workflow_name in ("ci.yml", "reusable-release-validation.yml"):
+    for workflow_name in ("ci.yml", "docs.yml", "reusable-release-validation.yml"):
         workflow = documents[workflow_name]
         for job_name, job in workflow["jobs"].items():
             for command in runs(job.get("steps", [])):
@@ -470,6 +471,81 @@ def assert_lychee_contract(reusable_steps: list[dict]) -> None:
             "Docs link checks must use only github.token through action input/environment, never a long-lived secret or CLI token.")
     require("lycheeverse/lychee-action" not in run,
             "Windows Docs link check must not use the hosted Lychee action.")
+
+
+def assert_documentation_site_contract(document: dict) -> None:
+    triggers = document.get("on", {})
+    require("workflow_dispatch" in triggers,
+            "Documentation workflow must support manual dispatch.")
+    required_paths = {
+        ".config/dotnet-tools.json",
+        ".github/workflows/docs.yml",
+        "README.md",
+        "CONTRIBUTING.md",
+        "SECURITY.md",
+        "SUPPORT.md",
+        "VERSIONING.md",
+        "CHANGELOG.md",
+        "docs/**",
+        "src/**/*.cs",
+        "src/**/*.csproj",
+        "src/**/README.md",
+    }
+    for event in ("push", "pull_request"):
+        trigger = triggers.get(event, {})
+        require(trigger.get("branches") == ["main", "upd", "release/2.2.0", "sp220/checkpoint-*"],
+                f"Documentation {event} branches must cover main/upd, the release branch, and all checkpoint branches.")
+        require(required_paths.issubset(set(trigger.get("paths", []))),
+                f"Documentation {event} paths must cover docs, package READMEs, and public source/API changes.")
+
+    require(document.get("permissions") == {"contents": "read"},
+            "Documentation workflow must remain read-only.")
+    require(document.get("env", {}).get("NUGET_PACKAGES") == NUGET_PACKAGES_PATH,
+            "Documentation workflow must isolate NuGet packages in the workspace.")
+
+    job = document.get("jobs", {}).get("build")
+    require(isinstance(job, dict), "Documentation workflow must define build job.")
+    require(job.get("runs-on") == "ubuntu-latest",
+            "Documentation workflow must use GitHub-hosted Linux.")
+    require(job.get("timeout-minutes") == 30,
+            "Documentation workflow must retain a bounded timeout.")
+    require_same_repository_pr_guard(job, "Documentation build")
+
+    job_steps = steps(job, "documentation build")
+    setup = named_step(job_steps, "Setup .NET")
+    require(setup.get("uses") ==
+            "actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1",
+            "Documentation workflow must use the pinned setup-dotnet action.")
+    require(setup.get("with") == {
+        "global-json-file": "global.json",
+        "cache": True,
+        "cache-dependency-path": "**/packages.lock.json",
+    }, "Documentation setup-dotnet cache/SDK contract changed.")
+    restore = named_step(job_steps, "Restore locked")
+    require(str(restore.get("run", "")).strip() ==
+            "dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true",
+            "Documentation workflow must use the exact locked restore command.")
+    build = named_step(job_steps, "Build")
+    require(str(build.get("run", "")).strip() ==
+            "dotnet build SmartPipe.Core.slnx --configuration Release --no-restore --warnaserror",
+            "Documentation workflow must build the exact Release solution before API extraction.")
+    tool_restore = named_step(job_steps, "Restore documentation tool")
+    require(str(tool_restore.get("run", "")).strip() == "dotnet tool restore",
+            "Documentation workflow must restore the repository-local tool manifest.")
+    docfx = named_step(job_steps, "Build documentation")
+    require(str(docfx.get("run", "")).strip() ==
+            "dotnet tool run docfx -- docs/docfx.json --warningsAsErrors",
+            "Documentation workflow must fail on DocFX warnings.")
+    upload = named_step(job_steps, "Upload documentation preview")
+    require(upload.get("uses") ==
+            "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+            "Documentation preview must use the pinned upload-artifact action.")
+    require(upload.get("with") == {
+        "name": "smartpipe-docs-preview",
+        "path": "docs/_site",
+        "if-no-files-found": "error",
+        "retention-days": 7,
+    }, "Documentation preview artifact contract changed.")
 
 
 def load_workflows() -> dict[str, dict]:
@@ -1095,6 +1171,7 @@ def validate(documents: dict[str, dict]) -> None:
     ci = documents["ci.yml"]
     static_analysis = documents["codeql.yml"]
     dependency_review = documents["dependency-review.yml"]
+    documentation = documents["docs.yml"]
     publish = documents["publish-nuget.yml"]
     assert_consumer_schema_contract()
 
@@ -1118,6 +1195,7 @@ def validate(documents: dict[str, dict]) -> None:
             require(f"sp220/checkpoint-{checkpoint}" in branches,
                     f"{workflow_name} push must include sp220/checkpoint-{checkpoint}.")
     assert_diagnostic_contract(ci)
+    assert_documentation_site_contract(documentation)
 
     expected_triggers = {
         "ci.yml": {

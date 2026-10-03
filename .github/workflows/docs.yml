@@ -1,0 +1,78 @@
+name: Documentation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, upd, release/2.2.0, 'sp220/checkpoint-*' ]
+    paths:
+      - '.config/dotnet-tools.json'
+      - '.github/workflows/docs.yml'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - 'SECURITY.md'
+      - 'SUPPORT.md'
+      - 'VERSIONING.md'
+      - 'CHANGELOG.md'
+      - 'docs/**'
+      - 'src/**/*.cs'
+      - 'src/**/*.csproj'
+      - 'src/**/README.md'
+  pull_request:
+    branches: [ main, upd, release/2.2.0, 'sp220/checkpoint-*' ]
+    paths:
+      - '.config/dotnet-tools.json'
+      - '.github/workflows/docs.yml'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - 'SECURITY.md'
+      - 'SUPPORT.md'
+      - 'VERSIONING.md'
+      - 'CHANGELOG.md'
+      - 'docs/**'
+      - 'src/**/*.cs'
+      - 'src/**/*.csproj'
+      - 'src/**/README.md'
+
+permissions:
+  contents: read
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore locked
+        run: dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true
+
+      - name: Build
+        run: dotnet build SmartPipe.Core.slnx --configuration Release --no-restore --warnaserror
+
+      - name: Restore documentation tool
+        run: dotnet tool restore
+
+      - name: Build documentation
+        run: dotnet tool run docfx -- docs/docfx.json --warningsAsErrors
+
+      - name: Upload documentation preview
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: smartpipe-docs-preview
+          path: docs/_site
+          if-no-files-found: error
+          retention-days: 7

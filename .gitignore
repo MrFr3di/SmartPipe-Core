@@ -56,3 +56,7 @@ opencode.jsonc
 
 # Python workflow contract imports
 /eng/tests/__pycache__/
+
+# Generated documentation
+/docs/api/
+/docs/_site/

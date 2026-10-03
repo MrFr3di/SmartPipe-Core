@@ -170,6 +170,10 @@ public sealed class DocumentationVerificationServiceTests
         repository.Write("SECURITY.md", "# Security\n\n[Support](SUPPORT.md)\n");
         repository.Write("SUPPORT.md", "# Support\n");
         repository.Write("VERSIONING.md", "# Versioning\n");
+        repository.Write(".config/dotnet-tools.json", "{\"version\":1,\"isRoot\":true,\"tools\":{\"docfx\":{\"version\":\"2.81.0\",\"commands\":[\"docfx\"]}}}\n");
+        repository.Write(".github/workflows/docs.yml", "name: Documentation\njobs:\n  build:\n    runs-on: ubuntu-latest\n");
+        repository.Write("docs/docfx.json", "{\"metadata\":[],\"build\":{}}\n");
+        repository.Write("docs/toc.yml", "items:\n- name: Home\n  href: index.md\n");
         repository.Write(
             "docs/index.md",
             "# Documentation\n\n" +
