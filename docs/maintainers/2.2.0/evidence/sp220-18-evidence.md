@@ -1,6 +1,6 @@
 # SP220-18 candidate evidence
 
-Status: implementation, local candidate validation, and exact-head hosted machine validation are complete; final-head hosted evidence is recorded in PR [#115](https://github.com/MrFr3di/SmartPipe-Core/pull/115), which is ready for review. Independent maintainer acceptance and owner publishing gates remain open. This report does not accept checkpoint G or authorize publication. [Owner gates and publication sequence](../readiness/sp220-18-release-readiness.md) remain normative follow-up.
+Status: implementation and exact-head hosted machine validation are complete. SP220-17 PR #114 and SP220-18 PR #115 were accepted into `sp220/checkpoint-g` on 2026-10-04 through true merges `a47f5a671a621756180099c45480dee329cbe4c3` and `1c442036a5d33b0e1fa83c002e13f9a9e2c1a893`. Because no independent maintainer was available, the repository owner used the documented emergency policy exception with pre-merge audit records on both PRs; no machine check, failed gate, squash/rebase, or force-push was bypassed. Checkpoint G itself is not yet accepted: release-document finalization and a fresh exact-head G release validation still remain, and owner publication gates are tracked in issue #120. This report does not authorize publication. [Owner gates and publication sequence](../readiness/sp220-18-release-readiness.md) remain normative follow-up.
 
 ## Scope and provenance
 
@@ -37,7 +37,7 @@ Final SP220-17 head `1941efbc11051f4947f63f305f2af88f7560dbcc` passed exact-head
 
 SP220-18 exact head `a9c46ace6d5814c82df5c67d1fa20c6a6b0aa905` passed ordinary PR CI37121874020, Documentation37121873905, CodeQL37121873920 and Dependency Review37121873916. Fresh release-mode workflow_dispatch run37126132473, attempt2, completed successfully on that same SHA. Its Linux producer package artifact is ID11275238155 with digest `sha256:b79b57c9cd62bf9451bf17cfb956827fcf3f81df54e0854ca1d0af73dc534f20`; Windows replay report artifact is ID11276576264 with digest `sha256:c2c379985c2230248128e8cbe9532cdfd221b573a8c348a03dbbbeefab9e0016`; PostgreSQL consumer results are ID11274577914 with digest `sha256:5132687b4edf1535a88e976e5e5aae3d6a7948e8e77f110328bd0f6dbc3e7d57`. Windows downloaded and validated the producer artifact, did not repack it, and uploaded reports only; PostgreSQL package consumers reused the producer artifact on18.6 while source integration passed on18.6 and17.11.
 
-Attempt1 of the same workflow_dispatch reached the Windows documentation-link gate after preceding replay checks passed and failed on an external GitHub HTTP503; rerunning the unchanged SHA passed. Initial release dispatch36872841718 at `fcbab31` and later ancestor dispatches such as `cefa0788` are historical evidence only. Required independent maintainer approval, release ruleset approval-count verification, environment/ref policy and external NuGet Trusted Publishing verification remain open. See the linked readiness report for observed state and owner actions.
+Attempt1 of the same workflow_dispatch reached the Windows documentation-link gate after preceding replay checks passed and failed on an external GitHub HTTP503; rerunning the unchanged SHA passed. Initial release dispatch36872841718 at `fcbab31` and later ancestor dispatches such as `cefa0788` are historical evidence only. The normal independent-review gate could not be satisfied because no second human maintainer was available; #114/#115 therefore merged under the repository-owner emergency exception with audit comments recorded before merge. Release ruleset approval-count correction, tag authorization, environment/ref policy and external NuGet Trusted Publishing verification remain open in #120. See the linked readiness report for observed state and owner actions.
 
 ## Deep-review recovery hardening
 
@@ -81,7 +81,7 @@ Use the pinned SDK and normal workflow commands: locked restore, Release build w
 
 Local manifest, all40 package archives, consumer result/log files and unchanged old Consumer.dll files are retained as ignored artifacts; they are not committed or published. Regenerable per-consumer NuGet caches were removed after successful results to fit the workspace disk. A discarded mixed-provenance feed is preserved separately and excluded from all reported consumer results.
 
-SonarCloud Quality Gate for the current PR #115 exact head is green. The aggregate gate is not treated as a substitute for issue-level review or independent maintainer acceptance; no finding is classified as resolved merely because the quality gate is green.
+SonarCloud Quality Gate for the accepted #115 exact head is green. The aggregate gate is not treated as a substitute for issue-level review; the absence of an available independent maintainer was handled only through the separately audited owner policy exception and did not reclassify Sonar findings or machine evidence.
 
 ## Local package hashes
 
