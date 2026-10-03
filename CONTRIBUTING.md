@@ -87,7 +87,7 @@ Hosted CI is authoritative for merge/release evidence, and exact-head rules
 apply where the governance policy requires them.
 
 For Microsoft Testing Platform, coverage, hosted-CI operation, and the existing
-performance gate, see [docs/contributing.md](docs/contributing.md).
+performance gate, see [docs/contributing.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/contributing.md).
 
 ## Code and API style
 
@@ -131,8 +131,8 @@ starting with a large implementation.
 
 ## Architecture and compatibility rules
 
-Read [Architecture](docs/architecture.md),
-[Runtime contracts](docs/runtime-contracts.md), and the relevant ADR before
+Read [Architecture](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/architecture.md),
+[Runtime contracts](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/runtime-contracts.md), and the relevant ADR before
 editing compatibility-sensitive code.
 
 The following are repository contracts:
@@ -198,7 +198,7 @@ Key rules:
 - `SmartPipe.Extensions`: compatibility facade/bundle, not the preferred
   dependency for new applications.
 
-See [Package authoring](docs/contributing/package-authoring.md) for the complete
+See [Package authoring](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/contributing/package-authoring.md) for the complete
 graph/ownership/consumer contract.
 
 ## Compatibility with 2.1.2
@@ -218,9 +218,9 @@ local wrappers, aliases, or blanket ApiCompat suppression.
 
 For details, read:
 
-- [2.1.2 → 2.2.0 migration](docs/migration/2.2.0-integration-packages.md)
-- [Compatibility matrix](docs/reference/compatibility/2.1.2-to-2.2.0.md)
-- [ADR-0004](docs/adr/0004-smartpipe-2.2-breaking-migration.md)
+- [2.1.2 → 2.2.0 migration](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md)
+- [Compatibility matrix](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/reference/compatibility/2.1.2-to-2.2.0.md)
+- [ADR-0004](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/adr/0004-smartpipe-2.2-breaking-migration.md)
 
 ## Branches and release-train work
 
@@ -238,7 +238,7 @@ ci/<short-slug>
 ```
 
 SP220/2.2 maintainer work follows the stricter checkpoint graph in
-[2.2 branch and review policy](docs/maintainers/governance/2.2.0-branch-and-review-policy.md):
+[2.2 branch and review policy](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/maintainers/governance/2.2.0-branch-and-review-policy.md):
 
 ```text
 main
@@ -506,7 +506,7 @@ Do not open a public issue for a vulnerability that could enable exploitation,
 credential exposure, data corruption, denial of service, provenance bypass, or
 unsafe parser/resource behavior.
 
-Follow [SECURITY.md](SECURITY.md) and use private vulnerability reporting when
+Follow [SECURITY.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SECURITY.md) and use private vulnerability reporting when
 available.
 
 Ordinary correctness bugs that are not security-sensitive use the normal issue
@@ -554,7 +554,7 @@ Before merge:
 
 For the 2.2 release train, follow the exact merge strategy and reviewer
 requirements in
-[docs/maintainers/governance/2.2.0-branch-and-review-policy.md](docs/maintainers/governance/2.2.0-branch-and-review-policy.md).
+[docs/maintainers/governance/2.2.0-branch-and-review-policy.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/maintainers/governance/2.2.0-branch-and-review-policy.md).
 
 ## Need help?
 

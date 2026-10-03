@@ -47,7 +47,7 @@ For ordinary defects, open a focused GitHub issue with:
 - expected and actual behavior;
 - relevant logs or exception details with secrets removed.
 
-For security-sensitive reports, follow [SECURITY.md](SECURITY.md) instead of
+For security-sensitive reports, follow [SECURITY.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SECURITY.md) instead of
 publishing exploit details in a normal issue.
 
-For version compatibility rules, see [VERSIONING.md](VERSIONING.md).
+For version compatibility rules, see [VERSIONING.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/VERSIONING.md).

@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Support status is defined in [SUPPORT.md](SUPPORT.md). Do not infer security
+Support status is defined in [SUPPORT.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SUPPORT.md). Do not infer security
 support from package availability or the compatibility baseline.
 
 The current `2.2.0` tree is a release train until publication; release-candidate

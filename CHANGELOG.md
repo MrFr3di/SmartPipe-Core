@@ -2,7 +2,7 @@
 
 ## [2.2.0] — Development
 
-User-facing overview: [2.2.0 release notes](docs/releases/2.2.0.md). Upgrade details: [2.1.2 → 2.2.0 integration migration](docs/migration/2.2.0-integration-packages.md).
+User-facing overview: [2.2.0 release notes](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/releases/2.2.0.md). Upgrade details: [2.1.2 → 2.2.0 integration migration](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md).
 
 - Extracted Channels, Transforms, Logging, and DataAnnotations implementations
   into narrow packages while preserving broad-facade type identities through

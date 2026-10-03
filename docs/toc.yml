@@ -82,4 +82,4 @@ items:
 - name: Architecture decisions
   href: adr/README.md
 - name: Maintainers
-  href: maintainers/README.md
+  href: https://github.com/MrFr3di/SmartPipe-Core/tree/main/docs/maintainers

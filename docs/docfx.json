@@ -46,7 +46,8 @@
         ],
         "exclude": [
           "api/**",
-          "_site/**"
+          "_site/**",
+          "maintainers/**"
         ]
       },
       {

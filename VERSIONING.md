@@ -36,8 +36,8 @@ For the 2.2 transition:
 - 6 are intentionally removed and require migration/recompilation.
 
 See the
-[compatibility matrix](docs/reference/compatibility/2.1.2-to-2.2.0.md)
-and [migration guide](docs/migration/2.2.0-integration-packages.md).
+[compatibility matrix](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/reference/compatibility/2.1.2-to-2.2.0.md)
+and [migration guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md).
 
 ## Package version policy
 
@@ -84,4 +84,4 @@ For every release-facing compatibility change, keep these layers consistent:
 4. release notes;
 5. exact-head hosted evidence.
 
-Support lifecycle is documented separately in [SUPPORT.md](SUPPORT.md).
+Support lifecycle is documented separately in [SUPPORT.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SUPPORT.md).

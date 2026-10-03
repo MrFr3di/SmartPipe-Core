@@ -6,7 +6,7 @@
 [![NuGet downloads](https://img.shields.io/nuget/dt/SmartPipe.Core)](https://www.nuget.org/packages/SmartPipe.Core)
 [![CI](https://github.com/MrFr3di/SmartPipe-Core/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MrFr3di/SmartPipe-Core/actions/workflows/ci.yml)
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](#compatibility)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrFr3di/SmartPipe-Core/blob/main/LICENSE)
 
 SmartPipe.Core runs explicit `source -> transform -> sink` pipelines inside your
 process. It combines bounded channels, typed envelopes, explicit component

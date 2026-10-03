@@ -49,11 +49,11 @@ internal sealed class DocumentationVerificationService
 
     private static readonly string[] RequiredDocumentationIndexLinks =
     [
-        "(reference/api-overview.md)",
-        "(reference/compatibility/2.1.2-to-2.2.0.md)",
-        "(maintainers/README.md)",
-        "(maintainers/2.2.0/README.md)",
-        "(adr/README.md)",
+        "reference/api-overview.md",
+        "reference/compatibility/2.1.2-to-2.2.0.md",
+        "maintainers/README.md",
+        "maintainers/2.2.0/README.md",
+        "adr/README.md",
     ];
 
     private readonly PackageGraphLoader _graphLoader;
@@ -168,7 +168,7 @@ internal sealed class DocumentationVerificationService
             {
                 if (!documentationIndex.Contains(target, StringComparison.Ordinal))
                 {
-                    violations.Add(new("SPDOC009", "docs/index.md", $"documentation index must link to {target[1..^1]}"));
+                    violations.Add(new("SPDOC009", "docs/index.md", $"documentation index must link to {target}"));
                 }
             }
         }
@@ -177,7 +177,7 @@ internal sealed class DocumentationVerificationService
         if (File.Exists(securityPath))
         {
             var security = await File.ReadAllTextAsync(securityPath, cancellationToken).ConfigureAwait(false);
-            if (!security.Contains("(SUPPORT.md)", StringComparison.Ordinal))
+            if (!security.Contains("SUPPORT.md", StringComparison.Ordinal))
             {
                 violations.Add(new("SPDOC006", "SECURITY.md", "security policy must delegate support status to SUPPORT.md"));
             }

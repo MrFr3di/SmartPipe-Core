@@ -30,7 +30,7 @@ timestamp, so none is invented: local receipt time belongs to pipeline telemetry
 payload is opaque and is never parsed, validated or logged by the package.
 
 The full package walk-through, including the `NpgsqlSlimDataSourceBuilder` setup for
-NativeAOT, lives in the [package README](../src/SmartPipe.Extensions.PostgreSql/README.md).
+NativeAOT, lives in the [package README](https://github.com/MrFr3di/SmartPipe-Core/blob/main/src/SmartPipe.Extensions.PostgreSql/README.md).
 
 Binary COPY sources, binary COPY batch sinks and `LISTEN` notification sources require an
 application-owned data source with `Multiplexing=false` (the Npgsql default). All three factories reject

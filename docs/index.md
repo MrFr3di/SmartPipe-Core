@@ -66,8 +66,8 @@ each package.
 
 ## Maintainer and release material
 
-- [Maintainer documentation](maintainers/README.md)
-- [SmartPipe 2.2 maintainer index](maintainers/2.2.0/README.md)
+- [Maintainer documentation](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/maintainers/README.md)
+- [SmartPipe 2.2 maintainer index](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/maintainers/2.2.0/README.md)
 - [Architecture decision records](adr/README.md)
 
 Plans, exact-head evidence, readiness records, and release governance live under
