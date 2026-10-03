@@ -103,6 +103,28 @@ public sealed class DocumentationVerificationServiceTests
     }
 
     [Fact]
+    public async Task VerifyAsync_RejectsBrokenRelativeDocumentationTarget()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "docs/maintainers/2.2.0/README.md",
+            "# 2.2 maintainer index\n\n[Missing](plans/missing.md)\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC013"
+            && violation.Path == "docs/maintainers/2.2.0/README.md"
+            && violation.Rule.Contains("plans/missing.md", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task VerifyAsync_ReportsPackageAndReferenceDrift()
     {
         using var repository = new RepositoryTestDirectory();
