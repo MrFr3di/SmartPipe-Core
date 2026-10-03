@@ -2,6 +2,12 @@
 
 Logging sinks for SmartPipe.Core.
 
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.Logging
+```
+
 `LoggerSink<T>(ILogger<LoggerSink<T>>)` remains the legacy raw-payload
 compatibility path. It keeps the existing Information-level message and
 structured `TraceId`/`Value` fields.

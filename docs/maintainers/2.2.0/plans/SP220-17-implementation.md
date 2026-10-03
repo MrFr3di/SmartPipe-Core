@@ -29,7 +29,7 @@
 
 ## Task 1: Compatibility inventory and acceptance
 
-- [x] Derive the 42-row facade matrix from baseline assets and existing ownership assignments in `docs/implementation/2.2.0/sp220-17-compatibility-matrix.md`.
+- [x] Derive the 42-row facade matrix from baseline assets and existing ownership assignments in `docs/reference/compatibility/2.1.2-to-2.2.0.md`.
 - [x] Clarify SP220-17 acceptance and bundle scope in the master plan; retain ADR-0002 and all six ADR-0004 removals.
 - [x] Verify counts 23/13/6 and no ambiguous/unclassified rows; commit documentation.
 
@@ -69,10 +69,10 @@ Files: `tests/Consumers/Scenarios/extensions-meta`, `opentelemetry-facade`, lega
 
 - [x] Release solution build with warnings as errors; format verification; affected test suites. Results and environment limits are recorded in evidence.
 - [x] Pack and native baseline validation; graph/ownership current and release checks; package metadata/version checks.
-- [x] Record candidate SHA, SDK/OS, package hashes and consumer DLL hash evidence in `docs/implementation/2.2.0/sp220-17-evidence.md`.
+- [x] Record candidate SHA, SDK/OS, package hashes and consumer DLL hash evidence in `docs/maintainers/2.2.0/evidence/sp220-17-evidence.md`.
 - [x] Review complete branch; fix blocking findings and verify their regressions.
 - [x] Hand off concrete branch changes and remaining Linux/Windows exact-head CI requirements. SP220-18, promotion, tagging and publishing remain separate.
 
 ## Release boundary
 
-Local implementation and verification are recorded in [evidence](../../implementation/2.2.0/sp220-17-evidence.md). Full ProcessRunnerTests, PostgreSQL coverage and Linux/Windows exact-head CI remain unverified here. The aggregate release metadata gate still requires release notes for the other 19 packages (SP220-18); promotion/tagging/publishing have not been performed.
+Local implementation and verification are recorded in [evidence](../evidence/sp220-17-evidence.md). Full ProcessRunnerTests, PostgreSQL coverage and Linux/Windows exact-head CI remain unverified here. The aggregate release metadata gate still requires release notes for the other 19 packages (SP220-18); promotion/tagging/publishing have not been performed.

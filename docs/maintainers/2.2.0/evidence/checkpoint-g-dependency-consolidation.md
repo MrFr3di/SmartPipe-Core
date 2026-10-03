@@ -53,7 +53,7 @@ SP220-18 accepted.
 References: [xUnit 4.0.0 release notes](https://xunit.net/releases/v3/4.0.0),
 [xUnit 4.0.1](https://xunit.net/releases/v3/4.0.1),
 [VS adapter 4.0.0](https://xunit.net/releases/visualstudio/4.0.0),
-[SP220-17 analysis](../../plans/2.2.0/SP220-17-facade-and-migration-analysis.md).
+[SP220-17 analysis](../plans/SP220-17-facade-and-migration-analysis.md).
 
 ## Review follow-up validation
 

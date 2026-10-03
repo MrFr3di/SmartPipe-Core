@@ -1,345 +1,395 @@
 # SmartPipe.Core
 
-Typed in-process streaming pipelines for .NET.
+**Typed, bounded, in-process streaming pipelines for .NET 10.**
+
+[![NuGet](https://img.shields.io/nuget/v/SmartPipe.Core)](https://www.nuget.org/packages/SmartPipe.Core)
+[![NuGet downloads](https://img.shields.io/nuget/dt/SmartPipe.Core)](https://www.nuget.org/packages/SmartPipe.Core)
+[![CI](https://github.com/MrFr3di/SmartPipe-Core/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MrFr3di/SmartPipe-Core/actions/workflows/ci.yml)
+[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](#compatibility)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrFr3di/SmartPipe-Core/blob/main/LICENSE)
 
 SmartPipe.Core runs explicit `source -> transform -> sink` pipelines inside your
-process with bounded channels, envelope metadata, retry/timeout/circuit-breaker
-stage handling, observer events, metrics snapshots, and dead-letter records
-with replay context. It is not a distributed workflow engine, message broker,
-durable queue, or exactly-once delivery system.
+process. It combines bounded channels, typed envelopes, explicit component
+ownership, retry/timeout/circuit-breaker stage handling, observer events,
+metrics, tracing, dead-letter records, graceful drain/cancel/abort semantics,
+and a modular integration package ecosystem.
 
-[CI workflow](.github/workflows/ci.yml)
-[![NuGet Core](https://img.shields.io/nuget/v/SmartPipe.Core.svg)](https://www.nuget.org/packages/SmartPipe.Core)
-[![NuGet Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.svg)](https://www.nuget.org/packages/SmartPipe.Extensions)
-[![NuGet JSON Extensions](https://img.shields.io/nuget/v/SmartPipe.Extensions.Json.svg)](https://www.nuget.org/packages/SmartPipe.Extensions.Json)
-![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
+SmartPipe is not a distributed workflow engine, broker, durable queue, or
+exactly-once delivery system. The runtime stays in-process and leaves durable
+storage, replay after process loss, distributed coordination, and application
+idempotency to the caller.
 
-## Contract
+## Highlights
 
-### Guarantees
-
-| Guarantee | Notes |
-|---|---|
-| In-process processing only | Pipelines run inside the caller's process. No cross-process hops. |
-| Bounded channels | Input, output, and buffered observer channels are bounded. |
-| Adaptive admission | Adaptive parallelism is opt-in; see [Configuration](docs/configuration.md#adaptive-parallelism). |
-| Envelope metadata | `ProcessingEnvelope<T>` carries `PipelineId`, `RunId`, `TraceId`, `Metadata`, `Lineage`, `Attempt`, `CreatedAtUtc`. |
-| Typed source/transform/sink | `IPipelineSource<T>`, `IPipelineTransformer<TInput,TOutput>`, `IPipelineSink<T>`. |
-| Configured retry/timeout/circuit breaker | Per-stage `StageFailureOptions`; circuit breaker uses half-open probe leases. |
-| Observer events | Lifecycle, stage, sink, retry, dead-letter, drop, and circuit-breaker transitions. |
-| Metrics snapshots | `SmartPipeMetricsRecorder` and immutable `SmartPipeMetricsSnapshot`. |
-
-### Non-Goals
-
-| Non-goal | Notes |
-|---|---|
-| Distributed coordination | No cluster or leader election. |
-| Durable queue | Work is in memory; crash recovery is the user's source/sink responsibility. |
-| Exactly-once guarantee | At-least-once and at-most-once only. |
-| Replay after process crash | Provided only if the user source/sink implements it. |
-| Broker semantics | Not a message broker or workflow engine. |
-
-### Output Semantics
-
-| Situation | Behavior |
-|---|---|
-| No sink attached | Success output is emitted after transform success. |
-| Sink attached | Success output is emitted only after sink write succeeds. |
-| Default `OutputPolicy` | `SuppressSuccessWhenSinkAttached` — safe default for sink-backed runs. |
-| `PipelineOutputPolicy.EmitAll` | Requires an active consumer of `PipelineRun<T>.Outputs`; otherwise the run can backpressure. |
-
-Default `OutputPolicy` is `SuppressSuccessWhenSinkAttached`.
-
-This is the safe default for sink-backed pipelines because successful outputs are not written to `PipelineRun<T>.Outputs` unless the caller explicitly opts into `EmitAll`.
-
-Use `EmitAll` only when the caller actively consumes `PipelineRun<T>.Outputs`.
-For the `OutputMode` compatibility deprecation policy and migration map, see
-[Configuration](docs/configuration.md#output-filtering-api-deprecation).
-
-### Failure Semantics
-
-| Event | Behavior |
-|---|---|
-| Transformer exception | Routed through the stage's `FailureAction` policy. |
-| `StageResult.Filtered()` | Non-failure terminal state. No sink call, no dead-letter, no failed-metric increment. |
-| Stage timeout | Treated as transient failure; subject to retry policy. |
-| Circuit breaker rejection | Terminal for the current item; not retried into the open breaker. |
-| Dead-letter action | Requires `StageDeadLetterOptions<T>`; the action fails the run if misconfigured. |
-
-Dead-letter records preserve replay context, but persistence durability depends
-on the configured sink and storage. Path-backed dead-letter and JSON file sinks
-provide in-process exception rollback on seekable streams; they do not provide
-crash-atomic file replacement.
-
-### Lifecycle Semantics
-
-| Operation | Semantics |
-|---|---|
-| `DrainAsync` / `TryDrainAsync` | Stops source reading and waits for already accepted work to complete. |
-| `CancelAsync` | Cancels source reading and in-flight processing. |
-| `AbortAsync` | Immediate cancellation of source and processing. |
-| `DisposeAsync` | Idempotent; disposes runtime-owned components once. |
+- **Typed runtime model.** Sources produce `ProcessingEnvelope<T>`, transforms
+  return `StageResult<T>`, sinks consume typed envelopes, and
+  `PipelineRun<T>` exposes completion, state, metrics, controls, and outputs.
+- **Bounded backpressure.** Input, output, and buffered-observer channels are
+  bounded; wait and lossy modes are explicit and observable.
+- **Explicit ownership and lifetime.** Runtime-owned, scope-owned, and borrowed
+  components have different initialization and disposal contracts.
+- **Reusable definitions without hidden activation.** Canonical definitions
+  validate and snapshot structure without invoking factories; reusable
+  definitions create fresh per-run components.
+- **Failure policy in the runtime.** Retry, timeout, circuit breaker,
+  dead-letter routing, and terminal failure actions are stage-level contracts.
+- **Graceful lifecycle.** Drain, cancel, abort, terminal-state publication, and
+  cleanup are coordinated through one run lifecycle.
+- **Built-in diagnostics.** Core emits stable .NET metrics and activities;
+  exporter selection remains application-owned.
+- **Modular integrations.** JSON, CSV, Dapper, EF Core, Mapster, HTTP, Polly,
+  DI, Hosting, HealthChecks, OpenTelemetry, PostgreSQL, and other capabilities
+  live in narrow packages.
+- **Compatibility is explicit.** The 2.2 compatibility facade uses documented
+  type forwarding/wrappers for retained 2.1.2 identities and documented
+  removals where migration and recompilation are required.
+- **AOT claims are scoped.** Core and several leaves have positive trim/AOT
+  contracts; reflection-heavy integrations are annotated or deliberately make
+  no blanket claim.
 
 ## Install
 
+For the runtime only:
+
 ```bash
-dotnet add package SmartPipe.Core --version 2.2.0
-dotnet add package SmartPipe.Extensions.Json --version 2.2.0
+dotnet package add SmartPipe.Core
 ```
 
-For canonical 2.2 DI pipelines, `SmartPipe.Extensions.HealthChecks` adds exact-key liveness, readiness, aggregate, ASP.NET tag, trimming, and NativeAOT support. See [Health checks](docs/health-checks.md).
+Add only the integration packages your application needs:
 
-For OpenTelemetry collection, `SmartPipe.Extensions.OpenTelemetry` registers the existing Core meter and activity source with the application's exporter-neutral OpenTelemetry builder. See [OpenTelemetry](docs/opentelemetry.md).
+```bash
+dotnet package add SmartPipe.Extensions.Json
+dotnet package add SmartPipe.Extensions.DependencyInjection
+dotnet package add SmartPipe.Extensions.Hosting
+```
 
-New applications should install the specific integration packages they use.
-`SmartPipe.Extensions` 2.2.0 is the compatibility bundle for applications that
-intentionally want its complete integration set, including HealthChecks and
-OpenTelemetry. See the [migration guide](docs/migration/2.2.0-integration-packages.md).
+Existing applications that intentionally want the broad 2.2 compatibility
+bundle can reference:
 
-## Canonical Definitions In 2.2
+```bash
+dotnet package add SmartPipe.Extensions
+```
 
-The 2.2 definition API separates resource-free construction from per-run
-activation. Every component enters through an explicit ownership descriptor;
-`Build()` and terminal `To()` validate and snapshot the definition without
-invoking factories:
+New applications should prefer the narrow leaf packages.
+
+## Quick start
+
+### Run a typed pipeline
+
+```csharp
+var run = PipelineBuilder
+    .From(PipelineSource.FromAsyncEnumerable(items))
+    .Transform(PipelineTransformer.FromFunc<int, string>(
+        static (value, cancellationToken) =>
+            ValueTask.FromResult(value.ToString())))
+    .To(PipelineSink.FromFunc<string>(
+        static (value, cancellationToken) =>
+            ValueTask.CompletedTask));
+
+await run.Completion;
+```
+
+For sink-backed pipelines, the default output policy is
+`SuppressSuccessWhenSinkAttached`: successful items are not also written to
+`PipelineRun<T>.Outputs` unless the caller explicitly selects `EmitAll`.
+
+### Build a canonical reusable definition
 
 ```csharp
 PipelineDefinition<int, string> definition = PipelineDefinitionBuilder
     .From(
         new PipelineKey("orders"),
         PipelineComponent.RuntimeOwned<IPipelineSource<int>>(
-            static (_, _) => ValueTask.FromResult<IPipelineSource<int>>(new OrderSource())))
+            static (_, _) =>
+                ValueTask.FromResult<IPipelineSource<int>>(new OrderSource())))
     .Transform(
         new PipelineStageKey("format"),
         PipelineComponent.RuntimeOwned<IPipelineTransformer<int, string>>(
-            static (_, _) => ValueTask.FromResult<IPipelineTransformer<int, string>>(
-                PipelineTransformer.FromFunc<int, string>(
-                    static (value, _) => ValueTask.FromResult(value.ToString())))))
+            static (_, _) =>
+                ValueTask.FromResult<IPipelineTransformer<int, string>>(
+                    PipelineTransformer.FromFunc<int, string>(
+                        static (value, _) =>
+                            ValueTask.FromResult(value.ToString())))))
     .Build();
 
-await using PipelineRun<string> run = await definition.StartAsync(cancellationToken);
-await run.Completion;
-```
-
-Definitions containing only per-run component descriptors are reusable. A
-borrowed component, observer instance, or `StageDeadLetterOptions<T>` makes the
-definition single-use; Core never disposes those external resources.
-`StartAsync` returns only after activation, initialization, runtime `Running`
-state, and `PipelineStartedEvent` acceptance. Runtime-created handles expose the
-exact `PipelineKey` and `Guid RunId` for the run.
-
-## Quick Start
-
-```csharp
-var run = PipelineBuilder
-    .From(PipelineSource.FromAsyncEnumerable(items))
-    .Transform(PipelineTransformer.FromFunc<int, string>(
-        static (value, ct) => ValueTask.FromResult(value.ToString())))
-    .To(PipelineSink.FromFunc<string>(
-        static (value, ct) => ValueTask.CompletedTask));
+await using PipelineRun<string> run =
+    await definition.StartAsync(cancellationToken);
 
 await run.Completion;
 ```
 
-For component-based pipelines:
+A definition is reusable only when its source, stages, and optional sink are
+per-run descriptors and it retains no borrowed observer/dead-letter state.
+Borrowed component instances remain caller-owned and make the definition
+single-use.
 
-```csharp
-IPipelineSource<Order> source = new OrderSource();
-IPipelineTransformer<Order, OrderDto> stage = new OrderStage();
-IPipelineSink<OrderDto> sink = new OrderSink();
-
-await using var run = PipelineBuilder
-    .From(source)
-    .WithPipelineId("orders")
-    .Transform(stage)
-    .WithRuntimeOptions(new PipelineRuntimeOptions
-    {
-        MaxConcurrency = 4,
-        InputCapacity = 1024,
-        OutputPolicy = PipelineOutputPolicy.SuppressSuccessWhenSinkAttached,
-    })
-    .To(sink);
-
-await run.Completion;
-```
-
-`PipelineRun<T>.Outputs` exposes `PipelineOutput<T>` records with the final
-`ProcessingEnvelope<T>` when available and a classified `PipelineResult<T>`.
-The output channel is single-reader by contract. Callers that need fan-out
-must do it explicitly in user code (for example by reading outputs and
-re-publishing through their own dispatcher).
-For sink-backed pipelines, success output means transform processing and sink
-write both completed successfully. `StageResult.Filtered()` is non-failure
-terminal control flow: it does not call the sink, does not dead-letter, and does
-not increment failed metrics.
-
-## Lifecycle
-
-- `DrainAsync` stops accepting new source items at source boundaries, cancels
-  cooperative source reads, and waits for already accepted work.
-- `TryDrainAsync` returns a structured `PipelineDrainResult` instead of
-  throwing for timeout or run fault status.
-- `CancelAsync` requests cooperative cancellation.
-- `AbortAsync` is the immediate stop path.
-- `DisposeAsync` is idempotent and disposes runtime-owned components once.
-
-## DI And Hosting
-
-Use the dedicated leaf packages for DI registration and hosting:
-`SmartPipe.Extensions.DependencyInjection` provides immutable definitions and
-per-run factories; `SmartPipe.Extensions.Hosting` provides background hosting.
+### Register with DI and the Generic Host
 
 ```csharp
 using SmartPipe.Extensions.DependencyInjection;
 using SmartPipe.Extensions.Hosting;
 
 var smartPipe = services.AddSmartPipe();
-smartPipe.AddPipeline(definition)
-    .RunAsHostedService(options => options.Order = 0);
+
+smartPipe
+    .AddPipeline(definition)
+    .RunAsHostedService(options =>
+    {
+        options.Order = 0;
+        options.DrainTimeout = TimeSpan.FromSeconds(30);
+    });
 ```
 
-Resolve the keyed `ISmartPipeRunFactory<Order, OrderDto>` and call `StartAsync()`
-for direct runs, or use `RunAsHostedService(...)` for background hosting.
+Each accepted DI run gets one async scope. Hosted pipelines are started in
+deterministic order and stopped in reverse order.
 
-Factory-created runs preserve the underlying runtime controls: `CancelAsync`,
-`DrainAsync`, `TryDrainAsync`, `AbortAsync`, `Metrics`, `Outputs`, and `State`.
-The DI wrapper only replaces the completion/disposal lifetime so the run scope is
-disposed exactly once when the run completes or is disposed manually.
+## Common tasks
 
-### Factory Vs Instance Builders
+| Goal | Package / API |
+| --- | --- |
+| Run an in-process typed pipeline | `SmartPipe.Core`, `PipelineBuilder`, `PipelineDefinitionBuilder` |
+| Reuse a definition across runs | Per-run `PipelineComponent.RuntimeOwned` / `ScopeOwned` descriptors |
+| Register typed pipelines in DI | `SmartPipe.Extensions.DependencyInjection` |
+| Run pipelines under Generic Host | `SmartPipe.Extensions.Hosting` |
+| Add liveness/readiness | `SmartPipe.Extensions.HealthChecks` |
+| Export Core metrics/traces | `SmartPipe.Extensions.OpenTelemetry` + application-owned exporter |
+| Read/write JSON | `SmartPipe.Extensions.Json` |
+| Read/write strict bounded CSV | `SmartPipe.Extensions.Csv` |
+| Execute explicit SQL with Dapper | `SmartPipe.Extensions.Dapper` |
+| Stream EF Core queries | `SmartPipe.Extensions.EntityFrameworkCore` |
+| Map objects with Mapster | `SmartPipe.Extensions.Mapster` |
+| Use streaming HTTP transport | `SmartPipe.Extensions.Http` |
+| Add source-generated HTTP JSON codecs | `SmartPipe.Extensions.Http.Json` |
+| Decorate transforms with Polly | `SmartPipe.Extensions.Polly` |
+| Use PostgreSQL binary COPY or LISTEN/NOTIFY | `SmartPipe.Extensions.PostgreSql` |
+| Test pipeline components without a test framework dependency | `SmartPipe.Testing` |
+| Keep the broad 2.x compatibility surface | `SmartPipe.Extensions` |
 
-Instance pipelines use concrete components and are single-use:
+## How it works
 
-```csharp
-PipelineBuilder
-    .From(source)
-    .Transform(stage)
-    .To(sink);
+```mermaid
+flowchart LR
+    S["IPipelineSource<TInput>"] --> I["Bounded input channel"]
+    I --> W["Pipeline worker(s)"]
+    W --> X["Sequential typed stage chain"]
+    X --> K{"Sink attached?"}
+    K -->|yes| N["IPipelineSink<TOutput>"]
+    K -->|no| P["Output emitter"]
+    N --> P
+    P --> O["PipelineRun<T>.Outputs<br/>policy-gated"]
+    X -. events .-> E["Observers"]
+    X -. metrics / activities .-> D[".NET diagnostics"]
+    X -. failure policy .-> F["retry / timeout / circuit breaker / dead-letter"]
 ```
 
-Reusable factory pipelines must use factories from source through sink:
+The stage chain for one envelope is sequential. `MaxConcurrency > 1` allows
+multiple envelopes to be processed concurrently, so cross-envelope output order
+is not guaranteed.
 
-```csharp
-PipelineBuilder
-    .FromFactory(_ => new Source())
-    .TransformFactory(_ => new Stage())
-    .ToFactory(_ => new Sink());
+## Runtime contracts
+
+| Contract | Behavior |
+| --- | --- |
+| Execution boundary | In-process only |
+| Input/output queues | Bounded |
+| Default sink-backed output | `SuppressSuccessWhenSinkAttached` |
+| Output readers | One reader by contract; user code owns fan-out |
+| Instance pipelines | Single-use |
+| All-factory definitions | Reusable when no borrowed retained state exists |
+| `DrainAsync` | Stops source intake and waits for accepted work |
+| `CancelAsync` | Cooperative cancellation of source and in-flight processing |
+| `AbortAsync` | Immediate-stop intent with abort precedence over ordinary cancellation |
+| Cleanup | Best-effort complete; owned resources are attempted even after an earlier cleanup failure |
+| Exactly-once | Not provided |
+| Durable queue / crash replay | Not provided by Core |
+
+See [Runtime contracts](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/runtime-contracts.md) for the full lifecycle,
+ownership, failure-precedence, observer, and channel semantics.
+
+## Package ecosystem
+
+| Package | Responsibility | AOT / trimming contract |
+| --- | --- | --- |
+| `SmartPipe.Core` | Runtime, typed definitions, diagnostics | full |
+| `SmartPipe.Extensions.Channels` | Channel merge primitives | full |
+| `SmartPipe.Extensions.Transforms` | Composable transforms | full |
+| `SmartPipe.Extensions.Logging` | Logging sinks | full |
+| `SmartPipe.Extensions.Json` | JSON files, transforms, dead-letter persistence | source-generated `JsonTypeInfo` path |
+| `SmartPipe.Extensions.Csv` | Strict bounded CSV files | verified, no blanket claim |
+| `SmartPipe.Extensions.Dapper` | Explicit-SQL Dapper integration | explicit-SQL scoped contract |
+| `SmartPipe.Extensions.EntityFrameworkCore` | Provider-neutral EF Core query sources | no blanket claim |
+| `SmartPipe.Extensions.Mapster` | Mapster transforms | no blanket claim; runtime mapping is reflection/dynamic-code sensitive |
+| `SmartPipe.Extensions.Polly` | Polly transform decorator | verified |
+| `SmartPipe.Extensions.Http` | Streaming HTTP transport | full transport contract |
+| `SmartPipe.Extensions.Http.Json` | Source-generated HTTP JSON codecs | full `JsonTypeInfo` path |
+| `SmartPipe.Extensions.DependencyInjection` | Keyed DI registration and run factories | full |
+| `SmartPipe.Extensions.OpenTelemetry` | Exporter-neutral diagnostics registration | verified |
+| `SmartPipe.Extensions.Hosting` | Generic Host orchestration | full |
+| `SmartPipe.Extensions.HealthChecks` | Pipeline liveness/readiness | full |
+| `SmartPipe.Extensions.DataAnnotations` | DataAnnotations validation | reflection boundary annotated |
+| `SmartPipe.Extensions.PostgreSql` | Binary COPY and LISTEN/NOTIFY | verified slim/static path |
+| `SmartPipe.Testing` | Test helpers | test-only, not a runtime AOT claim |
+| `SmartPipe.Extensions` | Broad compatibility facade/bundle | no blanket claim |
+
+`SmartPipe.Extensions` has 17 direct SmartPipe dependencies and 18 SmartPipe
+IDs in its closure including the facade itself. The optional PostgreSQL package
+and test-only `SmartPipe.Testing` stay outside the bundle.
+
+Leaf packages must not depend back on the broad facade.
+
+## Compatibility with 2.1.2
+
+The immutable 2.1.2 facade baseline contains 42 relevant public identities.
+
+| 2.2 treatment | Count |
+| --- | ---: |
+| Preserved through type forwarding | 23 |
+| Retained physically in the compatibility facade | 13 |
+| Intentionally removed | 6 |
+
+The six deliberate removals are:
+
+- `HttpSelector<T>`
+- `HttpClientFactorySelector<T>`
+- `HttpSink<T>`
+- `HttpClientFactorySink<T>`
+- `HttpSelectorStreamingMode`
+- `PollyResilienceTransform<T>`
+
+Consumers using those identities must migrate and recompile. Retained binary
+compatibility is validated separately from source compatibility; namespace
+preservation alone is not treated as binary evidence.
+
+See the [2.1.2 → 2.2.0 migration guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md),
+[compatibility matrix](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/reference/compatibility/2.1.2-to-2.2.0.md),
+and [ADR-0004](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/adr/0004-smartpipe-2.2-breaking-migration.md).
+
+## Lifecycle model
+
+```text
+Created -> Running
+Running -> Draining -> Completed
+Running -> Cancelled
+Running -> Aborted
+Running -> Faulted
+Completed / Cancelled / Aborted / Faulted -> Disposed
 ```
 
-Do not mix instance components with `TransformFactory` or `ToFactory`. Use
-`.Transform(instance)` and `.To(instance)` for instance pipelines, or start with
-`.FromFactory(...)` when every run needs fresh runtime-owned components.
-Legacy instance registrations and observers are single-use even when an instance
-advertises `Reusable` or `SingletonExternal`; use the all-factory form for every
-repeated or concurrent run.
+Terminal precedence is:
 
-Typed health checks can be registered for DI pipelines:
-
-```csharp
-services
-    .AddHealthChecks()
-    .AddSmartPipeHealthCheck<Order, OrderDto>("orders");
+```text
+processing or mandatory cleanup fault
+    > abort request
+    > cancellation request
+    > completion
 ```
 
-The health check reads the typed run state and immutable metrics snapshot. It
-reports high queue utilization or stale processing as degraded and faulted runs
-as unhealthy. Running pipelines with no initial activity remain healthy by
-default unless `RequireInitialActivity` is enabled.
+Runtime-created components are disposed by the runtime. Borrowed components,
+borrowed observers, and objects retained by dead-letter options remain
+caller-owned.
 
-Hosted-service pipeline faults are configurable through
-`SmartPipeHostedServiceOptions`. The default `FailureBehavior` is
-`StopApplication`, so a background pipeline fault requests host shutdown instead
-of being logged and swallowed.
+## Compatibility
 
-Lossy bounded channel modes are observable. Input, output, and buffered
-observer drops record `smartpipe.items.dropped`,
-`smartpipe.output.items.dropped`, and `smartpipe.observer.events.dropped`.
-Queue depths in metrics snapshots are point-in-time pressure indicators, not
-durable work accounting.
+| Area | Support |
+| --- | --- |
+| Runtime target | `net10.0` |
+| Repository SDK | pinned .NET SDK `10.0.303` |
+| Core NativeAOT / trimming | positive package contract |
+| Integration NativeAOT / trimming | package-specific; see package table and [AOT guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/aot-compatibility.md) |
+| Input model | typed async sources over bounded runtime channels |
+| DI / Hosting | optional leaf packages |
+| Persistence | application/integration responsibility; Core is not a durable queue |
+| Distributed coordination | out of scope |
+| Compatibility baseline | immutable 2.1.2 package assets plus source/binary consumer validation |
 
-## AOT And Trimming
+## Repository map
 
-SmartPipe.Core is AOT-conscious and analyzer-gated.
+```text
+src/                         Core, integration leaves, compatibility facade, Testing
+tests/                       unit, lifecycle, integration and repository-contract tests
+tests/Consumers/             packed-package source/binary/trim/NativeAOT consumers
+benchmarks/                  BenchmarkDotNet release/performance evidence
+docs/                        runtime, architecture, migration and subsystem guides
+docs/adr/                    architecture decisions
+docs/maintainers/            governance, release plans, evidence and readiness
+docs/reference/               package, API and compatibility reference
+eng/                         package graph, ownership, consumers, release validators
+eng/baselines/2.1.2/         immutable compatibility baseline
+agent_docs/                  repository orientation for coding agents
+CONTRIBUTING.md              contribution workflow
+SUPPORT.md                   release-line support policy
+VERSIONING.md                versioning and compatibility policy
+SECURITY.md                  vulnerability reporting
+```
 
-Reflection-based HTTP, JSON file, and dead-letter helpers are annotated with
-`RequiresUnreferencedCode` / `RequiresDynamicCode`. Use constructors that accept
-source-generated `JsonTypeInfo` for NativeAOT or trimming-sensitive consumers.
-`JsonFileSink<T>` writes newline-delimited JSON batches: one JSON array per
-flushed batch.
+### For coding agents
 
-Options-based constructors also support one root JSON array and conventional
-NDJSON. Sources stream arrays and top-level values, reject null records by
-default, and enforce configurable depth and framed-record limits.
+Read the repository architecture, the nearest package README/specification, and
+the applicable governance/EPIC plan before changing compatibility-sensitive
+code. Package ownership, forwarding/removal records, consumer scenarios,
+lifecycle semantics, AOT claims, and exact-head evidence are contracts, not
+incidental implementation detail.
 
-JSON file, transform, and JSON dead-letter integrations live in
-`SmartPipe.Extensions.Json`; the CSV and Dapper leaves own their file and
-explicit-SQL integrations, and the Channels, Transforms, DataAnnotations, and
-Logging leaves are reachable through the bundle. The Entity Framework Core and
-Mapster leaves are active and their legacy identities are forwarded from the
-bundle. HTTP lives in the `SmartPipe.Extensions.Http` transport and
-`SmartPipe.Extensions.Http.Json` codec leaves; the 2.1.2 HTTP selector and sink
-types were removed by ADR-0004 and consumers recompile against those leaves.
-Polly lives in the `SmartPipe.Extensions.Polly` decorator leaf, which depends only on
-Core and `Polly.Core`; the 2.1.2 no-op `PollyResilienceTransform<T>` was removed by
-ADR-0004.
-PostgreSQL lives in `SmartPipe.Extensions.PostgreSql`, which streams binary `COPY` in
-both directions and exposes `LISTEN`/`NOTIFY` over an application-owned
-`NpgsqlDataSource`; it depends only on Core, `Npgsql`, and Logging.Abstractions,
-declares the positive `IsAotCompatible` contract for the slim/static primitive path,
-and is not part of the bundle.
-Some non-JSON integrations may not be AOT-friendly.
+Start with:
 
-## Extensions Package Surface
+- [Architecture](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/architecture.md)
+- [Runtime contracts](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/runtime-contracts.md)
+- [2.2 architecture plan](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/maintainers/2.2.0/plans/architecture-plan.md)
+- [2.2 branch and review policy](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/maintainers/governance/2.2.0-branch-and-review-policy.md)
+- [Package authoring](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/contributing/package-authoring.md)
 
-`SmartPipe.Extensions.Json` owns JSON file sources and sinks, JSON transforms,
-and JSON dead-letter persistence without the broad Extensions dependency graph.
-`SmartPipe.Extensions` remains the convenience bundle and compatibility facade:
-moved public types are exposed from it through type forwarding, and the
-[ADR-0002](docs/adr/0002-smartpipe-2.2-legacy-compatibility-quarantine.md) legacy
-DI/Hosting/Health cluster stays there under `obsolete-wrapper` ownership for
-2.2.0. The exact baseline inventory is 23 forwarded, 13 retained and six removed
-identities; removed HTTP/Polly callers must migrate and recompile. The bundle has
-17 direct SmartPipe dependencies and 18 IDs including itself. New applications
-should reference dedicated packages directly.
-`SmartPipe.Extensions.PostgreSql` is the PostgreSQL-native leaf and stays outside
-the bundle: it is an optional reference, and the facade neither forwards its
-types nor takes a package dependency on it.
+## Building from source
 
-README examples are intentionally minimal. CI consumer smoke is the executable
-check for the public quick-start scenarios.
+The repository pins .NET SDK `10.0.303` in `global.json` and uses Microsoft
+Testing Platform.
 
-## Docs
+```bash
+dotnet restore SmartPipe.Core.slnx --locked-mode
+dotnet format SmartPipe.Core.slnx --verify-no-changes --no-restore
+dotnet build SmartPipe.Core.slnx -c Release --no-restore -warnaserror
+```
 
-- [Getting started](docs/getting-started.md)
-- [Configuration](docs/configuration.md)
-- [Runtime contracts](docs/runtime-contracts.md)
-- [Resilience](docs/resilience.md)
-- [PostgreSQL](docs/postgresql.md)
-- [Architecture](docs/architecture.md)
-- [Observability](docs/observability.md)
-- [Observers](docs/observers.md)
-- [Dependency injection](docs/dependency-injection.md)
-- [Hosting](docs/hosting.md)
-- [Health checks](docs/health-checks.md)
-- [API reference](docs/api-reference.md)
-- [Contributing](docs/contributing.md)
-- [Package authoring](docs/contributing/package-authoring.md)
-- [Package infrastructure](docs/architecture/package-infrastructure.md)
-- [Migration from removed legacy APIs](docs/migration/legacy-to-typed.md)
-- [Migration to SmartPipe.Extensions.Json](docs/migration/2.1.2-json-package-split.md)
+Run the tests for the affected projects while iterating. For example:
 
-## Requirements
+```bash
+dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj -c Release --no-build
+dotnet test --project tests/SmartPipe.Extensions.Tests/SmartPipe.Extensions.Tests.csproj -c Release --no-build
+```
 
-- .NET 10.0 or later.
-- `SmartPipe.Core` depends on `Microsoft.Extensions.Logging.Abstractions`.
-- `SmartPipe.Extensions.Json` adds System.Text.Json file, transform, and
-  dead-letter integrations.
-- `SmartPipe.Extensions.PostgreSql` adds binary `COPY` sources and sinks and a
-  `LISTEN`/`NOTIFY` source over an application-owned `NpgsqlDataSource`. It needs
-  `Npgsql` 10.0.3 and is optional: it is not part of the bundle.
-- `SmartPipe.Extensions` is the convenience bundle and compatibility facade for
-  the runtime integration dependencies.
+Repository/package changes also use `eng/SmartPipe.RepositoryChecks` and
+packed-package consumer validation. See [CONTRIBUTING.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CONTRIBUTING.md).
+
+## Documentation
+
+Start with the [documentation index](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/index.md).
+
+- [Getting started](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/getting-started.md)
+- [Runtime contracts](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/runtime-contracts.md)
+- [Architecture](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/architecture.md)
+- [Package reference](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/reference/packages.md)
+- [AOT and trimming](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/aot-compatibility.md)
+- [2.2.0 release notes](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/releases/2.2.0.md)
+- [2.1.2 → 2.2.0 migration](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md)
+- [Versioning and compatibility](https://github.com/MrFr3di/SmartPipe-Core/blob/main/VERSIONING.md)
+- [Support](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SUPPORT.md)
+- [Contributing](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CONTRIBUTING.md)
+- [Security](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SECURITY.md)
+- [Changelog](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CHANGELOG.md)
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/CONTRIBUTING.md).
+
+Changes to Core lifecycle, public API, package boundaries, type forwarding,
+compatibility ownership, release workflows, security boundaries, or scoped
+AOT/trimming claims require proportional review and evidence.
+
+## Security
+
+Do not publish exploit details in a normal issue. Follow
+[SECURITY.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SECURITY.md) and use the repository's private security reporting
+path when available.
 
 ## License
 
-MIT [LICENSE](LICENSE).
+[MIT](https://github.com/MrFr3di/SmartPipe-Core/blob/main/LICENSE)

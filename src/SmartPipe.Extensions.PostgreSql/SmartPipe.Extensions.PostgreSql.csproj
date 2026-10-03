@@ -6,6 +6,7 @@
   <PropertyGroup>
     <PackageId>SmartPipe.Extensions.PostgreSql</PackageId>
     <Description>PostgreSQL-native SmartPipe components: binary COPY streaming source, binary COPY batch sink and LISTEN/NOTIFY notification source on an application-owned NpgsqlDataSource.</Description>
+    <PackageReleaseNotes>First standalone release in 2.2.0. Adds binary COPY streaming source, COPY batch sink and LISTEN/NOTIFY source over an application-owned NpgsqlDataSource. PostgreSQL 18.6 and 17.11 are supported validation targets. Separate optional package; not in the facade bundle. Trimming and NativeAOT supported.</PackageReleaseNotes>
     <PackageTags>smartpipe;pipeline;postgresql;npgsql;copy;listen;notify;integration</PackageTags>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
     <IsAotCompatible>true</IsAotCompatible>

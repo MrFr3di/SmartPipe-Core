@@ -6,7 +6,7 @@
 checkpoint G base `4083f4e2`. Исторические G.0 и раздел 4.1 ниже не требуется
 повторять. Текущая реализация и проверяемые шаги ведутся в
 [implementation plan](SP220-17-implementation.md) и
-[evidence](../../implementation/2.2.0/sp220-17-evidence.md); прежние результаты
+[evidence](../evidence/sp220-17-evidence.md); прежние результаты
 базы не подменяют проверки нового candidate.
 
 ## 1. Проверенная база
@@ -31,7 +31,7 @@ checkpoint G base `4083f4e2`. Исторические G.0 и раздел 4.1 �
 
 У CI подтверждены успешные build-test-pack, baseline Windows, JSON Windows, Hosting Linux/Windows, CSV Linux/Windows, PostgreSQL integration 18.6/17.11 и package consumers 18.6. Это доказательство текущей базы, а не будущих изменений G и не финальной release validation SP220-18.
 
-`AGENTS.md` в проверенном checkout не обнаружен. Действуют ADR и `docs/governance/2.2.0-branch-and-review-policy.md`.
+`AGENTS.md` в проверенном checkout не обнаружен. Действуют ADR и `docs/maintainers/governance/2.2.0-branch-and-review-policy.md`.
 
 ## 2. Что изменилось относительно приложенных планов
 
@@ -170,7 +170,7 @@ README фасада по-прежнему содержит installation 2.1.2, r
 
 ### SP220-17.1 — exact compatibility inventory
 
-Файлы: `eng/package-ownership.json`, `docs/package-ownership.md`, новый отчёт `docs/implementation/2.2.0/sp220-17-compatibility-matrix.md`, тесты Ownership.
+Файлы: `eng/package-ownership.json`, `docs/package-ownership.md`, новый отчёт `docs/reference/compatibility/2.1.2-to-2.2.0.md`, тесты Ownership.
 
 Источники: immutable package-assets baseline, существующий ownership manifest, metadata текущих packed assemblies, PublicAPI. Таблица — производное представление существующих источников, а не второй authoritative manifest.
 
@@ -266,7 +266,7 @@ Binary procedure уже реализован в `ConsumerScenarioRunner`:
 
 Не применять strict baseline equality, запрещающую новые canonical API; не разрешать глобальные CP0001/NoWarn suppressions. Проверить актуальность ровно шести intentional-removal suppressions; новые suppressions требуют нового решения. Для разрешения forwarded references использовать штатный механизм SDK; при реальной ошибке resolver настроить `PackageValidationReferencePath`, не отключать проверки.
 
-Записать evidence в `docs/implementation/2.2.0/sp220-17-evidence.md`: SHA, SDK, run URL/ID/event, ОС, nupkg hashes, forwarded/retained/removed counts, source/binary scenarios и результаты, consumer DLL before/after SHA, inspected dependency closure. До выполнения это план, не «passed».
+Записать evidence в `docs/maintainers/2.2.0/evidence/sp220-17-evidence.md`: SHA, SDK, run URL/ID/event, ОС, nupkg hashes, forwarded/retained/removed counts, source/binary scenarios и результаты, consumer DLL before/after SHA, inspected dependency closure. До выполнения это план, не «passed».
 
 После SP220-17 можно приступать к SP220-18 внутри G. G не продвигать на release по одному facade PR: полноценный checkpoint acceptance включает SP220-18.
 
@@ -315,6 +315,6 @@ SP220-18 отдельно подтверждает полный release artifact
 
 SDK 10.0.303 установлен для проверки. Locked restore и Release build с `-warnaserror` проходят. Core: 1283/1283. Прямой запуск тестовых сборок: 17 suites проходят; OpenTelemetry имеет четыре одинаковых падения на кандидате и исходной release-базе. RepositoryChecks блокируется запретом сокетов; PostgreSQL требует БД. Facade suite превысил локальный лимит 180 секунд. Полная приёмка кандидата остаётся за CI; SP220-17 и SP220-18 не завершены.
 
-Трассировка предложений и исправлений: `docs/implementation/2.2.0/checkpoint-g-dependency-consolidation.md`.
+Трассировка предложений и исправлений: `docs/maintainers/2.2.0/evidence/checkpoint-g-dependency-consolidation.md`.
 
 Пользователь явно разрешил публикацию общей ветки и закрытие заменённых PR 30.09.2026. Проверки кандидата и SP220-17 остаются отдельными критериями приёмки.

@@ -11,8 +11,8 @@ published separately and are excluded from this bundle.
 The facade DLL preserves 23 forwarded and 13 frozen legacy public identities
 from 2.1.2. Six HTTP/Polly identities were intentionally removed and require
 migration and recompilation. See the
-[2.1.2 → 2.2.0 migration guide](../../docs/migration/2.2.0-integration-packages.md)
-and [compatibility matrix](../../docs/implementation/2.2.0/sp220-17-compatibility-matrix.md).
+[2.1.2 → 2.2.0 migration guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md)
+and [compatibility matrix](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/reference/compatibility/2.1.2-to-2.2.0.md).
 
 ## Selectors (Data Sources)
 
@@ -62,7 +62,7 @@ connection.
 
 `HttpSelector<T>`, `HttpClientFactorySelector<T>`, `HttpSink<T>`,
 `HttpClientFactorySink<T>`, and `HttpSelectorStreamingMode` were removed in 2.2.0 by
-[ADR-0004](../../docs/adr/0004-smartpipe-2.2-breaking-migration.md), with no
+[ADR-0004](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/adr/0004-smartpipe-2.2-breaking-migration.md), with no
 wrappers or type forwarders. This bundle references
 `SmartPipe.Extensions.Http` (streaming transport) and
 `SmartPipe.Extensions.Http.Json` (bounded source-generated JSON codecs); use
@@ -77,7 +77,7 @@ intentional: SmartPipe stage policies, `HttpClient` handlers, and the
 ## Polly
 
 `PollyResilienceTransform<T>` was removed in 2.2.0 by
-[ADR-0004](../../docs/adr/0004-smartpipe-2.2-breaking-migration.md), with no wrapper
+[ADR-0004](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/adr/0004-smartpipe-2.2-breaking-migration.md), with no wrapper
 or type forwarder: it returned success without running an inner transform. This
 bundle references `SmartPipe.Extensions.Polly`; use `PollyPipelineComponents.Decorate`
 or `PollyTransformDecorator<TInput,TOutput>` with a typed `ResiliencePipeline<StageResult<TOutput>>`
@@ -92,7 +92,7 @@ and explicit inner ownership, then recompile.
 
 The legacy `SmartPipeHealthCheckOptions` and `SmartPipeRunHealthMonitor<TIn,TOut>`
 remain facade-owned for compatibility. New code uses canonical registration
-and the [HealthChecks leaf](../SmartPipe.Extensions.HealthChecks/README.md).
+and the [HealthChecks leaf](https://github.com/MrFr3di/SmartPipe-Core/blob/main/src/SmartPipe.Extensions.HealthChecks/README.md).
 
 ## Hosting
 
@@ -103,8 +103,8 @@ and the [HealthChecks leaf](../SmartPipe.Extensions.HealthChecks/README.md).
 | `AddSmartPipeHostedService<TIn,TOut>()` | Retained legacy hosted-service registration |
 
 Canonical keyed registration and orchestration live in the
-[DependencyInjection](../SmartPipe.Extensions.DependencyInjection/README.md) and
-[Hosting](../SmartPipe.Extensions.Hosting/README.md) leaves. Legacy synchronous
+[DependencyInjection](https://github.com/MrFr3di/SmartPipe-Core/blob/main/src/SmartPipe.Extensions.DependencyInjection/README.md) and
+[Hosting](https://github.com/MrFr3di/SmartPipe-Core/blob/main/src/SmartPipe.Extensions.Hosting/README.md) leaves. Legacy synchronous
 factory `Start` retains its obsolete diagnostic and immediate-return behavior;
 prefer the canonical factory `StartAsync` for new applications. Do not combine
 similarly named legacy and canonical extension methods without choosing the
@@ -129,7 +129,7 @@ token remains available.
 ## Installation
 
 ```bash
-dotnet add package SmartPipe.Extensions --version 2.2.0
+dotnet package add SmartPipe.Extensions
 ```
 
 For narrow SP220-07 integrations, install `SmartPipe.Extensions.Channels`,
@@ -140,7 +140,7 @@ existing public types and pulls these leaves only as a compatibility facade.
 For JSON-only integrations, prefer:
 
 ```bash
-dotnet add package SmartPipe.Extensions.Json --version 2.2.0
+dotnet package add SmartPipe.Extensions.Json
 ```
 
 ## JSON Package Migration
@@ -156,7 +156,7 @@ is planned for removal in SmartPipe 3.0.
 ## Requirements
 
 - .NET 10.0+
-- SmartPipe.Core 2.2.0 (included as dependency)
+- SmartPipe.Core (included as a package dependency)
 - This package intentionally includes integration dependencies for the features below.
 - Individual features pull their own dependencies:
   - HTTP transport and codecs → `SmartPipe.Extensions.Http` / `SmartPipe.Extensions.Http.Json`
