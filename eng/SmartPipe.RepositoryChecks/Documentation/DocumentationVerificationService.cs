@@ -186,14 +186,25 @@ internal sealed class DocumentationVerificationService
         if (File.Exists(gettingStartedPath))
         {
             var gettingStarted = await File.ReadAllTextAsync(gettingStartedPath, cancellationToken).ConfigureAwait(false);
-            foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
+            var packageSelection = ExtractLevelTwoSection(gettingStarted, "## Choose the integration package");
+            if (packageSelection is null)
             {
-                if (!gettingStarted.Contains(package.Id, StringComparison.Ordinal))
+                violations.Add(new(
+                    "SPDOC018",
+                    "docs/getting-started.md",
+                    "getting-started must contain the '## Choose the integration package' release-package selection section"));
+            }
+            else
+            {
+                foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
                 {
-                    violations.Add(new(
-                        "SPDOC018",
-                        "docs/getting-started.md",
-                        $"getting-started package selection is stale; release package is not named: {package.Id}"));
+                    if (!packageSelection.Contains(package.Id, StringComparison.Ordinal))
+                    {
+                        violations.Add(new(
+                            "SPDOC018",
+                            "docs/getting-started.md",
+                            $"getting-started package selection is stale; release package is not named: {package.Id}"));
+                    }
                 }
             }
         }
