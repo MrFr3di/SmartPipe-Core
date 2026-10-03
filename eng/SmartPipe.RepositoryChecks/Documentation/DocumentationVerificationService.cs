@@ -193,7 +193,7 @@ internal sealed class DocumentationVerificationService
                     violations.Add(new(
                         "SPDOC018",
                         "docs/getting-started.md",
-                        $"getting-started package selection is stale; active package is not named: {package.Id}"));
+                        $"getting-started package selection is stale; release package is not named: {package.Id}"));
                 }
             }
         }
