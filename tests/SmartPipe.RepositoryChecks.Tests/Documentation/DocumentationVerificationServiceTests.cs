@@ -218,6 +218,30 @@ public sealed class DocumentationVerificationServiceTests
 
 
     [Fact]
+    public async Task VerifyAsync_RejectsGettingStartedPackageCatalogDrift()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "docs/getting-started.md",
+            "# Getting Started\n\n" +
+            "`SmartPipe.Core`\n" +
+            "`SmartPipe.Extensions.Json`\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC018"
+            && violation.Path == "docs/getting-started.md"
+            && violation.Rule.Contains("SmartPipe.Extensions.Csv", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task VerifyAsync_RejectsMissingCurrentReleaseDocument()
     {
         using var repository = new RepositoryTestDirectory();
@@ -565,6 +589,12 @@ public sealed class DocumentationVerificationServiceTests
             "[Maintainers](maintainers/README.md) " +
             "[2.2](maintainers/2.2.0/README.md) " +
             "[ADR](adr/README.md)\n");
+        repository.Write(
+            "docs/getting-started.md",
+            "# Getting Started\n\n" +
+            "`SmartPipe.Core`\n" +
+            "`SmartPipe.Extensions.Json`\n" +
+            "`SmartPipe.Extensions.Csv`\n");
         repository.Write("docs/architecture.md", "# Architecture\n");
         repository.Write("docs/runtime-contracts.md", "# Runtime contracts\n");
         repository.Write(

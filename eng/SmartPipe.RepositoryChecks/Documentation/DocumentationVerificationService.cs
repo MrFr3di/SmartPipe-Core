@@ -24,6 +24,7 @@ internal sealed class DocumentationVerificationService
         "docs/docfx.json",
         "docs/toc.yml",
         "docs/index.md",
+        "docs/getting-started.md",
         "docs/architecture.md",
         "docs/runtime-contracts.md",
         "docs/reference/packages.md",
@@ -177,6 +178,22 @@ internal sealed class DocumentationVerificationService
                 if (!documentationIndex.Contains(target, StringComparison.Ordinal))
                 {
                     violations.Add(new("SPDOC009", "docs/index.md", $"documentation index must link to {target}"));
+                }
+            }
+        }
+
+        var gettingStartedPath = Resolve(root, "docs/getting-started.md");
+        if (File.Exists(gettingStartedPath))
+        {
+            var gettingStarted = await File.ReadAllTextAsync(gettingStartedPath, cancellationToken).ConfigureAwait(false);
+            foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
+            {
+                if (!gettingStarted.Contains($"`{package.Id}`", StringComparison.Ordinal))
+                {
+                    violations.Add(new(
+                        "SPDOC018",
+                        "docs/getting-started.md",
+                        $"getting-started package selection is stale; active package is not named: {package.Id}"));
                 }
             }
         }
