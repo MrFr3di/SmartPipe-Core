@@ -198,7 +198,7 @@ internal sealed class DocumentationVerificationService
             {
                 foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
                 {
-                    if (!packageSelection.Contains(package.Id, StringComparison.Ordinal))
+                    if (!packageSelection.Contains($"`{package.Id}`", StringComparison.Ordinal))
                     {
                         violations.Add(new(
                             "SPDOC018",
