@@ -55,7 +55,7 @@ Interfaces: reusable workflow `validation-mode` string (current/release, default
 - [x] Run all workflow mutation tests and PowerShell artifact fixtures GREEN; commit.
 - [x] Add post-publication payload equivalence checks and provenance-safe partial-release recovery for both nupkg and snupkg; lock the behavior with rejecting mutation/PowerShell fixtures.
 - [x] Harden recovery/publication with GET-based preflight response checks, state-driven fail-closed recovery, environment-only credentials, immediate primary/symbol hash revalidation, duplicate-signature rejection and one shared15-minute propagation window.
-- [ ] Re-run exact-head hosted validation after the recovery hardening and record the new SHA/run evidence.
+- [x] Re-run exact-head hosted validation after the recovery hardening. Exact head `a9c46ace6d5814c82df5c67d1fa20c6a6b0aa905` passed ordinary PR checks and release-mode workflow_dispatch37126132473 (attempt2); immutable producer/replay/PostgreSQL artifact IDs and digests are recorded in PR #115 and the evidence report.
 
 ## Task 3: Audits, docs and owner gates
 
@@ -71,10 +71,10 @@ Files: evidence and release readiness documentation, master plan acceptance refe
 - [x] Run locked restore, Release build with warnings-as-errors, format, workflow/PowerShell fixtures and affected RepositoryChecks tests.
 - [x] Pack one fresh final feed; baseline offline integrity and graph/ownership/metadata/version current+release checks.
 - [x] Run63 non-PostgreSQL consumers; run7 PostgreSQL consumers with real18.6 when available and integration18.6/17.11. Record unavailable server/Windows gates honestly.
-- [ ] Prepare/publish reviewable feature PRs and dispatch exact-head CI where credentials permit. Observe results; fix genuine failures with regression coverage.
+- [x] Prepare/publish the reviewable feature PR and dispatch exact-head CI. PR #115 is ready for review; ordinary exact-head checks and the explicit release-mode dispatch passed after genuine failures were corrected with regression coverage.
 
 ## Task 5: Review and evidence
 
 - [x] Fresh whole-branch read-only review, then fix Critical/Important findings and verify.
-- [ ] Record commits, SDK/OS, command results, artifact hashes and GitHub run URLs/IDs. Clearly distinguish implementation done, local verified, remote verified and owner approval pending.
+- [x] Record commits, SDK/OS, command results, artifact hashes and GitHub run URLs/IDs. Final exact-head hosted IDs/digests are kept in PR #115/evidence without making a later documentation commit masquerade as the tested SHA; independent approval and owner publishing configuration remain pending.
 - [x] Handoff without marking SP220-18/checkpoint G accepted while required gates remain open.

@@ -1,6 +1,6 @@
 # SP220-18 candidate evidence
 
-Status: implementation and local candidate validation complete; final-head hosted evidence is recorded in draft PR [#115](https://github.com/MrFr3di/SmartPipe-Core/pull/115). Independent maintainer acceptance and owner publishing gates remain open. This report does not accept checkpoint G or authorize publication. [Owner gates and publication sequence](../readiness/sp220-18-release-readiness.md) remain normative follow-up.
+Status: implementation, local candidate validation, and exact-head hosted machine validation are complete; final-head hosted evidence is recorded in PR [#115](https://github.com/MrFr3di/SmartPipe-Core/pull/115), which is ready for review. Independent maintainer acceptance and owner publishing gates remain open. This report does not accept checkpoint G or authorize publication. [Owner gates and publication sequence](../readiness/sp220-18-release-readiness.md) remain normative follow-up.
 
 ## Scope and provenance
 
@@ -33,9 +33,11 @@ Final immutable20 nupkg/20 snupkg feed passed hash/mode/version/source-commit ve
 
 ## Remote evidence and acceptance boundary
 
-Final SP220-17 head `1941efbc11051f4947f63f305f2af88f7560dbcc` passed exact-head CI36989255683, CodeQL36989255329 and Dependency Review36989255317 before synchronization. Earlier `bfe755a`/`c505eab` runs remain historical evidence only. After the merge synchronization, SP220-18 requires its own new exact-head CI and release-mode dispatch; no ancestor run is treated as acceptance for the combined candidate.
+Final SP220-17 head `1941efbc11051f4947f63f305f2af88f7560dbcc` passed exact-head CI36989255683, CodeQL36989255329 and Dependency Review36989255317 before synchronization. Earlier `bfe755a`/`c505eab` runs remain historical evidence only.
 
-The final-head run IDs, exact head, producer artifact ID/digest and Windows/PostgreSQL reuse results are maintained in PR #115 to avoid treating a subsequent documentation commit as the previously tested SHA. Initial release dispatch36872841718 at `fcbab31` is historical evidence only. Required independent maintainer approval, release ruleset approval-count verification, environment/ref policy and external NuGet Trusted Publishing verification remain open. See the linked readiness report for observed state and owner actions.
+SP220-18 exact head `a9c46ace6d5814c82df5c67d1fa20c6a6b0aa905` passed ordinary PR CI37121874020, Documentation37121873905, CodeQL37121873920 and Dependency Review37121873916. Fresh release-mode workflow_dispatch run37126132473, attempt2, completed successfully on that same SHA. Its Linux producer package artifact is ID11275238155 with digest `sha256:b79b57c9cd62bf9451bf17cfb956827fcf3f81df54e0854ca1d0af73dc534f20`; Windows replay report artifact is ID11276576264 with digest `sha256:c2c379985c2230248128e8cbe9532cdfd221b573a8c348a03dbbbeefab9e0016`; PostgreSQL consumer results are ID11274577914 with digest `sha256:5132687b4edf1535a88e976e5e5aae3d6a7948e8e77f110328bd0f6dbc3e7d57`. Windows downloaded and validated the producer artifact, did not repack it, and uploaded reports only; PostgreSQL package consumers reused the producer artifact on18.6 while source integration passed on18.6 and17.11.
+
+Attempt1 of the same workflow_dispatch reached the Windows documentation-link gate after preceding replay checks passed and failed on an external GitHub HTTP503; rerunning the unchanged SHA passed. Initial release dispatch36872841718 at `fcbab31` and later ancestor dispatches such as `cefa0788` are historical evidence only. Required independent maintainer approval, release ruleset approval-count verification, environment/ref policy and external NuGet Trusted Publishing verification remain open. See the linked readiness report for observed state and owner actions.
 
 ## Deep-review recovery hardening
 
@@ -45,7 +47,7 @@ A later independent review found that `--skip-duplicate` alone was insufficient 
 
 Recovery records verified preflight state for primary and symbol packages, then skips only entries already proven equivalent. Preflight uses real GET downloads with `-SkipHttpErrorCheck -PassThru` rather than relying on HEAD support from the gallery symbol endpoint. Missing primaries are pushed with `--no-symbols`, and missing manifest-listed snupkgs are pushed explicitly. No recovery push uses `--skip-duplicate`: a package appearing after preflight causes the push to fail rather than silently accepting a TOCTOU conflict. Immediately before any normal or recovery push, both the nupkg and sibling snupkg path/hash are rechecked against the immutable manifest. Normal first publication keeps the standard primary-package push. The post-publication gate tracks all20 nupkg and20 snupkg artifacts in one shared15-minute propagation deadline, retries only propagation/transient HTTP states, fails immediately on payload mismatch or unexpected status, and compares every downloaded payload with the immutable producer artifact. The OIDC-derived publish credential is exposed to NuGet Client only through `NUGET_API_KEY`/`NUGET_SYMBOL_API_KEY` environment variables; publish commands do not place it in process arguments.
 
-Regression coverage includes matching signed payload plus rejection of mutated payload, extra entries and multiple `.signature.p7s` entries. Workflow mutation tests reject removal of release-tag ancestry, recovery preflight, GET/response handling, environment-only credentials, symbol hash verification, explicit recovery symbol push, the shared propagation deadline or final primary/symbol payload verification. These changes require fresh exact-head hosted validation; the earlier `cefa0788` release dispatch is historical evidence and does not validate this follow-up.
+Regression coverage includes matching signed payload plus rejection of mutated payload, extra entries and multiple `.signature.p7s` entries. Workflow mutation tests reject removal of release-tag ancestry, recovery preflight, GET/response handling, environment-only credentials, symbol hash verification, explicit recovery symbol push, the shared propagation deadline or final primary/symbol payload verification. Fresh exact-head hosted validation for these changes is the successful `a9c46ace...` release dispatch37126132473 above; the earlier `cefa0788` release dispatch remains historical evidence only.
 
 ## Hosted link-check hardening
 
@@ -79,7 +81,7 @@ Use the pinned SDK and normal workflow commands: locked restore, Release build w
 
 Local manifest, all40 package archives, consumer result/log files and unchanged old Consumer.dll files are retained as ignored artifacts; they are not committed or published. Regenerable per-consumer NuGet caches were removed after successful results to fit the workspace disk. A discarded mixed-provenance feed is preserved separately and excluded from all reported consumer results.
 
-SonarCloud Quality Gate for PR #115 remains green and reports0 Security Hotspots. The latest PR summary reports6 New issues after the SP220-17 synchronization/release hardening; issue-level details are not exposed by the current GitHub connector, so this evidence does not classify or dismiss them. Independent review must inspect the linked Sonar issue list before acceptance; no Sonar issue is treated as resolved merely because the aggregate gate is green.
+SonarCloud Quality Gate for the current PR #115 exact head is green. The aggregate gate is not treated as a substitute for issue-level review or independent maintainer acceptance; no finding is classified as resolved merely because the quality gate is green.
 
 ## Local package hashes
 
