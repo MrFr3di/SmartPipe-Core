@@ -280,7 +280,7 @@ internal sealed class DocumentationVerificationService
                              package.Lifecycle != PackageLifecycle.Planned
                              && package.BaselineVersion is null))
                 {
-                    if (!currentReleaseSection.Contains($"\`{package.Id}\`", StringComparison.Ordinal))
+                    if (!currentReleaseSection.Contains($"`{package.Id}`", StringComparison.Ordinal))
                     {
                         violations.Add(new(
                             "SPDOC016",
