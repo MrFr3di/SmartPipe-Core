@@ -48,7 +48,7 @@ internal sealed class DocumentationVerificationService
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex SelfRepositoryBlobMainTargetRegex = new(
-        @"https://github\.com/MrFr3di/SmartPipe-Core/blob/main/(?<path>[^)\\s#?]+)(?:[?#][^)\\s]+)?",
+        @"https://github\.com/MrFr3di/SmartPipe-Core/blob/main/(?<path>[^)\s#?]+)(?:[?#][^)\s]+)?",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly string[] LinkCheckedRootDocuments =
