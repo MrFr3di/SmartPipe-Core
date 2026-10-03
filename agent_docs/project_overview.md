@@ -96,10 +96,13 @@ governance.
 
 ## Current 2.2 work
 
-Checkpoint G is the release-completion checkpoint. SP220-17 defines the facade and
-2.1.2 -> 2.2.0 migration contract; SP220-18 defines immutable artifact/release
-validation; release-document finalization reconciles changelog, release notes,
-package references, migration guidance, and documentation checks.
+Checkpoint G is the release-completion checkpoint. SP220-17 and SP220-18 are already
+true-merged into the checkpoint; their accepted task heads retain the facade/migration
+and immutable-artifact release-validation evidence. The active implementation slice is
+release-document finalization, which reconciles changelog, release notes, package
+references, migration guidance, current handoff documentation, and documentation checks.
+After that merge, Checkpoint G still requires a fresh exact-head release-validation run
+before promotion.
 
 Do not use old SP220-08/SP220-09 checkpoint SHAs or paused-candidate notes as current
 state. Historical evidence belongs in completed plans/evidence, not in this current
