@@ -355,7 +355,7 @@ jobs:
       uses: lycheeverse/lychee-action@a8c4c7cb88f0c7386610c35eb25108e448569cb0 # v2.7.0
       with:
         token: ${{ github.token }}
-        args: --no-progress --max-retries 5 --retry-wait-time 2 --max-concurrency 8 --exclude '^https://github\.com/MrFr3di/SmartPipe-Core/blob/main/' README.md CONTRIBUTING.md SECURITY.md SUPPORT.md VERSIONING.md 'docs/**/*.md' 'src/**/README.md'
+        args: --no-progress --max-retries 5 --retry-wait-time 2 --max-concurrency 8 --exclude '^https://github\.com/MrFr3di/SmartPipe-Core/blob/main/' README.md CONTRIBUTING.md SECURITY.md SUPPORT.md VERSIONING.md CHANGELOG.md 'docs/**/*.md' 'src/**/README.md'
 
     - name: Docs link check (Windows)
       if: runner.os == 'Windows'
@@ -370,7 +370,7 @@ jobs:
           $actualHash = (Get-FileHash -LiteralPath $lychee -Algorithm SHA256).Hash.ToLowerInvariant()
           $expectedHash = 'a1784c32c63ba46dccef0698ddf6be82a83a7d0455b0fd772423d601e3c70ab4'
           if ($actualHash -ne $expectedHash) { throw "Lychee SHA256 mismatch: $actualHash" }
-          & $lychee --no-progress --max-retries 5 --retry-wait-time 2 --max-concurrency 8 --exclude '^https://github\.com/MrFr3di/SmartPipe-Core/blob/main/' README.md CONTRIBUTING.md SECURITY.md SUPPORT.md VERSIONING.md 'docs/**/*.md' 'src/**/README.md'
+          & $lychee --no-progress --max-retries 5 --retry-wait-time 2 --max-concurrency 8 --exclude '^https://github\.com/MrFr3di/SmartPipe-Core/blob/main/' README.md CONTRIBUTING.md SECURITY.md SUPPORT.md VERSIONING.md CHANGELOG.md 'docs/**/*.md' 'src/**/README.md'
           $exitCode = $LASTEXITCODE
         }
         finally {
