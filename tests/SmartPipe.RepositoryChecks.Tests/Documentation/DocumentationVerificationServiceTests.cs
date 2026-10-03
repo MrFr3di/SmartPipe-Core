@@ -156,7 +156,7 @@ public sealed class DocumentationVerificationServiceTests
         using var repository = new RepositoryTestDirectory();
         var graph = Graph();
         WriteRequiredDocuments(repository, graph);
-        File.Delete(repository.Resolve("docs/releases/2.2.0.md"));
+        File.Delete(Path.Combine(repository.Path, "docs", "releases", "2.2.0.md"));
 
         var result = await DocumentationVerificationService.VerifyAsync(
             repository.Path,
