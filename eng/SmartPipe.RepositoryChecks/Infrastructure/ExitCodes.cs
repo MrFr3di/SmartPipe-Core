@@ -16,5 +16,6 @@ internal static class ExitCodes
     public const int ScaffoldCollisionOrRefusedOverwrite = 28;
     public const int ConsumerScenarioFailure = 29;
     public const int PackagePackFailure = 30;
+    public const int DocumentationViolation = 31;
     public const int UnexpectedInternalFailure = 10;
 }

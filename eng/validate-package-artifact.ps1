@@ -2,7 +2,9 @@
 param(
     [Parameter(Mandatory)][string]$ArtifactRoot,
     [Parameter(Mandatory)][string]$ExpectedVersion,
-    [Parameter(Mandatory)][string]$GraphPath
+    [Parameter(Mandatory)][string]$GraphPath,
+    [ValidateSet('current', 'release')][string]$ExpectedMode = 'current',
+    [ValidatePattern('^$|^[a-f0-9]{40}$')][string]$ExpectedCommit = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,12 +49,21 @@ function Assert-Archive([string]$Path, [string]$Id, [string]$Version) {
         if ($ids.Count -ne 1 -or $versions.Count -ne 1 -or $ids[0].InnerText -cne $Id -or $versions[0].InnerText -cne $Version) {
             throw "Archive nuspec identity/version mismatch: $Id"
         }
+        if ($ExpectedCommit -ne '') {
+            $repositories = $xml.SelectNodes('/*[local-name()="package"]/*[local-name()="metadata"]/*[local-name()="repository"]')
+            if ($repositories.Count -ne 1 -or $repositories[0].GetAttribute('commit') -cne $ExpectedCommit) {
+                throw "Archive repository commit does not match the checked-out source: $Id"
+            }
+        }
     } finally { $zip.Dispose() }
 }
 
 $manifest = Get-Content -LiteralPath (Resolve-ArtifactFile 'artifacts/packages/manifest.json') -Raw | ConvertFrom-Json
 $graph = Get-Content -LiteralPath $GraphPath -Raw | ConvertFrom-Json
-if ($manifest.schemaVersion -ne 1 -or $manifest.mode -cne 'current') { throw 'Unsupported package manifest schema/mode.' }
+if ($manifest.schemaVersion -ne 1 -or $manifest.mode -cnotin @('current', 'release')) { throw 'Unsupported package manifest schema/mode.' }
+if ($manifest.mode -cne $ExpectedMode) { throw 'Package manifest mode does not match the expected mode.' }
+if ($ExpectedMode -eq 'release' -and @($graph.packages | Where-Object lifecycle -eq 'planned').Count -ne 0) { throw 'Release graph contains planned packages.' }
+if ($ExpectedMode -eq 'release' -and $ExpectedCommit -eq '') { throw 'Release artifact validation requires an expected source commit.' }
 if ($ExpectedVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$' -or $manifest.version -cne $ExpectedVersion) { throw 'Artifact version does not match the expected version.' }
 $expected = @{}
 foreach ($node in $graph.packages) {

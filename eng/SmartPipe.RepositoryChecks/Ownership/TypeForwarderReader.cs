@@ -5,7 +5,10 @@ namespace SmartPipe.RepositoryChecks.Ownership;
 
 internal sealed record TypeOwnershipSnapshot(
     IReadOnlyDictionary<string, IReadOnlySet<string>> Implementations,
-    IReadOnlyDictionary<string, IReadOnlySet<string>> Forwarders);
+    IReadOnlyDictionary<string, IReadOnlySet<string>> Forwarders,
+    IReadOnlyList<OwnedAssemblySnapshot>? Assets = null);
+
+internal sealed record OwnedAssemblySnapshot(string PackageId, PackageAssemblySnapshot Assembly);
 
 internal sealed class TypeForwarderReader
 {
@@ -15,7 +18,7 @@ internal sealed class TypeForwarderReader
         foreach (var id in packageIds)
         {
             var path = Path.Combine(directory, $"{id}.{version}.nupkg");
-            if (!File.Exists(path)) continue;
+            if (!File.Exists(path)) throw new OwnershipException("SPOWN030", $"Required package is missing: {path}");
             var package = await new NuGetPackageReader().ReadAsync(path, id, version, ct).ConfigureAwait(false);
             packages.Add((id, package.Assets.Assemblies));
         }
@@ -52,15 +55,17 @@ internal sealed class TypeForwarderReader
     {
         var implementations = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         var forwarders = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var assets = new List<OwnedAssemblySnapshot>();
         foreach (var package in packages)
             foreach (var assembly in package.Assemblies)
             {
+                assets.Add(new(package.Id, assembly));
                 foreach (var type in assembly.ExportedTypes) Add(implementations, type, package.Id);
                 foreach (var type in assembly.TypeForwarders) Add(forwarders, type, package.Id);
             }
         return new(
             implementations.ToDictionary(x => x.Key, x => (IReadOnlySet<string>)x.Value, StringComparer.Ordinal),
-            forwarders.ToDictionary(x => x.Key, x => (IReadOnlySet<string>)x.Value, StringComparer.Ordinal));
+            forwarders.ToDictionary(x => x.Key, x => (IReadOnlySet<string>)x.Value, StringComparer.Ordinal), assets);
         static void Add(Dictionary<string, HashSet<string>> map, string type, string package) { if (!map.TryGetValue(type, out var set)) map[type] = set = new(StringComparer.OrdinalIgnoreCase); set.Add(package); }
     }
 }

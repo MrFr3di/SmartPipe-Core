@@ -59,7 +59,6 @@
         "health-checks-nativeaot",
         "opentelemetry-direct",
         "opentelemetry-otlp",
-        "opentelemetry-facade",
         "opentelemetry-trim",
         "opentelemetry-nativeaot",
         "csv-direct",
@@ -670,7 +669,6 @@
       "consumerScenarios": [
         "opentelemetry-direct",
         "opentelemetry-otlp",
-        "opentelemetry-facade",
         "opentelemetry-trim",
         "opentelemetry-nativeaot",
         "postgresql-opentelemetry-composition"
@@ -825,17 +823,19 @@
           "SmartPipe.Extensions.Channels",
           "SmartPipe.Extensions.Transforms",
           "SmartPipe.Extensions.Logging",
-          "SmartPipe.Extensions.DataAnnotations",
-          "SmartPipe.Extensions.DependencyInjection",
-          "SmartPipe.Extensions.Hosting",
           "SmartPipe.Extensions.Json",
           "SmartPipe.Extensions.Csv",
           "SmartPipe.Extensions.Dapper",
           "SmartPipe.Extensions.EntityFrameworkCore",
           "SmartPipe.Extensions.Mapster",
+          "SmartPipe.Extensions.Polly",
           "SmartPipe.Extensions.Http",
           "SmartPipe.Extensions.Http.Json",
-          "SmartPipe.Extensions.Polly"
+          "SmartPipe.Extensions.DependencyInjection",
+          "SmartPipe.Extensions.OpenTelemetry",
+          "SmartPipe.Extensions.Hosting",
+          "SmartPipe.Extensions.HealthChecks",
+          "SmartPipe.Extensions.DataAnnotations"
         ],
         "allowedSmartPipePackages": [],
         "allowedExternalPackages": [
@@ -871,7 +871,6 @@
         "allowedExternalPackages": [
           "Microsoft.Extensions.Diagnostics.HealthChecks",
           "Microsoft.Extensions.Hosting.Abstractions",
-          "Microsoft.Extensions.Http",
           "Microsoft.Extensions.Options",
           "Microsoft.Extensions.Logging.Abstractions",
           "CsvHelper",

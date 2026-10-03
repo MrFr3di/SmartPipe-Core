@@ -5,25 +5,47 @@ SmartPipe.Core has one runtime model: typed envelopes.
 ## Choose the integration package
 
 ```bash
-dotnet add package SmartPipe.Core
+dotnet package add SmartPipe.Core --version 2.2.0
 ```
 
 Use `SmartPipe.Extensions.Json` for JSON files, JSON transforms, and JSON
 dead-letter persistence:
 
 ```bash
-dotnet add package SmartPipe.Extensions.Json
+dotnet package add SmartPipe.Extensions.Json --version 2.2.0
 ```
 
-Use `SmartPipe.Extensions` for HTTP, database, CSV, mapping, resilience,
-hosting, and health-check integrations:
+For integrations, prefer the narrow package that owns the capability:
+
+| Capability | Package |
+|---|---|
+| JSON files/transforms/dead-letter | `SmartPipe.Extensions.Json` |
+| CSV files | `SmartPipe.Extensions.Csv` |
+| Explicit SQL / Dapper | `SmartPipe.Extensions.Dapper` |
+| Entity Framework Core queries | `SmartPipe.Extensions.EntityFrameworkCore` |
+| Mapster | `SmartPipe.Extensions.Mapster` |
+| HTTP transport | `SmartPipe.Extensions.Http` |
+| HTTP JSON codecs | `SmartPipe.Extensions.Http.Json` |
+| Polly resilience | `SmartPipe.Extensions.Polly` |
+| Dependency injection | `SmartPipe.Extensions.DependencyInjection` |
+| Generic Host | `SmartPipe.Extensions.Hosting` |
+| Health checks | `SmartPipe.Extensions.HealthChecks` |
+| OpenTelemetry registration | `SmartPipe.Extensions.OpenTelemetry` |
+| PostgreSQL binary COPY / LISTEN | `SmartPipe.Extensions.PostgreSql` |
+| Test helpers | `SmartPipe.Testing` |
+
+Use the broad compatibility bundle only when its complete integration dependency
+set is intentional:
 
 ```bash
-dotnet add package SmartPipe.Extensions
+dotnet package add SmartPipe.Extensions --version 2.2.0
 ```
 
-`SmartPipe.Extensions` forwards the JSON types for 2.x compatibility.
-Direct JSON package references are recommended for new applications.
+`SmartPipe.Extensions` preserves retained 2.x facade identities and forwards
+moved types where compatibility is supported. It does not include the optional
+PostgreSQL package or the test-only Testing package. New applications should
+prefer leaf references. See the [2.2.0 release notes](releases/2.2.0.md) and
+[2.1.2 → 2.2.0 migration guide](migration/2.2.0-integration-packages.md).
 
 ```text
 IPipelineSource<TInput>
@@ -154,5 +176,5 @@ Next links:
 - [Runtime contracts](runtime-contracts.md)
 - [Resilience](resilience.md)
 - [PostgreSQL](postgresql.md)
-- [API reference](api-reference.md)
+- [API reference](reference/api-overview.md)
 - [Migration guide](migration/legacy-to-typed.md)

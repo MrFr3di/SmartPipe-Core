@@ -8,7 +8,7 @@
 
 ## Context
 
-SmartPipe 2.1.x combines the stable execution runtime with a monolithic integration package. Release 2.2.0 must establish independently reviewable integration packages without duplicating runtime semantics or breaking existing consumers. The complete implementation requirements are maintained in the [2.2.0 extension architecture plan](../plans/2.2.0-extension-architecture.md); branch and review controls are defined by the [2.2.0 governance policy](../governance/2.2.0-branch-and-review-policy.md), and baseline work is decomposed in the [SP220-00 detailed plan](../plans/2.2.0/SP220-00-governance-and-baseline.md).
+SmartPipe 2.1.x combines the stable execution runtime with a monolithic integration package. Release 2.2.0 must establish independently reviewable integration packages without duplicating runtime semantics or breaking existing consumers. The complete implementation requirements are maintained in the [2.2.0 extension architecture plan](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/maintainers/2.2.0/plans/architecture-plan.md); branch and review controls are defined by the [2.2.0 governance policy](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/maintainers/governance/2.2.0-branch-and-review-policy.md), and baseline work is decomposed in the [SP220-00 detailed plan](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/maintainers/2.2.0/plans/SP220-00-governance-and-baseline.md).
 
 ## Decision
 

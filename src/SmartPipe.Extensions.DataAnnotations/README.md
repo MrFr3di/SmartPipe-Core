@@ -2,6 +2,12 @@
 
 DataAnnotations validation transforms for SmartPipe.Core.
 
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.DataAnnotations
+```
+
 `ValidationTransform<T>` keeps the existing public namespace
 `SmartPipe.Extensions.Transforms` and combines object/property DataAnnotations
 validation with fluent `Require` rules. Validation follows

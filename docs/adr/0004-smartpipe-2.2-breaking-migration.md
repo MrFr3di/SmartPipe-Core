@@ -48,7 +48,7 @@ and response, streams responses through caller readers, bounds error previews,
 and does not retry implicitly. `Http.Json` supplies bounded array and NDJSON
 codecs using `JsonTypeInfo<T>`; it has no reflection fallback as a positive
 trim/AOT path. Exact contracts and limits live in the HTTP sections of the
-[architecture plan](../plans/2.2.0-extension-architecture.md) and the two
+[architecture plan](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/maintainers/2.2.0/plans/architecture-plan.md) and the two
 package READMEs.
 
 ## Consequences

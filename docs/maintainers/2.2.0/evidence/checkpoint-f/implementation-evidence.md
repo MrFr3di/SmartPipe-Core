@@ -37,7 +37,7 @@ RED evidence: leading-comment/position-budget/early-Throw HTTP tests, oversized 
 
 ## NDJSON measurements
 
-Raw data: [before](evidence/checkpoint-f/ndjson-before.csv), [after](evidence/checkpoint-f/ndjson-after.csv).
+Raw data: [before](ndjson-before.csv), [after](ndjson-after.csv).
 Both use the same source-linked framer harness, fixed in-memory input prepared outside measurement, three warmups, then 100/20/8 repetitions for small/1 MiB/16 MiB inputs. Each repetition rewinds and drains the iterator, consuming Bytes and TooLarge in a checksum. Allocation uses `GC.GetTotalAllocatedBytes(true)`; Gen2 uses collection counts. This is a controlled local comparison, not a statistically stable throughput benchmark.
 
 | 16 MiB input | Before allocated B/op | After allocated B/op | Before / after MiB/s |
@@ -58,7 +58,7 @@ The local `--job Dry` smoke executed all 15 cases and reported approximately 48 
 
 ## Channel validation measurements
 
-Raw data: [before](evidence/checkpoint-f/channels-before.csv), [after](evidence/checkpoint-f/channels-after.csv).
+Raw data: [before](channels-before.csv), [after](channels-after.csv).
 The same source-linked `PostgreSqlChannelSet.Create` harness composes preallocated ordinal names, with unique and duplicate-at-end inputs; no PostgreSQL/network I/O. It warms up 16 times, selects a bounded repetition count from a probe, then reports the median of seven samples and thread-local allocated bytes. The preceding source is from the baseline commit.
 
 | Unique channels | Before ns/op | After ns/op | Before / after allocated B/op |

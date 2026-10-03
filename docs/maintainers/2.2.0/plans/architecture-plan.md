@@ -2,7 +2,7 @@
 % Архитектурный план декомпозиции, интеграции и реализации
 % 15 июля 2026
 
-Связанные нормативные документы: [ADR-0001](../adr/0001-smartpipe-2.2-package-boundaries.md), [branch and review policy](../governance/2.2.0-branch-and-review-policy.md). Детальные планы EPIC: [SP220-00 Governance and Baseline](2.2.0/SP220-00-governance-and-baseline.md).
+Связанные нормативные документы: [ADR-0001](../../../adr/0001-smartpipe-2.2-package-boundaries.md), [branch and review policy](../../governance/2.2.0-branch-and-review-policy.md). Детальные планы EPIC: [SP220-00 Governance and Baseline](SP220-00-governance-and-baseline.md).
 
 # Содержание
 
@@ -760,7 +760,7 @@ SmartPipe package регистрирует только Meter/ActivitySource. О
 | DbSink | Dapper | Переместить и forward; legacy auto-SQL path остаётся только внутри forwarded типа |
 | EfCoreSelector | EntityFrameworkCore | Переместить и forward; добавить factory-based source |
 | MapsterTransform | Mapster | Переместить и forward |
-| PollyResilienceTransform | Нет; removed per [ADR-0004](../adr/0004-smartpipe-2.2-breaking-migration.md) | No-op identity удалена без forwarder/wrapper; `Removed` записан в ownership matrix; замена — `PollyTransformDecorator`/`PollyPipelineComponents.Decorate` в Polly leaf |
+| PollyResilienceTransform | Нет; removed per [ADR-0004](../../../adr/0004-smartpipe-2.2-breaking-migration.md) | No-op identity удалена без forwarder/wrapper; `Removed` записан в ownership matrix; замена — `PollyTransformDecorator`/`PollyPipelineComponents.Decorate` в Polly leaf |
 | FilterTransform, ConditionalTransform, CompositeTransform, CompressionTransform | Transforms | Переместить и forward; исправить lifecycle/API |
 | ValidationTransform, FilterValidationExtensions | DataAnnotations | Переместить и forward |
 | LoggerSink | Logging | Переместить и forward; добавить safe options API |
@@ -769,12 +769,12 @@ SmartPipe package регистрирует только Meter/ActivitySource. О
 | Legacy SmartPipeHostedService/options/enums | Extensions facade | Сохранить физически как frozen compatibility quarantine; новый orchestrator находится в Hosting |
 | Legacy HealthCheck/options/snapshots/monitor types | Extensions facade | Сохранить физически как frozen compatibility quarantine; новые key-based contracts находятся в HealthChecks |
 | SmartPipeServiceCollectionExtensions | Extensions facade | Сохранить физические legacy registration entry points; не делегировать canonical builders; obsolete только synchronous `Start` members |
-| `HttpSelector`, `HttpClientFactorySelector`, `HttpSink`, `HttpClientFactorySink` | Нет; removed per [ADR-0004](../adr/0004-smartpipe-2.2-breaking-migration.md) | `Removed` с явной заменой записан в ownership matrix; реализаций, forwarders и wrappers нет; consumers обновляют API и перекомпилируются |
+| `HttpSelector`, `HttpClientFactorySelector`, `HttpSink`, `HttpClientFactorySink` | Нет; removed per [ADR-0004](../../../adr/0004-smartpipe-2.2-breaking-migration.md) | `Removed` с явной заменой записан в ownership matrix; реализаций, forwarders и wrappers нет; consumers обновляют API и перекомпилируются |
 
 ## 12.2. Удаление legacy HTTP identities
 
 Четыре composite identities из migration matrix удалены в 2.2.0 согласно
-[ADR-0004](../adr/0004-smartpipe-2.2-breaking-migration.md). Их смешанные JSON и
+[ADR-0004](../../../adr/0004-smartpipe-2.2-breaking-migration.md). Их смешанные JSON и
 Polly signatures не переносятся в чистые HTTP leaves и не сохраняются в facade
 через wrappers или forwarders. Consumers переходят на `HttpPipelineComponents`
 и HTTP JSON codecs, затем перекомпилируются. Удаления должны быть отражены в
@@ -1250,7 +1250,7 @@ Core, configured `HttpClient` handlers и Polly decorator. HTTP adapter не
 ## 19.1. Старый no-op transform
 
 `PollyResilienceTransform<T>` удалён из `SmartPipe.Extensions` в SP220-14 по
-[ADR-0004](../adr/0004-smartpipe-2.2-breaking-migration.md): его callback
+[ADR-0004](../../../adr/0004-smartpipe-2.2-breaking-migration.md): его callback
 возвращал `StageResult<T>.Success(envelope.Payload)` и не вызывал inner
 transform. Forwarder и wrapper нет; ownership matrix фиксирует `Removed`, facade
 несёт одну targeted `CP0001` ApiCompat suppression. Consumers переходят на
@@ -1370,7 +1370,7 @@ callbacks, registry packages и dynamic application code вне этого claim
 
 - convenience bundle;
 - compatibility facade;
-- references на все official packages;
+- references на Core и 16 runtime integration leaves из releaseDependencies в `eng/package-graph.json`; `SmartPipe.Testing` и optional `SmartPipe.Extensions.PostgreSql` не входят в bundle;
 - type forwarders для всех перемещённых public types;
 - legacy wrappers только для composite types, которые нельзя разделить безопасным forwarding;
 - не получает новые feature APIs.
@@ -1680,7 +1680,7 @@ violating topological order, and it is deliberately absent from the facade bundl
 - [ ] Создать release branch `release/2.2.0` от актуальной `main`.
 - [ ] Повторно зафиксировать baseline SHA и успешный CI.
 - [ ] Добавить ADR package boundaries.
-- [ ] Добавить данный plan в `docs/plans/2.2.0-extension-architecture.md`.
+- [ ] Добавить данный plan в `docs/maintainers/2.2.0/plans/architecture-plan.md`.
 - [ ] Зафиксировать правило: новые framework-specific types не добавляются в broad package.
 - [ ] Сохранить 2.1.2 nupkg как baseline для ApiCompat и binary consumers.
 - [ ] Снять текущий package dependency graph и public API snapshots.
@@ -1942,9 +1942,25 @@ direct consumer не получает facade, Dapper, EF Core, HTTP или Polly
 - [ ] Добавить compile/binary compatibility matrix.
 - [ ] Добавить migration doc от 2.1.2.
 
-**Acceptance:** old binary запускается; new specific consumers не устанавливают broad meta package.
+**Acceptance:** baseline facade inventory полностью классифицирован: 23 forwarded,
+13 retained, 6 removed identities. Packed assemblies подтверждают точные owners,
+forwarder destinations и отсутствие лишнего public facade API. Source и binary
+consumers сохраняемого API работают; binary consumer, собранный против 2.1.2,
+запускается с 2.2.0 без перекомпиляции и с неизменным SHA DLL. Шесть HTTP/Polly
+removals ADR-0004 требуют миграции и перекомпиляции, не wrappers/forwarders.
+Фасад содержит 17 прямых SmartPipe dependencies (18 IDs вместе с фасадом);
+Testing/PostgreSql исключены. Direct leaf consumers не устанавливают broad
+meta package. Native Package Validation, graph/ownership current и release
+gates и миграционные примеры проходят на одном candidate SHA.
+
+Детальный план: [SP220-17 implementation](SP220-17-implementation.md).
 
 ## EPIC SP220-18 — Release validation
+
+Implementation: [SP220-18 plan](SP220-18-implementation.md),
+[candidate evidence](../evidence/sp220-18-evidence.md),
+[owner gates and publication sequence](../readiness/sp220-18-release-readiness.md).
+The acceptance checklist remains open until exact-head remote evidence and owner approvals are recorded.
 
 **Зависимости:** все.
 
@@ -2044,11 +2060,11 @@ to `release/2.2.0` through a reviewable merge. G starts from accepted F.
 ## Compatibility
 
 - [ ] Старые namespaces сохранены для retained identities; HTTP removals следуют ADR-0004.
-- [ ] Retained moved types forwarded; removed HTTP identities have no forwarders.
-- [ ] Оставшиеся composite legacy APIs имеют thin wrappers; четыре HTTP identities не имеют реализации или forwarders.
-- [ ] Source consumer 2.1.2 компилируется.
+- [ ] Retained moved types forwarded; все шесть HTTP/Polly removals ADR-0004 не имеют forwarders.
+- [ ] Legacy DI/Hosting/Health cluster остаётся физически в facade по ADR-0002; все шесть removed identities не имеют реализации или wrappers.
+- [ ] Source consumer сохраняемого API 2.1.2 компилируется.
 - [ ] Binary consumer 2.1.2 запускается для retained moves.
-- [ ] Consumers четырёх удалённых HTTP identities обновлены и перекомпилируются.
+- [ ] Consumers пяти удалённых HTTP identities и PollyResilienceTransform обновлены и перекомпилируются.
 - [ ] Нет новых overload ambiguities.
 
 ## Runtime/lifecycle
@@ -2135,7 +2151,7 @@ to `release/2.2.0` through a reviewable merge. G starts from accepted F.
 18. [Polly — DI pipeline registry](https://github.com/App-vNext/Polly/blob/main/src/Polly.Extensions/DependencyInjection/PollyServiceCollectionExtensions.cs)
 19. [Serilog.Extensions.Hosting](https://github.com/serilog/serilog-extensions-hosting)
 20. [MassTransit EntityFrameworkCore integration](https://github.com/MassTransit/MassTransit/tree/develop/src/Persistence/MassTransit.EntityFrameworkCoreIntegration)
-21. SmartPipe.Core baseline commit `8e79902d22de714f493582946f7c260462b0895e`; [tracked baseline manifest](../../eng/baselines/2.1.2/manifest.json)
+21. SmartPipe.Core baseline commit `8e79902d22de714f493582946f7c260462b0895e`; [tracked baseline manifest](../../../../eng/baselines/2.1.2/manifest.json)
 
 # 36. Финальная директива
 
