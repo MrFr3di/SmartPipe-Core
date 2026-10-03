@@ -188,7 +188,7 @@ internal sealed class DocumentationVerificationService
             var gettingStarted = await File.ReadAllTextAsync(gettingStartedPath, cancellationToken).ConfigureAwait(false);
             foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
             {
-                if (!gettingStarted.Contains($"`{package.Id}`", StringComparison.Ordinal))
+                if (!gettingStarted.Contains(package.Id, StringComparison.Ordinal))
                 {
                     violations.Add(new(
                         "SPDOC018",
