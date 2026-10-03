@@ -175,7 +175,7 @@ public sealed class DocumentationVerificationServiceTests
         using var repository = new RepositoryTestDirectory();
         var graph = Graph();
         WriteRequiredDocuments(repository, graph);
-        repository.Write("CHANGELOG.md", "# Changelog\\n\\n## [2.1.2] — 2026-07-15\\n");
+        repository.Write("CHANGELOG.md", "# Changelog\n\n## [2.1.2] — 2026-07-15\n");
 
         var result = await DocumentationVerificationService.VerifyAsync(
             repository.Path,
@@ -196,17 +196,17 @@ public sealed class DocumentationVerificationServiceTests
         WriteRequiredDocuments(repository, graph);
         repository.Write(
             "docs/releases/2.2.0.md",
-            "# SmartPipe 2.2.0 release notes\\n\\n" +
-            "## Package selection\\n\\n" +
-            "| Package | Primary purpose |\\n" +
-            "|---|---|\\n" +
-            "| `SmartPipe.Core` | Runtime |\\n" +
-            "| `SmartPipe.Extensions.Json` | JSON |\\n\\n" +
-            "## Breaking changes and migration\\n\\n" +
-            "[Migration](../migration/2.2.0-integration-packages.md)\\n" +
-            "[Compatibility](../reference/compatibility/2.1.2-to-2.2.0.md)\\n\\n" +
-            "## Detailed changes\\n\\n" +
-            "[CHANGELOG](../../CHANGELOG.md)\\n");
+            "# SmartPipe 2.2.0 release notes\n\n" +
+            "## Package selection\n\n" +
+            "| Package | Primary purpose |\n" +
+            "|---|---|\n" +
+            "| `SmartPipe.Core` | Runtime |\n" +
+            "| `SmartPipe.Extensions.Json` | JSON |\n\n" +
+            "## Breaking changes and migration\n\n" +
+            "[Migration](../migration/2.2.0-integration-packages.md)\n" +
+            "[Compatibility](../reference/compatibility/2.1.2-to-2.2.0.md)\n\n" +
+            "## Detailed changes\n\n" +
+            "[CHANGELOG](../../CHANGELOG.md)\n");
 
         var result = await DocumentationVerificationService.VerifyAsync(
             repository.Path,
@@ -227,10 +227,10 @@ public sealed class DocumentationVerificationServiceTests
         WriteRequiredDocuments(repository, graph);
         repository.Write(
             "CHANGELOG.md",
-            "# Changelog\\n\\n" +
-            "## [2.2.0] — Development\\n\\n" +
-            "`SmartPipe.Core` and `SmartPipe.Extensions.Json` changes only.\\n\\n" +
-            "## [2.1.2] — 2026-07-15\\n");
+            "# Changelog\n\n" +
+            "## [2.2.0] — Development\n\n" +
+            "`SmartPipe.Core` and `SmartPipe.Extensions.Json` changes only.\n\n" +
+            "## [2.1.2] — 2026-07-15\n");
 
         var result = await DocumentationVerificationService.VerifyAsync(
             repository.Path,
@@ -252,13 +252,13 @@ public sealed class DocumentationVerificationServiceTests
         WriteRequiredDocuments(repository, graph);
         repository.Write(
             "docs/releases/2.2.0.md",
-            "# SmartPipe 2.2.0 release notes\\n\\n" +
-            "## Package selection\\n\\n" +
-            "| Package | Primary purpose |\\n" +
-            "|---|---|\\n" +
-            "| `SmartPipe.Core` | Runtime |\\n" +
-            "| `SmartPipe.Extensions.Json` | JSON |\\n" +
-            "| `SmartPipe.Extensions.Csv` | CSV |\\n");
+            "# SmartPipe 2.2.0 release notes\n\n" +
+            "## Package selection\n\n" +
+            "| Package | Primary purpose |\n" +
+            "|---|---|\n" +
+            "| `SmartPipe.Core` | Runtime |\n" +
+            "| `SmartPipe.Extensions.Json` | JSON |\n" +
+            "| `SmartPipe.Extensions.Csv` | CSV |\n");
 
         var result = await DocumentationVerificationService.VerifyAsync(
             repository.Path,
@@ -279,10 +279,10 @@ public sealed class DocumentationVerificationServiceTests
         WriteRequiredDocuments(repository, graph);
         repository.Write(
             "CHANGELOG.md",
-            "# Changelog\\n\\n" +
-            "## [2.2.0] — Development\\n\\n" +
-            "`SmartPipe.Extensions.Csv` first release. [Missing](docs/missing.md)\\n\\n" +
-            "## [2.1.2] — 2026-07-15\\n");
+            "# Changelog\n\n" +
+            "## [2.2.0] — Development\n\n" +
+            "`SmartPipe.Extensions.Csv` first release. [Missing](docs/missing.md)\n\n" +
+            "## [2.1.2] — 2026-07-15\n");
 
         var result = await DocumentationVerificationService.VerifyAsync(
             repository.Path,
@@ -389,25 +389,25 @@ public sealed class DocumentationVerificationServiceTests
         repository.Write("docs/runtime-contracts.md", "# Runtime contracts\n");
         repository.Write(
             "CHANGELOG.md",
-            "# Changelog\\n\\n" +
-            "## [2.2.0] — Development\\n\\n" +
-            "First release: `SmartPipe.Extensions.Csv`.\\n\\n" +
-            "## [2.1.2] — 2026-07-15\\n");
+            "# Changelog\n\n" +
+            "## [2.2.0] — Development\n\n" +
+            "First release: `SmartPipe.Extensions.Csv`.\n\n" +
+            "## [2.1.2] — 2026-07-15\n");
         repository.Write(
             "docs/releases/2.2.0.md",
-            "# SmartPipe 2.2.0 release notes\\n\\n" +
-            "## Package selection\\n\\n" +
-            "| Package | Primary purpose |\\n" +
-            "|---|---|\\n" +
-            "| `SmartPipe.Core` | Runtime |\\n" +
-            "| `SmartPipe.Extensions.Json` | JSON |\\n" +
-            "| `SmartPipe.Extensions.Csv` | CSV |\\n\\n" +
-            "## Breaking changes and migration\\n\\n" +
-            "[Migration](../migration/2.2.0-integration-packages.md)\\n" +
-            "[Compatibility](../reference/compatibility/2.1.2-to-2.2.0.md)\\n\\n" +
-            "## Detailed changes\\n\\n" +
-            "[CHANGELOG](../../CHANGELOG.md)\\n");
-        repository.Write("docs/migration/2.2.0-integration-packages.md", "# Migration\\n");
+            "# SmartPipe 2.2.0 release notes\n\n" +
+            "## Package selection\n\n" +
+            "| Package | Primary purpose |\n" +
+            "|---|---|\n" +
+            "| `SmartPipe.Core` | Runtime |\n" +
+            "| `SmartPipe.Extensions.Json` | JSON |\n" +
+            "| `SmartPipe.Extensions.Csv` | CSV |\n\n" +
+            "## Breaking changes and migration\n\n" +
+            "[Migration](../migration/2.2.0-integration-packages.md)\n" +
+            "[Compatibility](../reference/compatibility/2.1.2-to-2.2.0.md)\n\n" +
+            "## Detailed changes\n\n" +
+            "[CHANGELOG](../../CHANGELOG.md)\n");
+        repository.Write("docs/migration/2.2.0-integration-packages.md", "# Migration\n");
         repository.Write("docs/reference/api-overview.md", "# API overview\n");
         repository.Write("docs/reference/compatibility/README.md", "# Compatibility reference\n");
         repository.Write("docs/reference/compatibility/2.1.2-to-2.2.0.md", "# Compatibility matrix\n");
