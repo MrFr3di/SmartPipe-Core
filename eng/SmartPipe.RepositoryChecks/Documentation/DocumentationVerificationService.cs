@@ -236,17 +236,15 @@ internal sealed class DocumentationVerificationService
         else
         {
             var changelog = await File.ReadAllTextAsync(changelogPath, cancellationToken).ConfigureAwait(false);
-            var currentHeadingRegex = new Regex(
-                $@"^## \[{Regex.Escape(releaseVersion)}\] — (?<state>Development|\d{{4}}-\d{{2}}-\d{{2}})\s*$",
-                RegexOptions.CultureInvariant | RegexOptions.Multiline);
-            var currentHeadingCandidates = Regex.Matches(
-                changelog,
-                $@"^## \[{Regex.Escape(releaseVersion)}\] — [^\r\n]+\s*$",
-                RegexOptions.CultureInvariant | RegexOptions.Multiline);
-            var currentHeading = currentHeadingRegex.Match(changelog);
+            var changelogLines = SplitLines(changelog);
+            var headingPrefix = $"## [{releaseVersion}] — ";
+            var currentHeadingCandidates = changelogLines
+                .Select((line, index) => (Line: line.TrimEnd(), Index: index))
+                .Where(item => item.Line.StartsWith(headingPrefix, StringComparison.Ordinal))
+                .ToArray();
 
-            var releaseState = currentHeading.Success
-                ? currentHeading.Groups["state"].Value
+            var releaseState = currentHeadingCandidates.Length == 1
+                ? currentHeadingCandidates[0].Line[headingPrefix.Length..]
                 : string.Empty;
             var hasValidReleaseState = string.Equals(releaseState, "Development", StringComparison.Ordinal)
                 || DateOnly.TryParseExact(
@@ -256,7 +254,7 @@ internal sealed class DocumentationVerificationService
                     DateTimeStyles.None,
                     out _);
 
-            if (currentHeadingCandidates.Count != 1 || !currentHeading.Success || !hasValidReleaseState)
+            if (currentHeadingCandidates.Length != 1 || !hasValidReleaseState)
             {
                 violations.Add(new(
                     "SPDOC014",
@@ -265,7 +263,10 @@ internal sealed class DocumentationVerificationService
             }
             else
             {
-                currentReleaseSection = ExtractSectionAfterHeading(changelog, currentHeading, VersionHeadingRegex);
+                currentReleaseSection = ExtractSectionAfterLine(
+                    changelogLines,
+                    currentHeadingCandidates[0].Index,
+                    IsVersionHeadingLine);
 
                 foreach (var package in graph.Packages.Where(package =>
                              package.Lifecycle != PackageLifecycle.Planned
@@ -307,9 +308,7 @@ internal sealed class DocumentationVerificationService
                 .Select(package => package.Id)
                 .ToHashSet(StringComparer.Ordinal);
 
-            var actual = ReleasePackageRowRegex.Matches(packageSection)
-                .Select(match => match.Groups["id"].Value)
-                .ToArray();
+            var actual = EnumerateReleasePackageIds(packageSection).ToArray();
             var actualSet = actual.ToHashSet(StringComparer.Ordinal);
             var missing = expected.Except(actualSet, StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
             var unknown = actualSet.Except(expected, StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
@@ -358,20 +357,71 @@ internal sealed class DocumentationVerificationService
 
     private static string? ExtractLevelTwoSection(string content, string heading)
     {
-        var headingRegex = new Regex(
-            $"^{Regex.Escape(heading)}\\s*$",
-            RegexOptions.CultureInvariant | RegexOptions.Multiline);
-        var match = headingRegex.Match(content);
-        return match.Success ? ExtractSectionAfterHeading(content, match, LevelTwoHeadingRegex) : null;
+        var lines = SplitLines(content);
+        for (var index = 0; index < lines.Length; index++)
+        {
+            if (string.Equals(lines[index].TrimEnd(), heading, StringComparison.Ordinal))
+            {
+                return ExtractSectionAfterLine(lines, index, IsLevelTwoHeadingLine);
+            }
+        }
+
+        return null;
     }
 
-    private static string ExtractSectionAfterHeading(string content, Match heading, Regex nextHeadingRegex)
+    private static string ExtractSectionAfterLine(
+        IReadOnlyList<string> lines,
+        int headingIndex,
+        Func<string, bool> isNextHeading)
     {
-        var start = heading.Index + heading.Length;
-        var remainder = content[start..];
-        var nextHeading = nextHeadingRegex.Match(remainder);
-        return nextHeading.Success ? remainder[..nextHeading.Index] : remainder;
+        var end = headingIndex + 1;
+        while (end < lines.Count && !isNextHeading(lines[end]))
+        {
+            end++;
+        }
+
+        return string.Join('\n', lines.Skip(headingIndex + 1).Take(end - headingIndex - 1));
     }
+
+    private static bool IsVersionHeadingLine(string line)
+    {
+        var candidate = line.TrimEnd();
+        return candidate.StartsWith("## [", StringComparison.Ordinal)
+            && candidate.Contains("] — ", StringComparison.Ordinal);
+    }
+
+    private static bool IsLevelTwoHeadingLine(string line) =>
+        line.TrimEnd().StartsWith("## ", StringComparison.Ordinal);
+
+    private static IEnumerable<string> EnumerateReleasePackageIds(string section)
+    {
+        foreach (var line in SplitLines(section))
+        {
+            if (line.Length == 0 || line[0] != '|')
+            {
+                continue;
+            }
+
+            var separator = line.IndexOf('|', 1);
+            if (separator < 0)
+            {
+                continue;
+            }
+
+            var firstCell = line[1..separator].Trim();
+            if (firstCell.Length >= 3 && firstCell[0] == '`' && firstCell[^1] == '`')
+            {
+                var id = firstCell[1..^1];
+                if (id.Length != 0)
+                {
+                    yield return id;
+                }
+            }
+        }
+    }
+
+    private static string[] SplitLines(string content) =>
+        content.Split('\n').Select(static line => line.TrimEnd('\r')).ToArray();
 
     private static async Task ValidateSelfRepositoryLinksAsync(
         string root,
