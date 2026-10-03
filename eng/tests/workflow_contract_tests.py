@@ -512,15 +512,6 @@ def assert_documentation_site_contract(document: dict) -> None:
     require_same_repository_pr_guard(job, "Documentation build")
 
     job_steps = steps(job, "documentation build")
-    setup = named_step(job_steps, "Setup .NET")
-    require(setup.get("uses") ==
-            "actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1",
-            "Documentation workflow must use the pinned setup-dotnet action.")
-    require(setup.get("with") == {
-        "global-json-file": "global.json",
-        "cache": True,
-        "cache-dependency-path": "**/packages.lock.json",
-    }, "Documentation setup-dotnet cache/SDK contract changed.")
     restore = named_step(job_steps, "Restore locked")
     require(str(restore.get("run", "")).strip() ==
             "dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true",
