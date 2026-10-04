@@ -12,7 +12,7 @@ try
         .ToCsvFile(output, new CsvSinkOptions());
     await using var run = await definition.StartAsync();
     await run.Completion;
-    if (!File.ReadAllText(output).Contains("Ada,42", StringComparison.Ordinal)) return 1;
+    if (!(await File.ReadAllTextAsync(output)).Contains("Ada,42", StringComparison.Ordinal)) return 1;
 }
 finally
 {
@@ -20,7 +20,7 @@ finally
     File.Delete(output);
 }
 
-Console.WriteLine("CONSUMER_OK csv-direct");
+await Console.Out.WriteLineAsync("CONSUMER_OK csv-direct");
 return 0;
 
 namespace SmartPipe.ConsumerScenarios
