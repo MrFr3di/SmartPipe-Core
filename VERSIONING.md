@@ -138,7 +138,7 @@ SmartPipe release publication is explicit and main-driven. Pushing or creating a
    `v<version>` on the exact workflow SHA and publish the GitHub Release using
    the extracted `RELEASE_NOTES.md`.
 
-Normal publication rejects duplicate identities. Recovery is explicit,
+Normal publication rejects duplicate identities. Recovery is failed-job-only,
 payload-equivalence checked, never rebuilds the same version, and never moves an
 existing tag.
 
