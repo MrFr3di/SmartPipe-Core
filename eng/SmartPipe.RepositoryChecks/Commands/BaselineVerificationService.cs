@@ -420,7 +420,7 @@ internal sealed class BaselineVerificationService
         var found = requiredEvents.ToDictionary(static item => item, static _ => false, StringComparer.Ordinal);
         string? currentEvent = null;
         var inOn = false;
-        var inBranches = false;
+        string? branchListEvent = null;
         var lineCount = 0;
         foreach (var rawLine in File.ReadLines(path))
         {
@@ -441,7 +441,7 @@ internal sealed class BaselineVerificationService
             {
                 inOn = content == "on:";
                 currentEvent = null;
-                inBranches = false;
+                branchListEvent = null;
                 continue;
             }
 
@@ -453,14 +453,14 @@ internal sealed class BaselineVerificationService
             if (indent == 2 && content.EndsWith(':') && !content.StartsWith('-'))
             {
                 currentEvent = content[..^1];
-                inBranches = false;
+                branchListEvent = null;
                 continue;
             }
 
             if (indent <= 2)
             {
                 currentEvent = null;
-                inBranches = false;
+                branchListEvent = null;
                 continue;
             }
 
@@ -494,7 +494,7 @@ internal sealed class BaselineVerificationService
 
             if (indent <= 4)
             {
-                inBranches = false;
+                branchListEvent = null;
             }
         }
 
