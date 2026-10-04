@@ -12,12 +12,6 @@ on:
         required: true
         type: boolean
         default: false
-      recoverable-rerun:
-        description: Resume a partial publication only after proving published payload equivalence
-        required: true
-        type: boolean
-        default: false
-
 permissions:
   contents: read
 
@@ -63,12 +57,12 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
           PUBLISH_NUGET: ${{ inputs.publish_nuget }}
-          RECOVERABLE_RERUN: ${{ inputs.recoverable-rerun }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
 
-          if [[ "$RECOVERABLE_RERUN" == "true" && "$PUBLISH_NUGET" != "true" ]]; then
-            echo "recoverable-rerun requires publish_nuget=true." >&2
+          if [[ "$RUN_ATTEMPT" != "1" ]]; then
+            echo "Do not rerun the whole release workflow: that would rebuild an already validated version. For partial publication recovery use GitHub 'Re-run failed jobs' so the successful producer artifact is reused." >&2
             exit 1
           fi
 
@@ -104,11 +98,8 @@ jobs:
           fi
 
           if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
-            if [[ "$RECOVERABLE_RERUN" != "true" ]]; then
-              echo "Tag v$VERSION already exists; normal releases never reuse or move tags." >&2
-              exit 1
-            fi
-            echo "Recovery will verify the existing tag before completing the GitHub Release."
+            echo "Tag v$VERSION already exists; releases never reuse or move tags." >&2
+            exit 1
           fi
 
           echo "package-version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -181,7 +172,7 @@ jobs:
         run: sha256sum --check --strict SHA256SUMS
 
       - name: Preflight recoverable published packages
-        if: inputs.recoverable-rerun
+        if: github.run_attempt > 1
         shell: pwsh
         env:
           PACKAGE_MANIFEST: artifacts/packages/manifest.json
@@ -259,12 +250,12 @@ jobs:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
           NUGET_SYMBOL_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
           PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
-          RECOVERABLE_RERUN: ${{ inputs.recoverable-rerun }}
+          RECOVERY_MODE: ${{ github.run_attempt > 1 }}
         run: |
           manifest="artifacts/packages/manifest.json"
           recovery_state="artifacts/recovery-state.json"
-          if [[ "$RECOVERABLE_RERUN" == "true" && ! -f "$recovery_state" ]]; then
-            echo "Recoverable publication requires preflight state." >&2
+          if [[ "$RECOVERY_MODE" == "true" && ! -f "$recovery_state" ]]; then
+            echo "Recovery rerun requires preflight state." >&2
             exit 1
           fi
           mapfile -t packages < <(jq -r '.packages | sort_by(.publishOrder)[] | .nupkgPath' "$manifest")
@@ -292,7 +283,7 @@ jobs:
               exit 1
             fi
 
-            if [[ "$RECOVERABLE_RERUN" != "true" ]]; then
+            if [[ "$RECOVERY_MODE" != "true" ]]; then
               dotnet nuget push "$package" --source https://api.nuget.org/v3/index.json
               continue
             fi
