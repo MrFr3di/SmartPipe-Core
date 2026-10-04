@@ -156,7 +156,7 @@ The release boundary is instead composed of:
 - the `nuget-production` environment and NuGet Trusted Publishing policy.
 
 See
-[the 2.2 branch/review policy](docs/maintainers/governance/2.2.0-branch-and-review-policy.md)
+[the 2.2 branch/review policy](~/docs/maintainers/governance/2.2.0-branch-and-review-policy.md)
 for the concrete SP220 release train.
 
 ## Release documentation
