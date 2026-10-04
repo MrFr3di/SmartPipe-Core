@@ -51,6 +51,12 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Restore release request validator
+        run: dotnet restore eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true
+
+      - name: Build release request validator
+        run: dotnet build eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-restore -warnaserror
+
       - name: Validate requested release
         id: version
         shell: bash
@@ -67,7 +73,7 @@ jobs:
           fi
 
           dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj \
-            --configuration Release -- prepare-release-notes \
+            --configuration Release --no-build --no-restore -- prepare-release-notes \
             --repo-root . --version "$VERSION" --changelog CHANGELOG.md \
             --output artifacts/release-request/RELEASE_NOTES.md
 
