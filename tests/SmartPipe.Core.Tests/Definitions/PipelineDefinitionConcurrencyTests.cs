@@ -11,6 +11,7 @@ public sealed class PipelineDefinitionConcurrencyTests
     [Trait("Category", "ConcurrencyRegression")]
     public async Task FactoryDefinition_32ConcurrentStarts_CreateDistinctComponentsAndRunIdentities()
     {
+        var testCancellation = TestContext.Current.CancellationToken;
         var key = new PipelineKey("32-concurrent-starts");
         var factoryRelease = NewGate();
         var allSourcesCreated = NewGate();
@@ -52,34 +53,43 @@ public sealed class PipelineDefinitionConcurrencyTests
             .ToArray();
 
         var starts = contexts
-            .Select(context => definition.StartAsync(context, CancellationToken.None))
+            .Select(context => definition.StartAsync(context, testCancellation))
             .ToArray();
-        await allSourcesCreated.Task;
-        factoryRelease.TrySetResult(null);
-        var runs = await Task.WhenAll(starts);
-        await Task.WhenAll(runs.Select(run => run.Completion));
-        await Task.WhenAll(runs.Select(run => run.DisposeAsync().AsTask()));
+        try
+        {
+            await allSourcesCreated.Task.WaitAsync(testCancellation);
+            factoryRelease.TrySetResult(null);
+            var runs = await Task.WhenAll(starts).WaitAsync(testCancellation);
+            await Task.WhenAll(runs.Select(run => run.Completion)).WaitAsync(testCancellation);
+            await Task.WhenAll(runs.Select(run => run.DisposeAsync().AsTask()));
 
-        sourceCalls.Should().Be(32);
-        sources.Should().HaveCount(32);
-        stages.Should().HaveCount(32);
-        sinks.Should().HaveCount(32);
-        sources.Distinct().Should().HaveCount(32);
-        stages.Distinct().Should().HaveCount(32);
-        sinks.Distinct().Should().HaveCount(32);
-        runs.Select(run => run.RunId).Should().OnlyHaveUniqueItems();
-        runs.Should().OnlyContain(run => run.PipelineKey == key);
-        contexts.Select(context => context.RunId).Should().BeEquivalentTo(
-            runs.Select(run => run.RunId));
-        sources.Should().OnlyContain(instance => instance.DisposeCount == 1);
-        stages.Should().OnlyContain(instance => instance.DisposeCount == 1);
-        sinks.Should().OnlyContain(instance => instance.DisposeCount == 1);
+            sourceCalls.Should().Be(32);
+            sources.Should().HaveCount(32);
+            stages.Should().HaveCount(32);
+            sinks.Should().HaveCount(32);
+            sources.Distinct().Should().HaveCount(32);
+            stages.Distinct().Should().HaveCount(32);
+            sinks.Distinct().Should().HaveCount(32);
+            runs.Select(run => run.RunId).Should().OnlyHaveUniqueItems();
+            runs.Should().OnlyContain(run => run.PipelineKey == key);
+            contexts.Select(context => context.RunId).Should().BeEquivalentTo(
+                runs.Select(run => run.RunId));
+            sources.Should().OnlyContain(instance => instance.DisposeCount == 1);
+            stages.Should().OnlyContain(instance => instance.DisposeCount == 1);
+            sinks.Should().OnlyContain(instance => instance.DisposeCount == 1);
+        }
+        finally
+        {
+            factoryRelease.TrySetResult(null);
+            await CleanupStartsAsync(starts);
+        }
     }
 
     [Fact(Timeout = 10000)]
     [Trait("Category", "ConcurrencyRegression")]
     public async Task ConcurrentFactoryRuns_CancellingOneRun_DoesNotCancelOthers()
     {
+        var testCancellation = TestContext.Current.CancellationToken;
         var key = new PipelineKey("independent-cancellation");
         var sources = new ConcurrentDictionary<Guid, ConcurrencySource>();
         var allSourcesCreated = NewGate();
@@ -98,31 +108,42 @@ public sealed class PipelineDefinitionConcurrencyTests
             .Build();
         var firstContext = new PipelineActivationContext(key, Guid.NewGuid());
         var secondContext = new PipelineActivationContext(key, Guid.NewGuid());
-        var first = definition.StartDeferred(firstContext, CancellationToken.None);
-        var second = definition.StartDeferred(secondContext, CancellationToken.None);
+        var first = definition.StartDeferred(firstContext, testCancellation);
+        var second = definition.StartDeferred(secondContext, testCancellation);
 
-        await allSourcesCreated.Task;
-        var firstSource = sources[firstContext.RunId];
-        var secondSource = sources[secondContext.RunId];
-        await Task.WhenAll(firstSource.ReadEntered.Task, secondSource.ReadEntered.Task);
+        try
+        {
+            await allSourcesCreated.Task.WaitAsync(testCancellation);
+            var firstSource = sources[firstContext.RunId];
+            var secondSource = sources[secondContext.RunId];
+            await Task.WhenAll(firstSource.ReadEntered.Task, secondSource.ReadEntered.Task).WaitAsync(testCancellation);
 
-        await first.Run.CancelAsync();
-        secondSource.ReadGate!.TrySetResult(null);
+            await first.Run.CancelAsync();
+            secondSource.ReadGate!.TrySetResult(null);
 
-        var firstError = await Record.ExceptionAsync(() => first.Completion);
-        await second.Completion;
+            var firstError = await Record.ExceptionAsync(() => first.Completion);
+            await second.Completion.WaitAsync(testCancellation);
 
-        firstError.Should().BeAssignableTo<OperationCanceledException>();
-        second.Run.State.Should().Be(PipelineRunState.Completed);
-        firstSource.DisposeCount.Should().Be(1);
-        secondSource.DisposeCount.Should().Be(1);
-        sourceCalls.Should().Be(2);
+            testCancellation.ThrowIfCancellationRequested();
+            firstError.Should().BeAssignableTo<OperationCanceledException>();
+            second.Run.State.Should().Be(PipelineRunState.Completed);
+            firstSource.DisposeCount.Should().Be(1);
+            secondSource.DisposeCount.Should().Be(1);
+            sourceCalls.Should().Be(2);
+        }
+        finally
+        {
+            foreach (var source in sources.Values) source.ReadGate!.TrySetResult(null);
+            await CleanupRunsAsync(first.Run, second.Run);
+        }
+
     }
 
     [Fact(Timeout = 10000)]
     [Trait("Category", "ConcurrencyRegression")]
     public async Task ConcurrentRunDispose_DisposesOnlyTheSelectedRunInstances()
     {
+        var testCancellation = TestContext.Current.CancellationToken;
         var key = new PipelineKey("independent-disposal");
         var sources = new ConcurrentDictionary<Guid, ConcurrencySource>();
         var stages = new ConcurrentDictionary<Guid, ConcurrencyTransformer>();
@@ -158,33 +179,43 @@ public sealed class PipelineDefinitionConcurrencyTests
             }));
         var firstContext = new PipelineActivationContext(key, Guid.NewGuid());
         var secondContext = new PipelineActivationContext(key, Guid.NewGuid());
-        var first = definition.StartDeferred(firstContext, CancellationToken.None);
-        var second = definition.StartDeferred(secondContext, CancellationToken.None);
+        var first = definition.StartDeferred(firstContext, testCancellation);
+        var second = definition.StartDeferred(secondContext, testCancellation);
 
-        await allComponentsCreated.Task;
-        var firstSource = sources[firstContext.RunId];
-        var secondSource = sources[secondContext.RunId];
-        await Task.WhenAll(firstSource.ReadEntered.Task, secondSource.ReadEntered.Task);
+        try
+        {
+            await allComponentsCreated.Task.WaitAsync(testCancellation);
+            var firstSource = sources[firstContext.RunId];
+            var secondSource = sources[secondContext.RunId];
+            await Task.WhenAll(firstSource.ReadEntered.Task, secondSource.ReadEntered.Task).WaitAsync(testCancellation);
 
-        var firstDispose = first.Run.DisposeAsync().AsTask();
-        await firstDispose.WaitAsync(TimeSpan.FromSeconds(10));
-        _ = await Record.ExceptionAsync(() => first.Completion);
+            var firstDispose = first.Run.DisposeAsync().AsTask();
+            await firstDispose.WaitAsync(TimeSpan.FromSeconds(10));
+            _ = await Record.ExceptionAsync(() => first.Completion);
 
-        firstSource.DisposeCount.Should().Be(1);
-        stages[firstContext.RunId].DisposeCount.Should().Be(1);
-        sinks[firstContext.RunId].DisposeCount.Should().Be(1);
-        secondSource.DisposeCount.Should().Be(0);
-        stages[secondContext.RunId].DisposeCount.Should().Be(0);
-        sinks[secondContext.RunId].DisposeCount.Should().Be(0);
-        second.Completion.IsCompleted.Should().BeFalse();
+            testCancellation.ThrowIfCancellationRequested();
+            firstSource.DisposeCount.Should().Be(1);
+            stages[firstContext.RunId].DisposeCount.Should().Be(1);
+            sinks[firstContext.RunId].DisposeCount.Should().Be(1);
+            secondSource.DisposeCount.Should().Be(0);
+            stages[secondContext.RunId].DisposeCount.Should().Be(0);
+            sinks[secondContext.RunId].DisposeCount.Should().Be(0);
+            second.Completion.IsCompleted.Should().BeFalse();
 
-        secondSource.ReadGate!.TrySetResult(null);
-        await second.Completion;
-        await second.Run.DisposeAsync();
+            secondSource.ReadGate!.TrySetResult(null);
+            await second.Completion.WaitAsync(testCancellation);
+            await second.Run.DisposeAsync();
 
-        secondSource.DisposeCount.Should().Be(1);
-        stages[secondContext.RunId].DisposeCount.Should().Be(1);
-        sinks[secondContext.RunId].DisposeCount.Should().Be(1);
+            secondSource.DisposeCount.Should().Be(1);
+            stages[secondContext.RunId].DisposeCount.Should().Be(1);
+            sinks[secondContext.RunId].DisposeCount.Should().Be(1);
+
+        }
+        finally
+        {
+            foreach (var source in sources.Values) source.ReadGate!.TrySetResult(null);
+            await CleanupRunsAsync(first.Run, second.Run);
+        }
 
         void SignalAllComponentsCreated()
         {
@@ -197,6 +228,7 @@ public sealed class PipelineDefinitionConcurrencyTests
     [Trait("Category", "ConcurrencyRegression")]
     public async Task CompileAndStartRace_UsesOneCachedPlan()
     {
+        var testCancellation = TestContext.Current.CancellationToken;
         var key = new PipelineKey("compile-start-race");
         var definition = PipelineDefinitionBuilder
             .From(
@@ -210,7 +242,7 @@ public sealed class PipelineDefinitionConcurrencyTests
             .Select(async index =>
             {
                 ready.Signal();
-                await release.Task.ConfigureAwait(false);
+                await release.Task.WaitAsync(testCancellation).ConfigureAwait(false);
                 if (index % 2 == 0)
                 {
                     _ = definition.GetExecutionPlan();
@@ -219,27 +251,38 @@ public sealed class PipelineDefinitionConcurrencyTests
                 {
                     var run = await definition.StartAsync(
                         new PipelineActivationContext(key, Guid.NewGuid()),
-                        CancellationToken.None);
-                    await run.Completion.ConfigureAwait(false);
-                    await run.DisposeAsync().ConfigureAwait(false);
+                        testCancellation);
+                    try { await run.Completion.WaitAsync(testCancellation).ConfigureAwait(false); }
+                    finally { await run.DisposeAsync().ConfigureAwait(false); }
                 }
 
                 return definition.GetExecutionPlan();
             })
             .ToArray();
 
-        ready.Wait();
-        release.TrySetResult(null);
-        var plans = await Task.WhenAll(workers);
+        try
+        {
+            ready.Wait(testCancellation);
+            release.TrySetResult(null);
+            var plans = await Task.WhenAll(workers).WaitAsync(testCancellation);
 
-        plans.Should().OnlyContain(plan => ReferenceEquals(plan, plans[0]));
+            plans.Should().OnlyContain(plan => ReferenceEquals(plan, plans[0]));
+        }
+        finally
+        {
+            release.TrySetResult(null);
+            await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(5));
+        }
     }
 
     [Fact(Timeout = 10000)]
     [Trait("Category", "ConcurrencyRegression")]
     public async Task ConcurrentDisposeAndNaturalCompletion_DisposesEachComponentExactlyOnce()
     {
+        var testCancellation = TestContext.Current.CancellationToken;
         var key = new PipelineKey("dispose-natural-completion");
+        var readRelease = NewGate();
+        var disposeRelease = NewGate();
         var sourceCreated = NewCompletionSource<ConcurrencySource>();
         var stageCreated = NewCompletionSource<ConcurrencyTransformer>();
         var sinkCreated = NewCompletionSource<ConcurrencySink>();
@@ -249,8 +292,8 @@ public sealed class PipelineDefinitionConcurrencyTests
                 PipelineComponent.RuntimeOwned<IPipelineSource<int>>((_, _) =>
                 {
                     var source = new ConcurrencySource(
-                        readGate: NewGate(),
-                        disposeGate: NewGate());
+                        readGate: readRelease,
+                        disposeGate: disposeRelease);
                     sourceCreated.TrySetResult(source);
                     return ValueTask.FromResult<IPipelineSource<int>>(source);
                 }))
@@ -272,30 +315,40 @@ public sealed class PipelineDefinitionConcurrencyTests
                 }));
         var operation = definition.StartDeferred(
             new PipelineActivationContext(key, Guid.NewGuid()),
-            CancellationToken.None);
-        var source = await sourceCreated.Task;
-        var stage = await stageCreated.Task;
-        var sink = await sinkCreated.Task;
-        await source.ReadEntered.Task;
+            testCancellation);
+        try
+        {
+            var source = await sourceCreated.Task.WaitAsync(testCancellation);
+            var stage = await stageCreated.Task.WaitAsync(testCancellation);
+            var sink = await sinkCreated.Task.WaitAsync(testCancellation);
+            await source.ReadEntered.Task.WaitAsync(testCancellation);
 
-        source.ReadGate!.TrySetResult(null);
-        await source.DisposeEntered.Task;
-        var dispose = operation.Run.DisposeAsync().AsTask();
-        dispose.IsCompleted.Should().BeFalse();
+            source.ReadGate!.TrySetResult(null);
+            await source.DisposeEntered.Task.WaitAsync(testCancellation);
+            var dispose = operation.Run.DisposeAsync().AsTask();
+            dispose.IsCompleted.Should().BeFalse();
 
-        source.DisposeGate!.TrySetResult(null);
-        await dispose;
-        _ = await Record.ExceptionAsync(() => operation.Completion);
+            source.DisposeGate!.TrySetResult(null);
+            await dispose;
+            _ = await Record.ExceptionAsync(() => operation.Completion);
 
-        source.DisposeCount.Should().Be(1);
-        stage.DisposeCount.Should().Be(1);
-        sink.DisposeCount.Should().Be(1);
+            source.DisposeCount.Should().Be(1);
+            stage.DisposeCount.Should().Be(1);
+            sink.DisposeCount.Should().Be(1);
+        }
+        finally
+        {
+            readRelease.TrySetResult(null);
+            disposeRelease.TrySetResult(null);
+            await CleanupRunsAsync(operation.Run);
+        }
     }
 
     [Fact(Timeout = 10000)]
     [Trait("Category", "ConcurrencyRegression")]
     public async Task ActivationCancellationAndExternalDispose_CompleteWithoutDeadlock()
     {
+        var testCancellation = TestContext.Current.CancellationToken;
         var key = new PipelineKey("cancel-external-dispose");
         var factoryEntered = NewGate();
         var factoryCalls = 0;
@@ -312,19 +365,44 @@ public sealed class PipelineDefinitionConcurrencyTests
             .Build();
         var operation = definition.StartDeferred(
             new PipelineActivationContext(key, Guid.NewGuid()),
-            CancellationToken.None);
+            testCancellation);
 
-        await factoryEntered.Task;
-        var cancel = operation.Run.CancelAsync().AsTask();
-        var dispose = operation.Run.DisposeAsync().AsTask();
-        var all = Task.WhenAll(cancel, dispose, operation.Completion);
-        var error = await Record.ExceptionAsync(
-            () => all.WaitAsync(TimeSpan.FromSeconds(10)));
+        try
+        {
+            await factoryEntered.Task.WaitAsync(testCancellation);
+            var cancel = operation.Run.CancelAsync().AsTask();
+            var dispose = operation.Run.DisposeAsync().AsTask();
+            var all = Task.WhenAll(cancel, dispose, operation.Completion);
+            var error = await Record.ExceptionAsync(
+                () => all.WaitAsync(TimeSpan.FromSeconds(10)));
 
-        error.Should().NotBeOfType<TimeoutException>();
-        operation.Completion.IsCompleted.Should().BeTrue();
-        factoryCalls.Should().Be(1);
+            testCancellation.ThrowIfCancellationRequested();
+            error.Should().NotBeOfType<TimeoutException>();
+            operation.Completion.IsCompleted.Should().BeTrue();
+            factoryCalls.Should().Be(1);
+        }
+        finally
+        {
+            await CleanupRunsAsync(operation.Run);
+        }
     }
+
+    private static async Task CleanupStartsAsync(IEnumerable<Task<PipelineRun<int>>> starts)
+    {
+        var cleanup = Task.WhenAll(starts.Select(async start =>
+        {
+            try
+            {
+                var run = await start;
+                await run.DisposeAsync();
+            }
+            catch (OperationCanceledException) { }
+        }));
+        await cleanup.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private static Task CleanupRunsAsync(params PipelineRun<int>[] runs) =>
+        Task.WhenAll(runs.Select(run => run.DisposeAsync().AsTask())).WaitAsync(TimeSpan.FromSeconds(5));
 
     private static TaskCompletionSource<object?> NewGate() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);

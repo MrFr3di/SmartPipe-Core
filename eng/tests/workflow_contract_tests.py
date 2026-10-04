@@ -26,6 +26,7 @@ FILES = {
         "ci.yml",
         "codeql.yml",
         "dependency-review.yml",
+        "docs.yml",
         "reusable-release-validation.yml",
         "publish-nuget.yml",
         "reusable-postgresql-validation.yml",
@@ -39,10 +40,10 @@ SCENARIO_TEMPLATE_PATTERN = (
 HOSTED_WINDOWS = "windows-latest"
 HOSTED_WINDOWS_JSON = '["windows-latest"]'
 CODEQL_ACTION_REF = (
-    "github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9"
+    "github/codeql-action/init@1c5b675653bb5c22dbe9b12b556ec555138e09fd"
 )
 CODEQL_ANALYZE_ACTION_REF = (
-    "github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9"
+    "github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd"
 )
 DEPENDENCY_REVIEW_ACTION_REF = (
     "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294"
@@ -78,9 +79,7 @@ HOSTING_MATRIX = (
     "'{\"os\":[\"ubuntu-latest\",\"windows-latest\"]}') }}"
 )
 CSV_INTEGRATION_NAME = "CSV file integration (${{ matrix.os == 'windows-latest' && 'Windows' || matrix.os }})"
-CSV_INTEGRATION_MATRIX = (
-    "${{ fromJSON('{\"os\":[\"ubuntu-latest\",\"windows-latest\"]}') }}"
-)
+CSV_INTEGRATION_MATRIX = {"os": ["ubuntu-latest", "windows-latest"]}
 CSV_TEST_PROJECT = (
     "tests/SmartPipe.Extensions.Csv.Tests/SmartPipe.Extensions.Csv.Tests.csproj"
 )
@@ -113,9 +112,7 @@ POSTGRESQL_TEST_PROJECT = (
     "SmartPipe.Extensions.PostgreSql.Tests.csproj"
 )
 POSTGRESQL_INTEGRATION_NAME = "PostgreSQL integration (${{ matrix.postgres-version }})"
-POSTGRESQL_INTEGRATION_MATRIX = (
-    "${{ fromJSON('{\"postgres-version\":[\"18.6\",\"17.11\"]}') }}"
-)
+POSTGRESQL_INTEGRATION_MATRIX = {"postgres-version": ["18.6", "17.11"]}
 POSTGRESQL_PRIMARY_VERSION = "18.6"
 POSTGRESQL_COMPATIBILITY_VERSION = "17.11"
 POSTGRESQL_SERVICE_IMAGE = "postgres:${{ matrix.postgres-version }}"
@@ -131,6 +128,7 @@ LYCHEE_URL = (
     "lychee-v0.21.0/lychee-x86_64-windows.exe"
 )
 LYCHEE_SHA256 = "a1784c32c63ba46dccef0698ddf6be82a83a7d0455b0fd772423d601e3c70ab4"
+SELF_REPOSITORY_MAIN_URL_PATTERN = r"^https://github\.com/MrFr3di/SmartPipe-Core/blob/main/"
 NATIVE_FAIL_FAST_GUARD = "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
 REPOSITORY_CHECKS_PROFILE_COMMAND = (
     "dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
@@ -222,7 +220,7 @@ def assert_setup_dotnet_cache_contract(workflow: dict, workflow_name: str) -> No
 
 
 def assert_hosted_restore_source_contract(documents: dict[str, dict]) -> None:
-    for workflow_name in ("ci.yml", "reusable-release-validation.yml"):
+    for workflow_name in ("ci.yml", "docs.yml", "reusable-release-validation.yml"):
         workflow = documents[workflow_name]
         for job_name, job in workflow["jobs"].items():
             for command in runs(job.get("steps", [])):
@@ -234,9 +232,9 @@ def assert_hosted_restore_source_contract(documents: dict[str, dict]) -> None:
 def assert_diagnostic_contract(ci: dict) -> None:
     dispatch = ci.get("on", {}).get("workflow_dispatch", {})
     inputs = dispatch.get("inputs", {}) if isinstance(dispatch, dict) else {}
-    require(set(inputs) == {"diagnostic-sha", "diagnostic-scenario", "diagnostic-repeat"},
-            "CI diagnostic dispatch must expose exactly SHA, scenario, and repeat inputs.")
-    for name in inputs:
+    require(set(inputs) == {"release-validation", "diagnostic-sha", "diagnostic-scenario", "diagnostic-repeat"},
+            "CI diagnostic dispatch must expose exactly SHA, scenario, and repeat inputs plus the release-validation flag.")
+    for name in ("diagnostic-sha", "diagnostic-scenario", "diagnostic-repeat"):
         definition = inputs[name]
         require(definition.get("required") is False
                 and definition.get("type") == "string"
@@ -443,21 +441,112 @@ def assert_all_multiline_native_fail_fast_contract(documents: dict[str, dict]) -
 
 def assert_lychee_contract(reusable_steps: list[dict]) -> None:
     linux = named_step(reusable_steps, "Docs link check")
+    linux_with = linux.get("with")
     require(linux.get("if") == "runner.os != 'Windows'"
-            and linux.get("uses") == "lycheeverse/lychee-action@a8c4c7cb88f0c7386610c35eb25108e448569cb0",
-            "Linux Docs link check must retain the pinned Lychee action.")
+            and linux.get("uses") == "lycheeverse/lychee-action@a8c4c7cb88f0c7386610c35eb25108e448569cb0"
+            and isinstance(linux_with, dict)
+            and linux_with.get("token") == "${{ github.token }}",
+            "Linux Docs link check must retain the pinned Lychee action and explicit ephemeral github.token.")
+    linux_args = str(linux_with.get("args", ""))
     windows = named_step(reusable_steps, "Docs link check (Windows)")
     run = str(windows.get("run", ""))
+    windows_env = windows.get("env")
     require(windows.get("if") == "runner.os == 'Windows'"
             and windows.get("shell") == "pwsh"
+            and isinstance(windows_env, dict)
+            and windows_env.get("GITHUB_TOKEN") == "${{ github.token }}"
             and LYCHEE_URL in run and LYCHEE_SHA256 in run
             and "Get-FileHash" in run and "SHA256" in run,
-            "Windows Docs link check must download the pinned Lychee binary and verify SHA256.")
+            "Windows Docs link check must use the pinned SHA-verified Lychee binary with ephemeral github.token.")
+    for option in ("--max-retries 5", "--retry-wait-time 2", "--max-concurrency 8"):
+        require(option in linux_args and option in run,
+                f"Docs link checks must retain bounded transient hardening: {option}.")
+    self_link_exclusion = f"--exclude '{SELF_REPOSITORY_MAIN_URL_PATTERN}'"
+    require(self_link_exclusion in linux_args and self_link_exclusion in run,
+            "Docs link checks must leave self-repository blob/main targets to branch-local verify-docs validation.")
+    for root_document in ("CONTRIBUTING.md", "SECURITY.md", "SUPPORT.md", "VERSIONING.md", "CHANGELOG.md"):
+        require(root_document in linux_args and root_document in run,
+                f"Docs link checks must include root/release document {root_document}.")
+    require("'src/**/README.md'" in linux_args and "'src/**/README.md'" in run,
+            "Docs link checks must include package READMEs shipped from src.")
     lychee_text = json.dumps({"linux": linux, "windows": windows})
-    require("GITHUB_TOKEN" not in lychee_text and "github-token" not in lychee_text.lower(),
-            "Docs link check must not expose or require GITHUB_TOKEN.")
+    require("secrets." not in lychee_text.lower()
+            and "--github-token" not in lychee_text.lower(),
+            "Docs link checks must use only github.token through action input/environment, never a long-lived secret or CLI token.")
     require("lycheeverse/lychee-action" not in run,
             "Windows Docs link check must not use the hosted Lychee action.")
+
+
+def assert_documentation_site_contract(document: dict) -> None:
+    triggers = document.get("on", {})
+    require("workflow_dispatch" in triggers,
+            "Documentation workflow must support manual dispatch.")
+    required_paths = {
+        ".config/dotnet-tools.json",
+        ".github/workflows/docs.yml",
+        "README.md",
+        "CONTRIBUTING.md",
+        "SECURITY.md",
+        "SUPPORT.md",
+        "VERSIONING.md",
+        "CHANGELOG.md",
+        "docs/**",
+        "src/**/*.cs",
+        "src/**/*.csproj",
+        "src/**/README.md",
+    }
+    for event in ("push", "pull_request"):
+        trigger = triggers.get(event, {})
+        require(trigger.get("branches") == ["main", "upd", "release/2.2.0", "sp220/checkpoint-*"],
+                f"Documentation {event} branches must cover main/upd, the release branch, and all checkpoint branches.")
+        require(required_paths.issubset(set(trigger.get("paths", []))),
+                f"Documentation {event} paths must cover docs, package READMEs, and public source/API changes.")
+
+    require(document.get("permissions") == {"contents": "read"},
+            "Documentation workflow must remain read-only.")
+    require(document.get("env", {}).get("NUGET_PACKAGES") == NUGET_PACKAGES_PATH,
+            "Documentation workflow must isolate NuGet packages in the workspace.")
+
+    job = document.get("jobs", {}).get("build")
+    require(isinstance(job, dict), "Documentation workflow must define build job.")
+    require(job.get("runs-on") == "ubuntu-latest",
+            "Documentation workflow must use GitHub-hosted Linux.")
+    require(job.get("timeout-minutes") == 30,
+            "Documentation workflow must retain a bounded timeout.")
+    require_same_repository_pr_guard(job, "Documentation build")
+
+    job_steps = steps(job, "documentation build")
+    restore = named_step(job_steps, "Restore locked")
+    require(str(restore.get("run", "")).strip() ==
+            "dotnet restore SmartPipe.Core.slnx --locked-mode -p:DisableImplicitLibraryPacksFolder=true",
+            "Documentation workflow must use the exact locked restore command.")
+    build = named_step(job_steps, "Build")
+    require(str(build.get("run", "")).strip() ==
+            "dotnet build SmartPipe.Core.slnx --configuration Release --no-restore --warnaserror",
+            "Documentation workflow must build the exact Release solution before API extraction.")
+    verify_docs = named_step(job_steps, "Verify documentation contracts")
+    require(str(verify_docs.get("run", "")).strip() ==
+            "dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify-docs --repo-root .",
+            "Documentation workflow must run the exact branch-local documentation contract gate.")
+    tool_restore = named_step(job_steps, "Restore documentation tool")
+    require(job_steps.index(build) < job_steps.index(verify_docs) < job_steps.index(tool_restore),
+            "Documentation contracts must run after the Release build and before DocFX tool restore.")
+    require(str(tool_restore.get("run", "")).strip() == "dotnet tool restore",
+            "Documentation workflow must restore the repository-local tool manifest.")
+    docfx = named_step(job_steps, "Build documentation")
+    require(str(docfx.get("run", "")).strip() ==
+            "dotnet tool run docfx -- docs/docfx.json --warningsAsErrors",
+            "Documentation workflow must fail on DocFX warnings.")
+    upload = named_step(job_steps, "Upload documentation preview")
+    require(upload.get("uses") ==
+            "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+            "Documentation preview must use the pinned upload-artifact action.")
+    require(upload.get("with") == {
+        "name": "smartpipe-docs-preview",
+        "path": "docs/_site",
+        "if-no-files-found": "error",
+        "retention-days": 7,
+    }, "Documentation preview artifact contract changed.")
 
 
 def load_workflows() -> dict[str, dict]:
@@ -527,6 +616,7 @@ def assert_repository_checks_profile(
             "RepositoryChecks profile must run before Repository baseline contract tests.")
 
     release_gate_names = (
+        "Verify documentation contracts",
         "Test and benchmark warning gate", "Pack packages from graph",
         "Provision 2.1.2 baseline packages", "Verify package graph current",
         "Verify package metadata current", "Verify package ownership current",
@@ -538,6 +628,15 @@ def assert_repository_checks_profile(
     for name in release_gate_names:
         require(profile_index < reusable_steps.index(named_step(reusable_steps, name)),
                 f"RepositoryChecks profile must run before {name}.")
+
+    documentation_step = named_step(reusable_steps, "Verify documentation contracts")
+    documentation_run = " ".join(str(documentation_step.get("run", "")).split())
+    expected_documentation = (
+        "dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj "
+        "--configuration Release --no-build -- verify-docs --repo-root ."
+    )
+    require(documentation_run == expected_documentation,
+            "Reusable validation must run the exact documentation contract command.")
 
     reusable_runs = runs(reusable_steps)
     require(not any("verify-central-packages" in command or
@@ -655,18 +754,6 @@ def assert_link_check_exclusion_scoped() -> None:
             "SmartPipe.Extensions.Json URL.")
     require(not any("nuget.org" in pattern and pattern != target for pattern in exclude),
             "lychee.toml must not contain a broad nuget.org exclusion.")
-
-
-def assert_private_repository_docs_links_are_local() -> None:
-    private_repository_prefix = "https://github.com/MrFr3di/SmartPipe-Core/"
-    sources = (
-        ROOT / "README.md",
-        ROOT / "docs" / "plans" / "2.2.0-extension-architecture.md",
-        ROOT / "docs" / "plans" / "2.2.0" / "SP220-00-governance-and-baseline.md",
-    )
-    for source in sources:
-        require(private_repository_prefix not in source.read_text(encoding="utf-8"),
-                f"{source.relative_to(ROOT)} must use local links for private repository references.")
 
 
 def assert_scenario_id_grammar() -> None:
@@ -1029,7 +1116,7 @@ def assert_downloaded_postgresql_contract(documents: dict[str, dict]) -> None:
     require(download.get("with") == {"artifact-ids": "${{ inputs.artifact-id }}", "path": "downloaded", "merge-multiple": True},
             "Consumers must download the same-run immutable artifact ID into an explicit root.")
     integrity = named_step(job_steps, "Validate downloaded package artifact")
-    require(integrity.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot downloaded -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json'
+    require(integrity.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot downloaded -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json -ExpectedMode "$env:VALIDATION_MODE" -ExpectedCommit (git rev-parse HEAD)'
             and integrity.get("env", {}).get("PACKAGE_VERSION") == "${{ inputs.package-version }}"
             and not integrity.get("if") and not integrity.get("continue-on-error"),
             "Consumers must fail closed on artifact integrity and exact version before running.")
@@ -1063,21 +1150,37 @@ def assert_downloaded_postgresql_contract(documents: dict[str, dict]) -> None:
             and named_step(producer_job["steps"], "Set package version").get("id") == "version",
             "Producer outputs must bind directly to version and immutable upload steps.")
     publication = publish["publish"]
-    require(not publication.get("if") and not publication.get("continue-on-error"),
-            "Publishing must require successful validation gates.")
+    require(publication.get("if") == "${{ inputs.publish_nuget }}"
+            and not publication.get("continue-on-error"),
+            "Publishing must require successful validation gates and explicit publish_nuget authorization.")
+    recovery_step = named_step(publication["steps"], "Preflight recoverable published packages")
+    require(recovery_step.get("if") == "github.run_attempt > 1",
+            "Recovery must be activated only by GitHub failed-job reruns, never by a new release input.")
     publication_steps = publication["steps"]
     validation = named_step(publication_steps, "Validate downloaded package artifact")
-    require(validation.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json'
+    require(validation.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json -ExpectedMode release -ExpectedCommit (git rev-parse HEAD)'
             and validation.get("env", {}).get("PACKAGE_VERSION") == "${{ needs.version.outputs.package-version }}"
             and not validation.get("if") and not validation.get("continue-on-error"),
             "Publisher must independently verify the exact version and artifact integrity.")
     require(publication_steps.index(named_step(publication_steps, "Download validated packages")) < publication_steps.index(validation)
             < publication_steps.index(named_step(publication_steps, "NuGet login")),
             "Publisher integrity must precede credential acquisition.")
+    github_release = publish["github-release"]
+    non_privileged = {
+        name: job for name, job in jobs.items()
+        if name not in {"publish", "github-release"}
+    }
     require(reusable.get("permissions") == {"contents": "read"}
-            and all(job.get("permissions", {"contents": "read"}) == {"contents": "read"} for job in jobs.values())
-            and publication.get("permissions") == {"contents": "read", "id-token": "write"},
-            "Only publisher may acquire NuGet OIDC credentials.")
+            and all(job.get("permissions", {"contents": "read"}) == {"contents": "read"} for job in non_privileged.values())
+            and publication.get("permissions") == {
+                "contents": "read",
+                "id-token": "write",
+                "attestations": "write",
+                "artifact-metadata": "write",
+            }
+            and github_release.get("permissions") == {"contents": "write"}
+            and "id-token" not in github_release.get("permissions", {}),
+            "Only publisher may acquire NuGet OIDC/attestation permissions; GitHub Release may hold contents write only.")
 
 
 def validate(documents: dict[str, dict]) -> None:
@@ -1085,6 +1188,7 @@ def validate(documents: dict[str, dict]) -> None:
     ci = documents["ci.yml"]
     static_analysis = documents["codeql.yml"]
     dependency_review = documents["dependency-review.yml"]
+    documentation = documents["docs.yml"]
     publish = documents["publish-nuget.yml"]
     assert_consumer_schema_contract()
 
@@ -1094,7 +1198,7 @@ def validate(documents: dict[str, dict]) -> None:
         ("dependency-review.yml", dependency_review),
     ):
         branches = workflow.get("on", {}).get("pull_request", {}).get("branches", [])
-        for checkpoint in ("c", "d", "e", "f"):
+        for checkpoint in ("c", "d", "e", "f", "g"):
             require(f"sp220/checkpoint-{checkpoint}" in branches,
                     f"{workflow_name} pull_request must include sp220/checkpoint-{checkpoint}.")
 
@@ -1104,15 +1208,22 @@ def validate(documents: dict[str, dict]) -> None:
                 f"CI {event} must include release/2.2.0.")
     for workflow_name in ("ci.yml", "codeql.yml"):
         branches = documents[workflow_name].get("on", {}).get("push", {}).get("branches", [])
-        for checkpoint in ("e", "f"):
+        for checkpoint in ("e", "f", "g"):
             require(f"sp220/checkpoint-{checkpoint}" in branches,
                     f"{workflow_name} push must include sp220/checkpoint-{checkpoint}.")
     assert_diagnostic_contract(ci)
+    assert_documentation_site_contract(documentation)
 
     expected_triggers = {
         "ci.yml": {
             "workflow_dispatch": {
                 "inputs": {
+                    "release-validation": {
+                        "description": "Validate a release candidate and replay its immutable packages on Windows",
+                        "required": False,
+                        "type": "boolean",
+                        "default": False,
+                    },
                     "diagnostic-sha": {
                         "description": "Exact 40-character commit SHA for a single-consumer diagnostic",
                         "required": False,
@@ -1133,18 +1244,18 @@ def validate(documents: dict[str, dict]) -> None:
                     },
                 },
             },
-            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e", "sp220/checkpoint-f"]},
+            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]},
             "pull_request": {
-                "branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f"]
+                "branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]
             },
         },
         "codeql.yml": {
-            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e", "sp220/checkpoint-f"]},
-            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f"]},
+            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]},
+            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]},
             "schedule": [{"cron": "27 3 * * 1"}],
         },
         "dependency-review.yml": {
-            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f"]},
+            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]},
         },
     }
     for workflow_name, expected in expected_triggers.items():
@@ -1257,7 +1368,7 @@ def validate(documents: dict[str, dict]) -> None:
                 f"{name} must run before wide tests.")
     reusable_text = "\n".join(reusable_runs)
     pack_run = str(named_step(reusable_steps, "Pack packages from graph").get("run", ""))
-    for token in ("pack-packages", "--mode current", "--configuration Release",
+    for token in ("pack-packages", '--mode "$env:VALIDATION_MODE"', "--configuration Release",
                   "--package-version", "--output artifacts/packages",
                   "--manifest artifacts/packages/manifest.json"):
         require(token in pack_run, f"Graph-driven pack step must contain '{token}'.")
@@ -1312,7 +1423,7 @@ def validate(documents: dict[str, dict]) -> None:
             and "--report artifacts/audit/vulnerable.json" in audit_policy_run,
             "Reusable validation must enforce the direct production audit policy from the vulnerable JSON report.")
     upload = named_step(reusable_steps, "Upload immutable packages and reports")
-    require(upload.get("if") == SAME_REPOSITORY_PR_GUARD,
+    require(upload.get("if") == f"({SAME_REPOSITORY_PR_GUARD}) && inputs.package-artifact-id == ''",
             "Reusable validation artifact upload must allow trusted pull requests and reject forks.")
     require(upload.get("with", {}).get("name") == "${{ inputs.artifact-name }}",
             "Reusable validation must upload the caller-selected artifact name.")
@@ -1335,7 +1446,7 @@ def validate(documents: dict[str, dict]) -> None:
         "uses": "./.github/workflows/reusable-release-validation.yml",
         "permissions": {"contents": "read"},
         "if": CI_NORMAL_GUARD,
-        "with": {"runner-labels": CI_VALIDATION_RUNNER_INPUT},
+        "with": {"runner-labels": CI_VALIDATION_RUNNER_INPUT, "validation-mode": "${{ inputs.release-validation && 'release' || 'current' }}"},
     }, "CI validation must be the exact reusable workflow caller with read-only contents permission.")
     pull_request = ci.get("on", {}).get("pull_request", {})
     require("paths-ignore" not in pull_request,
@@ -1444,8 +1555,48 @@ def validate(documents: dict[str, dict]) -> None:
     assert_postgresql_consumer_partition_contract(reusable, ci)
     assert_downloaded_postgresql_contract(documents)
     assert_link_check_exclusion_scoped()
-    assert_private_repository_docs_links_are_local()
     assert_consumer_contract()
+
+    publish_triggers = publish.get("on", {})
+    require(set(publish_triggers) == {"workflow_dispatch"},
+            "Publish workflow must be workflow_dispatch-only; tag pushes must never publish.")
+    publish_dispatch = publish_triggers.get("workflow_dispatch", {})
+    publish_inputs = publish_dispatch.get("inputs", {}) if isinstance(publish_dispatch, dict) else {}
+    require(set(publish_inputs) == {"version", "publish_nuget"},
+            "Publish workflow dispatch must expose exactly version and publish_nuget inputs.")
+    require(publish_inputs["version"].get("required") is True
+            and publish_inputs["version"].get("type") == "string",
+            "Publish version input must be a required string.")
+    definition = publish_inputs["publish_nuget"]
+    require(definition.get("required") is True
+            and definition.get("type") == "boolean"
+            and definition.get("default") is False,
+            "Publish publish_nuget input must be an explicit boolean defaulting false.")
+
+    version = publish["jobs"].get("version")
+    validation = publish["jobs"].get("validation")
+    publication = publish["jobs"].get("publish")
+    github_release = publish["jobs"].get("github-release")
+    require(isinstance(version, dict) and isinstance(validation, dict)
+            and isinstance(publication, dict) and isinstance(github_release, dict),
+            "Publish workflow must define version, validation, publish, and github-release jobs.")
+    version_steps = steps(version, "publish version")
+    require_main = named_step(version_steps, "Require main")
+    require('refs/heads/main' in str(require_main.get("run", "")),
+            "Publish workflow must fail unless workflow_dispatch runs from main.")
+    require(publication.get("if") == "${{ inputs.publish_nuget }}",
+            "Publish job must run only when publish_nuget is explicitly true.")
+    require(github_release.get("needs") == ["version", "validation", "publish"],
+            "GitHub Release must depend on version, the immutable producer artifact, and successful NuGet publication.")
+    require(github_release.get("permissions") == {"contents": "write"},
+            "GitHub Release job must hold only contents: write.")
+    release_steps = steps(github_release, "github-release")
+    create_release = named_step(release_steps, "Create release tag and publish GitHub Release")
+    create_release_run = str(create_release.get("run", ""))
+    require("RELEASE_NOTES.md" in create_release_run
+            and "gh release create" in create_release_run
+            and "git/refs" in create_release_run,
+            "GitHub Release must create the exact release tag and use prepared CHANGELOG notes.")
 
     version = publish["jobs"].get("version")
     validation = publish["jobs"].get("validation")
@@ -1458,10 +1609,12 @@ def validate(documents: dict[str, dict]) -> None:
     require("runner-labels" not in validation.get("with", {}),
             "Publish validation must use reusable hosted Linux runner default.")
     require(validation.get("with") == {
+        "validation-mode": "release",
         "package-version": "${{ needs.version.outputs.package-version }}",
         "artifact-name": "${{ needs.version.outputs.artifact-name }}",
-    }, "Publish validation must pass version outputs as the reusable workflow inputs.")
-    require(publication.get("needs") == ["version", "validation", "postgresql-validation"],
+        "prepare-release-assets": True,
+    }, "Publish validation must pass version outputs and release-asset preparation to the reusable producer.")
+    require(publication.get("needs") == ["version", "validation", "windows-validation", "postgresql-validation"],
             "Publish job must depend exactly on version and validation and PostgreSQL validation.")
     require(publication.get("environment") == "nuget-production",
             "Publish job must use nuget-production.")
@@ -1488,17 +1641,28 @@ def validate(documents: dict[str, dict]) -> None:
     require("awk '{print tolower($1)}'" in push_run
             and "toupper($1)" not in push_run,
             "Publish must normalize sha256sum output to lowercase before comparing it with the manifest hash.")
-    require(push_run.count("dotnet nuget push") == 1,
-            "Publish must use one manifest-driven push loop.")
-    require("skip_duplicate=(--skip-duplicate)" in push_run,
-            "Recoverable rerun must be the only source of --skip-duplicate.")
-    availability_run = str(named_step(
-        publish_steps, "Verify published package versions are available").get("run", ""))
-    require("sort_by(.publishOrder)" in availability_run
-            and "[.id, .version]" in availability_run,
-            "Availability checks must derive package IDs and versions from manifest.json.")
+    require(push_run.count("dotnet nuget push") == 3
+            and 'if [[ "$RECOVERY_MODE" != "true" ]]' in push_run
+            and 'recovery-state.json' in push_run
+            and '--skip-duplicate' not in push_run
+            and '--no-symbols' in push_run
+            and '.snupkgPath' in push_run
+            and 'primaryPublished' in push_run
+            and 'symbolsPublished' in push_run
+            and 'dotnet nuget push "$symbol_package"' in push_run,
+            "Publish must use one ordered manifest loop, normal combined publication, and state-driven explicit primary/symbol recovery without duplicate suppression.")
+    published_run = str(named_step(
+        publish_steps, "Verify published package payloads").get("run", ""))
+    require("Sort-Object publishOrder" in published_run
+            and ".id" in published_run and ".version" in published_run
+            and ".nupkgPath" in published_run and ".snupkgPath" in published_run
+            and "/api/v2/symbolpackage/" in published_run
+            and "compare-nuget-package-payload.ps1" in published_run,
+            "Published-package checks must derive IDs/versions from manifest.json and verify primary/symbol producer payload equivalence.")
 
     assert_immutable_action_refs(documents)
+    from release_validation_contract_tests import assert_release_contract
+    assert_release_contract(documents)
 
 
 def _remove_csv_scenario(document: dict) -> None:
@@ -1568,6 +1732,26 @@ def _remove_codeql_checkpoint_f_branch(documents: dict[str, dict]) -> None:
 
 def _remove_dependency_review_checkpoint_f_branch(documents: dict[str, dict]) -> None:
     documents["dependency-review.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-f")
+
+
+def _remove_ci_checkpoint_g_push_branch(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["on"]["push"]["branches"].remove("sp220/checkpoint-g")
+
+
+def _remove_ci_checkpoint_g_branch(documents: dict[str, dict]) -> None:
+    documents["ci.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-g")
+
+
+def _remove_codeql_checkpoint_g_push_branch(documents: dict[str, dict]) -> None:
+    documents["codeql.yml"]["on"]["push"]["branches"].remove("sp220/checkpoint-g")
+
+
+def _remove_codeql_checkpoint_g_branch(documents: dict[str, dict]) -> None:
+    documents["codeql.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-g")
+
+
+def _remove_dependency_review_checkpoint_g_branch(documents: dict[str, dict]) -> None:
+    documents["dependency-review.yml"]["on"]["pull_request"]["branches"].remove("sp220/checkpoint-g")
 
 
 def _remove_csv_integration_job(documents: dict[str, dict]) -> None:
@@ -2020,11 +2204,36 @@ def _remove_windows_lychee_step(documents: dict[str, dict]) -> None:
 
 
 def _add_lychee_token(documents: dict[str, dict]) -> None:
-    linux = named_step(
-        documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"],
-        "Docs link check",
-    )
-    linux["env"] = {"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}
+    steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+    linux = named_step(steps, "Docs link check")
+    linux.setdefault("with", {})["token"] = "${{ secrets.GITHUB_TOKEN }}"
+    windows = named_step(steps, "Docs link check (Windows)")
+    windows["env"] = {"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}
+
+
+def _remove_lychee_transient_hardening(documents: dict[str, dict]) -> None:
+    steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+    linux = named_step(steps, "Docs link check")
+    linux["with"]["args"] = str(linux["with"].get("args", "")).replace("--max-retries 5 ", "")
+    windows = named_step(steps, "Docs link check (Windows)")
+    windows["run"] = str(windows.get("run", "")).replace("--max-retries 5 ", "")
+
+
+def _remove_self_repository_link_exclusion(documents: dict[str, dict]) -> None:
+    steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+    needle = f"--exclude '{SELF_REPOSITORY_MAIN_URL_PATTERN}' "
+    linux = named_step(steps, "Docs link check")
+    linux["with"]["args"] = str(linux["with"].get("args", "")).replace(needle, "")
+    windows = named_step(steps, "Docs link check (Windows)")
+    windows["run"] = str(windows.get("run", "")).replace(needle, "")
+
+
+def _remove_changelog_link_input(documents: dict[str, dict]) -> None:
+    steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+    linux = named_step(steps, "Docs link check")
+    linux["with"]["args"] = str(linux["with"].get("args", "")).replace(" CHANGELOG.md", "")
+    windows = named_step(steps, "Docs link check (Windows)")
+    windows["run"] = str(windows.get("run", "")).replace(" CHANGELOG.md", "")
 
 
 def _remove_reusable_pr_guard(documents: dict[str, dict]) -> None:
@@ -2166,6 +2375,12 @@ def main() -> int:
         (_remove_codeql_checkpoint_f_branch, "codeql.yml pull_request must include sp220/checkpoint-f"),
         (_remove_dependency_review_checkpoint_f_branch,
          "dependency-review.yml pull_request must include sp220/checkpoint-f"),
+        (_remove_ci_checkpoint_g_push_branch, "ci.yml push must include sp220/checkpoint-g"),
+        (_remove_ci_checkpoint_g_branch, "ci.yml pull_request must include sp220/checkpoint-g"),
+        (_remove_codeql_checkpoint_g_push_branch, "codeql.yml push must include sp220/checkpoint-g"),
+        (_remove_codeql_checkpoint_g_branch, "codeql.yml pull_request must include sp220/checkpoint-g"),
+        (_remove_dependency_review_checkpoint_g_branch,
+         "dependency-review.yml pull_request must include sp220/checkpoint-g"),
     ):
         assert_mutation_rejected(documents, mutate, expected)
     for mutate, expected in (
@@ -2521,7 +2736,22 @@ def main() -> int:
     assert_mutation_rejected(
         documents,
         _add_lychee_token,
-        "must not expose or require GITHUB_TOKEN",
+        "explicit ephemeral github.token",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_lychee_transient_hardening,
+        "bounded transient hardening",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_self_repository_link_exclusion,
+        "branch-local verify-docs validation",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_changelog_link_input,
+        "root/release document CHANGELOG.md",
     )
     assert_mutation_rejected(
         documents,

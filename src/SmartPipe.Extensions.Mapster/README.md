@@ -2,6 +2,12 @@
 
 Mapster object-mapping transforms for `SmartPipe.Core` with composition-time configuration isolation.
 
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.Mapster
+```
+
 ## What this package owns
 
 - `MapsterPipelineComponents.Transform<TInput,TOutput>(Action<TypeAdapterConfig>? configure = null)` — a

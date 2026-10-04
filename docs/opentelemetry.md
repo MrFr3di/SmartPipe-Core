@@ -6,13 +6,19 @@ remains the single owner of telemetry emission; this package never creates a
 second telemetry pipeline, never selects an exporter, and never rewrites metric
 or activity names.
 
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.OpenTelemetry --version 2.2.0
+```
+
 ## Registration
 
 The sample assumes the application installs its own OpenTelemetry packages:
 
 ```text
-dotnet add package OpenTelemetry.Extensions.Hosting --version 1.17.0
-dotnet add package OpenTelemetry.Exporter.OpenTelemetryProtocol --version 1.17.0
+dotnet package add OpenTelemetry.Extensions.Hosting --version 1.17.0
+dotnet package add OpenTelemetry.Exporter.OpenTelemetryProtocol --version 1.17.0
 ```
 
 ```csharp

@@ -7,6 +7,7 @@
   <PropertyGroup>
     <PackageId>SmartPipe.Extensions.HealthChecks</PackageId>
     <Description>Key-based liveness and readiness health checks for canonical SmartPipe pipelines.</Description>
+    <PackageReleaseNotes>First standalone release in 2.2.0. Adds key-based liveness and readiness for canonical pipelines, with bounded run observation. Included in the facade convenience bundle. Trimming and NativeAOT supported.</PackageReleaseNotes>
     <PackageTags>SmartPipe;pipeline;health-checks;liveness;readiness</PackageTags>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)/README.md</SmartPipePackageReadmeSource>
     <IsAotCompatible>true</IsAotCompatible>

@@ -6,6 +6,7 @@
   <PropertyGroup>
     <PackageId>SmartPipe.Extensions.Csv</PackageId>
     <Description>Strict, bounded CSV sources and sinks for SmartPipe.Core.</Description>
+    <PackageReleaseNotes>First standalone release in 2.2.0. CSV source, sink and transform identities move from the facade with type forwarding; strict bounded file APIs are available. CsvHelper reflection paths do not carry a blanket trimming or NativeAOT guarantee.</PackageReleaseNotes>
     <PackageTags>smartpipe;pipeline;csv;csvhelper;streaming</PackageTags>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>

@@ -709,6 +709,12 @@ public sealed class ConsumerScenarioRunnerTests
         Directory.CreateDirectory(output);
         var consumerAssembly = Path.Combine(output, "Consumer.dll");
         var binary = new byte[] { 1, 3, 3, 7 };
+        fixture.Write("source/obj/project.assets.json", """
+            {"libraries":{"SmartPipe.Core/2.2.0":{},"SmartPipe.Extensions/2.2.0":{},"SmartPipe.Extensions.Channels/2.2.0":{}}}
+            """);
+        fixture.Write("source/bin/Release/net10.0/Consumer.deps.json", """
+            {"libraries":{"SmartPipe.Core/2.2.0":{},"SmartPipe.Extensions/2.2.0":{},"SmartPipe.Extensions.Channels/2.2.0":{}}}
+            """);
         await File.WriteAllBytesAsync(consumerAssembly, binary, TestContext.Current.CancellationToken);
         var stdoutLog = fixture.Write("logs/stdout.log", string.Empty);
         var stderrLog = fixture.Write("logs/stderr.log", string.Empty);
@@ -736,7 +742,7 @@ public sealed class ConsumerScenarioRunnerTests
             ["restore", project, "--configfile", Path.Combine(fixture.Path, "NuGet.Config"), "--packages", Path.Combine(fixture.Path, "packages"), "--use-lock-file", "--force-evaluate"],
             process.Requests[0].Arguments);
         Assert.Equal(
-            ["msbuild", project, "-t:GenerateBuildDependencyFile", "-p:Configuration=Release"],
+            ["msbuild", project, "-t:GenerateBuildDependencyFile;_CopyFilesMarkedCopyLocal", "-p:Configuration=Release", "-p:BuildProjectReferences=false", "-p:SkipCopyUnchangedFiles=false"],
             process.Requests[1].Arguments);
         Assert.Equal(binary, await File.ReadAllBytesAsync(consumerAssembly, TestContext.Current.CancellationToken));
         Assert.Equal("binary-deployment-metadata", events[^1].Phase);
@@ -760,9 +766,9 @@ public sealed class ConsumerScenarioRunnerTests
             ["SmartPipe.Core", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Csv", "SmartPipe.Extensions.Dapper", "SmartPipe.Extensions.Transforms",
              "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection",
              "SmartPipe.Extensions.EntityFrameworkCore",
-             "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Http", "SmartPipe.Extensions.Json",
+             "SmartPipe.Extensions.HealthChecks", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Http", "SmartPipe.Extensions.Json",
              "SmartPipe.Extensions.Http.Json",
-             "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.Mapster", "SmartPipe.Extensions.Polly", "SmartPipe.Extensions"],
+             "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.Mapster", "SmartPipe.Extensions.OpenTelemetry", "SmartPipe.Extensions.Polly", "SmartPipe.Extensions"],
             closure);
     }
 

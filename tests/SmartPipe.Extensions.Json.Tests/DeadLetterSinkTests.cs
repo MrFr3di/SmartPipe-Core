@@ -117,7 +117,7 @@ public class DeadLetterSinkTests
             x => x.Log(
                 LogLevel.Warning,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("attempt")),
+                It.Is<It.IsAnyType>((v, t) => v != null && v.ToString()!.Contains("attempt")),
                 It.IsAny<IOException>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Exactly(3));
@@ -125,7 +125,7 @@ public class DeadLetterSinkTests
             x => x.Log(
                 LogLevel.Error,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to write")),
+                It.Is<It.IsAnyType>((v, t) => v != null && v.ToString()!.Contains("Failed to write")),
                 It.IsAny<IOException>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
@@ -155,7 +155,7 @@ public class DeadLetterSinkTests
             x => x.Log(
                 LogLevel.Error,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to write")),
+                It.Is<It.IsAnyType>((v, t) => v != null && v.ToString()!.Contains("Failed to write")),
                 It.IsAny<IOException>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
@@ -180,7 +180,7 @@ public class DeadLetterSinkTests
             x => x.Log(
                 LogLevel.Warning,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("attempt")),
+                It.Is<It.IsAnyType>((v, t) => v != null && v.ToString()!.Contains("attempt")),
                 It.IsAny<IOException>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Exactly(2));

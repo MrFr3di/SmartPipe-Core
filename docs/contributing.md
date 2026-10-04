@@ -1,7 +1,22 @@
-# Contributing
+# Contributing: validation reference
+
+The canonical contribution policy, decision tree, architecture/compatibility
+rules, PR expectations, and review criteria live in
+[../CONTRIBUTING.md](../CONTRIBUTING.md). This document is the technical
+validation reference for Microsoft Testing Platform, coverage, concurrency,
+performance, and hosted-CI operations.
 
 Before opening a change, run the validation tier that matches the affected
 surface.
+
+For documentation, package metadata, or package-boundary changes, also run:
+
+```powershell
+dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-docs --repo-root .
+```
+
+This gate checks repository policy documents, per-package README identity and
+installation commands, and the graph-backed package reference.
 
 For runtime or public API changes:
 

@@ -10,17 +10,17 @@
       },
       "Dapper": {
         "type": "Direct",
-        "requested": "[2.1.86, )",
-        "resolved": "2.1.86",
-        "contentHash": "v5wQfl9GfHhfTeFhorWTefa8c1Ev4HO8VF8i8wbSdZkq+P/az+1DTcqpkz8s9lMGyFf9kvoeJ+b2ABShW4cuIA=="
+        "requested": "[2.1.89, )",
+        "resolved": "2.1.89",
+        "contentHash": "1VjFE664wnxvuhlgP8kS4PeFFF4jqD3VkbIHW6Zlc52zuibgcz5ICnIHcQXlTp6pURpPNGLV0ZpNe5x9KePJnA=="
       },
       "Mapster": {
         "type": "Direct",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "ap0sVf4YxqYVSj2wafyrknuj2hWkWhpSm+SXTvrOQlc2vLG7u51dJ8GazaSHLLG6saHN5uPCBeP+YIqXS0a1vg==",
+        "requested": "[10.0.13, )",
+        "resolved": "10.0.13",
+        "contentHash": "/FaFSm4W6rQp5kEZa7yTtvHH2yGmuC1p22Bg2zi83+W8SMJ+5RBTEWgRK0JS2S8jIdXj2hm2s4z1egjkE2azoQ==",
         "dependencies": {
-          "Mapster.Core": "10.0.12"
+          "Mapster.Core": "10.0.13"
         }
       },
       "Microsoft.CodeAnalysis.PublicApiAnalyzers": {
@@ -87,8 +87,8 @@
       },
       "Mapster.Core": {
         "type": "Transitive",
-        "resolved": "10.0.12",
-        "contentHash": "iLPB0xAzxMWKhbBjWb4ZdQMV/TNEuZafDOoONhtDjBD4bEmf6BwcZt2v0MHhS7xbjwi1JUR266XMarfEs9BUIw=="
+        "resolved": "10.0.13",
+        "contentHash": "fLj/MDJy16QiL7IULC0+e2YXh9nNDhtzdNl13R6CI0Qh6181eadA6EHykWkJWgTHdMjC5Ured3fq5x1QV7U9vg=="
       },
       "Microsoft.EntityFrameworkCore.Abstractions": {
         "type": "Transitive",
@@ -205,6 +205,11 @@
         "resolved": "10.0.11",
         "contentHash": "SXcz+kF+4Oo9b1+55zntpJFYfwb1jw66ioxptyNOOTDc8g2FHnBFWjZpsWfCvZIhzr0x+4e2trVTs4OKwQfBtw=="
       },
+      "OpenTelemetry.Api": {
+        "type": "Transitive",
+        "resolved": "1.17.0",
+        "contentHash": "mSBxzomZgHIJu9CyVNqyDu/n2JHEtqVgfcCD1Br0cV5iLYogjZOMqhlVLt99PEp+0KGBNUR3GXgeOdN2GR3F9g=="
+      },
       "smartpipe.core": {
         "type": "Project",
         "dependencies": {
@@ -228,7 +233,7 @@
       "smartpipe.extensions.dapper": {
         "type": "Project",
         "dependencies": {
-          "Dapper": "[2.1.86, )",
+          "Dapper": "[2.1.89, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.11, )",
           "SmartPipe.Core": "[2.2.0, )"
         }
@@ -253,6 +258,16 @@
           "Microsoft.EntityFrameworkCore": "[10.0.11, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.11, )",
           "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
+      "smartpipe.extensions.healthchecks": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.11, )",
+          "Microsoft.Extensions.Diagnostics.HealthChecks": "[10.0.11, )",
+          "Microsoft.Extensions.Options": "[10.0.11, )",
+          "SmartPipe.Core": "[2.2.0, )",
+          "SmartPipe.Extensions.DependencyInjection": "[2.2.0, )"
         }
       },
       "smartpipe.extensions.hosting": {
@@ -297,7 +312,14 @@
       "smartpipe.extensions.mapster": {
         "type": "Project",
         "dependencies": {
-          "Mapster": "[10.0.12, )",
+          "Mapster": "[10.0.13, )",
+          "SmartPipe.Core": "[2.2.0, )"
+        }
+      },
+      "smartpipe.extensions.opentelemetry": {
+        "type": "Project",
+        "dependencies": {
+          "OpenTelemetry.Api.ProviderBuilderExtensions": "[1.17.0, )",
           "SmartPipe.Core": "[2.2.0, )"
         }
       },
@@ -341,6 +363,16 @@
           "Microsoft.Extensions.Logging": "10.0.11",
           "Microsoft.Extensions.Logging.Abstractions": "10.0.11",
           "Microsoft.Extensions.Options": "10.0.11"
+        }
+      },
+      "OpenTelemetry.Api.ProviderBuilderExtensions": {
+        "type": "CentralTransitive",
+        "requested": "[1.17.0, )",
+        "resolved": "1.17.0",
+        "contentHash": "Xgc3Qf9B9TFMFpx6exTdGqMWuYIT2miNzkdMPutVvT9YuMFaEovXWke1Gb6z8NxYaQbbGF38vYLuSg1JCeui5Q==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.0",
+          "OpenTelemetry.Api": "1.17.0"
         }
       },
       "Polly.Core": {

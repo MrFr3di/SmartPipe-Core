@@ -22,11 +22,13 @@ public sealed class PostgreSqlBoundedMemoryCollection
 /// </summary>
 /// <remarks>
 /// Only ceilings are asserted: an exact allocation figure would be a property of the runtime, not of the component.
-/// The bounded-memory invariant is proved by the sampled peak heap of a full 100k-row stream and by the allocation of
+/// The bounded-memory invariant is proved by the sampled peak retained heap of a full 100k-row stream and by the allocation of
 /// a consumer that stops after ten rows; the cumulative allocation is additionally checked against a derived per-row
 /// budget, because cumulative allocation alone is a throughput metric and cannot show whether the result was
-/// materialised. Every row carries a 500-character text value, so a result set that is materialised before the first
-/// envelope is observable as roughly 100 MB of live strings, while a streaming source keeps the heap far below that.
+/// materialised. Every row carries a 500-character text value, so eager reading allocates roughly 100 MB of strings
+/// before the first envelope and exceeds the early-break budget even if the mapper retains only their lengths.
+/// The full-stream check bounds retained heap growth above a collected baseline taken before source activation,
+/// including the source's fixed overhead while excluding already-live runner/provider caches.
 /// </remarks>
 [Collection(PostgreSqlBoundedMemoryCollection.Name)]
 public sealed class PostgreSqlBoundedMemoryIntegrationTests(PostgreSqlIntegrationDatabase database)
@@ -37,8 +39,8 @@ public sealed class PostgreSqlBoundedMemoryIntegrationTests(PostgreSqlIntegratio
     private const int PayloadCharacters = 500;
 
     /// <summary>
-    /// Ceiling for the managed heap sampled while a 100k-row COPY streams. Materialising the result would keep
-    /// roughly 100 MB of strings alive, so this ceiling fails such an implementation and passes a streaming one.
+    /// Ceiling for retained managed heap growth above the pre-activation baseline while a 100k-row COPY streams. The early-break allocation ceiling below
+    /// detects eager materialisation even when mapped rows discard their original text payloads.
     /// </summary>
     private const long PeakHeapCeiling = 40L * 1024 * 1024;
 
@@ -54,7 +56,25 @@ public sealed class PostgreSqlBoundedMemoryIntegrationTests(PostgreSqlIntegratio
     private const long EarlyBreakAllocationCeiling = 8L * 1024 * 1024;
 
     [Fact]
-    public async Task CopyOut_HundredThousandRows_StreamWithinTheHeapCeiling()
+    public Task CopyOut_HundredThousandRows_StreamWithinTheHeapCeiling() =>
+        AssertFullStreamFitsMemoryBudgetsAsync();
+
+    [Fact]
+    public async Task CopyOut_PreexistingRetainedHeap_DoesNotCountAgainstStreamingCeiling()
+    {
+        // Model a live runner/provider cache that already exceeds the scenario's 40 MiB budget.
+        var ambientCache = new byte[48 * 1024 * 1024];
+        try
+        {
+            await AssertFullStreamFitsMemoryBudgetsAsync();
+        }
+        finally
+        {
+            GC.KeepAlive(ambientCache);
+        }
+    }
+
+    private async Task AssertFullStreamFitsMemoryBudgetsAsync()
     {
         database.RequireServer();
         var ct = TestContext.Current.CancellationToken;
@@ -64,8 +84,10 @@ public sealed class PostgreSqlBoundedMemoryIntegrationTests(PostgreSqlIntegratio
         GC.WaitForPendingFinalizers();
         GC.Collect();
 
+        // Keep source activation and initialization inside the scenario's memory budget.
+        var baselineHeap = GC.GetTotalMemory(forceFullCollection: true);
         var allocatedBefore = GC.GetTotalAllocatedBytes(precise: false);
-        var peakHeap = 0L;
+        var peakHeapGrowth = 0L;
         var count = 0;
         var outOfOrderRows = 0;
 
@@ -78,7 +100,12 @@ public sealed class PostgreSqlBoundedMemoryIntegrationTests(PostgreSqlIntegratio
                 outOfOrderRows++;
 
             if (count % 5_000 == 0)
-                peakHeap = Math.Max(peakHeap, GC.GetTotalMemory(forceFullCollection: false));
+            {
+                // Measure live rows rather than garbage awaiting the runner-dependent GC schedule.
+                // Collection cannot hide materialized rows: the enumerator still retains them.
+                var sampledHeap = GC.GetTotalMemory(forceFullCollection: true);
+                peakHeapGrowth = Math.Max(peakHeapGrowth, Math.Max(0L, sampledHeap - baselineHeap));
+            }
         }
 
         var allocated = GC.GetTotalAllocatedBytes(precise: false) - allocatedBefore;
@@ -87,9 +114,9 @@ public sealed class PostgreSqlBoundedMemoryIntegrationTests(PostgreSqlIntegratio
         Assert.Equal(RowCount, count);
         Assert.Equal(0, outOfOrderRows);
         Assert.True(
-            peakHeap < PeakHeapCeiling,
-            $"The managed heap reached {peakHeap:N0} bytes while streaming {RowCount} rows, above the "
-            + $"{PeakHeapCeiling:N0}-byte ceiling, which means rows were accumulated instead of streamed.");
+            peakHeapGrowth < PeakHeapCeiling,
+            $"The retained managed heap grew by {peakHeapGrowth:N0} bytes above a {baselineHeap:N0}-byte baseline "
+            + $"while streaming {RowCount} rows, above the {PeakHeapCeiling:N0}-byte ceiling.");
         Assert.True(
             allocated < RowCount * PerRowAllocationBudget,
             $"Streaming {RowCount} rows allocated {allocated:N0} bytes in total, above the derived budget of "

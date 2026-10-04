@@ -1,9 +1,15 @@
 # Hosting
 
-Install `SmartPipe.Extensions.Hosting` to run canonical DI registrations under the
-.NET Generic Host. Every call to `RunAsHostedService` contributes immutable
-metadata to one shared `SmartPipeHostedOrchestrator`; the number of pipelines
-does not change the number of SmartPipe `IHostedService` registrations.
+`SmartPipe.Extensions.Hosting` runs canonical DI registrations under the .NET
+Generic Host. Every call to `RunAsHostedService` contributes immutable metadata
+to one shared `SmartPipeHostedOrchestrator`; the number of pipelines does not
+change the number of SmartPipe `IHostedService` registrations.
+
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.Hosting --version 2.2.0
+```
 
 ```csharp
 using Microsoft.Extensions.Hosting;

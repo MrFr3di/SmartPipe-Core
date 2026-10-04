@@ -36,10 +36,10 @@ public sealed class PipelineDefinitionReuseTests
 
         var failed = definition.StartDeferred(
             new PipelineActivationContext(key, failedRunId),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var successful = definition.StartDeferred(
             new PipelineActivationContext(key, successfulRunId),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         var failure = await Record.ExceptionAsync(() => failed.Completion);
         failure.Should().BeSameAs(expected);
@@ -75,10 +75,10 @@ public sealed class PipelineDefinitionReuseTests
 
         var first = definition.StartDeferred(
             new PipelineActivationContext(key, Guid.NewGuid()),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var second = definition.StartDeferred(
             new PipelineActivationContext(key, Guid.NewGuid()),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         var firstError = await Record.ExceptionAsync(() => first.Completion);
         var secondError = await Record.ExceptionAsync(() => second.Completion);
@@ -114,8 +114,8 @@ public sealed class PipelineDefinitionReuseTests
         var firstContext = new PipelineActivationContext(key, Guid.NewGuid(), firstProvider);
         var secondContext = new PipelineActivationContext(key, Guid.NewGuid(), secondProvider);
         var runs = await Task.WhenAll(
-            definition.StartAsync(firstContext, CancellationToken.None),
-            definition.StartAsync(secondContext, CancellationToken.None));
+            definition.StartAsync(firstContext, TestContext.Current.CancellationToken),
+            definition.StartAsync(secondContext, TestContext.Current.CancellationToken));
 
         await Task.WhenAll(runs.Select(run => run.Completion));
 
