@@ -540,7 +540,7 @@ internal static class RepositoryCheckProcessHost
         }
         catch (Exception)
         {
-            initializationCancellation.Cancel();
+            await initializationCancellation.CancelAsync().ConfigureAwait(false);
             return InvalidArgumentsExitCode;
         }
 
