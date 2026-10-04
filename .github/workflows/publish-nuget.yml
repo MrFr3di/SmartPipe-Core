@@ -1,13 +1,19 @@
 name: Publish NuGet
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
+      version:
+        description: Exact canonical SemVer package version, for example 2.2.0 or 2.3.0-rc.1
+        required: true
+        type: string
+      publish_nuget:
+        description: Publish the validated packages, then create the immutable tag and GitHub Release
+        required: true
+        type: boolean
+        default: false
       recoverable-rerun:
-        description: Allow already-published packages to be skipped when recovering a partial release
+        description: Resume a partial publication only after proving published payload equivalence
         required: true
         type: boolean
         default: false
@@ -16,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-nuget-${{ github.ref }}
+  group: publish-nuget-${{ inputs.version }}
   cancel-in-progress: false
 
 jobs:
@@ -31,18 +37,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Require accepted release commit
+      - name: Require main
         shell: bash
         run: |
-          git fetch --no-tags origin \
-            +refs/heads/main:refs/remotes/origin/main \
-            +refs/heads/release/2.2.0:refs/remotes/origin/release/2.2.0
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
-            echo "Release tag commit must already be contained in main." >&2
-            exit 1
-          fi
-          if ! git merge-base --is-ancestor refs/remotes/origin/release/2.2.0 "$GITHUB_SHA"; then
-            echo "Release tag commit must contain the accepted release/2.2.0 head." >&2
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Release publication must be dispatched from main." >&2
             exit 1
           fi
 
@@ -51,21 +51,49 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Require a release tag and resolve package version
+      - name: Validate requested release
         id: version
         shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          PUBLISH_NUGET: ${{ inputs.publish_nuget }}
+          RECOVERABLE_RERUN: ${{ inputs.recoverable-rerun }}
         run: |
-          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
-            echo "Run this workflow against the release tag." >&2
+          set -euo pipefail
+
+          if [[ "$RECOVERABLE_RERUN" == "true" && "$PUBLISH_NUGET" != "true" ]]; then
+            echo "recoverable-rerun requires publish_nuget=true." >&2
             exit 1
           fi
-          PACKAGE_VERSION="${GITHUB_REF_NAME#v}"
-          if [[ -z "$PACKAGE_VERSION" || "$PACKAGE_VERSION" == "$GITHUB_REF_NAME" ]]; then
-            echo "Release tag must have the form v<package-version>." >&2
+
+          dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj \
+            --configuration Release -- prepare-release-notes \
+            --repo-root . --version "$VERSION" --changelog CHANGELOG.md \
+            --output artifacts/release-request/RELEASE_NOTES.md
+
+          repository_version="$(dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo | tr -d '\r\n[:space:]')"
+          graph_version="$(jq -r '.releaseVersion' eng/package-graph.json)"
+          stable_core="${VERSION%%-*}"
+
+          if [[ -z "$repository_version" || "$stable_core" != "$repository_version" ]]; then
+            echo "Requested version core $stable_core does not match repository Version $repository_version." >&2
             exit 1
           fi
-          echo "package-version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "artifact-name=nuget-packages-$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+          if [[ -z "$graph_version" || "$graph_version" == "null" || "$stable_core" != "$graph_version" ]]; then
+            echo "Requested version core $stable_core does not match package-graph releaseVersion $graph_version." >&2
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            if [[ "$RECOVERABLE_RERUN" != "true" ]]; then
+              echo "Tag v$VERSION already exists; normal releases never reuse or move tags." >&2
+              exit 1
+            fi
+            echo "Recovery will verify the existing tag before completing the GitHub Release."
+          fi
+
+          echo "package-version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "artifact-name=nuget-packages-$VERSION" >> "$GITHUB_OUTPUT"
 
   validation:
     needs: version
@@ -76,6 +104,7 @@ jobs:
       validation-mode: release
       package-version: ${{ needs.version.outputs.package-version }}
       artifact-name: ${{ needs.version.outputs.artifact-name }}
+      prepare-release-assets: true
 
   windows-validation:
     needs: [version, validation]
@@ -100,11 +129,14 @@ jobs:
       artifact-id: ${{ needs.validation.outputs.artifact-id }}
 
   publish:
+    if: ${{ inputs.publish_nuget }}
     needs: [version, validation, windows-validation, postgresql-validation]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
+      attestations: write
+      artifact-metadata: write
     environment: nuget-production
 
     steps:
@@ -125,8 +157,12 @@ jobs:
           PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
         run: ./eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json -ExpectedMode release -ExpectedCommit (git rev-parse HEAD)
 
+      - name: Verify release asset checksums
+        working-directory: artifacts/packages
+        run: sha256sum --check --strict SHA256SUMS
+
       - name: Preflight recoverable published packages
-        if: github.event_name == 'workflow_dispatch' && inputs.recoverable-rerun
+        if: inputs.recoverable-rerun
         shell: pwsh
         env:
           PACKAGE_MANIFEST: artifacts/packages/manifest.json
@@ -184,6 +220,14 @@ jobs:
             Remove-Item -LiteralPath $downloadRoot -Recurse -Force -ErrorAction SilentlyContinue
           }
 
+
+      - name: Attest release package provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            artifacts/packages/*.nupkg
+            artifacts/packages/*.snupkg
+
       - name: NuGet login
         id: nuget-login
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
@@ -196,7 +240,7 @@ jobs:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
           NUGET_SYMBOL_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
           PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
-          RECOVERABLE_RERUN: ${{ github.event_name == 'workflow_dispatch' && inputs.recoverable-rerun }}
+          RECOVERABLE_RERUN: ${{ inputs.recoverable-rerun }}
         run: |
           manifest="artifacts/packages/manifest.json"
           recovery_state="artifacts/recovery-state.json"
@@ -331,3 +375,90 @@ jobs:
           finally {
             Remove-Item -LiteralPath $downloadRoot -Recurse -Force -ErrorAction SilentlyContinue
           }
+
+  github-release:
+    if: ${{ inputs.publish_nuget }}
+    needs: [version, validation, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download validated packages
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          artifact-ids: ${{ needs.validation.outputs.artifact-id }}
+          path: .
+          merge-multiple: true
+
+      - name: Verify release asset checksums
+        working-directory: artifacts/packages
+        run: sha256sum --check --strict SHA256SUMS
+
+      - name: Create release tag and publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.package-version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+
+          existing="$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/${tag}" \
+            --jq ".[] | select(.ref == \"refs/tags/${tag}\") | .object.sha")"
+          if [[ -z "${existing}" ]]; then
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${tag}" \
+              -f sha="${GITHUB_SHA}" > /dev/null
+          elif [[ "${existing}" != "${GITHUB_SHA}" ]]; then
+            echo "Tag ${tag} already points to ${existing}, not ${GITHUB_SHA}; it is never moved." >&2
+            exit 1
+          fi
+
+          assets=(
+            artifacts/packages/*.nupkg
+            artifacts/packages/*.snupkg
+            artifacts/packages/SHA256SUMS
+            artifacts/packages/RELEASE_NOTES.md
+          )
+          state="$(gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" --json isDraft -q .isDraft 2>/dev/null || echo missing)"
+
+          case "${state}" in
+            missing)
+              flags=()
+              if [[ "${VERSION}" == *-* ]]; then
+                flags=(--prerelease --latest=false)
+              else
+                flags=(--latest)
+              fi
+              gh release create "${tag}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --verify-tag \
+                --draft \
+                "${flags[@]}" \
+                --title "SmartPipe ${VERSION}" \
+                --notes-file artifacts/packages/RELEASE_NOTES.md \
+                "${assets[@]}"
+              ;;
+            true)
+              gh release edit "${tag}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "SmartPipe ${VERSION}" \
+                --notes-file artifacts/packages/RELEASE_NOTES.md
+              gh release upload "${tag}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --clobber \
+                "${assets[@]}"
+              ;;
+            false)
+              echo "Release ${tag} is already published."
+              exit 0
+              ;;
+            *)
+              echo "Unexpected GitHub Release state for ${tag}: ${state}" >&2
+              exit 1
+              ;;
+          esac
+
+          gh release edit "${tag}" --repo "${GITHUB_REPOSITORY}" --draft=false
+          gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" --json url,isDraft,isImmutable -q .
