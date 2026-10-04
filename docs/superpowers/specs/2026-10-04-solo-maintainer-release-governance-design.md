@@ -99,8 +99,9 @@ Keep the existing filename `.github/workflows/publish-nuget.yml` so the NuGet Tr
 The workflow becomes `workflow_dispatch` only, with inputs:
 
 - `version`: exact SemVer package version;
-- `publish_nuget`: boolean, default false;
-- `recoverable_rerun`: boolean, default false.
+- `publish_nuget`: boolean, default false.
+
+Recovery is intentionally not a dispatch input; it uses GitHub **Re-run failed jobs** on the original release run.
 
 ### Entry gate
 
@@ -145,7 +146,7 @@ When `publish_nuget=true`:
 - it revalidates version, mode, source commit and recorded hashes;
 - it obtains a short-lived NuGet credential using `NuGet/login`;
 - it publishes the manifest-listed 20 packages in dependency order;
-- it preserves the existing fail-closed recoverable-rerun semantics.
+- it preserves the existing fail-closed failed-job recovery semantics.
 
 Add GitHub artifact attestation for the release nupkg/snupkg set before publication when supported by the repository/account configuration. Attestation failure is a release failure, not a warning.
 
@@ -153,9 +154,9 @@ Add GitHub artifact attestation for the release nupkg/snupkg set before publicat
 
 Normal publication rejects already-published package identities.
 
-With `recoverable_rerun=true`, the workflow may resume only after downloading already-published primary/symbol packages and proving payload equivalence to the immutable producer artifact. A mismatch fails closed. Existing primary packages never excuse a missing or mismatched symbol package.
+`failed-job recovery` is not a new dispatch mode. After a partial publication failure, use GitHub **Re-run failed jobs** on the same workflow run. Successful producer/Windows/PostgreSQL jobs are not rerun, so the immutable producer artifact is reused. The rerun preflights already-published primary/symbol packages and proves payload equivalence before obtaining publishing credentials. A mismatch fails closed. Existing primary packages never excuse a missing or mismatched symbol package.
 
-Recovery must never rebuild the same version.
+Do not use **Re-run all jobs** for release recovery; the version gate rejects a whole-workflow rerun to prevent rebuilding an already validated version.
 
 ## Tag and GitHub Release
 
