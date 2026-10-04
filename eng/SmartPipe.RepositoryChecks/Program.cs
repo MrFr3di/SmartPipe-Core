@@ -55,7 +55,7 @@ internal static class Program
                         await new BaselineCaptureService(
                             runner, "git", "dotnet", fetcher, signatureVerifier, packageReader,
                             repositoryReader, verification).CaptureAsync(capture, cancellation.Token).ConfigureAwait(false);
-                        Console.WriteLine("BASELINE CAPTURED");
+                        await Console.Out.WriteLineAsync("BASELINE CAPTURED");
                         return ExitCodes.Success;
                     }
 
@@ -76,7 +76,7 @@ internal static class Program
                             },
                             (offline, ct) => verification.VerifyAsync(offline, ct),
                             cancellation.Token).ConfigureAwait(false);
-                        Console.WriteLine(result.Format());
+                        await Console.Out.WriteLineAsync(result.Format());
                         return result.Success ? ExitCodes.Success : ExitCodes.RepositorySnapshotMismatch;
                     }
 
@@ -88,12 +88,12 @@ internal static class Program
                             var fetcher = new NuGetPackageFetcher(httpClient, new NuGetServiceIndexClient(httpClient));
                             var count = await new BaselinePackageProvisioner(fetcher)
                                 .ProvisionAsync(provision, cancellation.Token).ConfigureAwait(false);
-                            Console.WriteLine($"BASELINE PACKAGES PROVISIONED packages={count}");
+                            await Console.Out.WriteLineAsync($"BASELINE PACKAGES PROVISIONED packages={count}");
                             return ExitCodes.Success;
                         }
                         catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
                         {
-                            Console.Error.WriteLine("[SPB001] Baseline acquisition input is invalid.");
+                            await Console.Error.WriteLineAsync("[SPB001] Baseline acquisition input is invalid.");
                             return ExitCodes.SchemaOrManifestInvalid;
                         }
                     }
@@ -144,7 +144,7 @@ internal static class Program
                         var context = await new AgentContextBuilder(runner)
                             .BuildAsync(agentContext.RepositoryRoot, agentContext.Epic, agentContext.Task, cancellation.Token)
                             .ConfigureAwait(false);
-                        Console.Write(AgentJsonSerializer.Serialize(context.Context));
+                        await Console.Out.WriteAsync(AgentJsonSerializer.Serialize(context.Context));
                         return ExitCodes.Success;
                     }
 
@@ -172,14 +172,14 @@ internal static class Program
                         var result = await new AgentEvidenceService(new AgentContextBuilder(runner))
                             .CollectAsync(evidence.RepositoryRoot, evidence.Epic, cancellation.Token)
                             .ConfigureAwait(false);
-                        Console.Write(AgentJsonSerializer.Serialize(result.Evidence));
+                        await Console.Out.WriteAsync(AgentJsonSerializer.Serialize(result.Evidence));
                         return result.ExitCode;
                     }
 
                 case VerifySp220ScopeOptions verifyScope:
                     var scopeResult = await new Sp220ScopeVerificationService(runner, "git")
                         .VerifyAsync(verifyScope, cancellation.Token).ConfigureAwait(false);
-                    Console.WriteLine(scopeResult.Format());
+                    await Console.Out.WriteLineAsync(scopeResult.Format());
                     return scopeResult.Success ? ExitCodes.Success : ExitCodes.RepositorySnapshotMismatch;
 
                 case VerifyCentralPackagesOptions verifyCentral:
@@ -187,11 +187,11 @@ internal static class Program
                         verifyCentral.RepositoryRoot, verifyCentral.Mode, cancellation.Token).ConfigureAwait(false);
                     foreach (var violation in centralResult.Errors.Concat(centralResult.Warnings))
                     {
-                        Console.Error.WriteLine($"[{violation.Code}] {violation.Message} ({violation.Path})");
+                        await Console.Error.WriteLineAsync($"[{violation.Code}] {violation.Message} ({violation.Path})");
                     }
 
                     var modeName = verifyCentral.Mode.ToString().ToLowerInvariant();
-                    Console.WriteLine(centralResult.Success
+                    await Console.Out.WriteLineAsync(centralResult.Success
                         ? $"SP220_CPM_OK packages={centralResult.Versions.Count} warnings={centralResult.Warnings.Count} mode={modeName}"
                         : $"SP220_CPM_FAILED code={ExitCodes.CentralPackagePolicyViolation} violations={centralResult.Errors.Count} mode={modeName}");
                     return centralResult.Success ? ExitCodes.Success : ExitCodes.CentralPackagePolicyViolation;
@@ -201,18 +201,18 @@ internal static class Program
                         .VerifyAsync(verifyProjects.RepositoryRoot, cancellation.Token).ConfigureAwait(false);
                     foreach (var violation in packageProjectResult.Errors)
                     {
-                        Console.Error.WriteLine($"[{violation.Code}] {violation.Message} ({violation.Path})");
+                        await Console.Error.WriteLineAsync($"[{violation.Code}] {violation.Message} ({violation.Path})");
                     }
 
-                    Console.WriteLine(packageProjectResult.Success
+                    await Console.Out.WriteLineAsync(packageProjectResult.Success
                         ? $"SP220_PACKAGE_PROJECTS_OK projects=3"
                         : $"SP220_PACKAGE_PROJECTS_FAILED code={ExitCodes.PackageProjectViolation} violations={packageProjectResult.Errors.Count}");
                     return packageProjectResult.Success ? ExitCodes.Success : ExitCodes.PackageProjectViolation;
 
                 case VerifyLockFilesOptions verifyLocks:
                     var lockResult = await new VerifyLockFilesCommand().ExecuteAsync(verifyLocks.RepositoryRoot, cancellation.Token).ConfigureAwait(false);
-                    foreach (var error in lockResult.Errors) Console.Error.WriteLine($"[{error}]");
-                    Console.WriteLine(lockResult.Success
+                    foreach (var error in lockResult.Errors) await Console.Error.WriteLineAsync($"[{error}]");
+                    await Console.Out.WriteLineAsync(lockResult.Success
                         ? "SP220_LOCK_FILES_OK"
                         : $"SP220_LOCK_FILES_FAILED code={ExitCodes.CentralPackagePolicyViolation} violations={lockResult.Errors.Count}");
                     return lockResult.Success ? ExitCodes.Success : ExitCodes.CentralPackagePolicyViolation;
@@ -223,18 +223,18 @@ internal static class Program
                         .ConfigureAwait(false);
                     foreach (var violation in documentationResult.Violations)
                     {
-                        Console.Error.WriteLine($"[{violation.Code}] path={violation.Path} rule={violation.Rule}");
+                        await Console.Error.WriteLineAsync($"[{violation.Code}] path={violation.Path} rule={violation.Rule}");
                     }
 
-                    Console.WriteLine(documentationResult.Success
+                    await Console.Out.WriteLineAsync(documentationResult.Success
                         ? "SP220_DOCS_OK"
                         : $"SP220_DOCS_FAILED code={ExitCodes.DocumentationViolation} violations={documentationResult.Violations.Count}");
                     return documentationResult.Success ? ExitCodes.Success : ExitCodes.DocumentationViolation;
 
                 case VerifyNuGetAuditOptions verifyAudit:
                     var auditResult = new NuGetAuditPolicyValidator().Verify(verifyAudit.RepositoryRoot, verifyAudit.ReportPath);
-                    foreach (var error in auditResult.Errors) Console.Error.WriteLine($"[{error}]");
-                    Console.WriteLine(auditResult.Success
+                    foreach (var error in auditResult.Errors) await Console.Error.WriteLineAsync($"[{error}]");
+                    await Console.Out.WriteLineAsync(auditResult.Success
                         ? "SP220_NUGET_AUDIT_OK"
                         : $"SP220_NUGET_AUDIT_FAILED code={ExitCodes.CentralPackagePolicyViolation} violations={auditResult.Errors.Count}");
                     return auditResult.Success ? ExitCodes.Success : ExitCodes.CentralPackagePolicyViolation;
@@ -250,17 +250,17 @@ internal static class Program
                         else await new OwnershipLoader().CanonicalizeAsync(canonicalize.RepositoryRoot, canonicalize.InputPath, cancellation.Token).ConfigureAwait(false);
                     }
                     else await new PackageGraphLoader().CanonicalizeAsync(canonicalize.RepositoryRoot, canonicalize.InputPath, canonicalize.Check, cancellation.Token).ConfigureAwait(false);
-                    Console.WriteLine("SP220_CANONICAL_JSON_OK");
+                    await Console.Out.WriteLineAsync("SP220_CANONICAL_JSON_OK");
                     return ExitCodes.Success;
 
                 case VerifyPackageGraphOptions verifyGraph:
                     var graphResult = await new VerifyPackageGraphCommand().ExecuteAsync(verifyGraph, cancellation.Token).ConfigureAwait(false);
                     foreach (var violation in graphResult.Violations)
-                        Console.Error.WriteLine($"[{violation.Code}] package={violation.PackageId} representation={violation.Representation} dependency={violation.Dependency ?? "-"} rule={violation.Rule}");
+                        await Console.Error.WriteLineAsync($"[{violation.Code}] package={violation.PackageId} representation={violation.Representation} dependency={violation.Dependency ?? "-"} rule={violation.Rule}");
                     var loadedGraph = await new PackageGraphLoader().LoadAsync(verifyGraph.RepositoryRoot, verifyGraph.GraphPath, cancellation.Token).ConfigureAwait(false);
                     var active = loadedGraph.Packages.Count(x => x.Lifecycle != PackageLifecycle.Planned);
                     var planned = loadedGraph.Packages.Count - active;
-                    Console.WriteLine(graphResult.Success
+                    await Console.Out.WriteLineAsync(graphResult.Success
                         ? $"SP220_PACKAGE_GRAPH_OK packages={loadedGraph.Packages.Count} active={active} planned={planned} mode={verifyGraph.Mode.ToString().ToLowerInvariant()}"
                         : $"SP220_PACKAGE_GRAPH_FAILED code={ExitCodes.PackageProjectViolation} violations={graphResult.Violations.Count}");
                     return graphResult.Success ? ExitCodes.Success : ExitCodes.PackageProjectViolation;
@@ -268,24 +268,24 @@ internal static class Program
                 case VerifyPackageMetadataOptions verifyMetadata:
                     var metadataResult = await new VerifyPackageMetadataCommand().ExecuteAsync(verifyMetadata, cancellation.Token).ConfigureAwait(false);
                     foreach (var violation in metadataResult.Violations)
-                        Console.Error.WriteLine($"[{violation.Code}] package={violation.PackageId} path={violation.Path ?? "-"} rule={violation.Rule}");
-                    Console.WriteLine(metadataResult.Success
+                        await Console.Error.WriteLineAsync($"[{violation.Code}] package={violation.PackageId} path={violation.Path ?? "-"} rule={violation.Rule}");
+                    await Console.Out.WriteLineAsync(metadataResult.Success
                         ? $"SP220_PACKAGE_METADATA_OK packages={metadataResult.Packages} mode={metadataResult.Mode}"
                         : $"SP220_PACKAGE_METADATA_FAILED code={ExitCodes.PackedPackageViolation} violations={metadataResult.Violations.Count}");
                     return metadataResult.Success ? ExitCodes.Success : ExitCodes.PackedPackageViolation;
 
                 case VerifyPackageOwnershipOptions verifyOwnership:
                     var ownershipResult = await new VerifyPackageOwnershipCommand().ExecuteAsync(verifyOwnership, cancellation.Token).ConfigureAwait(false);
-                    foreach (var violation in ownershipResult.Violations) Console.Error.WriteLine($"[{violation.Code}] type={violation.Type} rule={violation.Rule}");
-                    Console.WriteLine(ownershipResult.Success
+                    foreach (var violation in ownershipResult.Violations) await Console.Error.WriteLineAsync($"[{violation.Code}] type={violation.Type} rule={violation.Rule}");
+                    await Console.Out.WriteLineAsync(ownershipResult.Success
                         ? $"SP220_PACKAGE_OWNERSHIP_OK types={ownershipResult.BaselineTypes} mode={verifyOwnership.Mode.ToString().ToLowerInvariant()}"
                         : $"SP220_PACKAGE_OWNERSHIP_FAILED code={ExitCodes.OwnershipViolation} violations={ownershipResult.Violations.Count}");
                     return ownershipResult.Success ? ExitCodes.Success : ExitCodes.OwnershipViolation;
 
                 case VerifyReleaseVersionOptions verifyVersion:
                     var versionResult = await new VerifyReleaseVersionCommand().ExecuteAsync(verifyVersion, cancellation.Token).ConfigureAwait(false);
-                    foreach (var violation in versionResult.Violations) Console.Error.WriteLine($"[{violation.Code}] package={violation.PackageId} path={violation.Path ?? "-"} rule={violation.Rule}");
-                    Console.WriteLine(versionResult.Success ? $"SP220_RELEASE_VERSION_OK version={versionResult.PackageVersion} mode={verifyVersion.Mode.ToString().ToLowerInvariant()}" : $"SP220_RELEASE_VERSION_FAILED code={ExitCodes.ReleaseVersionMismatch} violations={versionResult.Violations.Count}");
+                    foreach (var violation in versionResult.Violations) await Console.Error.WriteLineAsync($"[{violation.Code}] package={violation.PackageId} path={violation.Path ?? "-"} rule={violation.Rule}");
+                    await Console.Out.WriteLineAsync(versionResult.Success ? $"SP220_RELEASE_VERSION_OK version={versionResult.PackageVersion} mode={verifyVersion.Mode.ToString().ToLowerInvariant()}" : $"SP220_RELEASE_VERSION_FAILED code={ExitCodes.ReleaseVersionMismatch} violations={versionResult.Violations.Count}");
                     return versionResult.Success ? ExitCodes.Success : ExitCodes.ReleaseVersionMismatch;
 
                 case PrepareReleaseNotesOptions releaseNotes:
@@ -302,31 +302,31 @@ internal static class Program
                             notes,
                             new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
                             cancellation.Token).ConfigureAwait(false);
-                        Console.WriteLine(
+                        await Console.Out.WriteLineAsync(
                             $"SP220_RELEASE_NOTES_OK version={releaseNotes.Version} path={Path.GetRelativePath(releaseNotes.RepositoryRoot, releaseNotes.OutputPath).Replace('\\', '/')}");
                         return ExitCodes.Success;
                     }
 
                 case ScaffoldPackageOptions scaffold:
                     var scaffoldResult = await new ScaffoldPackageCommand().ExecuteAsync(scaffold, cancellation.Token).ConfigureAwait(false);
-                    foreach (var step in scaffoldResult.RequiredSteps) Console.WriteLine($"NEXT {step}");
-                    Console.WriteLine($"SP220_SCAFFOLD_OK package={scaffoldResult.PackageId} kind={scaffoldResult.Kind} files={scaffoldResult.Files.Count} dryRun={scaffoldResult.DryRun.ToString().ToLowerInvariant()}");
+                    foreach (var step in scaffoldResult.RequiredSteps) await Console.Out.WriteLineAsync($"NEXT {step}");
+                    await Console.Out.WriteLineAsync($"SP220_SCAFFOLD_OK package={scaffoldResult.PackageId} kind={scaffoldResult.Kind} files={scaffoldResult.Files.Count} dryRun={scaffoldResult.DryRun.ToString().ToLowerInvariant()}");
                     return ExitCodes.Success;
 
                 case ListPackagesOptions list:
                     var packageGraph = await new PackageGraphLoader().LoadAsync(list.RepositoryRoot, "eng/package-graph.json", cancellation.Token).ConfigureAwait(false);
-                    foreach (var package in packageGraph.Packages.Where(x => x.Lifecycle == list.Lifecycle)) Console.WriteLine(package.Id);
+                    foreach (var package in packageGraph.Packages.Where(x => x.Lifecycle == list.Lifecycle)) await Console.Out.WriteLineAsync(package.Id);
                     return ExitCodes.Success;
 
                 case RunConsumersCommandOptions consumers:
                     var consumerResults = await new ConsumerScenarioRunner().RunAsync(new(consumers.RepositoryRoot, consumers.Set, consumers.PackageDirectory, consumers.PackageVersion, consumers.ManifestPath, consumers.Category, consumers.Scenario, consumers.ExcludeCategory, consumers.MaxParallelism), cancellation.Token).ConfigureAwait(false);
-                    foreach (var consumer in consumerResults) Console.WriteLine($"SP220_CONSUMER_OK scenario={consumer.Scenario} durationMs={consumer.DurationMs} dependencies={consumer.ObservedSmartPipeDependencies.Count}");
-                    Console.WriteLine($"SP220_CONSUMERS_OK scenarios={consumerResults.Count} set={consumers.Set}");
+                    foreach (var consumer in consumerResults) await Console.Out.WriteLineAsync($"SP220_CONSUMER_OK scenario={consumer.Scenario} durationMs={consumer.DurationMs} dependencies={consumer.ObservedSmartPipeDependencies.Count}");
+                    await Console.Out.WriteLineAsync($"SP220_CONSUMERS_OK scenarios={consumerResults.Count} set={consumers.Set}");
                     return ExitCodes.Success;
 
                 case PackPackagesOptions pack:
                     var packManifest = await new PackPackagesCommand().ExecuteAsync(pack, cancellation.Token).ConfigureAwait(false);
-                    Console.WriteLine($"SP220_PACKAGES_OK packages={packManifest.Packages.Count} version={packManifest.Version} mode={packManifest.Mode}");
+                    await Console.Out.WriteLineAsync($"SP220_PACKAGES_OK packages={packManifest.Packages.Count} version={packManifest.Version} mode={packManifest.Mode}");
                     return ExitCodes.Success;
 
                 default:
@@ -335,52 +335,52 @@ internal static class Program
         }
         catch (CommandLineException exception)
         {
-            Console.Error.WriteLine(exception.Message);
+            await Console.Error.WriteLineAsync(exception.Message);
             return ExitCodes.UsageOrConfigurationError;
         }
         catch (AgentPlanException exception)
         {
-            Console.Error.WriteLine(exception.Message);
+            await Console.Error.WriteLineAsync(exception.Message);
             return ExitCodes.SchemaOrManifestInvalid;
         }
         catch (RepositoryCheckException exception)
         {
-            Console.Error.WriteLine(exception.Message);
+            await Console.Error.WriteLineAsync(exception.Message);
             return exception.ExitCode;
         }
         catch (PackageGraphException exception)
         {
-            Console.Error.WriteLine($"[{exception.Code}] {exception.Message}");
+            await Console.Error.WriteLineAsync($"[{exception.Code}] {exception.Message}");
             return ExitCodes.SchemaOrManifestInvalid;
         }
         catch (ReleaseNotesException exception)
         {
-            Console.Error.WriteLine($"[{exception.Code}] {exception.Message}");
+            await Console.Error.WriteLineAsync($"[{exception.Code}] {exception.Message}");
             return ExitCodes.SchemaOrManifestInvalid;
         }
         catch (ScaffoldException exception)
         {
-            Console.Error.WriteLine($"[{exception.Code}] {exception.Message}");
+            await Console.Error.WriteLineAsync($"[{exception.Code}] {exception.Message}");
             return ExitCodes.ScaffoldCollisionOrRefusedOverwrite;
         }
         catch (ConsumerScenarioException exception)
         {
-            Console.Error.WriteLine($"[{exception.Code}] {exception.Message}");
+            await Console.Error.WriteLineAsync($"[{exception.Code}] {exception.Message}");
             return ExitCodes.ConsumerScenarioFailure;
         }
         catch (PackagePackException exception)
         {
-            Console.Error.WriteLine($"[{exception.Code}] {exception.Message}");
+            await Console.Error.WriteLineAsync($"[{exception.Code}] {exception.Message}");
             return ExitCodes.PackagePackFailure;
         }
         catch (OperationCanceledException)
         {
-            Console.Error.WriteLine("Operation canceled.");
+            await Console.Error.WriteLineAsync("Operation canceled.");
             return ExitCodes.UsageOrConfigurationError;
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"Unexpected failure: {exception.Message}");
+            await Console.Error.WriteLineAsync($"Unexpected failure: {exception.Message}");
             return ExitCodes.UnexpectedInternalFailure;
         }
         finally
@@ -398,6 +398,6 @@ internal static class Program
             ProfileOutputFormat.GitHub => CheckRunGitHubRenderer.Render(run, failuresOnly),
             _ => throw new InvalidOperationException($"Unsupported profile output format '{format}'."),
         };
-        Console.Write(output);
+        await Console.Out.WriteAsync(output);
     }
 }
