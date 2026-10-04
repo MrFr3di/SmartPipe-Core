@@ -67,7 +67,7 @@ public sealed class ReleaseVersionValidatorTests
         Directory.CreateDirectory(Path.Combine(fixture.Path, "packages"));
         var artifacts = new[] { ("Core.nupkg", "SmartPipe.Core", "2.2.0-ci.1"), ("Facade.nupkg", "SmartPipe.Extensions", "2.2.0-ci.1") };
         foreach (var item in artifacts) File.WriteAllBytes(Path.Combine(fixture.Path, "packages", item.Item1), []);
-        var result = await new ReleaseVersionValidator(new FakeProjects("2.2.0"), new FakePackages(artifacts))
+        var result = await new ReleaseVersionValidator(new FakeProjects("2.2.0", "2.2.0-ci.1"), new FakePackages(artifacts))
             .ValidateAsync(Graph(), "v2.2.0-ci.1", PackageGraphMode.Current, fixture.Path, Path.Combine(fixture.Path, "packages"), TestContext.Current.CancellationToken);
         Assert.True(result.Success, string.Join(Environment.NewLine, result.Violations));
     }
