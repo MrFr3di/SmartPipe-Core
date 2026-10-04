@@ -30,7 +30,7 @@
 - A requested version with build metadata, noncanonical numeric components, or mismatched repository/package-graph version must fail.
 - A missing, `Development`-only, duplicated, or empty changelog section must not produce a publishable release.
 - An existing tag that points to another commit must fail and must never be moved.
-- Recoverable publication must distinguish primary and symbol package state and fail on any published-payload mismatch.
+- Failed-job recovery must distinguish primary and symbol package state, reuse the original producer artifact, and fail on any published-payload mismatch.
 
 ---
 
@@ -186,8 +186,8 @@ git commit -m "build(release): derive release notes from changelog"
 **Interfaces:**
 - Inputs:
   - `version: string`, required;
-  - `publish_nuget: boolean`, required, default `false`;
-  - `failed-job recovery: boolean`, required, default `false`.
+  - `publish_nuget: boolean`, required, default `false`.
+- Recovery trigger: GitHub `run_attempt > 1` only when using **Re-run failed jobs** on the original release run; it is not a workflow-dispatch input.
 - Consumes: `prepare-release-notes` command from Task 2.
 - Produces: validated `nuget-packages-<version>` artifact containing packages, manifest, `SHA256SUMS`, and `RELEASE_NOTES.md`.
 
@@ -219,7 +219,7 @@ Expected: FAIL against the old tag-driven workflow.
 
 - [ ] **Step 3: Replace the workflow entry contract**
 
-Change `on` to workflow-dispatch only. Add inputs `version`, `publish_nuget`, `failed-job recovery`.
+Change `on` to workflow-dispatch only. Add inputs `version` and `publish_nuget`. Recovery is deliberately not exposed as a new dispatch mode.
 
 The first validation job must:
 - require `refs/heads/main`;
@@ -265,7 +265,7 @@ Use a SHA-pinned `actions/attest` action and attest all manifest-listed nupkg/sn
 
 - [ ] **Step 6: Preserve fail-closed recovery**
 
-Adapt existing failed-job recovery conditions from `github.event_name == 'workflow_dispatch'` to the explicit boolean input.
+Bind recovery conditions to `github.run_attempt > 1`. Document and test that recovery uses **Re-run failed jobs** so successful producer/replay jobs are not rerun. The release request gate rejects a whole-workflow rerun.
 
 Normal mode:
 - any duplicate target package fails.
