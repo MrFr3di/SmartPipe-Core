@@ -1597,7 +1597,8 @@ def validate(documents: dict[str, dict]) -> None:
         "validation-mode": "release",
         "package-version": "${{ needs.version.outputs.package-version }}",
         "artifact-name": "${{ needs.version.outputs.artifact-name }}",
-    }, "Publish validation must pass version outputs as the reusable workflow inputs.")
+        "prepare-release-assets": True,
+    }, "Publish validation must pass version outputs and release-asset preparation to the reusable producer.")
     require(publication.get("needs") == ["version", "validation", "windows-validation", "postgresql-validation"],
             "Publish job must depend exactly on version and validation and PostgreSQL validation.")
     require(publication.get("environment") == "nuget-production",
