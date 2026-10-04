@@ -1162,10 +1162,22 @@ def assert_downloaded_postgresql_contract(documents: dict[str, dict]) -> None:
     require(publication_steps.index(named_step(publication_steps, "Download validated packages")) < publication_steps.index(validation)
             < publication_steps.index(named_step(publication_steps, "NuGet login")),
             "Publisher integrity must precede credential acquisition.")
+    github_release = publish["github-release"]
+    non_privileged = {
+        name: job for name, job in jobs.items()
+        if name not in {"publish", "github-release"}
+    }
     require(reusable.get("permissions") == {"contents": "read"}
-            and all(job.get("permissions", {"contents": "read"}) == {"contents": "read"} for job in jobs.values())
-            and publication.get("permissions") == {"contents": "read", "id-token": "write"},
-            "Only publisher may acquire NuGet OIDC credentials.")
+            and all(job.get("permissions", {"contents": "read"}) == {"contents": "read"} for job in non_privileged.values())
+            and publication.get("permissions") == {
+                "contents": "read",
+                "id-token": "write",
+                "attestations": "write",
+                "artifact-metadata": "write",
+            }
+            and github_release.get("permissions") == {"contents": "write"}
+            and "id-token" not in github_release.get("permissions", {}),
+            "Only publisher may acquire NuGet OIDC/attestation permissions; GitHub Release may hold contents write only.")
 
 
 def validate(documents: dict[str, dict]) -> None:
