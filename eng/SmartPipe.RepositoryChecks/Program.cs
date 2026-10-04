@@ -115,14 +115,14 @@ internal static class Program
                         }
                         catch (JsonException)
                         {
-                            RenderProfileRun(new CheckRun(
+                            await RenderProfileRunAsync(new CheckRun(
                                 "verify-profile", profile.Profile, false, ExitCodes.SchemaOrManifestInvalid,
                                 [new CheckDiagnostic("SPPROFILE001", "Verification profile manifest is invalid.")]), profile.Format, profile.FailuresOnly);
                             return ExitCodes.SchemaOrManifestInvalid;
                         }
                         catch (IOException)
                         {
-                            RenderProfileRun(new CheckRun(
+                            await RenderProfileRunAsync(new CheckRun(
                                 "verify-profile", profile.Profile, false, ExitCodes.SchemaOrManifestInvalid,
                                 [new CheckDiagnostic("SPPROFILE001", "Verification profile manifest could not be read.")]), profile.Format, profile.FailuresOnly);
                             return ExitCodes.SchemaOrManifestInvalid;
@@ -133,7 +133,7 @@ internal static class Program
                             .RunAsync(selected, cancellation.Token).ConfigureAwait(false);
                         foreach (var run in profileResult.CheckRuns)
                         {
-                            RenderProfileRun(run, profile.Format, profile.FailuresOnly);
+                            await RenderProfileRunAsync(run, profile.Format, profile.FailuresOnly);
                         }
 
                         return profileResult.ExitCode;
@@ -161,7 +161,7 @@ internal static class Program
                             .ConfigureAwait(false);
                         foreach (var run in result.CheckRuns)
                         {
-                            RenderProfileRun(run, verifyTask.Format, verifyTask.FailuresOnly);
+                            await RenderProfileRunAsync(run, verifyTask.Format, verifyTask.FailuresOnly);
                         }
 
                         return result.ExitCode;
@@ -389,7 +389,7 @@ internal static class Program
         }
     }
 
-    private static void RenderProfileRun(CheckRun run, ProfileOutputFormat format, bool failuresOnly)
+    private static async Task RenderProfileRunAsync(CheckRun run, ProfileOutputFormat format, bool failuresOnly)
     {
         var output = format switch
         {
