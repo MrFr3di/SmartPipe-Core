@@ -17,7 +17,7 @@ Read-only GitHub inspection found:
 
 | Gate | Observed state | Required follow-up |
 |---|---|---|
-| Release ruleset | ID `19148428`, `release-2.2.0-protection`, active for exact `release/2.2.0`; deletion/non-fast-forward blocked; PR, latest-push, conversation resolution and strict current status checks required | Align live approval/bypass settings with the solo-maintainer policy: approval count `0` is correct; remove normal-path owner bypass if administratively feasible |
+| Release ruleset | ID `19148428`, `release-2.2.0-protection`, active for exact `release/2.2.0`; deletion/non-fast-forward blocked; PR, conversation resolution and strict current status checks required. Live `require_last_push_approval=true` is incompatible with solo maintenance | Keep approval count `0`; set `require_last_push_approval=false` and `dismiss_stale_reviews_on_push=false`; remove normal-path owner bypass if administratively feasible |
 | Required status contexts | `validation / build-test-pack`, `json-file-windows`, `Baseline contract (Windows)`, `dependency-review`, `analyze`, `CodeQL` | Verify the actual final-head check names/results on each promotion PR |
 | Checkpoint G release validation | CI #428, `workflow_dispatch`, exact SHA `a8fec4c5d970f492807b9bed745c12d6743373e3`, success | This proves the pre-policy-change G candidate only. Re-run exact-head release validation after this release-flow slice merges because the candidate SHA and release workflow change |
 | Release-tag immutability | Repository ruleset inventory contains branch-target rulesets only; no tag-target rule protects `v*` | Add an active tag ruleset for `refs/tags/v*` blocking update, deletion and non-fast-forward before publication |
