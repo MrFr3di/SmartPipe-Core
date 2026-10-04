@@ -85,8 +85,8 @@ def assert_publication_contract(documents: dict) -> None:
     workflow = documents['publish-nuget.yml']
     require(set(workflow['on']) == {'workflow_dispatch'}, 'tag pushes must never trigger package publication')
     dispatch_inputs = workflow['on']['workflow_dispatch']['inputs']
-    require(set(dispatch_inputs) == {'version', 'publish_nuget', 'recoverable-rerun'},
-            'release dispatch must explicitly choose version, publication, and recovery mode')
+    require(set(dispatch_inputs) == {'version', 'publish_nuget'},
+            'release dispatch must explicitly choose only version and publication mode')
 
     jobs = workflow['jobs']
     version_steps = jobs['version']['steps']
@@ -100,8 +100,9 @@ def assert_publication_contract(documents: dict) -> None:
             and 'releaseVersion' in request_run
             and 'stable_core="${VERSION%%-*}"' in request_run
             and 'refs/tags/v$VERSION' in request_run
-            and 'recoverable-rerun requires publish_nuget=true' in request_run,
-            'release request must validate canonical version, dated changelog, stable-core graph parity, tag reuse, and recovery mode')
+            and 'RUN_ATTEMPT' in request_run
+            and 'Re-run failed jobs' in request_run,
+            'release request must validate canonical version, dated changelog, stable-core graph parity, tag reuse, and refuse whole-workflow recovery reruns')
 
     require(jobs['validation']['with'].get('validation-mode') == 'release'
             and jobs['validation']['with'].get('prepare-release-assets') is True,
@@ -137,7 +138,7 @@ def assert_publication_contract(documents: dict) -> None:
             'publisher must verify producer SHA256SUMS before credentials')
     recovery = named_step(publish_steps, 'Preflight recoverable published packages')
     recovery_run = recovery.get('run', '')
-    require(recovery.get('if') == 'inputs.recoverable-rerun'
+    require(recovery.get('if') == 'github.run_attempt > 1'
             and 'v3-flatcontainer' in recovery_run
             and '/api/v2/symbolpackage/' in recovery_run
             and '-OutFile $published -SkipHttpErrorCheck -PassThru' in recovery_run
@@ -158,7 +159,7 @@ def assert_publication_contract(documents: dict) -> None:
     push_env = push.get('env', {})
     require(push_env.get('NUGET_API_KEY') == '${{ steps.nuget-login.outputs.NUGET_API_KEY }}'
             and push_env.get('NUGET_SYMBOL_API_KEY') == '${{ steps.nuget-login.outputs.NUGET_API_KEY }}'
-            and push_env.get('RECOVERABLE_RERUN') == '${{ inputs.recoverable-rerun }}'
+            and push_env.get('RECOVERY_MODE') == '${{ github.run_attempt > 1 }}'
             and '--api-key' not in push_run and '--symbol-api-key' not in push_run,
             'NuGet credentials must stay in supported environment variables and recovery must be explicit')
     require('recovery-state.json' in push_run
