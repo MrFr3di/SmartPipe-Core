@@ -115,14 +115,14 @@ internal static class Program
                         }
                         catch (JsonException)
                         {
-                            await RenderProfileRunAsync(new CheckRun(
+                            await RenderProfileRunAsync(cancellation.Token, new CheckRun(
                                 "verify-profile", profile.Profile, false, ExitCodes.SchemaOrManifestInvalid,
                                 [new CheckDiagnostic("SPPROFILE001", "Verification profile manifest is invalid.")]), profile.Format, profile.FailuresOnly);
                             return ExitCodes.SchemaOrManifestInvalid;
                         }
                         catch (IOException)
                         {
-                            await RenderProfileRunAsync(new CheckRun(
+                            await RenderProfileRunAsync(cancellation.Token, new CheckRun(
                                 "verify-profile", profile.Profile, false, ExitCodes.SchemaOrManifestInvalid,
                                 [new CheckDiagnostic("SPPROFILE001", "Verification profile manifest could not be read.")]), profile.Format, profile.FailuresOnly);
                             return ExitCodes.SchemaOrManifestInvalid;
@@ -133,7 +133,7 @@ internal static class Program
                             .RunAsync(selected, cancellation.Token).ConfigureAwait(false);
                         foreach (var run in profileResult.CheckRuns)
                         {
-                            await RenderProfileRunAsync(run, profile.Format, profile.FailuresOnly);
+                            await RenderProfileRunAsync(cancellation.Token, run, profile.Format, profile.FailuresOnly);
                         }
 
                         return profileResult.ExitCode;
@@ -144,7 +144,8 @@ internal static class Program
                         var context = await new AgentContextBuilder(runner)
                             .BuildAsync(agentContext.RepositoryRoot, agentContext.Epic, agentContext.Task, cancellation.Token)
                             .ConfigureAwait(false);
-                        await Console.Out.WriteAsync(AgentJsonSerializer.Serialize(context.Context));
+                        var serializedContext = AgentJsonSerializer.Serialize(context.Context);
+                        await Console.Out.WriteAsync(serializedContext.AsMemory(), cancellation.Token);
                         return ExitCodes.Success;
                     }
 
@@ -161,7 +162,7 @@ internal static class Program
                             .ConfigureAwait(false);
                         foreach (var run in result.CheckRuns)
                         {
-                            await RenderProfileRunAsync(run, verifyTask.Format, verifyTask.FailuresOnly);
+                            await RenderProfileRunAsync(cancellation.Token, run, verifyTask.Format, verifyTask.FailuresOnly);
                         }
 
                         return result.ExitCode;
@@ -172,7 +173,8 @@ internal static class Program
                         var result = await new AgentEvidenceService(new AgentContextBuilder(runner))
                             .CollectAsync(evidence.RepositoryRoot, evidence.Epic, cancellation.Token)
                             .ConfigureAwait(false);
-                        await Console.Out.WriteAsync(AgentJsonSerializer.Serialize(result.Evidence));
+                        var serializedEvidence = AgentJsonSerializer.Serialize(result.Evidence);
+                        await Console.Out.WriteAsync(serializedEvidence.AsMemory(), cancellation.Token);
                         return result.ExitCode;
                     }
 
@@ -389,7 +391,11 @@ internal static class Program
         }
     }
 
-    private static async Task RenderProfileRunAsync(CheckRun run, ProfileOutputFormat format, bool failuresOnly)
+    private static async Task RenderProfileRunAsync(
+        CancellationToken cancellationToken,
+        CheckRun run,
+        ProfileOutputFormat format,
+        bool failuresOnly)
     {
         var output = format switch
         {
@@ -398,6 +404,6 @@ internal static class Program
             ProfileOutputFormat.GitHub => CheckRunGitHubRenderer.Render(run, failuresOnly),
             _ => throw new InvalidOperationException($"Unsupported profile output format '{format}'."),
         };
-        await Console.Out.WriteAsync(output);
+        await Console.Out.WriteAsync(output.AsMemory(), cancellationToken);
     }
 }
