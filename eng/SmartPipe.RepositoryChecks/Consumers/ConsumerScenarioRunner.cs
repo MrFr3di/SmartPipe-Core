@@ -415,6 +415,13 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             }
         }
 
+        if (allIds.Count == 0)
+        {
+            throw new ConsumerScenarioException(
+                "SPCONS021",
+                "Directory.Packages.props and lock files contain no external package IDs for source mapping.");
+        }
+
         var rid = RuntimeIdentifier();
         allIds.Add($"Microsoft.NETCore.App.Runtime.{rid}");
         allIds.Add($"Microsoft.WindowsDesktop.App.Runtime.{rid}");
@@ -425,9 +432,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         allIds.Add($"Microsoft.NETCore.App.Runtime.NativeAOT.{rid}");
         allIds.Add($"runtime.{rid}.Microsoft.DotNet.ILCompiler");
 
-        return allIds.Count == 0
-            ? throw new ConsumerScenarioException("SPCONS021", "Directory.Packages.props contains no external package IDs for source mapping.")
-            : allIds.Order(StringComparer.Ordinal).ToArray();
+        return allIds.Order(StringComparer.Ordinal).ToArray();
     }
 
     private static async Task InspectRuntimeArtifactsAsync(string output, ConsumerMode mode, CancellationToken ct)
