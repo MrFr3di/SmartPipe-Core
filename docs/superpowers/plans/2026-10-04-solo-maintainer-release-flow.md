@@ -187,7 +187,7 @@ git commit -m "build(release): derive release notes from changelog"
 - Inputs:
   - `version: string`, required;
   - `publish_nuget: boolean`, required, default `false`;
-  - `recoverable-rerun: boolean`, required, default `false`.
+  - `failed-job recovery: boolean`, required, default `false`.
 - Consumes: `prepare-release-notes` command from Task 2.
 - Produces: validated `nuget-packages-<version>` artifact containing packages, manifest, `SHA256SUMS`, and `RELEASE_NOTES.md`.
 
@@ -219,7 +219,7 @@ Expected: FAIL against the old tag-driven workflow.
 
 - [ ] **Step 3: Replace the workflow entry contract**
 
-Change `on` to workflow-dispatch only. Add inputs `version`, `publish_nuget`, `recoverable-rerun`.
+Change `on` to workflow-dispatch only. Add inputs `version`, `publish_nuget`, `failed-job recovery`.
 
 The first validation job must:
 - require `refs/heads/main`;
@@ -265,7 +265,7 @@ Use a SHA-pinned `actions/attest` action and attest all manifest-listed nupkg/sn
 
 - [ ] **Step 6: Preserve fail-closed recovery**
 
-Adapt existing recoverable-rerun conditions from `github.event_name == 'workflow_dispatch'` to the explicit boolean input.
+Adapt existing failed-job recovery conditions from `github.event_name == 'workflow_dispatch'` to the explicit boolean input.
 
 Normal mode:
 - any duplicate target package fails.
