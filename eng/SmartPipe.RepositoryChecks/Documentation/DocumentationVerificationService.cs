@@ -265,29 +265,30 @@ internal sealed class DocumentationVerificationService
         {
             var changelog = await File.ReadAllTextAsync(changelogPath, cancellationToken).ConfigureAwait(false);
             var changelogLines = SplitLines(changelog);
-            var headingPrefix = $"## [{releaseVersion}] — ";
+            var versionHeadingPrefix = $"## [{releaseVersion}]";
+            var developmentHeading = $"{versionHeadingPrefix} — Development";
+            var datedHeadingPrefix = $"{versionHeadingPrefix} - ";
             var currentHeadingCandidates = changelogLines
                 .Select((line, index) => (Line: line.TrimEnd(), Index: index))
-                .Where(item => item.Line.StartsWith(headingPrefix, StringComparison.Ordinal))
+                .Where(item => item.Line.StartsWith(versionHeadingPrefix, StringComparison.Ordinal))
                 .ToArray();
 
-            var releaseState = currentHeadingCandidates.Length == 1
-                ? currentHeadingCandidates[0].Line[headingPrefix.Length..]
-                : string.Empty;
-            var hasValidReleaseState = string.Equals(releaseState, "Development", StringComparison.Ordinal)
-                || DateOnly.TryParseExact(
-                    releaseState,
-                    "yyyy-MM-dd",
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out _);
+            var hasValidReleaseState = currentHeadingCandidates.Length == 1
+                && (string.Equals(currentHeadingCandidates[0].Line, developmentHeading, StringComparison.Ordinal)
+                    || currentHeadingCandidates[0].Line.StartsWith(datedHeadingPrefix, StringComparison.Ordinal)
+                    && DateOnly.TryParseExact(
+                        currentHeadingCandidates[0].Line[datedHeadingPrefix.Length..],
+                        "yyyy-MM-dd",
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.None,
+                        out _));
 
             if (currentHeadingCandidates.Length != 1 || !hasValidReleaseState)
             {
                 violations.Add(new(
                     "SPDOC014",
                     changelogRelativePath,
-                    $"current release changelog must contain exactly one heading '## [{releaseVersion}] — Development' or a valid ISO yyyy-MM-dd release date"));
+                    $"current release changelog must contain exactly one heading '## [{releaseVersion}] — Development' or '## [{releaseVersion}] - yyyy-MM-dd' with a valid ISO release date"));
             }
             else
             {
@@ -415,7 +416,8 @@ internal sealed class DocumentationVerificationService
     {
         var candidate = line.TrimEnd();
         return candidate.StartsWith("## [", StringComparison.Ordinal)
-            && candidate.Contains("] — ", StringComparison.Ordinal);
+            && (candidate.Contains("] — ", StringComparison.Ordinal)
+                || candidate.Contains("] - ", StringComparison.Ordinal));
     }
 
     private static bool IsLevelTwoHeadingLine(string line) =>
