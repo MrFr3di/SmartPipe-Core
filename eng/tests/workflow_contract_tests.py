@@ -1541,6 +1541,48 @@ def validate(documents: dict[str, dict]) -> None:
     assert_link_check_exclusion_scoped()
     assert_consumer_contract()
 
+    publish_triggers = publish.get("on", {})
+    require(set(publish_triggers) == {"workflow_dispatch"},
+            "Publish workflow must be workflow_dispatch-only; tag pushes must never publish.")
+    publish_dispatch = publish_triggers.get("workflow_dispatch", {})
+    publish_inputs = publish_dispatch.get("inputs", {}) if isinstance(publish_dispatch, dict) else {}
+    require(set(publish_inputs) == {"version", "publish_nuget", "recoverable-rerun"},
+            "Publish workflow dispatch must expose exactly version, publish_nuget, and recoverable-rerun inputs.")
+    require(publish_inputs["version"].get("required") is True
+            and publish_inputs["version"].get("type") == "string",
+            "Publish version input must be a required string.")
+    for boolean_input in ("publish_nuget", "recoverable-rerun"):
+        definition = publish_inputs[boolean_input]
+        require(definition.get("required") is True
+                and definition.get("type") == "boolean"
+                and definition.get("default") is False,
+                f"Publish {boolean_input} input must be an explicit boolean defaulting false.")
+
+    version = publish["jobs"].get("version")
+    validation = publish["jobs"].get("validation")
+    publication = publish["jobs"].get("publish")
+    github_release = publish["jobs"].get("github-release")
+    require(isinstance(version, dict) and isinstance(validation, dict)
+            and isinstance(publication, dict) and isinstance(github_release, dict),
+            "Publish workflow must define version, validation, publish, and github-release jobs.")
+    version_steps = steps(version, "publish version")
+    require_main = named_step(version_steps, "Require main")
+    require('refs/heads/main' in str(require_main.get("run", "")),
+            "Publish workflow must fail unless workflow_dispatch runs from main.")
+    require(publication.get("if") == "${{ inputs.publish_nuget }}",
+            "Publish job must run only when publish_nuget is explicitly true.")
+    require(github_release.get("needs") == ["version", "validation", "publish"],
+            "GitHub Release must depend on version, the immutable producer artifact, and successful NuGet publication.")
+    require(github_release.get("permissions") == {"contents": "write"},
+            "GitHub Release job must hold only contents: write.")
+    release_steps = steps(github_release, "github-release")
+    create_release = named_step(release_steps, "Create release tag and publish GitHub Release")
+    create_release_run = str(create_release.get("run", ""))
+    require("RELEASE_NOTES.md" in create_release_run
+            and "gh release create" in create_release_run
+            and "git/refs" in create_release_run,
+            "GitHub Release must create the exact release tag and use prepared CHANGELOG notes.")
+
     version = publish["jobs"].get("version")
     validation = publish["jobs"].get("validation")
     publication = publish["jobs"].get("publish")
