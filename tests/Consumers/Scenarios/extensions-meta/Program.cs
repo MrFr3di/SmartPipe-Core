@@ -51,7 +51,7 @@ if (!configuredResult.IsSuccess || configuredResult.Value?.DisplayName != "Bob")
     throw new InvalidOperationException("Configured Mapster facade mapping failed.");
 }
 
-Console.WriteLine("CONSUMER_OK extensions-meta");
+await Console.Out.WriteLineAsync("CONSUMER_OK extensions-meta");
 
 static void ExpectNullMetadata(Action call)
 {
@@ -60,24 +60,27 @@ static void ExpectNullMetadata(Action call)
     throw new InvalidOperationException("Legacy JSON null/default metadata behavior changed.");
 }
 
-internal sealed class DefaultSource
+namespace SmartPipe.Consumers.ExtensionsMeta
 {
-    public required string Name { get; init; }
-    public int Age { get; init; }
-}
+    internal sealed class DefaultSource
+    {
+        public required string Name { get; init; }
+        public int Age { get; init; }
+    }
 
-internal sealed class DefaultDestination
-{
-    public string? Name { get; init; }
-    public int Age { get; init; }
-}
+    internal sealed class DefaultDestination
+    {
+        public string? Name { get; init; }
+        public int Age { get; init; }
+    }
 
-internal sealed class ConfiguredSource
-{
-    public required string Name { get; init; }
-}
+    internal sealed class ConfiguredSource
+    {
+        public required string Name { get; init; }
+    }
 
-internal sealed class ConfiguredDestination
-{
-    public string? DisplayName { get; init; }
+    internal sealed class ConfiguredDestination
+    {
+        public string? DisplayName { get; init; }
+    }
 }
