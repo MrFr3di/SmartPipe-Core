@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.2.0] — Development
+## [2.2.0] - 2026-10-04
 
 User-facing overview: [2.2.0 release notes](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/releases/2.2.0.md). Upgrade details: [2.1.2 → 2.2.0 integration migration](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md).
 
