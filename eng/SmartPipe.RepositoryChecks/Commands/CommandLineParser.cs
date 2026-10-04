@@ -3,6 +3,7 @@ using SmartPipe.RepositoryChecks.Packaging;
 using SmartPipe.RepositoryChecks.PackageGraph;
 using SmartPipe.RepositoryChecks.Ownership;
 using SmartPipe.RepositoryChecks.Consumers;
+using SmartPipe.RepositoryChecks.Release;
 
 namespace SmartPipe.RepositoryChecks.Commands;
 
@@ -85,6 +86,7 @@ internal sealed record CanonicalizeJsonOptions(string RepositoryRoot, string Inp
 internal sealed record VerifyPackageMetadataOptions(string RepositoryRoot, string GraphPath, string PackageDirectory, PackageGraphMode Mode, string? ReportPath) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record VerifyPackageOwnershipOptions(string RepositoryRoot, string BaselineDirectory, string PackageDirectory, PackageGraphMode Mode) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record VerifyReleaseVersionOptions(string RepositoryRoot, string Tag, PackageGraphMode Mode, string PackageDirectory) : RepositoryCheckCommand(RepositoryRoot);
+internal sealed record PrepareReleaseNotesOptions(string RepositoryRoot, string Version, string ChangelogPath, string OutputPath) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record ScaffoldPackageOptions(string RepositoryRoot, string PackageId, bool DryRun, string? OutputReport) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record ListPackagesOptions(string RepositoryRoot, PackageLifecycle Lifecycle) : RepositoryCheckCommand(RepositoryRoot);
 internal sealed record RunConsumersCommandOptions(
@@ -161,12 +163,64 @@ internal static class CommandLineParser
             "verify-package-metadata" => ParseVerifyPackageMetadata(args.AsSpan(1)),
             "verify-package-ownership" => ParseVerifyPackageOwnership(args.AsSpan(1)),
             "verify-release-version" => ParseVerifyReleaseVersion(args.AsSpan(1)),
+            "prepare-release-notes" => ParsePrepareReleaseNotes(args.AsSpan(1)),
             "scaffold-package" => ParseScaffoldPackage(args.AsSpan(1)),
             "list-packages" => ParseListPackages(args.AsSpan(1)),
             "run-consumers" => ParseRunConsumers(args.AsSpan(1)),
             "pack-packages" => ParsePackPackages(args.AsSpan(1)),
             _ => throw new CommandLineException($"Unknown command '{args[0]}'."),
         };
+    }
+
+    private static PrepareReleaseNotesOptions ParsePrepareReleaseNotes(ReadOnlySpan<string> args)
+    {
+        string? root = null;
+        string? version = null;
+        string? changelog = null;
+        string? output = null;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var i = 0; i < args.Length; i += 2)
+        {
+            if (i + 1 >= args.Length)
+                throw new CommandLineException($"Option '{args[i]}' requires a value.");
+            if (!seen.Add(args[i]))
+                throw new CommandLineException($"Duplicate option '{args[i]}'.");
+
+            switch (args[i])
+            {
+                case "--repo-root" or "--repository-root": root = args[i + 1]; break;
+                case "--version": version = args[i + 1]; break;
+                case "--changelog": changelog = args[i + 1]; break;
+                case "--output": output = args[i + 1]; break;
+                default: throw new CommandLineException($"Unknown prepare-release-notes option '{args[i]}'.");
+            }
+        }
+
+        root = Path.GetFullPath(root ?? Directory.GetCurrentDirectory());
+        if (!Directory.Exists(root))
+            throw new CommandLineException($"Repository root does not exist: {root}.");
+        if (string.IsNullOrWhiteSpace(version))
+            throw new CommandLineException("Missing required option '--version'.");
+        if (string.IsNullOrWhiteSpace(changelog))
+            throw new CommandLineException("Missing required option '--changelog'.");
+        if (string.IsNullOrWhiteSpace(output))
+            throw new CommandLineException("Missing required option '--output'.");
+
+        try
+        {
+            _ = ReleaseVersionValidator.ParseTag($"v{version}");
+        }
+        catch (ReleaseVersionException)
+        {
+            throw new CommandLineException("Option '--version' must be canonical SemVer without build metadata.");
+        }
+
+        return new(
+            root,
+            version,
+            ResolveWithinRoot(root, changelog, "--changelog"),
+            ResolveWithinRoot(root, output, "--output"));
     }
 
     private static PackPackagesOptions ParsePackPackages(ReadOnlySpan<string> args)
