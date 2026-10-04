@@ -399,8 +399,8 @@ public sealed class NuGetPackageReaderTests
 
         var result = await new NuGetPackageReader().ReadAsync(package.Path, TestContext.Current.CancellationToken);
 
-        var hash = SHA1.HashData(fullKey);
-        var expectedFullKeyToken = Convert.ToHexStringLower(hash.AsSpan(hash.Length - 8).ToArray().Reverse().ToArray());
+        // ECMA-335 strong-name token vector for bytes 01..10 (SHA-1 is mandated by the format).
+        const string expectedFullKeyToken = "a9d8e4b4ef8aec96";
         Assert.Equal(expectedFullKeyToken, Assert.Single(result.Assets.Assemblies, static assembly => assembly.Name == "FullKey").PublicKeyToken);
         Assert.Equal("0102030405060708", Assert.Single(result.Assets.Assemblies, static assembly => assembly.Name == "StoredToken").PublicKeyToken);
     }
