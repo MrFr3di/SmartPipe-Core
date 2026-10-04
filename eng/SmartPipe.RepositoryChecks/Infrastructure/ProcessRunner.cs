@@ -520,11 +520,11 @@ internal static class RepositoryCheckProcessHost
                                                or OperationCanceledException
                                                or ProcessHostProtocolException)
             {
-                initializationCancellation.Cancel();
+                await initializationCancellation.CancelAsync().ConfigureAwait(false);
                 return InvalidArgumentsExitCode;
             }
 
-            initializationCancellation.Cancel();
+            await initializationCancellation.CancelAsync().ConfigureAwait(false);
             await ObserveCanceledInitializationAsync(ownershipTask).ConfigureAwait(false);
             return earlyCommand.Kind == ProcessHostControlMessageKind.Cancel && earlyCommand.Detail is null
                 ? 0
@@ -637,8 +637,8 @@ internal static class RepositoryCheckProcessHost
                 nonce,
                 new ProcessHostControlMessage(ProcessHostControlMessageKind.Started))
             .ConfigureAwait(false);
-        var forwardOutput = target.StandardOutput.BaseStream.CopyToAsync(Console.OpenStandardOutput());
-        var forwardError = target.StandardError.BaseStream.CopyToAsync(Console.OpenStandardError());
+        var forwardOutput = target.StandardOutput.BaseStream.CopyToAsync(Console.OpenStandardOutput(), CancellationToken.None);
+        var forwardError = target.StandardError.BaseStream.CopyToAsync(Console.OpenStandardError(), CancellationToken.None);
         await Task.WhenAll(forwardOutput, forwardError).ConfigureAwait(false);
         await target.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
         await WriteControlAsync(
