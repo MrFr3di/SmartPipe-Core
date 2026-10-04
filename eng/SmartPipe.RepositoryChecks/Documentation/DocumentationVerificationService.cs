@@ -1,3 +1,4 @@
+using System.Globalization;
 using SmartPipe.RepositoryChecks.PackageGraph;
 
 namespace SmartPipe.RepositoryChecks.Documentation;
@@ -23,6 +24,7 @@ internal sealed class DocumentationVerificationService
         "docs/docfx.json",
         "docs/toc.yml",
         "docs/index.md",
+        "docs/getting-started.md",
         "docs/architecture.md",
         "docs/runtime-contracts.md",
         "docs/reference/packages.md",
@@ -49,6 +51,7 @@ internal sealed class DocumentationVerificationService
         "SECURITY.md",
         "SUPPORT.md",
         "VERSIONING.md",
+        "CHANGELOG.md",
     ];
 
     private static readonly string[] RequiredDocumentationIndexLinks =
@@ -179,6 +182,33 @@ internal sealed class DocumentationVerificationService
             }
         }
 
+        var gettingStartedPath = Resolve(root, "docs/getting-started.md");
+        if (File.Exists(gettingStartedPath))
+        {
+            var gettingStarted = await File.ReadAllTextAsync(gettingStartedPath, cancellationToken).ConfigureAwait(false);
+            var packageSelection = ExtractLevelTwoSection(gettingStarted, "## Choose the integration package");
+            if (packageSelection is null)
+            {
+                violations.Add(new(
+                    "SPDOC018",
+                    "docs/getting-started.md",
+                    "getting-started must contain the '## Choose the integration package' release-package selection section"));
+            }
+            else
+            {
+                foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
+                {
+                    if (!packageSelection.Contains($"`{package.Id}`", StringComparison.Ordinal))
+                    {
+                        violations.Add(new(
+                            "SPDOC018",
+                            "docs/getting-started.md",
+                            $"getting-started package selection is stale; release package is not named: {package.Id}"));
+                    }
+                }
+            }
+        }
+
         var securityPath = Resolve(root, "SECURITY.md");
         if (File.Exists(securityPath))
         {
@@ -206,8 +236,220 @@ internal sealed class DocumentationVerificationService
             }
         }
 
+        await ValidateReleaseDocumentationAsync(root, graph, violations, cancellationToken).ConfigureAwait(false);
+
         return new(violations);
     }
+
+    private static async Task ValidateReleaseDocumentationAsync(
+        string root,
+        PackageGraphDocument graph,
+        List<DocumentationViolation> violations,
+        CancellationToken cancellationToken)
+    {
+        var releaseVersion = graph.ReleaseVersion;
+        var changelogRelativePath = "CHANGELOG.md";
+        var releaseRelativePath = $"docs/releases/{releaseVersion}.md";
+        var changelogPath = Resolve(root, changelogRelativePath);
+        var releasePath = Resolve(root, releaseRelativePath);
+
+        string? currentReleaseSection = null;
+        if (!File.Exists(changelogPath))
+        {
+            violations.Add(new(
+                "SPDOC014",
+                changelogRelativePath,
+                $"current release changelog is missing for {releaseVersion}"));
+        }
+        else
+        {
+            var changelog = await File.ReadAllTextAsync(changelogPath, cancellationToken).ConfigureAwait(false);
+            var changelogLines = SplitLines(changelog);
+            var headingPrefix = $"## [{releaseVersion}] — ";
+            var currentHeadingCandidates = changelogLines
+                .Select((line, index) => (Line: line.TrimEnd(), Index: index))
+                .Where(item => item.Line.StartsWith(headingPrefix, StringComparison.Ordinal))
+                .ToArray();
+
+            var releaseState = currentHeadingCandidates.Length == 1
+                ? currentHeadingCandidates[0].Line[headingPrefix.Length..]
+                : string.Empty;
+            var hasValidReleaseState = string.Equals(releaseState, "Development", StringComparison.Ordinal)
+                || DateOnly.TryParseExact(
+                    releaseState,
+                    "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out _);
+
+            if (currentHeadingCandidates.Length != 1 || !hasValidReleaseState)
+            {
+                violations.Add(new(
+                    "SPDOC014",
+                    changelogRelativePath,
+                    $"current release changelog must contain exactly one heading '## [{releaseVersion}] — Development' or a valid ISO yyyy-MM-dd release date"));
+            }
+            else
+            {
+                currentReleaseSection = ExtractSectionAfterLine(
+                    changelogLines,
+                    currentHeadingCandidates[0].Index,
+                    IsVersionHeadingLine);
+
+                foreach (var package in graph.Packages.Where(package =>
+                             package.Lifecycle != PackageLifecycle.Planned
+                             && package.BaselineVersion is null))
+                {
+                    if (!currentReleaseSection.Contains($"`{package.Id}`", StringComparison.Ordinal))
+                    {
+                        violations.Add(new(
+                            "SPDOC016",
+                            changelogRelativePath,
+                            $"first-release package must be explicitly named in the current release section: {package.Id}"));
+                    }
+                }
+            }
+        }
+
+        if (!File.Exists(releasePath))
+        {
+            violations.Add(new(
+                "SPDOC014",
+                releaseRelativePath,
+                $"current release notes are missing for {releaseVersion}"));
+            return;
+        }
+
+        var releaseNotes = await File.ReadAllTextAsync(releasePath, cancellationToken).ConfigureAwait(false);
+        var packageSection = ExtractLevelTwoSection(releaseNotes, "## Package selection");
+        if (packageSection is null)
+        {
+            violations.Add(new(
+                "SPDOC015",
+                releaseRelativePath,
+                "release notes must contain a '## Package selection' section projected from the package graph"));
+        }
+        else
+        {
+            var expected = graph.Packages
+                .Where(package => package.Lifecycle != PackageLifecycle.Planned)
+                .Select(package => package.Id)
+                .ToHashSet(StringComparer.Ordinal);
+
+            var actual = EnumerateReleasePackageIds(packageSection).ToArray();
+            var actualSet = actual.ToHashSet(StringComparer.Ordinal);
+            var missing = expected.Except(actualSet, StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+            var unknown = actualSet.Except(expected, StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+            var duplicates = actual
+                .GroupBy(id => id, StringComparer.Ordinal)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .OrderBy(id => id, StringComparer.Ordinal)
+                .ToArray();
+
+            if (missing.Length != 0 || unknown.Length != 0 || duplicates.Length != 0)
+            {
+                violations.Add(new(
+                    "SPDOC015",
+                    releaseRelativePath,
+                    $"release package table must match the non-planned package graph exactly; missing=[{string.Join(",", missing)}] unknown=[{string.Join(",", unknown)}] duplicates=[{string.Join(",", duplicates)}]"));
+            }
+        }
+
+        var requiredCrossLinks = new List<string>
+        {
+            "../../CHANGELOG.md",
+            $"../migration/{releaseVersion}-integration-packages.md",
+        };
+        var baselineVersions = graph.Packages
+            .Select(package => package.BaselineVersion)
+            .Where(version => !string.IsNullOrWhiteSpace(version))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (baselineVersions.Length == 1)
+        {
+            requiredCrossLinks.Add($"../reference/compatibility/{baselineVersions[0]}-to-{releaseVersion}.md");
+        }
+
+        foreach (var target in requiredCrossLinks)
+        {
+            if (!releaseNotes.Contains($"({target})", StringComparison.Ordinal))
+            {
+                violations.Add(new(
+                    "SPDOC017",
+                    releaseRelativePath,
+                    $"release notes must cross-link release detail/migration/compatibility target: {target}"));
+            }
+        }
+    }
+
+    private static string? ExtractLevelTwoSection(string content, string heading)
+    {
+        var lines = SplitLines(content);
+        for (var index = 0; index < lines.Length; index++)
+        {
+            if (string.Equals(lines[index].TrimEnd(), heading, StringComparison.Ordinal))
+            {
+                return ExtractSectionAfterLine(lines, index, IsLevelTwoHeadingLine);
+            }
+        }
+
+        return null;
+    }
+
+    private static string ExtractSectionAfterLine(
+        IReadOnlyList<string> lines,
+        int headingIndex,
+        Func<string, bool> isNextHeading)
+    {
+        var end = headingIndex + 1;
+        while (end < lines.Count && !isNextHeading(lines[end]))
+        {
+            end++;
+        }
+
+        return string.Join('\n', lines.Skip(headingIndex + 1).Take(end - headingIndex - 1));
+    }
+
+    private static bool IsVersionHeadingLine(string line)
+    {
+        var candidate = line.TrimEnd();
+        return candidate.StartsWith("## [", StringComparison.Ordinal)
+            && candidate.Contains("] — ", StringComparison.Ordinal);
+    }
+
+    private static bool IsLevelTwoHeadingLine(string line) =>
+        line.TrimEnd().StartsWith("## ", StringComparison.Ordinal);
+
+    private static IEnumerable<string> EnumerateReleasePackageIds(string section)
+    {
+        foreach (var line in SplitLines(section))
+        {
+            if (line.Length == 0 || line[0] != '|')
+            {
+                continue;
+            }
+
+            var separator = line.IndexOf('|', 1);
+            if (separator < 0)
+            {
+                continue;
+            }
+
+            var firstCell = line[1..separator].Trim();
+            if (firstCell.Length >= 3 && firstCell[0] == '`' && firstCell[^1] == '`')
+            {
+                var id = firstCell[1..^1];
+                if (id.Length != 0)
+                {
+                    yield return id;
+                }
+            }
+        }
+    }
+
+    private static string[] SplitLines(string content) =>
+        content.Split('\n').Select(static line => line.TrimEnd('\r')).ToArray();
 
     private static async Task ValidateSelfRepositoryLinksAsync(
         string root,

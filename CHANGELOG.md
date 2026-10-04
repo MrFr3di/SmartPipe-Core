@@ -4,6 +4,28 @@
 
 User-facing overview: [2.2.0 release notes](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/releases/2.2.0.md). Upgrade details: [2.1.2 → 2.2.0 integration migration](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md).
 
+### Package architecture
+
+- First standalone framework/runtime integration packages: `SmartPipe.Extensions.DependencyInjection`,
+  `SmartPipe.Extensions.Hosting`, `SmartPipe.Extensions.HealthChecks`, and
+  `SmartPipe.Extensions.OpenTelemetry`.
+- First standalone processing/data packages: `SmartPipe.Extensions.Channels`,
+  `SmartPipe.Extensions.Transforms`, `SmartPipe.Extensions.DataAnnotations`,
+  `SmartPipe.Extensions.Logging`, `SmartPipe.Extensions.Csv`,
+  `SmartPipe.Extensions.Dapper`, `SmartPipe.Extensions.EntityFrameworkCore`, and
+  `SmartPipe.Extensions.Mapster`.
+- First standalone transport/resilience packages: `SmartPipe.Extensions.Http`,
+  `SmartPipe.Extensions.Http.Json`, and `SmartPipe.Extensions.Polly`.
+- Added the optional `SmartPipe.Extensions.PostgreSql` provider integration and
+  the test-only `SmartPipe.Testing` helpers as separate packages. Neither is
+  part of the broad compatibility facade bundle.
+- The immutable 2.1.2 facade baseline contains 42 relevant public identities.
+  In 2.2.0, 23 are preserved through type forwarding, 13 remain physically in
+  `SmartPipe.Extensions`, and six HTTP/Polly identities are intentionally
+  removed and require migration/recompilation.
+
+### Runtime, integrations, and behavior
+
 - Extracted Channels, Transforms, Logging, and DataAnnotations implementations
   into narrow packages while preserving broad-facade type identities through
   forwarding.
@@ -138,6 +160,11 @@ User-facing overview: [2.2.0 release notes](https://github.com/MrFr3di/SmartPipe
 
 - Central package management, lock-file reconciliation, package graph and
   ownership manifests now drive current and release validation.
+- Release validation produces one immutable package artifact, records its source
+  commit, mode, version, inventory, and hashes, and replays that exact artifact
+  through Windows and PostgreSQL validation instead of repacking. Publication
+  and recovery revalidate the recorded payload and fail closed on mismatches;
+  publishing credentials are acquired only after the required validation gates.
 - Consumer smoke workspaces use fail-closed source mapping and bounded package
   archive extraction; package metadata validation rejects CI version drift.
 - Added contributor and architecture guides for package authoring and release

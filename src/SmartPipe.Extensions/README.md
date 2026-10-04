@@ -151,7 +151,8 @@ JSON file, transform, and JSON dead-letter implementations moved to
 `SmartPipe.Extensions` 2.1.2 retains type forwarders and a transitive package
 dependency, so existing 2.x source and binary consumers remain compatible. New
 applications should reference `SmartPipe.Extensions.Json` directly. The bridge
-is planned for removal in SmartPipe 3.0.
+remains part of the SmartPipe 2.x compatibility contract; any future removal
+requires a separately documented major-version compatibility decision.
 
 ## Requirements
 

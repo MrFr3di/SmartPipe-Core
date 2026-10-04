@@ -464,9 +464,9 @@ def assert_lychee_contract(reusable_steps: list[dict]) -> None:
     self_link_exclusion = f"--exclude '{SELF_REPOSITORY_MAIN_URL_PATTERN}'"
     require(self_link_exclusion in linux_args and self_link_exclusion in run,
             "Docs link checks must leave self-repository blob/main targets to branch-local verify-docs validation.")
-    for root_document in ("CONTRIBUTING.md", "SECURITY.md", "SUPPORT.md", "VERSIONING.md"):
+    for root_document in ("CONTRIBUTING.md", "SECURITY.md", "SUPPORT.md", "VERSIONING.md", "CHANGELOG.md"):
         require(root_document in linux_args and root_document in run,
-                f"Docs link checks must include root policy document {root_document}.")
+                f"Docs link checks must include root/release document {root_document}.")
     require("'src/**/README.md'" in linux_args and "'src/**/README.md'" in run,
             "Docs link checks must include package READMEs shipped from src.")
     lychee_text = json.dumps({"linux": linux, "windows": windows})
@@ -2170,6 +2170,14 @@ def _remove_self_repository_link_exclusion(documents: dict[str, dict]) -> None:
     windows["run"] = str(windows.get("run", "")).replace(needle, "")
 
 
+def _remove_changelog_link_input(documents: dict[str, dict]) -> None:
+    steps = documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"]
+    linux = named_step(steps, "Docs link check")
+    linux["with"]["args"] = str(linux["with"].get("args", "")).replace(" CHANGELOG.md", "")
+    windows = named_step(steps, "Docs link check (Windows)")
+    windows["run"] = str(windows.get("run", "")).replace(" CHANGELOG.md", "")
+
+
 def _remove_reusable_pr_guard(documents: dict[str, dict]) -> None:
     documents["reusable-release-validation.yml"]["jobs"]["build-test-pack"].pop("if", None)
 
@@ -2681,6 +2689,11 @@ def main() -> int:
         documents,
         _remove_self_repository_link_exclusion,
         "branch-local verify-docs validation",
+    )
+    assert_mutation_rejected(
+        documents,
+        _remove_changelog_link_input,
+        "root/release document CHANGELOG.md",
     )
     assert_mutation_rejected(
         documents,

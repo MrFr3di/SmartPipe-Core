@@ -15,6 +15,8 @@ items:
     href: recipes/testing-pipelines.md
 - name: Integrations
   items:
+  - name: Integration package catalog
+    href: reference/packages.md
   - name: Dependency injection
     href: dependency-injection.md
   - name: Hosting

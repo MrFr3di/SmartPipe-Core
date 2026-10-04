@@ -32,10 +32,13 @@ dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.c
 ```
 
 An entry in `eng/package-graph.json` is required before a package is published.
-The lifecycle is monotonic: `planned -> active -> published`. Planned entries
-have a scaffold kind and no baseline; active entries have a baseline and a
-project; published entries additionally require the release evidence defined by
-the release workflow. There is no automatic reverse transition.
+The graph lifecycle enum is `planned`, `active`, or
+`compatibility-facade`. `planned` represents future package work; `active`
+represents a normal package in the current release inventory; and
+`compatibility-facade` is the explicit special lifecycle for the broad 2.x
+compatibility package. Publication is release evidence, not a fourth lifecycle
+value. `baselineVersion` is null for a package's first release and names the
+comparison baseline only when an earlier package version exists.
 
 Every package project must be represented exactly once in the graph and marked
 with `SmartPipePackage=true`. Keep package-specific description, tags, README,
@@ -43,12 +46,14 @@ icon, repository metadata, XML documentation, symbols, Source Link, and API
 baselines in the package project or its template. Common properties come from
 `Directory.Build.props` and `eng/SmartPipe.Package.props`.
 README source paths use MSBuild path semantics on every supported operating
-system and must resolve to a file inside the repository. Every active package README must
+system and must resolve to a file inside the repository. Every non-planned release package README must
 state the package's owned capability and include a current installation example. For the
-.NET10 release line, use the noun-first CLI form `dotnet package add <PACKAGE_ID> --version
-<RELEASE_VERSION>`; keep compatibility/migration links next to packages whose public
-surface moved from the broad facade. The root README is the package README for
-`SmartPipe.Core`.
+.NET 10 release line, use the noun-first CLI form `dotnet package add <PACKAGE_ID>`.
+Package READMEs are packed into NuGet and therefore keep installation commands
+version-agnostic; release- or migration-specific documents may pin
+`--version <RELEASE_VERSION>` when reproducing a particular release. Keep
+compatibility/migration links next to packages whose public surface moved from the broad
+facade. The root README is the package README for `SmartPipe.Core`.
 
 ## Dependency and ownership rules
 

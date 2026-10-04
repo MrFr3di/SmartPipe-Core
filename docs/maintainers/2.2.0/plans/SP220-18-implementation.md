@@ -12,7 +12,7 @@
 
 ## Global constraints
 
-- Final SP220-17 head `1941efbc11051f4947f63f305f2af88f7560dbcc` is an actual ancestor of SP220-18 through merge `01593c0821d92c8ea3560875f614c5128aad7fc5`. PR #114 remains a separate prerequisite and must be accepted into `sp220/checkpoint-g` before #115; no rebase/squash may erase that evidence.
+- Final SP220-17 head `1941efbc11051f4947f63f305f2af88f7560dbcc` is an actual ancestor of SP220-18 through merge `01593c0821d92c8ea3560875f614c5128aad7fc5`. PR #114 was true-merged first into `sp220/checkpoint-g` as `a47f5a671a621756180099c45480dee329cbe4c3`; PR #115 was then true-merged as `1c442036a5d33b0e1fa83c002e13f9a9e2c1a893`. The merge order preserved the reviewed ancestry without squash/rebase.
 - Immutable 2.1.2 baseline files and six intentional-removal suppressions remain unchanged.
 - All 20 package IDs/version 2.2.0; facade inventory23/13/6 and bundle17direct18closure remain unchanged.
 - No dependency/SDK updates, runtime/API changes, new global suppressions or blanket AOT claims.
@@ -55,7 +55,7 @@ Interfaces: reusable workflow `validation-mode` string (current/release, default
 - [x] Run all workflow mutation tests and PowerShell artifact fixtures GREEN; commit.
 - [x] Add post-publication payload equivalence checks and provenance-safe partial-release recovery for both nupkg and snupkg; lock the behavior with rejecting mutation/PowerShell fixtures.
 - [x] Harden recovery/publication with GET-based preflight response checks, state-driven fail-closed recovery, environment-only credentials, immediate primary/symbol hash revalidation, duplicate-signature rejection and one shared15-minute propagation window.
-- [ ] Re-run exact-head hosted validation after the recovery hardening and record the new SHA/run evidence.
+- [x] Re-run exact-head hosted validation after the recovery hardening. Exact head `a9c46ace6d5814c82df5c67d1fa20c6a6b0aa905` passed ordinary PR checks and release-mode workflow_dispatch37126132473 (attempt2); immutable producer/replay/PostgreSQL artifact IDs and digests are recorded in PR #115 and the evidence report.
 
 ## Task 3: Audits, docs and owner gates
 
@@ -71,10 +71,10 @@ Files: evidence and release readiness documentation, master plan acceptance refe
 - [x] Run locked restore, Release build with warnings-as-errors, format, workflow/PowerShell fixtures and affected RepositoryChecks tests.
 - [x] Pack one fresh final feed; baseline offline integrity and graph/ownership/metadata/version current+release checks.
 - [x] Run63 non-PostgreSQL consumers; run7 PostgreSQL consumers with real18.6 when available and integration18.6/17.11. Record unavailable server/Windows gates honestly.
-- [ ] Prepare/publish reviewable feature PRs and dispatch exact-head CI where credentials permit. Observe results; fix genuine failures with regression coverage.
+- [x] Prepare/publish the reviewable feature PR and dispatch exact-head CI. PR #115 passed ordinary exact-head checks and explicit release-mode dispatch after genuine failures were corrected with regression coverage, then was true-merged into Checkpoint G after the documented owner-review exception was audited.
 
 ## Task 5: Review and evidence
 
 - [x] Fresh whole-branch read-only review, then fix Critical/Important findings and verify.
-- [ ] Record commits, SDK/OS, command results, artifact hashes and GitHub run URLs/IDs. Clearly distinguish implementation done, local verified, remote verified and owner approval pending.
-- [x] Handoff without marking SP220-18/checkpoint G accepted while required gates remain open.
+- [x] Record commits, SDK/OS, command results, artifact hashes and GitHub run URLs/IDs. Final exact-head hosted IDs/digests are kept in PR #115/evidence without making a later documentation commit masquerade as the tested SHA. The unavailable independent-review path was handled through the documented owner exception; publication-owner configuration remains pending in #120.
+- [x] Accept SP220-18 into Checkpoint G without claiming the checkpoint itself release-ready. Release-document finalization, final exact-head G release validation, and owner publication gates remain separate follow-up.
