@@ -1150,8 +1150,9 @@ def assert_downloaded_postgresql_contract(documents: dict[str, dict]) -> None:
             and named_step(producer_job["steps"], "Set package version").get("id") == "version",
             "Producer outputs must bind directly to version and immutable upload steps.")
     publication = publish["publish"]
-    require(not publication.get("if") and not publication.get("continue-on-error"),
-            "Publishing must require successful validation gates.")
+    require(publication.get("if") == "${{ inputs.publish_nuget }}"
+            and not publication.get("continue-on-error"),
+            "Publishing must require successful validation gates and explicit publish_nuget authorization.")
     publication_steps = publication["steps"]
     validation = named_step(publication_steps, "Validate downloaded package artifact")
     require(validation.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json -ExpectedMode release -ExpectedCommit (git rev-parse HEAD)'
