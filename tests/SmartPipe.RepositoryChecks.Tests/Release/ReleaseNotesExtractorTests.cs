@@ -25,14 +25,7 @@ public sealed class ReleaseNotesExtractorTests
 
         var notes = ReleaseNotesExtractor.Extract(changelog, "2.2.0");
 
-        Assert.Equal("""
-            ### Added
-            - New package graph.
-
-            ### Fixed
-            - Release flow.
-            """ + "
-", notes);
+        Assert.Equal("### Added\n- New package graph.\n\n### Fixed\n- Release flow.\n", notes);
     }
 
     [Fact]
@@ -121,8 +114,7 @@ public sealed class ReleaseNotesExtractorTests
 
         var notes = ReleaseNotesExtractor.Extract(changelog, "2.2.0");
 
-        Assert.Equal("- Current.
-", notes);
+        Assert.Equal("- Current.\n", notes);
         Assert.DoesNotContain("Historical", notes, StringComparison.Ordinal);
     }
 
@@ -145,8 +137,7 @@ public sealed class ReleaseNotesExtractorTests
 
         var notes = ReleaseNotesExtractor.Extract(changelog, "2.2.0");
 
-        Assert.Equal("- Current.
-", notes);
+        Assert.Equal("- Current.\n", notes);
     }
 
     [Theory]
