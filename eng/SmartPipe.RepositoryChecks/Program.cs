@@ -11,6 +11,8 @@ using SmartPipe.RepositoryChecks.Consumers;
 using SmartPipe.RepositoryChecks.Documentation;
 using SmartPipe.RepositoryChecks.Profiles;
 using SmartPipe.RepositoryChecks.Reporting;
+using SmartPipe.RepositoryChecks.Release;
+using System.Text;
 using System.Text.Json;
 
 namespace SmartPipe.RepositoryChecks;
@@ -286,6 +288,25 @@ internal static class Program
                     Console.WriteLine(versionResult.Success ? $"SP220_RELEASE_VERSION_OK version={versionResult.PackageVersion} mode={verifyVersion.Mode.ToString().ToLowerInvariant()}" : $"SP220_RELEASE_VERSION_FAILED code={ExitCodes.ReleaseVersionMismatch} violations={versionResult.Violations.Count}");
                     return versionResult.Success ? ExitCodes.Success : ExitCodes.ReleaseVersionMismatch;
 
+                case PrepareReleaseNotesOptions releaseNotes:
+                    {
+                        var changelog = await File.ReadAllTextAsync(
+                            releaseNotes.ChangelogPath,
+                            cancellation.Token).ConfigureAwait(false);
+                        var notes = ReleaseNotesExtractor.Extract(changelog, releaseNotes.Version);
+                        var outputDirectory = Path.GetDirectoryName(releaseNotes.OutputPath)
+                            ?? throw new IOException("Release notes output path has no parent directory.");
+                        Directory.CreateDirectory(outputDirectory);
+                        await File.WriteAllTextAsync(
+                            releaseNotes.OutputPath,
+                            notes,
+                            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                            cancellation.Token).ConfigureAwait(false);
+                        Console.WriteLine(
+                            $"SP220_RELEASE_NOTES_OK version={releaseNotes.Version} path={Path.GetRelativePath(releaseNotes.RepositoryRoot, releaseNotes.OutputPath).Replace('\\', '/')}");
+                        return ExitCodes.Success;
+                    }
+
                 case ScaffoldPackageOptions scaffold:
                     var scaffoldResult = await new ScaffoldPackageCommand().ExecuteAsync(scaffold, cancellation.Token).ConfigureAwait(false);
                     foreach (var step in scaffoldResult.RequiredSteps) Console.WriteLine($"NEXT {step}");
@@ -328,6 +349,11 @@ internal static class Program
             return exception.ExitCode;
         }
         catch (PackageGraphException exception)
+        {
+            Console.Error.WriteLine($"[{exception.Code}] {exception.Message}");
+            return ExitCodes.SchemaOrManifestInvalid;
+        }
+        catch (ReleaseNotesException exception)
         {
             Console.Error.WriteLine($"[{exception.Code}] {exception.Message}");
             return ExitCodes.SchemaOrManifestInvalid;
