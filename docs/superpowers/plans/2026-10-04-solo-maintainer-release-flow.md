@@ -98,7 +98,6 @@ git commit -m "docs(release): adopt solo-maintainer governance"
 **Files:**
 - Create: `eng/SmartPipe.RepositoryChecks/Release/ReleaseNotesExtractor.cs`
 - Modify: `eng/SmartPipe.RepositoryChecks/Commands/CommandLineParser.cs`
-- Modify: `eng/SmartPipe.RepositoryChecks/Commands/CommandOptions.cs` or the existing command-option declaration file used by the parser
 - Modify: `eng/SmartPipe.RepositoryChecks/Program.cs`
 - Create: `tests/SmartPipe.RepositoryChecks.Tests/Release/ReleaseNotesExtractorTests.cs`
 
@@ -199,7 +198,7 @@ Extend `assert_publish_contract` and mutation tests to require:
 - exact workflow-dispatch input set;
 - an early `Require main` guard checking `refs/heads/main`;
 - requested version is passed through canonical release validation;
-- repository Version and package-graph releaseVersion are compared to input;
+- the requested version's stable SemVer core is compared to repository Version and package-graph releaseVersion;
 - release notes are generated before artifact upload;
 - `publish` job has `if: inputs.publish_nuget`;
 - only publish job gets `id-token: write`;
@@ -225,8 +224,8 @@ Change `on` to workflow-dispatch only. Add inputs `version`, `publish_nuget`, `r
 The first validation job must:
 - require `refs/heads/main`;
 - resolve package version from `inputs.version`;
-- ensure repository Version equals requested version;
-- ensure package graph releaseVersion equals stable core of requested version;
+- ensure repository Version equals the stable SemVer core of the requested version;
+- ensure package graph releaseVersion equals the same stable SemVer core;
 - call existing release-mode package validation using `v<input.version>`;
 - generate `RELEASE_NOTES.md`.
 
@@ -313,26 +312,14 @@ git commit -m "ci(release): make publication main-driven"
 ### Task 4: Lock release documentation and workflow semantics together
 
 **Files:**
-- Modify: `eng/SmartPipe.RepositoryChecks/Documentation/DocumentationVerificationService.cs`
-- Modify: `tests/SmartPipe.RepositoryChecks.Tests/Documentation/DocumentationVerificationServiceTests.cs`
 - Modify: `docs/releases/2.2.0.md`
 - Modify: `docs/maintainers/2.2.0/readiness/sp220-18-release-readiness.md`
 
 **Interfaces:**
-- Consumes: current `SPDOC014-SPDOC018` release-document checks.
-- Produces: explicit documentation contract that a release section is curated once and reused by GitHub Release.
+- Consumes: current `SPDOC014-SPDOC018` release-document checks and Task 3 workflow contract.
+- Produces: explicit human-facing documentation that a release section is curated once and reused by GitHub Release.
 
-- [ ] **Step 1: Add documentation mutation tests**
-
-Add tests proving:
-- release documentation points to the changelog as GitHub Release source of truth;
-- maintainer release procedure names dry-run and publish modes;
-- no text claims that pushing a tag starts publication;
-- no text requires an independent reviewer.
-
-Use a new diagnostic only if existing SPDOC diagnostics cannot express the invariant cleanly; do not add diagnostics for prose that workflow structural tests already enforce.
-
-- [ ] **Step 2: Reconcile 2.2.0 release docs**
+- [ ] **Step 1: Reconcile 2.2.0 release docs**
 
 Document the final intended procedure without changing the changelog date yet:
 - checkpoint G -> release branch -> main;
@@ -342,7 +329,7 @@ Document the final intended procedure without changing the changelog date yet:
 - NuGet -> tag -> GitHub Release;
 - GitHub Release notes equal exact changelog section.
 
-- [ ] **Step 3: Run docs + repository checks**
+- [ ] **Step 2: Run docs + repository checks**
 
 Run:
 ```bash
@@ -352,12 +339,10 @@ dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.c
 
 Expected: PASS and `SP220_DOCS_OK`.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add eng/SmartPipe.RepositoryChecks/Documentation \
-        tests/SmartPipe.RepositoryChecks.Tests/Documentation \
-        docs/releases/2.2.0.md \
+git add docs/releases/2.2.0.md \
         docs/maintainers/2.2.0/readiness/sp220-18-release-readiness.md
 git commit -m "docs(release): lock changelog-backed release procedure"
 ```
