@@ -204,7 +204,10 @@ internal static class ManagedAssemblyInspector
             return Convert.ToHexStringLower(keyOrToken);
         }
 
-        var hash = SHA1.HashData(keyOrToken);
+        // ECMA-335 strong-name public-key tokens are defined as the reversed low
+        // 8 bytes of SHA-1(publicKey). This is an identity-format requirement,
+        // not a security decision; changing the algorithm would corrupt CLR identity.
+        var hash = SHA1.HashData(keyOrToken); // NOSONAR -- protocol-mandated strong-name token algorithm
         return Convert.ToHexStringLower(hash.AsSpan(hash.Length - 8).ToArray().Reverse().ToArray());
     }
 
