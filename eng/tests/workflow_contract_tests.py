@@ -1150,8 +1150,12 @@ def assert_downloaded_postgresql_contract(documents: dict[str, dict]) -> None:
             and named_step(producer_job["steps"], "Set package version").get("id") == "version",
             "Producer outputs must bind directly to version and immutable upload steps.")
     publication = publish["publish"]
-    require(not publication.get("if") and not publication.get("continue-on-error"),
-            "Publishing must require successful validation gates.")
+    require(publication.get("if") == "${{ inputs.publish_nuget }}"
+            and not publication.get("continue-on-error"),
+            "Publishing must require successful validation gates and explicit publish_nuget authorization.")
+    recovery_step = named_step(publication["steps"], "Preflight recoverable published packages")
+    require(recovery_step.get("if") == "github.run_attempt > 1",
+            "Recovery must be activated only by GitHub failed-job reruns, never by a new release input.")
     publication_steps = publication["steps"]
     validation = named_step(publication_steps, "Validate downloaded package artifact")
     require(validation.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json -ExpectedMode release -ExpectedCommit (git rev-parse HEAD)'
@@ -1161,10 +1165,22 @@ def assert_downloaded_postgresql_contract(documents: dict[str, dict]) -> None:
     require(publication_steps.index(named_step(publication_steps, "Download validated packages")) < publication_steps.index(validation)
             < publication_steps.index(named_step(publication_steps, "NuGet login")),
             "Publisher integrity must precede credential acquisition.")
+    github_release = publish["github-release"]
+    non_privileged = {
+        name: job for name, job in jobs.items()
+        if name not in {"publish", "github-release"}
+    }
     require(reusable.get("permissions") == {"contents": "read"}
-            and all(job.get("permissions", {"contents": "read"}) == {"contents": "read"} for job in jobs.values())
-            and publication.get("permissions") == {"contents": "read", "id-token": "write"},
-            "Only publisher may acquire NuGet OIDC credentials.")
+            and all(job.get("permissions", {"contents": "read"}) == {"contents": "read"} for job in non_privileged.values())
+            and publication.get("permissions") == {
+                "contents": "read",
+                "id-token": "write",
+                "attestations": "write",
+                "artifact-metadata": "write",
+            }
+            and github_release.get("permissions") == {"contents": "write"}
+            and "id-token" not in github_release.get("permissions", {}),
+            "Only publisher may acquire NuGet OIDC/attestation permissions; GitHub Release may hold contents write only.")
 
 
 def validate(documents: dict[str, dict]) -> None:
@@ -1541,6 +1557,47 @@ def validate(documents: dict[str, dict]) -> None:
     assert_link_check_exclusion_scoped()
     assert_consumer_contract()
 
+    publish_triggers = publish.get("on", {})
+    require(set(publish_triggers) == {"workflow_dispatch"},
+            "Publish workflow must be workflow_dispatch-only; tag pushes must never publish.")
+    publish_dispatch = publish_triggers.get("workflow_dispatch", {})
+    publish_inputs = publish_dispatch.get("inputs", {}) if isinstance(publish_dispatch, dict) else {}
+    require(set(publish_inputs) == {"version", "publish_nuget"},
+            "Publish workflow dispatch must expose exactly version and publish_nuget inputs.")
+    require(publish_inputs["version"].get("required") is True
+            and publish_inputs["version"].get("type") == "string",
+            "Publish version input must be a required string.")
+    definition = publish_inputs["publish_nuget"]
+    require(definition.get("required") is True
+            and definition.get("type") == "boolean"
+            and definition.get("default") is False,
+            "Publish publish_nuget input must be an explicit boolean defaulting false.")
+
+    version = publish["jobs"].get("version")
+    validation = publish["jobs"].get("validation")
+    publication = publish["jobs"].get("publish")
+    github_release = publish["jobs"].get("github-release")
+    require(isinstance(version, dict) and isinstance(validation, dict)
+            and isinstance(publication, dict) and isinstance(github_release, dict),
+            "Publish workflow must define version, validation, publish, and github-release jobs.")
+    version_steps = steps(version, "publish version")
+    require_main = named_step(version_steps, "Require main")
+    require('refs/heads/main' in str(require_main.get("run", "")),
+            "Publish workflow must fail unless workflow_dispatch runs from main.")
+    require(publication.get("if") == "${{ inputs.publish_nuget }}",
+            "Publish job must run only when publish_nuget is explicitly true.")
+    require(github_release.get("needs") == ["version", "validation", "publish"],
+            "GitHub Release must depend on version, the immutable producer artifact, and successful NuGet publication.")
+    require(github_release.get("permissions") == {"contents": "write"},
+            "GitHub Release job must hold only contents: write.")
+    release_steps = steps(github_release, "github-release")
+    create_release = named_step(release_steps, "Create release tag and publish GitHub Release")
+    create_release_run = str(create_release.get("run", ""))
+    require("RELEASE_NOTES.md" in create_release_run
+            and "gh release create" in create_release_run
+            and "git/refs" in create_release_run,
+            "GitHub Release must create the exact release tag and use prepared CHANGELOG notes.")
+
     version = publish["jobs"].get("version")
     validation = publish["jobs"].get("validation")
     publication = publish["jobs"].get("publish")
@@ -1555,7 +1612,8 @@ def validate(documents: dict[str, dict]) -> None:
         "validation-mode": "release",
         "package-version": "${{ needs.version.outputs.package-version }}",
         "artifact-name": "${{ needs.version.outputs.artifact-name }}",
-    }, "Publish validation must pass version outputs as the reusable workflow inputs.")
+        "prepare-release-assets": True,
+    }, "Publish validation must pass version outputs and release-asset preparation to the reusable producer.")
     require(publication.get("needs") == ["version", "validation", "windows-validation", "postgresql-validation"],
             "Publish job must depend exactly on version and validation and PostgreSQL validation.")
     require(publication.get("environment") == "nuget-production",
@@ -1584,7 +1642,7 @@ def validate(documents: dict[str, dict]) -> None:
             and "toupper($1)" not in push_run,
             "Publish must normalize sha256sum output to lowercase before comparing it with the manifest hash.")
     require(push_run.count("dotnet nuget push") == 3
-            and 'if [[ "$RECOVERABLE_RERUN" != "true" ]]' in push_run
+            and 'if [[ "$RECOVERY_MODE" != "true" ]]' in push_run
             and 'recovery-state.json' in push_run
             and '--skip-duplicate' not in push_run
             and '--no-symbols' in push_run

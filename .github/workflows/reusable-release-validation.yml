@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: '["ubuntu-latest"]'
+      prepare-release-assets:
+        description: Prepare dated CHANGELOG release notes and SHA256SUMS in a producer artifact
+        required: false
+        type: boolean
+        default: false
 
     outputs:
       artifact-id:
@@ -377,6 +382,34 @@ jobs:
           Remove-Item -LiteralPath $lychee -Force -ErrorAction SilentlyContinue
         }
         if ($exitCode -ne 0) { exit $exitCode }
+
+    - name: Prepare release notes
+      if: inputs.prepare-release-assets && inputs.package-artifact-id == ''
+      shell: pwsh
+      run: >
+        dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj
+        --configuration Release --no-build -- prepare-release-notes
+        --repo-root . --version "$env:PACKAGE_VERSION" --changelog CHANGELOG.md
+        --output artifacts/packages/RELEASE_NOTES.md
+
+    - name: Write release checksums
+      if: inputs.prepare-release-assets && inputs.package-artifact-id == ''
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $packageRoot = Join-Path $PWD 'artifacts/packages'
+        $archives = @(Get-ChildItem -LiteralPath $packageRoot -File |
+          Where-Object { $_.Extension -in @('.nupkg', '.snupkg') } |
+          Sort-Object Name)
+        if ($archives.Count -eq 0) { throw 'No package archives found for SHA256SUMS.' }
+        $lines = foreach ($archive in $archives) {
+          $hash = (Get-FileHash -LiteralPath $archive.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($archive.Name)"
+        }
+        [IO.File]::WriteAllLines(
+          (Join-Path $packageRoot 'SHA256SUMS'),
+          $lines,
+          [Text.UTF8Encoding]::new($false))
 
     - name: Upload immutable packages and reports
       id: packages

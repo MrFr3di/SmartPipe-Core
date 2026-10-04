@@ -474,6 +474,64 @@ public sealed class CommandLineParserTests
         Assert.Equal("Duplicate option '--scenario'.", error.Message);
     }
 
+    [Fact]
+    public void Parse_ReturnsPrepareReleaseNotesOptions()
+    {
+        using var repository = new CommandRepository();
+        var changelog = Path.Combine(repository.Path, "CHANGELOG.md");
+        File.WriteAllText(changelog, "## [2.2.0] - 2026-10-04\n- Notes.\n");
+
+        var command = Assert.IsType<PrepareReleaseNotesOptions>(CommandLineParser.Parse(
+        [
+            "prepare-release-notes",
+            "--repo-root", repository.Path,
+            "--version", "2.2.0",
+            "--changelog", "CHANGELOG.md",
+            "--output", "artifacts/release/RELEASE_NOTES.md",
+        ]));
+
+        Assert.Equal(repository.Path, command.RepositoryRoot);
+        Assert.Equal("2.2.0", command.Version);
+        Assert.Equal(changelog, command.ChangelogPath);
+        Assert.Equal(
+            Path.Combine(repository.Path, "artifacts", "release", "RELEASE_NOTES.md"),
+            command.OutputPath);
+    }
+
+    [Fact]
+    public void Parse_PrepareReleaseNotesRejectsNonCanonicalVersion()
+    {
+        using var repository = new CommandRepository();
+
+        var error = Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+        [
+            "prepare-release-notes",
+            "--repo-root", repository.Path,
+            "--version", "2.2.0+build.1",
+            "--changelog", "CHANGELOG.md",
+            "--output", "artifacts/release/RELEASE_NOTES.md",
+        ]));
+
+        Assert.Contains("canonical SemVer", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Parse_PrepareReleaseNotesRejectsOutputOutsideRepository()
+    {
+        using var repository = new CommandRepository();
+
+        var error = Assert.Throws<CommandLineException>(() => CommandLineParser.Parse(
+        [
+            "prepare-release-notes",
+            "--repo-root", repository.Path,
+            "--version", "2.2.0",
+            "--changelog", "CHANGELOG.md",
+            "--output", "../RELEASE_NOTES.md",
+        ]));
+
+        Assert.Contains("inside the repository", error.Message, StringComparison.Ordinal);
+    }
+
     private static string[] CaptureArgs(string repositoryRoot)
     {
         var workflowEvidence = Path.Combine(repositoryRoot, "workflow.json");
