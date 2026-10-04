@@ -59,7 +59,7 @@ Authoritative release-version inputs:
 1. repository-level `<Version>` in `Directory.Build.props`;
 2. `eng/package-graph.json.releaseVersion`.
 
-A release is invalid if these differ.
+These two stable-core versions must be identical. A requested prerelease such as `2.3.0-rc.1` is valid when its SemVer core `2.3.0` equals both repository values; the prerelease suffix becomes the package version for that release.
 
 For releases after the already-established 2.2.0 transition, follow SemVer 2.0:
 
@@ -108,8 +108,8 @@ The workflow must fail unless:
 
 - it is dispatched from `refs/heads/main`;
 - `version` is canonical SemVer without build metadata;
-- `version` equals `Directory.Build.props` Version;
-- `version` equals `eng/package-graph.json.releaseVersion`;
+- the stable SemVer core of `version` equals `Directory.Build.props` Version;
+- the same stable SemVer core equals `eng/package-graph.json.releaseVersion`;
 - a non-empty dated changelog section exists for that exact version;
 - for a normal run, `v<version>` does not already exist;
 - package publication state is compatible with the selected normal/recovery mode.
