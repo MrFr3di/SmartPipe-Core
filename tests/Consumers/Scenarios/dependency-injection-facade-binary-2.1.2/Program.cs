@@ -28,7 +28,7 @@ Console.WriteLine("CONSUMER_OK dependency-injection-facade-binary-2.1.2");
 
 static async Task VerifyLegacyStartAsync(ISmartPipeFactory<int, int> factory)
 {
-    var run = factory.Start();
+    var run = factory.Start(); // NOSONAR -- binary-compatibility scenario intentionally exercises the 2.1.2 synchronous API
     await run.Completion;
     await run.DisposeAsync();
 }
