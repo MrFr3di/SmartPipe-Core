@@ -291,7 +291,7 @@ public sealed class DocumentationVerificationServiceTests
         repository.Write(
             "CHANGELOG.md",
             "# Changelog\n\n" +
-            "## [2.2.0] — 2026-10-03\n\n" +
+            "## [2.2.0] - 2026-10-03\n\n" +
             "First release: `SmartPipe.Extensions.Csv`.\n\n" +
             "## [2.1.2] — 2026-07-15\n");
 
@@ -304,6 +304,30 @@ public sealed class DocumentationVerificationServiceTests
     }
 
     [Fact]
+    public async Task VerifyAsync_RejectsNonCanonicalDatedHeadingSeparator()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write(
+            "CHANGELOG.md",
+            "# Changelog\\n\\n" +
+            "## [2.2.0] — 2026-10-04\\n\\n" +
+            "First release: `SmartPipe.Extensions.Csv`.\\n\\n" +
+            "## [2.1.2] — 2026-07-15\\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC014"
+            && violation.Path == "CHANGELOG.md");
+    }
+
+    [Fact]
     public async Task VerifyAsync_RejectsInvalidCurrentReleaseCalendarDate()
     {
         using var repository = new RepositoryTestDirectory();
@@ -312,7 +336,7 @@ public sealed class DocumentationVerificationServiceTests
         repository.Write(
             "CHANGELOG.md",
             "# Changelog\n\n" +
-            "## [2.2.0] — 2026-99-99\n\n" +
+            "## [2.2.0] - 2026-99-99\n\n" +
             "First release: `SmartPipe.Extensions.Csv`.\n\n" +
             "## [2.1.2] — 2026-07-15\n");
 
