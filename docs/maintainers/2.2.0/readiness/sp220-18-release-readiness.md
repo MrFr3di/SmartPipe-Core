@@ -84,11 +84,13 @@ new exact-head evidence.
    Release, attach the validated packages/checksums, use the exact
    `CHANGELOG.md` 2.2.0 section as release notes, and publish the draft.
 
-Normal publication rejects duplicate package identities. An explicitly selected
-recoverable rerun may skip only already-published primary/symbol artifacts whose
-downloaded payload is proven equivalent to the immutable producer artifact.
-Recovery never rebuilds 2.2.0, never moves the tag, and fails closed on any
-mismatch or publication race.
+Normal publication rejects duplicate package identities. If publication fails
+after publishing any subset, use GitHub **Re-run failed jobs** on that same
+release run. The successful producer/replay jobs are not rerun, and the publisher
+may skip only already-published primary/symbol artifacts whose downloaded
+payload is proven equivalent to the immutable producer artifact. **Re-run all
+jobs** is rejected by the release request gate. Recovery never rebuilds 2.2.0,
+never moves the tag, and fails closed on any mismatch or publication race.
 
 ## Publication authorization
 
