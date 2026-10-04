@@ -12,7 +12,7 @@ try
         .ToCsvFile(output, new CsvSinkOptions());
     await using var run = await definition.StartAsync();
     await run.Completion;
-    if (!(await File.ReadAllTextAsync(output)).Contains("Ada,42", StringComparison.Ordinal)) return 1;
+    if (!(await File.ReadAllTextAsync(output, CancellationToken.None)).Contains("Ada,42", StringComparison.Ordinal)) return 1;
 }
 finally
 {
