@@ -1153,6 +1153,9 @@ def assert_downloaded_postgresql_contract(documents: dict[str, dict]) -> None:
     require(publication.get("if") == "${{ inputs.publish_nuget }}"
             and not publication.get("continue-on-error"),
             "Publishing must require successful validation gates and explicit publish_nuget authorization.")
+    recovery_step = named_step(publication["steps"], "Preflight recoverable published packages")
+    require(recovery_step.get("if") == "github.run_attempt > 1",
+            "Recovery must be activated only by GitHub failed-job reruns, never by a new release input.")
     publication_steps = publication["steps"]
     validation = named_step(publication_steps, "Validate downloaded package artifact")
     require(validation.get("run") == './eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json -ExpectedMode release -ExpectedCommit (git rev-parse HEAD)'
@@ -1559,17 +1562,16 @@ def validate(documents: dict[str, dict]) -> None:
             "Publish workflow must be workflow_dispatch-only; tag pushes must never publish.")
     publish_dispatch = publish_triggers.get("workflow_dispatch", {})
     publish_inputs = publish_dispatch.get("inputs", {}) if isinstance(publish_dispatch, dict) else {}
-    require(set(publish_inputs) == {"version", "publish_nuget", "recoverable-rerun"},
-            "Publish workflow dispatch must expose exactly version, publish_nuget, and recoverable-rerun inputs.")
+    require(set(publish_inputs) == {"version", "publish_nuget"},
+            "Publish workflow dispatch must expose exactly version and publish_nuget inputs.")
     require(publish_inputs["version"].get("required") is True
             and publish_inputs["version"].get("type") == "string",
             "Publish version input must be a required string.")
-    for boolean_input in ("publish_nuget", "recoverable-rerun"):
-        definition = publish_inputs[boolean_input]
-        require(definition.get("required") is True
-                and definition.get("type") == "boolean"
-                and definition.get("default") is False,
-                f"Publish {boolean_input} input must be an explicit boolean defaulting false.")
+    definition = publish_inputs["publish_nuget"]
+    require(definition.get("required") is True
+            and definition.get("type") == "boolean"
+            and definition.get("default") is False,
+            "Publish publish_nuget input must be an explicit boolean defaulting false.")
 
     version = publish["jobs"].get("version")
     validation = publish["jobs"].get("validation")
@@ -1640,7 +1642,7 @@ def validate(documents: dict[str, dict]) -> None:
             and "toupper($1)" not in push_run,
             "Publish must normalize sha256sum output to lowercase before comparing it with the manifest hash.")
     require(push_run.count("dotnet nuget push") == 3
-            and 'if [[ "$RECOVERABLE_RERUN" != "true" ]]' in push_run
+            and 'if [[ "$RECOVERY_MODE" != "true" ]]' in push_run
             and 'recovery-state.json' in push_run
             and '--skip-duplicate' not in push_run
             and '--no-symbols' in push_run
