@@ -71,7 +71,20 @@ jobs:
             --repo-root . --version "$VERSION" --changelog CHANGELOG.md \
             --output artifacts/release-request/RELEASE_NOTES.md
 
-          repository_version="$(dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo | tr -d '\r\n[:space:]')"
+          repository_version="$(python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("Directory.Build.props").getroot()
+          values = [
+              (node.text or "").strip()
+              for group in root.findall("PropertyGroup")
+              for node in group.findall("Version")
+              if (node.text or "").strip()
+          ]
+          if len(values) != 1:
+              raise SystemExit(f"Expected exactly one repository Version, found {len(values)}.")
+          print(values[0])
+          PY
+          )"
           graph_version="$(jq -r '.releaseVersion' eng/package-graph.json)"
           stable_core="${VERSION%%-*}"
 
