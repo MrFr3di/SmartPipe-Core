@@ -136,9 +136,5 @@ internal sealed class PackageContentValidator
     private static bool IsLocalAbsoluteSourceRoot(string value) =>
         value.Contains(":\\", StringComparison.Ordinal)
         || value.StartsWith("\\\\", StringComparison.Ordinal)
-        || value.StartsWith("/home/", StringComparison.Ordinal)
-        || value.StartsWith("/Users/", StringComparison.Ordinal)
-        || value.StartsWith("/tmp/", StringComparison.Ordinal)
-        || value.StartsWith("/var/", StringComparison.Ordinal)
-        || value.StartsWith("/mnt/", StringComparison.Ordinal);
+        || value.StartsWith("/", StringComparison.Ordinal);
 }
