@@ -471,9 +471,12 @@ internal sealed class BaselineVerificationService
 
             if (indent == 4 && content.StartsWith("branches:", StringComparison.Ordinal))
             {
-                inBranches = true;
                 var value = content["branches:".Length..].Trim();
-                if (value.Length != 0 && ParseInlineBranches(value).Contains(branch, StringComparer.Ordinal))
+                if (value.Length == 0)
+                {
+                    branchListEvent = currentEvent;
+                }
+                else if (ParseInlineBranches(value).Contains(branch, StringComparer.Ordinal))
                 {
                     found[currentEvent] = true;
                 }
@@ -481,12 +484,14 @@ internal sealed class BaselineVerificationService
                 continue;
             }
 
-            if (inBranches && indent == 6 && content.StartsWith("- ", StringComparison.Ordinal))
+            if (indent == 6
+                && branchListEvent is not null
+                && content.StartsWith("- ", StringComparison.Ordinal))
             {
                 var value = Unquote(content[2..].Trim());
                 if (string.Equals(value, branch, StringComparison.Ordinal))
                 {
-                    found[currentEvent] = true;
+                    found[branchListEvent] = true;
                 }
 
                 continue;
