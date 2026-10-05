@@ -63,22 +63,22 @@ internal sealed class PackageContentValidator
         Action<string, string, string?> add)
     {
         if (metadata.Snapshot.Id != node.Id || metadata.Snapshot.Version != version)
-            add("SPMETA001", $"identity must be {node.Id} {version}");
+            add("SPMETA001", $"identity must be {node.Id} {version}", null);
         if (metadata.Description.Length < 20
             || metadata.Description.Equals("Package Description", StringComparison.OrdinalIgnoreCase))
-            add("SPMETA002", "description must be non-empty and package-specific");
+            add("SPMETA002", "description must be non-empty and package-specific", null);
         if (metadata.Authors != "SmartPipe"
             || metadata.Copyright.Length == 0
             || metadata.LicenseExpression != "MIT")
-            add("SPMETA003", "authors/copyright/license metadata is invalid");
+            add("SPMETA003", "authors/copyright/license metadata is invalid", null);
         if (metadata.RepositoryUrl != "https://github.com/MrFr3di/SmartPipe-Core"
             || metadata.RepositoryType != "git"
             || !IsCommit(metadata.RepositoryCommit))
-            add("SPMETA004", "repository URL/type/40-hex commit is required");
+            add("SPMETA004", "repository URL/type/40-hex commit is required", null);
         if (metadata.Readme != "README.md" || metadata.Icon != "icon.png" || metadata.Tags.Length == 0)
-            add("SPMETA005", "readme/icon/tags metadata is invalid");
+            add("SPMETA005", "readme/icon/tags metadata is invalid", null);
         if (mode == PackageGraphMode.Release && metadata.ReleaseNotes is null)
-            add("SPMETA006", "release notes are required in release mode");
+            add("SPMETA006", "release notes are required in release mode", null);
     }
 
     private static void ValidateRequiredContent(
