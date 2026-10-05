@@ -828,12 +828,15 @@ internal sealed class BoundedRedactingOutputCollector
         var pendingLine = new StringBuilder(Math.Min(_maximumRetainedCharacters, 4096));
         var buffer = new char[4096];
         var outputTruncated = false;
+        var retainedCharacterCount = 0;
         var oversizedLine = false;
         var loggedCharacters = 0;
         var logTruncated = false;
         async Task AppendAsync(string value)
         {
-            outputTruncated |= AppendBounded(retained, value);
+            var appendResult = AppendBounded(retained, retainedCharacterCount, value);
+            retainedCharacterCount = appendResult.RetainedCharacters;
+            outputTruncated |= appendResult.Truncated;
             if (log is null || logTruncated) return;
             var available = _maximumLogCharacters - loggedCharacters;
             if (available <= 0) { await log.WriteAsync("\n[spill log truncated]\n").ConfigureAwait(false); logTruncated = true; return; }
@@ -882,16 +885,32 @@ internal sealed class BoundedRedactingOutputCollector
         return new(outputTruncated ? TruncatedMarker + retained : retained.ToString(), logPath);
     }
 
-    private bool AppendBounded(StringBuilder retained, string value)
+    private (int RetainedCharacters, bool Truncated) AppendBounded(
+        StringBuilder retained,
+        int retainedCharacters,
+        string value)
     {
-        retained.Append(value);
-        if (retained.Length <= _maximumRetainedCharacters)
+        var available = _maximumRetainedCharacters - retainedCharacters;
+        if (value.Length <= available)
         {
-            return false;
+            retained.Append(value);
+            return (retainedCharacters + value.Length, false);
         }
 
-        retained.Remove(0, retained.Length - _maximumRetainedCharacters);
-        return true;
+        if (value.Length >= _maximumRetainedCharacters)
+        {
+            retained.Clear();
+            retained.Append(
+                value,
+                value.Length - _maximumRetainedCharacters,
+                _maximumRetainedCharacters);
+            return (_maximumRetainedCharacters, true);
+        }
+
+        var charactersToRemove = value.Length - available;
+        retained.Remove(0, charactersToRemove);
+        retained.Append(value);
+        return (_maximumRetainedCharacters, true);
     }
 }
 
