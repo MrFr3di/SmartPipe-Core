@@ -376,6 +376,31 @@ public sealed class ProcessRunnerTests
         Assert.EndsWith("next-line", result, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("abcd", "abcd")]
+    [InlineData("abcdefgh", "abcdefgh")]
+    public async Task OutputCollector_ContentAtOrBelowRetentionLimit_IsNotMarkedTruncated(
+        string input,
+        string expected)
+    {
+        var collector = new BoundedRedactingOutputCollector(8);
+
+        var result = await collector.CollectAsync(new StringReader(input));
+
+        Assert.Equal(expected, result);
+        Assert.DoesNotContain("output truncated", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task OutputCollector_ContentBeyondRetentionLimit_PreservesExactTail()
+    {
+        var collector = new BoundedRedactingOutputCollector(8);
+
+        var result = await collector.CollectAsync(new StringReader("abcdefghij"));
+
+        Assert.Equal("[output truncated]\ncdefghij", result);
+    }
+
     [Fact]
     public async Task RunAsync_CancelsReadyOwnedHostTree_AndDoesNotLeakSilentDescendant()
     {
