@@ -599,10 +599,8 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
             case SmartPipeHostedPipelineFailureBehavior.Ignore:
                 break;
             default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(item.Descriptor.FailureBehavior),
-                    item.Descriptor.FailureBehavior,
-                    "Hosted pipeline failure behavior is invalid.");
+                throw new InvalidOperationException(
+                    $"Hosted pipeline failure behavior '{item.Descriptor.FailureBehavior}' is invalid.");
         }
     }
 

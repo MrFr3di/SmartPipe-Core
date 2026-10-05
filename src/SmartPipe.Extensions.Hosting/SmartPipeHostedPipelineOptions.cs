@@ -31,13 +31,13 @@ internal sealed record SmartPipeHostedPipelineOptionsSnapshot(
 
         if (!Enum.IsDefined(options.FailureBehavior))
             throw new ArgumentOutOfRangeException(
-                nameof(options.FailureBehavior),
+                nameof(options),
                 options.FailureBehavior,
                 "Hosted pipeline failure behavior is invalid.");
 
         if (!Enum.IsDefined(options.CompletionBehavior))
             throw new ArgumentOutOfRangeException(
-                nameof(options.CompletionBehavior),
+                nameof(options),
                 options.CompletionBehavior,
                 "Hosted pipeline completion behavior is invalid.");
 
@@ -45,7 +45,7 @@ internal sealed record SmartPipeHostedPipelineOptionsSnapshot(
             && (options.DrainTimeout <= TimeSpan.Zero
                 || options.DrainTimeout.TotalMilliseconds > uint.MaxValue - 1d))
             throw new ArgumentOutOfRangeException(
-                nameof(options.DrainTimeout),
+                nameof(options),
                 options.DrainTimeout,
                 "Hosted pipeline drain timeout must be positive and at most 4294967294 milliseconds, or infinite.");
 

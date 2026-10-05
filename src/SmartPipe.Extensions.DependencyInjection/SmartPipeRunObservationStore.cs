@@ -80,10 +80,13 @@ internal sealed class SmartPipeRunObservationStore :
     private static void Validate(SmartPipeTerminalRunCandidate candidate)
     {
         ArgumentNullException.ThrowIfNull(candidate);
-        ArgumentNullException.ThrowIfNull(candidate.Identity);
-        ArgumentNullException.ThrowIfNull(candidate.InputType);
-        ArgumentNullException.ThrowIfNull(candidate.OutputType);
-        ArgumentNullException.ThrowIfNull(candidate.Metrics);
+        if (candidate.Identity is null
+            || candidate.InputType is null
+            || candidate.OutputType is null
+            || candidate.Metrics is null)
+        {
+            throw new ArgumentException("Terminal run candidate contains null required members.", nameof(candidate));
+        }
         if (candidate.Identity.PipelineKey.IsEmpty || candidate.Identity.RunId == Guid.Empty)
         {
             throw new ArgumentException("Run identity must contain an initialized key and non-empty RunId.", nameof(candidate));

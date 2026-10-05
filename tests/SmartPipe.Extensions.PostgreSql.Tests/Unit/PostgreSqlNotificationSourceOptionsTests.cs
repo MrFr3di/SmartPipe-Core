@@ -5,8 +5,8 @@ namespace SmartPipe.Extensions.PostgreSql.Tests.Unit;
 /// <summary>Validates <see cref="PostgreSqlNotificationSourceOptions"/> and its snapshot.</summary>
 public sealed class PostgreSqlNotificationSourceOptionsTests
 {
-    private const string OperationNameParameter = "options.OperationName";
-    private const string BufferCapacityParameter = "options.BufferCapacity";
+    private const string OperationNameParameter = "options";
+    private const string BufferCapacityParameter = "options";
 
     [Fact]
     public void Defaults_AreTheFrozenPublicDefaults()

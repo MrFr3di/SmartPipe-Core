@@ -59,7 +59,8 @@ public static class SmartPipeDependencyInjectionExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(definition);
-        ArgumentNullException.ThrowIfNull(builder.Services);
+        if (builder.Services is null)
+            throw new ArgumentException("SmartPipe builder services must not be null.", nameof(builder));
 
         var infrastructure = FindInfrastructure(builder.Services)
             ?? throw new InvalidOperationException(

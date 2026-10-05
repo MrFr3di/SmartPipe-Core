@@ -75,12 +75,12 @@ internal sealed record DapperQueryOptionsSnapshot(
     {
         ArgumentNullException.ThrowIfNull(options);
         return new(
-            DapperOptionsValidation.ValidateOperationName(options.OperationName, nameof(options.OperationName)),
+            DapperOptionsValidation.ValidateOperationName(options.OperationName, nameof(options)),
             DapperOptionsValidation.ValidateCommandTimeout(
                 options.CommandTimeoutSeconds,
-                nameof(options.CommandTimeoutSeconds)),
-            DapperOptionsValidation.ValidateEnum(options.CommandType, nameof(options.CommandType)),
-            DapperOptionsValidation.ValidateEnum(options.CacheMode, nameof(options.CacheMode)));
+                nameof(options)),
+            DapperOptionsValidation.ValidateEnum(options.CommandType, nameof(options)),
+            DapperOptionsValidation.ValidateEnum(options.CacheMode, nameof(options)));
     }
 
     internal CommandFlags Flags => DapperOptionsValidation.ToFlags(CacheMode);
@@ -97,12 +97,12 @@ internal sealed record DapperSinkOptionsSnapshot(
     {
         ArgumentNullException.ThrowIfNull(options);
         return new(
-            DapperOptionsValidation.ValidateOperationName(options.OperationName, nameof(options.OperationName)),
+            DapperOptionsValidation.ValidateOperationName(options.OperationName, nameof(options)),
             DapperOptionsValidation.ValidateCommandTimeout(
                 options.CommandTimeoutSeconds,
-                nameof(options.CommandTimeoutSeconds)),
-            DapperOptionsValidation.ValidateEnum(options.CommandType, nameof(options.CommandType)),
-            DapperOptionsValidation.ValidateEnum(options.CacheMode, nameof(options.CacheMode)));
+                nameof(options)),
+            DapperOptionsValidation.ValidateEnum(options.CommandType, nameof(options)),
+            DapperOptionsValidation.ValidateEnum(options.CacheMode, nameof(options)));
     }
 
     internal CommandFlags Flags => DapperOptionsValidation.ToFlags(CacheMode);
@@ -123,28 +123,28 @@ internal sealed record DapperBatchSinkOptionsSnapshot(
         ArgumentNullException.ThrowIfNull(options);
         var operationName = DapperOptionsValidation.ValidateOperationName(
             options.OperationName,
-            nameof(options.OperationName));
+            nameof(options));
         var commandTimeoutSeconds = DapperOptionsValidation.ValidateCommandTimeout(
             options.CommandTimeoutSeconds,
-            nameof(options.CommandTimeoutSeconds));
-        var commandType = DapperOptionsValidation.ValidateEnum(options.CommandType, nameof(options.CommandType));
-        var cacheMode = DapperOptionsValidation.ValidateEnum(options.CacheMode, nameof(options.CacheMode));
+            nameof(options));
+        var commandType = DapperOptionsValidation.ValidateEnum(options.CommandType, nameof(options));
+        var cacheMode = DapperOptionsValidation.ValidateEnum(options.CacheMode, nameof(options));
         var transactionMode = DapperOptionsValidation.ValidateEnum(
             options.TransactionMode,
-            nameof(options.TransactionMode));
+            nameof(options));
         if (options.MaxBatchItems <= 0 || options.MaxBatchItems > DapperOptionsValidation.MaxBatchItemsLimit)
             throw new ArgumentOutOfRangeException(
-                nameof(options.MaxBatchItems),
+                nameof(options),
                 options.MaxBatchItems,
                 $"MaxBatchItems must be between 1 and {DapperOptionsValidation.MaxBatchItemsLimit}.");
 
         if (options.IsolationLevel is { } isolationLevel)
         {
-            DapperOptionsValidation.ValidateEnum(isolationLevel, nameof(options.IsolationLevel));
+            DapperOptionsValidation.ValidateEnum(isolationLevel, nameof(options));
             if (transactionMode == DapperBatchTransactionMode.None)
                 throw new ArgumentException(
                     "IsolationLevel requires DapperBatchTransactionMode.PerBatch.",
-                    nameof(options.IsolationLevel));
+                    nameof(options));
         }
 
         return new(

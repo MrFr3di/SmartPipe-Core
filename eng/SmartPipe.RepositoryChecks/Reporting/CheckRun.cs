@@ -71,9 +71,10 @@ internal static class CheckRunNormalizer
             throw new ArgumentException($"Unsupported diagnostic schema version: {run.SchemaVersion}.", nameof(run));
         }
 
-        var check = SingleLine(run.Check, nameof(run.Check), MaxIdentityLength);
-        var profile = OptionalSingleLine(run.Profile, nameof(run.Profile), MaxIdentityLength);
-        ArgumentNullException.ThrowIfNull(run.Diagnostics);
+        var check = SingleLine(run.Check, nameof(run.Check), nameof(run), MaxIdentityLength);
+        var profile = OptionalSingleLine(run.Profile, nameof(run.Profile), nameof(run), MaxIdentityLength);
+        if (run.Diagnostics is null)
+            throw new ArgumentException("Diagnostics must not be null.", nameof(run));
 
         var diagnostics = run.Success
             ? []
@@ -98,7 +99,7 @@ internal static class CheckRunNormalizer
             var sorted = new SortedDictionary<string, int>(StringComparer.Ordinal);
             foreach (var pair in run.Counters)
             {
-                var name = SingleLine(pair.Key, "counter name", MaxIdentityLength);
+                var name = SingleLine(pair.Key, "counter name", nameof(run), MaxIdentityLength);
                 if (pair.Value < 0)
                 {
                     throw new ArgumentException("Counter values must be non-negative.", nameof(run));
@@ -125,10 +126,10 @@ internal static class CheckRunNormalizer
     private static CheckDiagnostic NormalizeDiagnostic(CheckDiagnostic diagnostic)
     {
         ArgumentNullException.ThrowIfNull(diagnostic);
-        var code = SingleLine(diagnostic.Code, nameof(diagnostic.Code), MaxCodeLength);
-        var summary = SingleLine(diagnostic.Summary, nameof(diagnostic.Summary), MaxSummaryLength);
-        var path = RelativePath(diagnostic.Path, nameof(diagnostic.Path));
-        var evidencePath = RelativePath(diagnostic.EvidencePath, nameof(diagnostic.EvidencePath));
+        var code = SingleLine(diagnostic.Code, nameof(diagnostic.Code), nameof(diagnostic), MaxCodeLength);
+        var summary = SingleLine(diagnostic.Summary, nameof(diagnostic.Summary), nameof(diagnostic), MaxSummaryLength);
+        var path = RelativePath(diagnostic.Path, nameof(diagnostic.Path), nameof(diagnostic));
+        var evidencePath = RelativePath(diagnostic.EvidencePath, nameof(diagnostic.EvidencePath), nameof(diagnostic));
         if (diagnostic.Line is <= 0)
         {
             throw new ArgumentException("Diagnostic line must be positive.", nameof(diagnostic));
@@ -137,38 +138,42 @@ internal static class CheckRunNormalizer
         return new CheckDiagnostic(code, summary, path, diagnostic.Line, evidencePath);
     }
 
-    private static string SingleLine(string value, string parameterName, int maxLength)
+    private static string SingleLine(
+        string value,
+        string memberName,
+        string parameterName,
+        int maxLength)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(value, parameterName);
+        if (string.IsNullOrWhiteSpace(value))
+            throw new ArgumentException($"{memberName} must not be empty or whitespace.", parameterName);
         if (value.Length > maxLength || value.Contains('\r') || value.Contains('\n'))
-        {
-            throw new ArgumentException($"{parameterName} must be a bounded single line.", parameterName);
-        }
+            throw new ArgumentException($"{memberName} must be a bounded single line.", parameterName);
 
         return value;
     }
 
-    private static string? OptionalSingleLine(string? value, string parameterName, int maxLength) =>
-        value is null ? null : SingleLine(value, parameterName, maxLength);
+    private static string? OptionalSingleLine(
+        string? value,
+        string memberName,
+        string parameterName,
+        int maxLength) =>
+        value is null ? null : SingleLine(value, memberName, parameterName, maxLength);
 
-    private static string? RelativePath(string? value, string parameterName)
+    private static string? RelativePath(
+        string? value,
+        string memberName,
+        string parameterName)
     {
         if (value is null)
-        {
             return null;
-        }
 
-        var path = SingleLine(value, parameterName, MaxPathLength).Replace('\\', '/');
+        var path = SingleLine(value, memberName, parameterName, MaxPathLength).Replace('\\', '/');
         if (Path.IsPathRooted(value) || path.StartsWith("/", StringComparison.Ordinal) || path.Contains(':'))
-        {
-            throw new ArgumentException($"{parameterName} must be repository-relative.", parameterName);
-        }
+            throw new ArgumentException($"{memberName} must be repository-relative.", parameterName);
 
         var segments = path.Split('/');
         if (segments.Any(static segment => segment is "" or "." or ".."))
-        {
-            throw new ArgumentException($"{parameterName} must be a normalized repository-relative path.", parameterName);
-        }
+            throw new ArgumentException($"{memberName} must be a normalized repository-relative path.", parameterName);
 
         return path;
     }

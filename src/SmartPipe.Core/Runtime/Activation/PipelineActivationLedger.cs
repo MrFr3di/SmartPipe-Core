@@ -11,7 +11,8 @@ internal sealed class PipelineActivationLedger
     public void Append(ActivatedComponentLease lease)
     {
         ArgumentNullException.ThrowIfNull(lease);
-        ArgumentException.ThrowIfNullOrWhiteSpace(lease.Role);
+        if (string.IsNullOrWhiteSpace(lease.Role))
+            throw new ArgumentException("Component role must not be empty or whitespace.", nameof(lease));
         if (!Enum.IsDefined(lease.Ownership))
         {
             throw new ArgumentOutOfRangeException(
@@ -21,11 +22,15 @@ internal sealed class PipelineActivationLedger
         }
 
         if (lease.StageKey is { } stageKey)
-            PipelineStageKeyGuard.ThrowIfInvalid(stageKey, nameof(lease.StageKey));
+            PipelineStageKeyGuard.ThrowIfInvalid(stageKey, nameof(lease));
 
-        if (lease.Ownership == PipelineComponentOwnership.RuntimeOwned)
-            ArgumentNullException.ThrowIfNull(lease.RuntimeOwnedCleanup);
-        else if (lease.RuntimeOwnedCleanup is not null)
+        if (lease.Ownership == PipelineComponentOwnership.RuntimeOwned
+            && lease.RuntimeOwnedCleanup is null)
+        {
+            throw new ArgumentException("Runtime-owned leases must define cleanup.", nameof(lease));
+        }
+        else if (lease.Ownership != PipelineComponentOwnership.RuntimeOwned
+            && lease.RuntimeOwnedCleanup is not null)
             throw new ArgumentException("Only runtime-owned leases may define cleanup.", nameof(lease));
 
         lock (_gate)

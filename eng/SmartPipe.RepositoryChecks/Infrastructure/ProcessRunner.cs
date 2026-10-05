@@ -107,8 +107,10 @@ internal sealed class ProcessRunner : IProcessRunner
     public async Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.FileName);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(request.Timeout, TimeSpan.Zero);
+        if (string.IsNullOrWhiteSpace(request.FileName))
+            throw new ArgumentException("Process file name must not be empty or whitespace.", nameof(request));
+        if (request.Timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(request), request.Timeout, "Process timeout must be positive.");
         if (cancellationToken.IsCancellationRequested)
         {
             throw new ProcessRunnerException(

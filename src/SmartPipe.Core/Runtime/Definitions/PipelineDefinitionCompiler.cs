@@ -32,9 +32,11 @@ internal static class PipelineDefinitionCompiler
         PipelineComponent<IPipelineSink<TOutput>>? sink)
     {
         ArgumentNullException.ThrowIfNull(state);
-        PipelineKeyGuard.ThrowIfInvalid(state.Key, "pipelineKey");
-        ArgumentNullException.ThrowIfNull(state.Source);
-        ArgumentNullException.ThrowIfNull(state.RuntimeOptions);
+        PipelineKeyGuard.ThrowIfInvalid(state.Key, nameof(state));
+        if (state.Source is null)
+            throw new ArgumentException("Definition source must not be null.", nameof(state));
+        if (state.RuntimeOptions is null)
+            throw new ArgumentException("Definition runtime options must not be null.", nameof(state));
         state.RuntimeOptions.Validate();
 
         if (!Enum.IsDefined(state.LineageMode))
@@ -52,12 +54,17 @@ internal static class PipelineDefinitionCompiler
                 ?? throw new ArgumentException(
                     $"Stage descriptor at index {index} is null.",
                     nameof(state));
-            PipelineStageKeyGuard.ThrowIfInvalid(stage.Key, $"stages[{index}].Key");
-            ArgumentException.ThrowIfNullOrWhiteSpace(stage.Name);
-            ArgumentNullException.ThrowIfNull(stage.InputType);
-            ArgumentNullException.ThrowIfNull(stage.OutputType);
-            ArgumentNullException.ThrowIfNull(stage.FailureOptions);
-            ArgumentNullException.ThrowIfNull(stage.Metadata);
+            PipelineStageKeyGuard.ThrowIfInvalid(stage.Key, nameof(state));
+            if (string.IsNullOrWhiteSpace(stage.Name))
+                throw new ArgumentException($"Stage name at index {index} must not be empty or whitespace.", nameof(state));
+            if (stage.InputType is null)
+                throw new ArgumentException($"Stage input type at index {index} must not be null.", nameof(state));
+            if (stage.OutputType is null)
+                throw new ArgumentException($"Stage output type at index {index} must not be null.", nameof(state));
+            if (stage.FailureOptions is null)
+                throw new ArgumentException($"Stage failure options at index {index} must not be null.", nameof(state));
+            if (stage.Metadata is null)
+                throw new ArgumentException($"Stage metadata at index {index} must not be null.", nameof(state));
             stage.FailureOptions.Validate();
 
             topology[index] = new(
@@ -91,7 +98,8 @@ internal static class PipelineDefinitionCompiler
                 ?? throw new ArgumentException(
                     $"Observer registration at index {index} is null.",
                     nameof(state));
-            ArgumentNullException.ThrowIfNull(registration.Observer);
+            if (registration.Observer is null)
+                throw new ArgumentException($"Observer at index {index} must not be null.", nameof(state));
             if (!Enum.IsDefined(registration.Reliability))
             {
                 throw new ArgumentOutOfRangeException(
@@ -150,10 +158,15 @@ internal static class PipelineStageTopologyValidator
         for (var index = 0; index < stages.Count; index++)
         {
             var current = stages[index];
-            ArgumentException.ThrowIfNullOrWhiteSpace(current.StageId);
-            ArgumentException.ThrowIfNullOrWhiteSpace(current.StageName);
-            ArgumentNullException.ThrowIfNull(current.InputType);
-            ArgumentNullException.ThrowIfNull(current.OutputType);
+            if (string.IsNullOrWhiteSpace(current.StageId)
+                || string.IsNullOrWhiteSpace(current.StageName)
+                || current.InputType is null
+                || current.OutputType is null)
+            {
+                throw new ArgumentException(
+                    $"Stage topology entry at index {index} is incomplete.",
+                    nameof(stages));
+            }
 
             if (indexesById.TryGetValue(current.StageId, out var firstIndex))
             {
