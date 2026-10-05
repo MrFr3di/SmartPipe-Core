@@ -149,7 +149,7 @@ internal sealed class DocumentationVerificationService
                 violations.Add(new(
                     "SPDOC002",
                     readmePath,
-                    $"package README is missing for ${package.Id}"));
+                    $"package README is missing for {package.Id}"));
                 continue;
             }
 
@@ -167,18 +167,18 @@ internal sealed class DocumentationVerificationService
         var normalized = content.TrimStart('﻿', '\r', '\n', ' ', '\t');
         var lineBreak = normalized.IndexOf('\n');
         var firstLine = (lineBreak >= 0 ? normalized[..lineBreak] : normalized).TrimEnd('\r');
-        if (!string.Equals(firstLine, $"# ${package.Id}", StringComparison.Ordinal))
+        if (!string.Equals(firstLine, $"# {package.Id}", StringComparison.Ordinal))
         {
-            violations.Add(new("SPDOC003", readmePath, $"first heading must be '# ${package.Id}'"));
+            violations.Add(new("SPDOC003", readmePath, $"first heading must be '# {package.Id}'"));
         }
 
-        var installCommand = $"dotnet package add ${package.Id}";
+        var installCommand = $"dotnet package add {package.Id}";
         if (!content.Contains(installCommand, StringComparison.Ordinal))
         {
             violations.Add(new(
                 "SPDOC004",
                 readmePath,
-                $"README must contain installation command '${installCommand}'"));
+                $"README must contain installation command '{installCommand}'"));
         }
 
         if (content.Contains("dotnet add package ", StringComparison.Ordinal))
@@ -189,7 +189,7 @@ internal sealed class DocumentationVerificationService
                 "use the .NET 10 noun-first 'dotnet package add' form"));
         }
 
-        if (content.Contains($"${installCommand} --version ", StringComparison.Ordinal))
+        if (content.Contains($"{installCommand} --version ", StringComparison.Ordinal))
         {
             violations.Add(new(
                 "SPDOC010",
@@ -226,7 +226,7 @@ internal sealed class DocumentationVerificationService
                 violations.Add(new(
                     "SPDOC006",
                     relativePath,
-                    $"root README must link to ${target}"));
+                    $"root README must link to {target}"));
             }
         }
     }
@@ -251,7 +251,7 @@ internal sealed class DocumentationVerificationService
                 violations.Add(new(
                     "SPDOC009",
                     relativePath,
-                    $"documentation index must link to ${target}"));
+                    $"documentation index must link to {target}"));
             }
         }
     }
@@ -282,12 +282,12 @@ internal sealed class DocumentationVerificationService
 
         foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
         {
-            if (!packageSelection.Contains($"`${package.Id}`", StringComparison.Ordinal))
+            if (!packageSelection.Contains($"`{package.Id}`", StringComparison.Ordinal))
             {
                 violations.Add(new(
                     "SPDOC018",
                     relativePath,
-                    $"getting-started package selection is stale; release package is not named: ${package.Id}"));
+                    $"getting-started package selection is stale; release package is not named: {package.Id}"));
             }
         }
     }
@@ -336,7 +336,7 @@ internal sealed class DocumentationVerificationService
                 violations.Add(new(
                     "SPDOC007",
                     relativePath,
-                    $"package graph projection is stale for ${package.Id}; expected row: ${expectedRow}"));
+                    $"package graph projection is stale for {package.Id}; expected row: {expectedRow}"));
             }
         }
     }
@@ -349,7 +349,7 @@ internal sealed class DocumentationVerificationService
     {
         var releaseVersion = graph.ReleaseVersion;
         var changelogRelativePath = "CHANGELOG.md";
-        var releaseRelativePath = $"docs/releases/${releaseVersion}.md";
+        var releaseRelativePath = $"docs/releases/{releaseVersion}.md";
         var currentReleaseSection = await ValidateCurrentReleaseChangelogAsync(
             root,
             releaseVersion,
@@ -372,7 +372,7 @@ internal sealed class DocumentationVerificationService
             violations.Add(new(
                 "SPDOC014",
                 releaseRelativePath,
-                $"current release notes are missing for ${releaseVersion}"));
+                $"current release notes are missing for {releaseVersion}"));
             return;
         }
 
@@ -394,15 +394,15 @@ internal sealed class DocumentationVerificationService
             violations.Add(new(
                 "SPDOC014",
                 changelogRelativePath,
-                $"current release changelog is missing for ${releaseVersion}"));
+                $"current release changelog is missing for {releaseVersion}"));
             return null;
         }
 
         var changelog = await File.ReadAllTextAsync(changelogPath, cancellationToken).ConfigureAwait(false);
         var changelogLines = SplitLines(changelog);
-        var versionHeadingPrefix = $"## [${releaseVersion}]";
-        var developmentHeading = $"${versionHeadingPrefix} — Development";
-        var datedHeadingPrefix = $"${versionHeadingPrefix} - ";
+        var versionHeadingPrefix = $"## [{releaseVersion}]";
+        var developmentHeading = $"{versionHeadingPrefix} — Development";
+        var datedHeadingPrefix = $"{versionHeadingPrefix} - ";
         var currentHeadingCandidates = changelogLines
             .Select((line, index) => (Line: line.TrimEnd(), Index: index))
             .Where(item => item.Line.StartsWith(versionHeadingPrefix, StringComparison.Ordinal))
@@ -417,7 +417,7 @@ internal sealed class DocumentationVerificationService
             violations.Add(new(
                 "SPDOC014",
                 changelogRelativePath,
-                $"current release changelog must contain exactly one heading '## [${releaseVersion}] — Development' or '## [${releaseVersion}] - yyyy-MM-dd' with a valid ISO release date"));
+                $"current release changelog must contain exactly one heading '## [{releaseVersion}] — Development' or '## [{releaseVersion}] - yyyy-MM-dd' with a valid ISO release date"));
             return null;
         }
 
@@ -456,12 +456,12 @@ internal sealed class DocumentationVerificationService
                      package.Lifecycle != PackageLifecycle.Planned
                      && package.BaselineVersion is null))
         {
-            if (!currentReleaseSection.Contains($"`${package.Id}`", StringComparison.Ordinal))
+            if (!currentReleaseSection.Contains($"`{package.Id}`", StringComparison.Ordinal))
             {
                 violations.Add(new(
                     "SPDOC016",
                     changelogRelativePath,
-                    $"first-release package must be explicitly named in the current release section: ${package.Id}"));
+                    $"first-release package must be explicitly named in the current release section: {package.Id}"));
             }
         }
     }
@@ -508,7 +508,7 @@ internal sealed class DocumentationVerificationService
             violations.Add(new(
                 "SPDOC015",
                 releaseRelativePath,
-                $"release package table must match the non-planned package graph exactly; missing=[${string.Join(",", missing)}] unknown=[${string.Join(",", unknown)}] duplicates=[${string.Join(",", duplicates)}]"));
+                $"release package table must match the non-planned package graph exactly; missing=[{string.Join(",", missing)}] unknown=[{string.Join(",", unknown)}] duplicates=[{string.Join(",", duplicates)}]"));
         }
     }
 
@@ -522,7 +522,7 @@ internal sealed class DocumentationVerificationService
         var requiredCrossLinks = new List<string>
         {
             "../../CHANGELOG.md",
-            $"../migration/${releaseVersion}-integration-packages.md",
+            $"../migration/{releaseVersion}-integration-packages.md",
         };
         var baselineVersions = graph.Packages
             .Select(package => package.BaselineVersion)
@@ -532,17 +532,17 @@ internal sealed class DocumentationVerificationService
         if (baselineVersions.Length == 1)
         {
             requiredCrossLinks.Add(
-                $"../reference/compatibility/${baselineVersions[0]}-to-${releaseVersion}.md");
+                $"../reference/compatibility/{baselineVersions[0]}-to-{releaseVersion}.md");
         }
 
         foreach (var target in requiredCrossLinks)
         {
-            if (!releaseNotes.Contains($"(${target})", StringComparison.Ordinal))
+            if (!releaseNotes.Contains($"({target})", StringComparison.Ordinal))
             {
                 violations.Add(new(
                     "SPDOC017",
                     releaseRelativePath,
-                    $"release notes must cross-link release detail/migration/compatibility target: ${target}"));
+                    $"release notes must cross-link release detail/migration/compatibility target: {target}"));
             }
         }
     }
