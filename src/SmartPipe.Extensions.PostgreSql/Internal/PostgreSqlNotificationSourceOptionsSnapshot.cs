@@ -8,12 +8,12 @@ internal sealed record PostgreSqlNotificationSourceOptionsSnapshot(string Operat
         ArgumentNullException.ThrowIfNull(options);
         var operationName = PostgreSqlOperationName.Validate(
             options.OperationName,
-            $"{nameof(options)}.{nameof(options.OperationName)}");
+            nameof(options));
 
         if (options.BufferCapacity <= 0)
         {
             throw new ArgumentOutOfRangeException(
-                $"{nameof(options)}.{nameof(options.BufferCapacity)}",
+                nameof(options),
                 options.BufferCapacity,
                 PostgreSqlErrorMessages.BufferCapacityPositive);
         }
