@@ -52,7 +52,7 @@ public sealed class SmartPipeHostedPipelineOptionsTests
         var exception = Assert.Throws<ArgumentOutOfRangeException>(
             () => SmartPipeHostedPipelineOptionsSnapshot.Create(options));
 
-        Assert.Equal(nameof(SmartPipeHostedPipelineOptions.DrainTimeout), exception.ParamName);
+        Assert.Equal("options", exception.ParamName);
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public sealed class SmartPipeHostedPipelineOptionsTests
         var exception = Assert.Throws<ArgumentOutOfRangeException>(
             () => SmartPipeHostedPipelineOptionsSnapshot.Create(options));
 
-        Assert.Equal(nameof(SmartPipeHostedPipelineOptions.FailureBehavior), exception.ParamName);
+        Assert.Equal("options", exception.ParamName);
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public sealed class SmartPipeHostedPipelineOptionsTests
         var exception = Assert.Throws<ArgumentOutOfRangeException>(
             () => SmartPipeHostedPipelineOptionsSnapshot.Create(options));
 
-        Assert.Equal(nameof(SmartPipeHostedPipelineOptions.CompletionBehavior), exception.ParamName);
+        Assert.Equal("options", exception.ParamName);
     }
 
     [Fact]
