@@ -210,10 +210,7 @@ internal sealed class DapperQuerySource<T> : IPipelineSource<T>
         {
             try
             {
-                // Dapper's wrapped reader owns the command it executed: its synchronous disposal releases
-                // the reader first and then that command. The asynchronous path releases only the reader,
-                // so the synchronous release is the exactly-once path for both.
-                reader.Dispose();
+                DisposeOwnedDapperReader(reader);
             }
             catch (Exception exception)
             {
@@ -235,6 +232,14 @@ internal sealed class DapperQuerySource<T> : IPipelineSource<T>
         }
 
         return failures;
+    }
+
+    private static void DisposeOwnedDapperReader(DbDataReader reader)
+    {
+        // Dapper 2.1.89's wrapped reader owns the command it executed. Its synchronous disposal
+        // releases both the reader and command; keep this path until upstream async disposal
+        // provides the same ownership semantics.
+        reader.Dispose();
     }
 
     private CommandDefinition CreateCommandDefinition(CancellationToken cancellationToken) =>
