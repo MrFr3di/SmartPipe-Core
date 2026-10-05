@@ -831,7 +831,7 @@ internal sealed class BoundedRedactingOutputCollector
         var logTruncated = false;
         async Task AppendAsync(string value)
         {
-            AppendBounded(retained, value, ref outputTruncated);
+            outputTruncated |= AppendBounded(retained, value);
             if (log is null || logTruncated) return;
             var available = _maximumLogCharacters - loggedCharacters;
             if (available <= 0) { await log.WriteAsync("\n[spill log truncated]\n").ConfigureAwait(false); logTruncated = true; return; }
@@ -880,14 +880,16 @@ internal sealed class BoundedRedactingOutputCollector
         return new(outputTruncated ? TruncatedMarker + retained : retained.ToString(), logPath);
     }
 
-    private void AppendBounded(StringBuilder retained, string value, ref bool outputTruncated)
+    private bool AppendBounded(StringBuilder retained, string value)
     {
         retained.Append(value);
-        if (retained.Length > _maximumRetainedCharacters)
+        if (retained.Length <= _maximumRetainedCharacters)
         {
-            retained.Remove(0, retained.Length - _maximumRetainedCharacters);
-            outputTruncated = true;
+            return false;
         }
+
+        retained.Remove(0, retained.Length - _maximumRetainedCharacters);
+        return true;
     }
 }
 
