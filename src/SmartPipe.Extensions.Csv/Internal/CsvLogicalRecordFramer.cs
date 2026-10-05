@@ -194,7 +194,7 @@ internal sealed class CsvLogicalRecordFramer
         }
     }
 
-    private CsvLogicalRecord CompleteRecord(
+    private static CsvLogicalRecord CompleteRecord(
         PooledRecordBuffer record,
         int columnCount,
         CsvLimitFailure limitFailure)
@@ -232,7 +232,7 @@ internal sealed class CsvLogicalRecordFramer
         return _readBuffer[_readBufferOffset++];
     }
 
-    private void AppendRecordCharacter(
+    private static void AppendRecordCharacter(
         PooledRecordBuffer record,
         char character,
         ref CsvLimitFailure limitFailure)
@@ -258,7 +258,7 @@ internal sealed class CsvLogicalRecordFramer
         }
     }
 
-    private CsvLimitFailure MarkLimitFailure(
+    private static CsvLimitFailure MarkLimitFailure(
         PooledRecordBuffer record,
         CsvLimitFailure current,
         CsvLimitFailure failure)

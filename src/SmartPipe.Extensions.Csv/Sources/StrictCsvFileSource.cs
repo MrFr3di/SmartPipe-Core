@@ -10,6 +10,7 @@ namespace SmartPipe.Extensions.Csv;
 
 internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
 {
+    private const string MappingCategory = "mapping";
     private readonly string _path;
     private readonly CsvSourceOptionsSnapshot _options;
     private readonly CsvMapRegistration<T> _map;
@@ -90,7 +91,8 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
     {
         using var linkedCancellation = CreateLinkedCancellation(ct, out var cancellationToken);
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
-        var csv = _csv!;
+        var csv = _csv
+            ?? throw new InvalidOperationException("CSV source initialization did not create its CsvReader.");
         var recordIndex = 0L;
         Exception? primaryFailure = null;
 
@@ -98,89 +100,35 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
         {
             if (_options.HasHeaderRecord)
             {
-                try
-                {
-                    var headerResult = await ReadNextAsync(csv, cancellationToken, recordIndex, isHeader: true).ConfigureAwait(false);
-                    recordIndex = headerResult.RecordIndex;
-                    if (!headerResult.HasRecord)
-                        yield break;
-
-                    csv.ReadHeader();
-                    csv.ValidateHeader<T>();
-                }
-                catch (OperationCanceledException exception)
-                {
-                    primaryFailure = exception;
-                }
-                catch (Exception exception) when (exception is CsvHelperException or InvalidDataException)
-                {
-                    primaryFailure = CreateHeaderException(exception);
-                }
-                catch (Exception exception)
-                {
-                    primaryFailure = exception;
-                }
+                var header = await ReadHeaderOutcomeAsync(
+                    csv,
+                    cancellationToken,
+                    recordIndex).ConfigureAwait(false);
+                recordIndex = header.RecordIndex;
+                primaryFailure = header.Failure;
+                if (primaryFailure is null && !header.HasRecord)
+                    yield break;
             }
 
             while (primaryFailure is null)
             {
-                CsvReadResult readResult;
-                try
+                var record = await ReadRecordOutcomeAsync(
+                    csv,
+                    cancellationToken,
+                    recordIndex).ConfigureAwait(false);
+                recordIndex = record.RecordIndex;
+
+                if (record.Failure is not null)
                 {
-                    readResult = await ReadNextAsync(csv, cancellationToken, recordIndex, isHeader: false).ConfigureAwait(false);
-                    recordIndex = readResult.RecordIndex;
-                }
-                catch (OperationCanceledException exception)
-                {
-                    primaryFailure = exception;
-                    break;
-                }
-                catch (Exception exception)
-                {
-                    primaryFailure = exception;
+                    primaryFailure = record.Failure;
                     break;
                 }
 
-                if (!readResult.HasRecord)
+                if (!record.HasRecord)
                     break;
 
-                T value = default!;
-                try
-                {
-                    value = csv.GetRecord<T>();
-                }
-                catch (OperationCanceledException exception)
-                {
-                    primaryFailure = exception;
-                }
-                catch (Exception exception) when (exception is CsvHelperException or InvalidDataException)
-                {
-                    if (!HandleDataFailure(recordIndex, exception, "mapping"))
-                        primaryFailure = CreateDataException(recordIndex, exception, "mapping");
-                    else
-                        continue;
-                }
-                catch (Exception exception)
-                {
-                    primaryFailure = exception;
-                }
-
-                if (primaryFailure is not null)
-                    break;
-
-                if (value is null)
-                {
-                    var exception = new InvalidDataException("CSV record mapped to null.");
-                    if (!HandleDataFailure(recordIndex, exception, "mapping"))
-                    {
-                        primaryFailure = CreateDataException(recordIndex, exception, "mapping");
-                        break;
-                    }
-
-                    continue;
-                }
-
-                yield return ProcessingEnvelope<T>.Create(value);
+                if (record.Envelope is { } envelope)
+                    yield return envelope;
             }
         }
         finally
@@ -191,6 +139,107 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
 
         if (primaryFailure is not null)
             ExceptionDispatchInfo.Capture(primaryFailure).Throw();
+    }
+
+    private async ValueTask<CsvHeaderReadOutcome> ReadHeaderOutcomeAsync(
+        CsvReader csv,
+        CancellationToken cancellationToken,
+        long recordIndex)
+    {
+        try
+        {
+            var headerResult = await ReadNextAsync(
+                csv,
+                cancellationToken,
+                recordIndex,
+                isHeader: true).ConfigureAwait(false);
+            if (!headerResult.HasRecord)
+                return new(headerResult.RecordIndex, HasRecord: false, Failure: null);
+
+            csv.ReadHeader();
+            csv.ValidateHeader<T>();
+            return new(headerResult.RecordIndex, HasRecord: true, Failure: null);
+        }
+        catch (OperationCanceledException exception)
+        {
+            return new(recordIndex, HasRecord: false, Failure: exception);
+        }
+        catch (Exception exception) when (exception is CsvHelperException or InvalidDataException)
+        {
+            return new(recordIndex, HasRecord: false, Failure: CreateHeaderException(exception));
+        }
+        catch (Exception exception)
+        {
+            return new(recordIndex, HasRecord: false, Failure: exception);
+        }
+    }
+
+    private async ValueTask<CsvRecordReadOutcome> ReadRecordOutcomeAsync(
+        CsvReader csv,
+        CancellationToken cancellationToken,
+        long recordIndex)
+    {
+        CsvReadResult readResult;
+        try
+        {
+            readResult = await ReadNextAsync(
+                csv,
+                cancellationToken,
+                recordIndex,
+                isHeader: false).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            return new(recordIndex, HasRecord: false, Envelope: null, Failure: exception);
+        }
+
+        if (!readResult.HasRecord)
+            return new(readResult.RecordIndex, HasRecord: false, Envelope: null, Failure: null);
+
+        return MapRecord(csv, readResult.RecordIndex);
+    }
+
+    private CsvRecordReadOutcome MapRecord(CsvReader csv, long recordIndex)
+    {
+        try
+        {
+            var value = csv.GetRecord<T>();
+            if (value is not null)
+            {
+                return new(
+                    recordIndex,
+                    HasRecord: true,
+                    Envelope: ProcessingEnvelope<T>.Create(value),
+                    Failure: null);
+            }
+
+            var nullRecord = new InvalidDataException("CSV record mapped to null.");
+            return HandleDataFailure(recordIndex, nullRecord, MappingCategory)
+                ? new(recordIndex, HasRecord: true, Envelope: null, Failure: null)
+                : new(
+                    recordIndex,
+                    HasRecord: true,
+                    Envelope: null,
+                    Failure: CreateDataException(recordIndex, nullRecord, MappingCategory));
+        }
+        catch (OperationCanceledException exception)
+        {
+            return new(recordIndex, HasRecord: true, Envelope: null, Failure: exception);
+        }
+        catch (Exception exception) when (exception is CsvHelperException or InvalidDataException)
+        {
+            return HandleDataFailure(recordIndex, exception, MappingCategory)
+                ? new(recordIndex, HasRecord: true, Envelope: null, Failure: null)
+                : new(
+                    recordIndex,
+                    HasRecord: true,
+                    Envelope: null,
+                    Failure: CreateDataException(recordIndex, exception, MappingCategory));
+        }
+        catch (Exception exception)
+        {
+            return new(recordIndex, HasRecord: true, Envelope: null, Failure: exception);
+        }
     }
 
     public ValueTask DisposeAsync()
@@ -274,20 +323,12 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
                 recordIndex++;
                 return new CsvReadResult(true, recordIndex);
             }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
             catch (InvalidDataException exception)
             {
                 recordIndex++;
                 var category = IsUnrecoverable(exception) ? "framing" : "limit";
                 if (isHeader || IsUnrecoverable(exception) || !HandleDataFailure(recordIndex, exception, category))
                     throw CreateHeaderOrDataException(recordIndex, exception, isHeader, category);
-            }
-            catch (IOException)
-            {
-                throw;
             }
             catch (CsvHelperException exception)
             {
@@ -316,10 +357,10 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
     }
 
     private static InvalidDataException CreateHeaderException(Exception exception) =>
-        new("CSV header validation failed.");
+        new("CSV header validation failed.", exception);
 
     private static InvalidDataException CreateDataException(long recordIndex, Exception exception, string category) =>
-        new($"CSV record {recordIndex} failed during {category}.");
+        new($"CSV record {recordIndex} failed during {category}.", exception);
 
     private static InvalidDataException CreateHeaderOrDataException(
         long recordIndex,
@@ -329,6 +370,17 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
         isHeader
             ? CreateHeaderException(exception)
             : CreateDataException(recordIndex, exception, category);
+
+    private readonly record struct CsvHeaderReadOutcome(
+        long RecordIndex,
+        bool HasRecord,
+        Exception? Failure);
+
+    private readonly record struct CsvRecordReadOutcome(
+        long RecordIndex,
+        bool HasRecord,
+        ProcessingEnvelope<T>? Envelope,
+        Exception? Failure);
 
     private CsvConfiguration CreateConfiguration()
     {

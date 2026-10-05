@@ -741,24 +741,36 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
 
     internal static void ValidateNativeAotLibraryPaths(string packageDirectory, bool? isWindows = null)
     {
-        if (!(isWindows ?? OperatingSystem.IsWindows())) return;
+        if (!(isWindows ?? OperatingSystem.IsWindows()))
+            return;
 
         var root = Path.GetFullPath(packageDirectory);
-        if (!Directory.Exists(root)) return;
-        foreach (var path in Directory.EnumerateFiles(root, "*.lib", SearchOption.AllDirectories))
-        {
-            var fullPath = Path.GetFullPath(path);
-            var relative = Path.GetRelativePath(root, fullPath);
-            if (Path.IsPathRooted(relative)
-                || relative == ".."
-                || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-                throw new ConsumerScenarioException("SPCONS025", "NativeAOT library path escapes the scenario package cache.");
+        if (!Directory.Exists(root))
+            return;
 
-            var effectiveLength = fullPath.Length + 1;
-            if (effectiveLength >= 260)
-                throw new ConsumerScenarioException(
-                    "SPCONS025",
-                    $"NativeAOT library path is too long ({effectiveLength} characters including the terminating NUL): {relative.Replace('\\', '/')}");
+        foreach (var path in Directory.EnumerateFiles(root, "*.lib", SearchOption.AllDirectories))
+            ValidateNativeAotLibraryPath(root, path);
+    }
+
+    private static void ValidateNativeAotLibraryPath(string root, string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var relative = Path.GetRelativePath(root, fullPath);
+        if (Path.IsPathRooted(relative)
+            || relative == ".."
+            || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            throw new ConsumerScenarioException(
+                "SPCONS025",
+                "NativeAOT library path escapes the scenario package cache.");
+        }
+
+        var effectiveLength = fullPath.Length + 1;
+        if (effectiveLength >= 260)
+        {
+            throw new ConsumerScenarioException(
+                "SPCONS025",
+                $"NativeAOT library path is too long ({effectiveLength} characters including the terminating NUL): {relative.Replace('\\', '/')}");
         }
     }
 

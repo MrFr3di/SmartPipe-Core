@@ -120,7 +120,7 @@ internal sealed class SmartPipeRunFactory<TInput, TOutput> : ISmartPipeRunFactor
                 ExceptionDispatchInfo.Capture(error).Throw();
             }
 
-            throw new AggregateException([error, .. subsequentErrors]);
+            throw new AggregateException(subsequentErrors.Prepend(error));
         }
     }
 
@@ -201,7 +201,7 @@ internal sealed class ScopedPipelineRunLifetime<TInput, TOutput>
         if (completionError is not null && cleanupError is not null)
         {
             throw cleanupError is AggregateException aggregate
-                ? new AggregateException([completionError, .. aggregate.InnerExceptions])
+                ? new AggregateException(aggregate.InnerExceptions.Prepend(completionError))
                 : new AggregateException(completionError, cleanupError);
         }
 

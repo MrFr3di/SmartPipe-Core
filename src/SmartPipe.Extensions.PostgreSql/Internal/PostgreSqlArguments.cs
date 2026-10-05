@@ -7,7 +7,7 @@ internal static class PostgreSqlArguments
 {
     internal static NpgsqlDataSource DataSource(NpgsqlDataSource? dataSource)
     {
-        ArgumentNullException.ThrowIfNull(dataSource, nameof(dataSource));
+        ArgumentNullException.ThrowIfNull(dataSource);
         return dataSource;
     }
 

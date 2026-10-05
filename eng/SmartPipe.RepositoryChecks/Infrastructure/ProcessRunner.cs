@@ -890,27 +890,10 @@ internal sealed class BoundedRedactingOutputCollector
         int retainedCharacters,
         string value)
     {
-        var available = _maximumRetainedCharacters - retainedCharacters;
-        if (value.Length <= available)
-        {
-            retained.Append(value);
-            return (retainedCharacters + value.Length, false);
-        }
-
-        if (value.Length >= _maximumRetainedCharacters)
-        {
-            retained.Clear();
-            retained.Append(
-                value,
-                value.Length - _maximumRetainedCharacters,
-                _maximumRetainedCharacters);
-            return (_maximumRetainedCharacters, true);
-        }
-
-        var charactersToRemove = value.Length - available;
-        retained.Remove(0, charactersToRemove);
         retained.Append(value);
-        return (_maximumRetainedCharacters, true);
+        var overflow = Math.Max(0, retainedCharacters + value.Length - _maximumRetainedCharacters);
+        retained.Remove(0, overflow);
+        return (retainedCharacters + value.Length - overflow, overflow > 0);
     }
 }
 
