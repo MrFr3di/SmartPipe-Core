@@ -391,28 +391,9 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
             .Order(StringComparer.Ordinal)
             .ToArray() ?? [];
         var allIds = new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
-        foreach (var lockPath in Directory.EnumerateFiles(repositoryRoot, "packages.lock.json", SearchOption.AllDirectories))
+        foreach (var lockPath in EnumerateExternalPackageLockFiles(repositoryRoot))
         {
-            var normalized = lockPath.Replace('\\', '/');
-            if (normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
-                || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase)
-                || normalized.Contains("/artifacts/", StringComparison.OrdinalIgnoreCase)
-                || normalized.Contains("/Fixtures/", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            await using var lockStream = File.OpenRead(lockPath);
-            using var lockDocument = await JsonDocument.ParseAsync(lockStream, cancellationToken: ct).ConfigureAwait(false);
-            if (!lockDocument.RootElement.TryGetProperty("dependencies", out var frameworks)) continue;
-            foreach (var framework in frameworks.EnumerateObject())
-            {
-                foreach (var package in framework.Value.EnumerateObject())
-                {
-                    if (!package.Name.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase))
-                        allIds.Add(package.Name);
-                }
-            }
+            await AddExternalPackageIdsFromLockAsync(lockPath, allIds, ct).ConfigureAwait(false);
         }
 
         if (allIds.Count == 0)
@@ -433,6 +414,48 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         allIds.Add($"runtime.{rid}.Microsoft.DotNet.ILCompiler");
 
         return allIds.Order(StringComparer.Ordinal).ToArray();
+    }
+
+    private static IEnumerable<string> EnumerateExternalPackageLockFiles(string repositoryRoot)
+    {
+        return Directory
+            .EnumerateFiles(repositoryRoot, "packages.lock.json", SearchOption.AllDirectories)
+            .Where(static lockPath => !IsGeneratedOrFixturePath(lockPath));
+    }
+
+    private static bool IsGeneratedOrFixturePath(string lockPath)
+    {
+        var normalized = lockPath.Replace('\\', '/');
+        return normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("/artifacts/", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("/Fixtures/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task AddExternalPackageIdsFromLockAsync(
+        string lockPath,
+        ISet<string> packageIds,
+        CancellationToken cancellationToken)
+    {
+        await using var lockStream = File.OpenRead(lockPath);
+        using var lockDocument = await JsonDocument
+            .ParseAsync(lockStream, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        if (!lockDocument.RootElement.TryGetProperty("dependencies", out var frameworks))
+        {
+            return;
+        }
+
+        foreach (var framework in frameworks.EnumerateObject())
+        {
+            foreach (var package in framework.Value.EnumerateObject())
+            {
+                if (!package.Name.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase))
+                {
+                    packageIds.Add(package.Name);
+                }
+            }
+        }
     }
 
     private static async Task InspectRuntimeArtifactsAsync(string output, ConsumerMode mode, CancellationToken ct)
