@@ -832,18 +832,31 @@ internal sealed class BoundedRedactingOutputCollector
         var oversizedLine = false;
         var loggedCharacters = 0;
         var logTruncated = false;
-        async Task AppendAsync(string value)
+        async Task<bool> AppendAsync(string value)
         {
             var appendResult = AppendBounded(retained, retainedCharacterCount, value);
             retainedCharacterCount = appendResult.RetainedCharacters;
-            outputTruncated |= appendResult.Truncated;
-            if (log is null || logTruncated) return;
+            if (log is null || logTruncated)
+                return appendResult.Truncated;
+
             var available = _maximumLogCharacters - loggedCharacters;
-            if (available <= 0) { await log.WriteAsync("\n[spill log truncated]\n").ConfigureAwait(false); logTruncated = true; return; }
+            if (available <= 0)
+            {
+                await log.WriteAsync("\n[spill log truncated]\n").ConfigureAwait(false);
+                logTruncated = true;
+                return appendResult.Truncated;
+            }
+
             var written = value.Length <= available ? value : value[..available];
             await log.WriteAsync(written).ConfigureAwait(false);
             loggedCharacters += written.Length;
-            if (written.Length != value.Length) { await log.WriteAsync("\n[spill log truncated]\n").ConfigureAwait(false); logTruncated = true; }
+            if (written.Length != value.Length)
+            {
+                await log.WriteAsync("\n[spill log truncated]\n").ConfigureAwait(false);
+                logTruncated = true;
+            }
+
+            return appendResult.Truncated;
         }
         int charactersRead;
         try
@@ -857,14 +870,15 @@ internal sealed class BoundedRedactingOutputCollector
                     {
                         if (character == '\n')
                         {
-                            await AppendAsync(OversizedLineMarker + "\n").ConfigureAwait(false);
+                            outputTruncated |= await AppendAsync(OversizedLineMarker + "\n").ConfigureAwait(false);
                             oversizedLine = false;
                         }
                         continue;
                     }
                     if (character == '\n')
                     {
-                        await AppendAsync(DiagnosticRedactor.Redact(pendingLine.ToString()) + "\n").ConfigureAwait(false);
+                        outputTruncated |= await AppendAsync(
+                            DiagnosticRedactor.Redact(pendingLine.ToString()) + "\n").ConfigureAwait(false);
                         pendingLine.Clear();
                     }
                     else if (pendingLine.Length == _maximumLogCharacters)
@@ -875,8 +889,11 @@ internal sealed class BoundedRedactingOutputCollector
                     else pendingLine.Append(character);
                 }
             }
-            if (oversizedLine) await AppendAsync(OversizedLineMarker).ConfigureAwait(false);
-            else if (pendingLine.Length > 0) await AppendAsync(DiagnosticRedactor.Redact(pendingLine.ToString())).ConfigureAwait(false);
+            if (oversizedLine)
+                outputTruncated |= await AppendAsync(OversizedLineMarker).ConfigureAwait(false);
+            else if (pendingLine.Length > 0)
+                outputTruncated |= await AppendAsync(
+                    DiagnosticRedactor.Redact(pendingLine.ToString())).ConfigureAwait(false);
         }
         finally
         {
@@ -893,9 +910,7 @@ internal sealed class BoundedRedactingOutputCollector
         retained.Append(value);
         var overflow = Math.Max(0, retainedCharacters + value.Length - _maximumRetainedCharacters);
         retained.Remove(0, overflow);
-        // Sonar S2583 is a false positive here: overflow is exercised by
-        // OutputCollector_ContentBeyondRetentionLimit_PreservesExactTail.
-        return (retainedCharacters + value.Length - overflow, overflow > 0); // NOSONAR
+        return (retainedCharacters + value.Length - overflow, overflow > 0);
     }
 }
 
