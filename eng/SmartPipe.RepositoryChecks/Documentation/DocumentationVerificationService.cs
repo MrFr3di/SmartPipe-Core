@@ -159,7 +159,7 @@ internal sealed class DocumentationVerificationService
     }
 
     private static void ValidatePackageReadme(
-        PackageGraphNode package,
+        PackageNode package,
         string readmePath,
         string content,
         ICollection<DocumentationViolation> violations)
