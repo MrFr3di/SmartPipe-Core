@@ -277,7 +277,7 @@ internal sealed class SmartPipeHostedOrchestrator : BackgroundService
                 throw;
             }
 
-            throw new AggregateException([primary, .. cleanupErrors]);
+            throw new AggregateException(cleanupErrors.Prepend(primary));
         }
     }
 
