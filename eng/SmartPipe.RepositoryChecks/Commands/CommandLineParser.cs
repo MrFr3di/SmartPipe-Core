@@ -108,6 +108,10 @@ internal static class CommandLineParser
     private const string RepoRootOption = "--repo-root";
     private const string RepositoryRootOption = "--repository-root";
     private const string OutputOption = "--output";
+    private const string ManifestOption = "--manifest";
+    private const string ModeOption = "--mode";
+    private const string FormatOption = "--format";
+    private const string FailuresOnlyOption = "--failures-only";
     private static readonly HashSet<string> CaptureOptions = new(StringComparer.Ordinal)
     {
         RepoRootOption, "--repository", "--commit", "--target-release", "--baseline-version",
@@ -115,11 +119,11 @@ internal static class CommandLineParser
     };
     private static readonly HashSet<string> VerifyOptions = new(StringComparer.Ordinal)
     {
-        RepoRootOption, "--manifest", "--packages-dir", "--offline", "--mode",
+        RepoRootOption, ManifestOption, "--packages-dir", "--offline", ModeOption,
     };
     private static readonly HashSet<string> ProvisionOptions = new(StringComparer.Ordinal)
     {
-        RepoRootOption, "--manifest", "--packages-dir",
+        RepoRootOption, ManifestOption, "--packages-dir",
     };
     private static readonly HashSet<string> VerifySp220ScopeOptions = new(StringComparer.Ordinal)
     {
@@ -127,7 +131,7 @@ internal static class CommandLineParser
     };
     private static readonly HashSet<string> VerifyCentralPackagesOptions = new(StringComparer.Ordinal)
     {
-        RepositoryRootOption, RepoRootOption, "--mode",
+        RepositoryRootOption, RepoRootOption, ModeOption,
     };
     private static readonly HashSet<string> VerifyPackageProjectsOptionNames = new(StringComparer.Ordinal)
     {
@@ -135,7 +139,7 @@ internal static class CommandLineParser
     };
     private static readonly HashSet<string> VerifyProfileOptionNames = new(StringComparer.Ordinal)
     {
-        RepoRootOption, "--profile", "--format", "--failures-only",
+        RepoRootOption, "--profile", FormatOption, FailuresOnlyOption,
     };
 
     public static RepositoryCheckCommand Parse(string[] args)
@@ -237,19 +241,19 @@ internal static class CommandLineParser
             switch (args[i])
             {
                 case RepoRootOption or RepositoryRootOption: root = args[i + 1]; break;
-                case "--mode" when Enum.TryParse<PackageGraphMode>(args[i + 1], true, out var parsed): mode = parsed; break;
-                case "--mode": throw new CommandLineException("Option '--mode' must be 'current' or 'release'.");
+                case ModeOption when Enum.TryParse<PackageGraphMode>(args[i + 1], true, out var parsed): mode = parsed; break;
+                case ModeOption: throw new CommandLineException("Option '--mode' must be 'current' or 'release'.");
                 case "--configuration": configuration = args[i + 1]; break;
                 case "--package-version": version = args[i + 1]; break;
                 case OutputOption: output = args[i + 1]; break;
-                case "--manifest": manifest = args[i + 1]; break;
+                case ManifestOption: manifest = args[i + 1]; break;
                 default: throw new CommandLineException($"Unknown pack-packages option '{args[i]}'.");
             }
         }
         root = Path.GetFullPath(root ?? Directory.GetCurrentDirectory());
         if (!Directory.Exists(root) || mode is null || configuration is not ("Release" or "Debug") || string.IsNullOrWhiteSpace(version) || string.IsNullOrWhiteSpace(output) || string.IsNullOrWhiteSpace(manifest))
             throw new CommandLineException("pack-packages requires valid '--mode', '--configuration', '--package-version', '--output', and '--manifest'.");
-        return new(root, mode.Value, configuration, version, ResolveWithinRoot(root, output, OutputOption), ResolveWithinRoot(root, manifest, "--manifest"));
+        return new(root, mode.Value, configuration, version, ResolveWithinRoot(root, output, OutputOption), ResolveWithinRoot(root, manifest, ManifestOption));
     }
 
     private static RunConsumersCommandOptions ParseRunConsumers(ReadOnlySpan<string> args)
@@ -267,7 +271,7 @@ internal static class CommandLineParser
                 case "--set": set = args[i + 1]; break;
                 case "--package-directory": packages = args[i + 1]; break;
                 case "--package-version": version = args[i + 1]; break;
-                case "--manifest": manifest = args[i + 1]; break;
+                case ManifestOption: manifest = args[i + 1]; break;
                 case "--category": category = args[i + 1]; break;
                 case "--scenario": scenario = args[i + 1]; break;
                 case "--exclude-category": excludeCategory = args[i + 1]; break;
@@ -283,7 +287,7 @@ internal static class CommandLineParser
         if (!Directory.Exists(root)) throw new CommandLineException($"Repository root does not exist: {root}.");
         if (set != "current") throw new CommandLineException("Option '--set' must be 'current'.");
         if (string.IsNullOrWhiteSpace(packages) || string.IsNullOrWhiteSpace(version)) throw new CommandLineException("run-consumers requires '--package-directory' and '--package-version'.");
-        var resolvedManifest = ResolveWithinRoot(root, manifest, "--manifest");
+        var resolvedManifest = ResolveWithinRoot(root, manifest, ManifestOption);
         if (category is not null
             && (category.Length == 0
                 || category.Any(character => character is not (>= 'a' and <= 'z' or >= '0' and <= '9' or '-'))))
@@ -353,7 +357,7 @@ internal static class CommandLineParser
         for (var i = 0; i < args.Length; i += 2)
         {
             if (i + 1 >= args.Length) throw new CommandLineException($"Option '{args[i]}' requires a value.");
-            switch (args[i]) { case "--tag": tag = args[i + 1]; break; case "--package-directory" or "--packages": packages = args[i + 1]; break; case "--mode" when Enum.TryParse<PackageGraphMode>(args[i + 1], true, out var parsed): mode = parsed; break; default: throw new CommandLineException($"Unknown release-version option '{args[i]}'."); }
+            switch (args[i]) { case "--tag": tag = args[i + 1]; break; case "--package-directory" or "--packages": packages = args[i + 1]; break; case ModeOption when Enum.TryParse<PackageGraphMode>(args[i + 1], true, out var parsed): mode = parsed; break; default: throw new CommandLineException($"Unknown release-version option '{args[i]}'."); }
         }
         var root = Path.GetFullPath(Directory.GetCurrentDirectory());
         if (tag is null || packages is null) throw new CommandLineException("Release version requires '--tag' and '--package-directory'.");
@@ -366,7 +370,7 @@ internal static class CommandLineParser
         for (var i = 0; i < args.Length; i += 2)
         {
             if (i + 1 >= args.Length) throw new CommandLineException($"Option '{args[i]}' requires a value.");
-            switch (args[i]) { case "--baseline": baseline = args[i + 1]; break; case "--packages": packages = args[i + 1]; break; case "--mode" when Enum.TryParse<PackageGraphMode>(args[i + 1], true, out var parsed): mode = parsed; break; default: throw new CommandLineException($"Unknown ownership option '{args[i]}'."); }
+            switch (args[i]) { case "--baseline": baseline = args[i + 1]; break; case "--packages": packages = args[i + 1]; break; case ModeOption when Enum.TryParse<PackageGraphMode>(args[i + 1], true, out var parsed): mode = parsed; break; default: throw new CommandLineException($"Unknown ownership option '{args[i]}'."); }
         }
         var root = Path.GetFullPath(Directory.GetCurrentDirectory());
         if (baseline is null || packages is null) throw new CommandLineException("Ownership requires '--baseline' and '--packages'.");
@@ -388,8 +392,8 @@ internal static class CommandLineParser
                 case "--graph": graph = value; break;
                 case "--package-directory" or "--packages": packages = value; break;
                 case "--report": report = value; break;
-                case "--mode" when Enum.TryParse<PackageGraphMode>(value, true, out var parsed): mode = parsed; break;
-                case "--mode": throw new CommandLineException("Option '--mode' must be 'current' or 'release'.");
+                case ModeOption when Enum.TryParse<PackageGraphMode>(value, true, out var parsed): mode = parsed; break;
+                case ModeOption: throw new CommandLineException("Option '--mode' must be 'current' or 'release'.");
                 default: throw new CommandLineException($"Unknown option '{option}'.");
             }
         }
@@ -429,8 +433,8 @@ internal static class CommandLineParser
                 case RepoRootOption or RepositoryRootOption: root = value; break;
                 case "--graph": graph = value; break;
                 case "--packages": packages = value; break;
-                case "--mode" when Enum.TryParse<PackageGraphMode>(value, true, out var parsed): mode = parsed; break;
-                case "--mode": throw new CommandLineException("Option '--mode' must be 'current' or 'release'.");
+                case ModeOption when Enum.TryParse<PackageGraphMode>(value, true, out var parsed): mode = parsed; break;
+                case ModeOption: throw new CommandLineException("Option '--mode' must be 'current' or 'release'.");
                 default: throw new CommandLineException($"Unknown option '{option}'.");
             }
         }
@@ -504,7 +508,7 @@ internal static class CommandLineParser
             throw new CommandLineException("Missing required option '--repository-root'.");
         }
 
-        var mode = values.GetValueOrDefault("--mode") ?? "current";
+        var mode = values.GetValueOrDefault(ModeOption) ?? "current";
         if (!Enum.TryParse<CentralPackageValidationMode>(mode, ignoreCase: true, out var parsedMode))
         {
             throw new CommandLineException("Option '--mode' must be 'current' or 'release'.");
@@ -552,10 +556,10 @@ internal static class CommandLineParser
     {
         var values = ParseOptions(args, VerifyOptions);
         var root = RequireRoot(values);
-        var manifest = ResolveContainedInput(root, Require(values, "--manifest"), "--manifest");
+        var manifest = ResolveContainedInput(root, Require(values, ManifestOption), ManifestOption);
         var packages = ResolveContainedInput(root, Require(values, "--packages-dir"), "--packages-dir");
         var offline = values.ContainsKey("--offline");
-        var modeName = values.GetValueOrDefault("--mode") ?? "full";
+        var modeName = values.GetValueOrDefault(ModeOption) ?? "full";
         if (!Enum.TryParse<BaselineVerificationMode>(modeName, ignoreCase: true, out var mode))
         {
             throw new CommandLineException("Option '--mode' must be 'full' or 'integrity'.");
@@ -569,7 +573,7 @@ internal static class CommandLineParser
         var root = RequireRoot(values);
         return new ProvisionBaselineOptions(
             root,
-            ResolveContainedInput(root, Require(values, "--manifest"), "--manifest"),
+            ResolveContainedInput(root, Require(values, ManifestOption), ManifestOption),
             ResolveContainedInput(root, Require(values, "--packages-dir"), "--packages-dir"));
     }
 
@@ -593,7 +597,7 @@ internal static class CommandLineParser
                 throw new CommandLineException($"Duplicate option '{option}'.");
             }
 
-            if (option == "--failures-only")
+            if (option == FailuresOnlyOption)
             {
                 failuresOnly = true;
                 continue;
@@ -613,7 +617,7 @@ internal static class CommandLineParser
                 case "--profile":
                     profile = value;
                     break;
-                case "--format":
+                case FormatOption:
                     format = value switch
                     {
                         "text" => ProfileOutputFormat.Text,
@@ -658,8 +662,8 @@ internal static class CommandLineParser
             RequireOptionalRoot(values.GetValueOrDefault(RepoRootOption)),
             RequireAgentEpic(Require(values, "--epic")),
             RequireAgentTask(Require(values, "--task")),
-            ParseProfileFormat(values.GetValueOrDefault("--format") ?? "text"),
-            values.ContainsKey("--failures-only"));
+            ParseProfileFormat(values.GetValueOrDefault(FormatOption) ?? "text"),
+            values.ContainsKey(FailuresOnlyOption));
     }
 
     private static AgentEvidenceOptions ParseAgentEvidence(ReadOnlySpan<string> args)
@@ -678,9 +682,9 @@ internal static class CommandLineParser
         bool formatRequired,
         bool jsonOnly)
     {
-        var allowed = new HashSet<string>(StringComparer.Ordinal) { "--epic", RepoRootOption, "--format" };
+        var allowed = new HashSet<string>(StringComparer.Ordinal) { "--epic", RepoRootOption, FormatOption };
         if (allowTask) allowed.Add("--task");
-        if (allowFailuresOnly) allowed.Add("--failures-only");
+        if (allowFailuresOnly) allowed.Add(FailuresOnlyOption);
         var values = new Dictionary<string, string?>(StringComparer.Ordinal);
         for (var index = 0; index < args.Length; index++)
         {
@@ -695,7 +699,7 @@ internal static class CommandLineParser
                 throw new CommandLineException($"Duplicate option '{option}'.");
             }
 
-            if (option == "--failures-only")
+            if (option == FailuresOnlyOption)
             {
                 continue;
             }
@@ -706,7 +710,7 @@ internal static class CommandLineParser
             }
 
             var value = args[index];
-            if (option == "--format")
+            if (option == FormatOption)
             {
                 if (jsonOnly && value != "json")
                 {
@@ -732,7 +736,7 @@ internal static class CommandLineParser
             throw new CommandLineException("Missing required option '--task'.");
         }
 
-        if (formatRequired && !values.ContainsKey("--format"))
+        if (formatRequired && !values.ContainsKey(FormatOption))
         {
             throw new CommandLineException("Missing required option '--format'.");
         }
