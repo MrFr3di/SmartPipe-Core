@@ -146,7 +146,7 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
                 if (!readResult.HasRecord)
                     break;
 
-                T value = default;
+                T value = default!;
                 try
                 {
                     value = csv.GetRecord<T>();
