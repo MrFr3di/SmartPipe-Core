@@ -19,8 +19,8 @@ namespace SmartPipe.RepositoryChecks;
 
 internal static class RepositoryCommandExecutor
 {
-    private const string DotNetExecutable = DotNetExecutable;
-    private const string GitExecutable = GitExecutable;
+    private const string DotNetExecutable = "dotnet";
+    private const string GitExecutable = "git";
     internal static async Task<int> ExecuteAsync(
         RepositoryCheckCommand command,
         ProcessRunner runner,
