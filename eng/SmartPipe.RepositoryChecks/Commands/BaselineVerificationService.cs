@@ -412,99 +412,148 @@ internal sealed class BaselineVerificationService
         IReadOnlyList<string> requiredEvents,
         string branch)
     {
+        if (!TryReadWorkflowPolicy(path, out var lines))
+        {
+            return false;
+        }
+
+        var onIndex = FindTopLevelSection(lines, "on:");
+        return onIndex >= 0
+            && requiredEvents.All(requiredEvent =>
+                WorkflowEventContainsBranch(lines, onIndex, requiredEvent, branch));
+    }
+
+    private static bool TryReadWorkflowPolicy(string path, out string[] lines)
+    {
+        lines = [];
         if (!File.Exists(path) || new FileInfo(path).Length > 1024 * 1024)
         {
             return false;
         }
 
-        var found = requiredEvents.ToDictionary(static item => item, static _ => false, StringComparer.Ordinal);
-        string? currentEvent = null;
-        var inOn = false;
-        string? branchListEvent = null;
-        var lineCount = 0;
+        var collected = new List<string>();
         foreach (var rawLine in File.ReadLines(path))
         {
-            if (++lineCount > 10_000 || rawLine.Contains('\t', StringComparison.Ordinal))
+            if (collected.Count >= 10_000 || rawLine.Contains('\t', StringComparison.Ordinal))
             {
                 return false;
             }
 
-            var line = StripYamlComment(rawLine).TrimEnd();
+            collected.Add(StripYamlComment(rawLine).TrimEnd());
+        }
+
+        lines = collected.ToArray();
+        return true;
+    }
+
+    private static int FindTopLevelSection(IReadOnlyList<string> lines, string header)
+    {
+        for (var index = 0; index < lines.Count; index++)
+        {
+            var line = lines[index];
+            if (line.Length != 0 && GetIndent(line) == 0 && string.Equals(line, header, StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool WorkflowEventContainsBranch(
+        IReadOnlyList<string> lines,
+        int onIndex,
+        string requiredEvent,
+        string branch)
+    {
+        var eventHeader = $"{requiredEvent}:";
+        for (var index = onIndex + 1; index < lines.Count; index++)
+        {
+            var line = lines[index];
             if (line.Length == 0)
             {
                 continue;
             }
 
-            var indent = line.Length - line.TrimStart().Length;
-            var content = line[indent..];
+            var indent = GetIndent(line);
             if (indent == 0)
             {
-                inOn = content == "on:";
-                currentEvent = null;
-                branchListEvent = null;
-                continue;
+                break;
             }
 
-            if (!inOn)
+            if (indent == 2 && string.Equals(line[2..], eventHeader, StringComparison.Ordinal))
             {
-                continue;
-            }
-
-            if (indent == 2 && content.EndsWith(':') && !content.StartsWith('-'))
-            {
-                currentEvent = content[..^1];
-                branchListEvent = null;
-                continue;
-            }
-
-            if (indent <= 2)
-            {
-                currentEvent = null;
-                branchListEvent = null;
-                continue;
-            }
-
-            if (currentEvent is null || !found.ContainsKey(currentEvent))
-            {
-                continue;
-            }
-
-            if (indent == 4 && content.StartsWith("branches:", StringComparison.Ordinal))
-            {
-                var value = content["branches:".Length..].Trim();
-                if (value.Length == 0)
-                {
-                    branchListEvent = currentEvent;
-                }
-                else if (ParseInlineBranches(value).Contains(branch, StringComparer.Ordinal))
-                {
-                    found[currentEvent] = true;
-                }
-
-                continue;
-            }
-
-            if (indent == 6
-                && branchListEvent is not null
-                && content.StartsWith("- ", StringComparison.Ordinal))
-            {
-                var value = Unquote(content[2..].Trim());
-                if (string.Equals(value, branch, StringComparison.Ordinal))
-                {
-                    found[branchListEvent] = true;
-                }
-
-                continue;
-            }
-
-            if (indent <= 4)
-            {
-                branchListEvent = null;
+                return EventBranchFilterContains(lines, index + 1, branch);
             }
         }
 
-        return found.Values.All(static value => value);
+        return false;
     }
+
+    private static bool EventBranchFilterContains(
+        IReadOnlyList<string> lines,
+        int startIndex,
+        string branch)
+    {
+        for (var index = startIndex; index < lines.Count; index++)
+        {
+            var line = lines[index];
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            var indent = GetIndent(line);
+            if (indent <= 2)
+            {
+                break;
+            }
+
+            if (indent != 4 || !line[4..].StartsWith("branches:", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var value = line[(4 + "branches:".Length)..].Trim();
+            return value.Length != 0
+                ? ParseInlineBranches(value).Contains(branch, StringComparer.Ordinal)
+                : BlockBranchFilterContains(lines, index + 1, branch);
+        }
+
+        return false;
+    }
+
+    private static bool BlockBranchFilterContains(
+        IReadOnlyList<string> lines,
+        int startIndex,
+        string branch)
+    {
+        for (var index = startIndex; index < lines.Count; index++)
+        {
+            var line = lines[index];
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            var indent = GetIndent(line);
+            if (indent <= 4)
+            {
+                break;
+            }
+
+            if (indent == 6
+                && line[6..].StartsWith("- ", StringComparison.Ordinal)
+                && string.Equals(Unquote(line[8..].Trim()), branch, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static int GetIndent(string line) => line.Length - line.TrimStart().Length;
 
     private static IEnumerable<string> ParseInlineBranches(string value)
     {
