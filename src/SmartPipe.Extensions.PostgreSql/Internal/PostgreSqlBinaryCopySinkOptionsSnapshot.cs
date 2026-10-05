@@ -8,12 +8,12 @@ internal sealed record PostgreSqlBinaryCopySinkOptionsSnapshot(string OperationN
         ArgumentNullException.ThrowIfNull(options);
         var operationName = PostgreSqlOperationName.Validate(
             options.OperationName,
-            $"{nameof(options)}.{nameof(options.OperationName)}");
+            nameof(options));
 
         if (options.MaxRowsPerBatch <= 0)
         {
             throw new ArgumentOutOfRangeException(
-                $"{nameof(options)}.{nameof(options.MaxRowsPerBatch)}",
+                nameof(options),
                 options.MaxRowsPerBatch,
                 PostgreSqlErrorMessages.MaxRowsPerBatchPositive);
         }
