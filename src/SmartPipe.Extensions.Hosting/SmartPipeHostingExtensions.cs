@@ -18,7 +18,8 @@ public static class SmartPipeHostingExtensions
         Action<SmartPipeHostedPipelineOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(registration);
-        ArgumentNullException.ThrowIfNull(registration.Services);
+        if (registration.Services is null)
+            throw new ArgumentException("Hosted registration services must not be null.", nameof(registration));
 
         var options = new SmartPipeHostedPipelineOptions();
         configure?.Invoke(options);
