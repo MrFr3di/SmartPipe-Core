@@ -280,15 +280,14 @@ internal sealed class DocumentationVerificationService
             return;
         }
 
-        foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
+        foreach (var package in graph.Packages.Where(package =>
+                     package.Lifecycle != PackageLifecycle.Planned
+                     && !packageSelection.Contains($"`{package.Id}`", StringComparison.Ordinal)))
         {
-            if (!packageSelection.Contains($"`{package.Id}`", StringComparison.Ordinal))
-            {
-                violations.Add(new(
-                    "SPDOC018",
-                    relativePath,
-                    $"getting-started package selection is stale; release package is not named: {package.Id}"));
-            }
+            violations.Add(new(
+                "SPDOC018",
+                relativePath,
+                $"getting-started package selection is stale; release package is not named: {package.Id}"));
         }
     }
 
@@ -328,16 +327,15 @@ internal sealed class DocumentationVerificationService
         }
 
         var content = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-        foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
+        foreach (var candidate in graph.Packages
+                     .Where(package => package.Lifecycle != PackageLifecycle.Planned)
+                     .Select(package => (Package: package, ExpectedRow: BuildPackageReferenceRow(package)))
+                     .Where(candidate => !content.Contains(candidate.ExpectedRow, StringComparison.Ordinal)))
         {
-            var expectedRow = BuildPackageReferenceRow(package);
-            if (!content.Contains(expectedRow, StringComparison.Ordinal))
-            {
-                violations.Add(new(
-                    "SPDOC007",
-                    relativePath,
-                    $"package graph projection is stale for {package.Id}; expected row: {expectedRow}"));
-            }
+            violations.Add(new(
+                "SPDOC007",
+                relativePath,
+                $"package graph projection is stale for {candidate.Package.Id}; expected row: {candidate.ExpectedRow}"));
         }
     }
 
@@ -454,15 +452,13 @@ internal sealed class DocumentationVerificationService
     {
         foreach (var package in graph.Packages.Where(package =>
                      package.Lifecycle != PackageLifecycle.Planned
-                     && package.BaselineVersion is null))
+                     && package.BaselineVersion is null
+                     && !currentReleaseSection.Contains($"`{package.Id}`", StringComparison.Ordinal)))
         {
-            if (!currentReleaseSection.Contains($"`{package.Id}`", StringComparison.Ordinal))
-            {
-                violations.Add(new(
-                    "SPDOC016",
-                    changelogRelativePath,
-                    $"first-release package must be explicitly named in the current release section: {package.Id}"));
-            }
+            violations.Add(new(
+                "SPDOC016",
+                changelogRelativePath,
+                $"first-release package must be explicitly named in the current release section: {package.Id}"));
         }
     }
 
@@ -535,15 +531,13 @@ internal sealed class DocumentationVerificationService
                 $"../reference/compatibility/{baselineVersions[0]}-to-{releaseVersion}.md");
         }
 
-        foreach (var target in requiredCrossLinks)
+        foreach (var target in requiredCrossLinks.Where(target =>
+                     !releaseNotes.Contains($"({target})", StringComparison.Ordinal)))
         {
-            if (!releaseNotes.Contains($"({target})", StringComparison.Ordinal))
-            {
-                violations.Add(new(
-                    "SPDOC017",
-                    releaseRelativePath,
-                    $"release notes must cross-link release detail/migration/compatibility target: {target}"));
-            }
+            violations.Add(new(
+                "SPDOC017",
+                releaseRelativePath,
+                $"release notes must cross-link release detail/migration/compatibility target: {target}"));
         }
     }
 
@@ -627,44 +621,64 @@ internal sealed class DocumentationVerificationService
 
             var content = await File.ReadAllTextAsync(fullPath, cancellationToken).ConfigureAwait(false);
             var sourcePath = Path.GetRelativePath(root, fullPath).Replace('\\', '/');
+            ValidateSelfRepositoryBlobMainTargets(root, sourcePath, content, violations);
+            ValidateRelativeMarkdownTargets(root, fullPath, sourcePath, content, violations);
+        }
+    }
 
-            foreach (var rawTarget in EnumerateSelfRepositoryBlobMainTargets(content))
+    private static void ValidateSelfRepositoryBlobMainTargets(
+        string root,
+        string sourcePath,
+        string content,
+        ICollection<DocumentationViolation> violations)
+    {
+        foreach (var rawTarget in EnumerateSelfRepositoryBlobMainTargets(content))
+        {
+            var target = Uri.UnescapeDataString(rawTarget);
+            var targetPath = Resolve(root, target);
+            if (IsRepositoryLocalTarget(root, targetPath) && File.Exists(targetPath))
             {
-                var target = Uri.UnescapeDataString(rawTarget);
-                var targetPath = Resolve(root, target);
-
-                if (!IsRepositoryLocalTarget(root, targetPath) || !File.Exists(targetPath))
-                {
-                    violations.Add(new(
-                        "SPDOC012",
-                        sourcePath,
-                        $"self-repository blob/main link must resolve in the current checkout: {target}"));
-                }
+                continue;
             }
 
-            foreach (var rawTarget in EnumerateRelativeMarkdownTargets(content))
+            violations.Add(new(
+                "SPDOC012",
+                sourcePath,
+                $"self-repository blob/main link must resolve in the current checkout: {target}"));
+        }
+    }
+
+    private static void ValidateRelativeMarkdownTargets(
+        string root,
+        string fullPath,
+        string sourcePath,
+        string content,
+        ICollection<DocumentationViolation> violations)
+    {
+        var sourceDirectory = Path.GetDirectoryName(fullPath)
+            ?? throw new InvalidOperationException($"Documentation path has no directory: {sourcePath}");
+
+        foreach (var rawTarget in EnumerateRelativeMarkdownTargets(content))
+        {
+            var target = NormalizeRelativeMarkdownTarget(rawTarget);
+            if (target.Length == 0)
             {
-                var target = NormalizeRelativeMarkdownTarget(rawTarget);
-                if (target.Length == 0)
-                {
-                    continue;
-                }
-
-                var sourceDirectory = Path.GetDirectoryName(fullPath)
-                    ?? throw new InvalidOperationException($"Documentation path has no directory: {sourcePath}");
-                var targetPath = Path.GetFullPath(
-                    target.Replace('/', Path.DirectorySeparatorChar),
-                    sourceDirectory);
-
-                if (!IsRepositoryLocalTarget(root, targetPath)
-                    || (!File.Exists(targetPath) && !Directory.Exists(targetPath)))
-                {
-                    violations.Add(new(
-                        "SPDOC013",
-                        sourcePath,
-                        $"relative documentation link must resolve in the current checkout: {rawTarget}"));
-                }
+                continue;
             }
+
+            var targetPath = Path.GetFullPath(
+                target.Replace('/', Path.DirectorySeparatorChar),
+                sourceDirectory);
+            if (IsRepositoryLocalTarget(root, targetPath)
+                && (File.Exists(targetPath) || Directory.Exists(targetPath)))
+            {
+                continue;
+            }
+
+            violations.Add(new(
+                "SPDOC013",
+                sourcePath,
+                $"relative documentation link must resolve in the current checkout: {rawTarget}"));
         }
     }
 
