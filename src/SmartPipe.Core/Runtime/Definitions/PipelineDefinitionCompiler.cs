@@ -32,7 +32,7 @@ internal static class PipelineDefinitionCompiler
         PipelineComponent<IPipelineSink<TOutput>>? sink)
     {
         ArgumentNullException.ThrowIfNull(state);
-        PipelineKeyGuard.ThrowIfInvalid(state.Key, "pipelineKey");
+        PipelineKeyGuard.ThrowIfInvalid(state.Key, nameof(state));
         if (state.Source is null)
             throw new ArgumentException("Definition source must not be null.", nameof(state));
         if (state.RuntimeOptions is null)
