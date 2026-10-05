@@ -33,9 +33,9 @@ internal sealed record CsvSourceOptionsSnapshot(
             options.MaxFieldSizeCharacters,
             options.MaxColumnCount,
             options.BufferSize);
-        ValidateEnum(options.InvalidRecordBehavior, nameof(options.InvalidRecordBehavior));
-        ValidateEnum(options.MissingFieldBehavior, nameof(options.MissingFieldBehavior));
-        ValidateEnum(options.HeaderValidationBehavior, nameof(options.HeaderValidationBehavior));
+        ValidateEnum(options.InvalidRecordBehavior, nameof(options.InvalidRecordBehavior), nameof(options));
+        ValidateEnum(options.MissingFieldBehavior, nameof(options.MissingFieldBehavior), nameof(options));
+        ValidateEnum(options.HeaderValidationBehavior, nameof(options.HeaderValidationBehavior), nameof(options));
         if (options.InvalidRecordBehavior == CsvInvalidRecordBehavior.SkipAndLog && !loggerAvailable)
             throw new ArgumentException(
                 "SkipAndLog requires a borrowed ILoggerFactory.",
@@ -83,11 +83,11 @@ internal sealed record CsvSourceOptionsSnapshot(
             throw new ArgumentOutOfRangeException(nameof(bufferSize));
     }
 
-    private static void ValidateEnum<TEnum>(TEnum value, string parameterName)
+    private static void ValidateEnum<TEnum>(TEnum value, string memberName, string parameterName)
         where TEnum : struct, Enum
     {
         if (!Enum.IsDefined(value))
-            throw new ArgumentOutOfRangeException(parameterName);
+            throw new ArgumentOutOfRangeException(parameterName, value, $"{memberName} is not defined.");
     }
 
     internal static CultureInfo CloneCulture(CultureInfo culture)
@@ -157,14 +157,15 @@ internal sealed record CsvSinkOptionsSnapshot(
             options.MaxRecordSizeCharacters,
             options.BufferSize);
         if (!Enum.IsDefined(options.OpenMode))
-            throw new ArgumentOutOfRangeException(nameof(options.OpenMode));
+            throw new ArgumentOutOfRangeException(nameof(options), options.OpenMode, "OpenMode is not defined.");
         if (!Enum.IsDefined(options.FormulaInjectionMode))
-            throw new ArgumentOutOfRangeException(nameof(options.FormulaInjectionMode));
-        ArgumentNullException.ThrowIfNull(options.NewLine);
+            throw new ArgumentOutOfRangeException(nameof(options), options.FormulaInjectionMode, "FormulaInjectionMode is not defined.");
+        if (options.NewLine is null)
+            throw new ArgumentException("NewLine must not be null.", nameof(options));
         if (options.NewLine is not ("\r\n" or "\n" or "\r"))
             throw new ArgumentException("NewLine must be CRLF, LF, or CR.", nameof(options));
         if (options.FlushEveryRecords <= 0)
-            throw new ArgumentOutOfRangeException(nameof(options.FlushEveryRecords));
+            throw new ArgumentOutOfRangeException(nameof(options), options.FlushEveryRecords, "FlushEveryRecords must be positive.");
 
         return new(
             options.Delimiter,
