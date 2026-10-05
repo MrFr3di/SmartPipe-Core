@@ -15,7 +15,7 @@ internal sealed class PipelineActivationLedger
         if (!Enum.IsDefined(lease.Ownership))
         {
             throw new ArgumentOutOfRangeException(
-                nameof(lease.Ownership),
+                nameof(lease),
                 lease.Ownership,
                 "Component ownership is invalid.");
         }
