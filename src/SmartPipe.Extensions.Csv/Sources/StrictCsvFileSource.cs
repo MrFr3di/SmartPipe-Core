@@ -162,15 +162,15 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
         }
         catch (OperationCanceledException exception)
         {
-            return new(recordIndex, HasRecord: false, exception);
+            return new(recordIndex, HasRecord: false, Failure: exception);
         }
         catch (Exception exception) when (exception is CsvHelperException or InvalidDataException)
         {
-            return new(recordIndex, HasRecord: false, CreateHeaderException(exception));
+            return new(recordIndex, HasRecord: false, Failure: CreateHeaderException(exception));
         }
         catch (Exception exception)
         {
-            return new(recordIndex, HasRecord: false, exception);
+            return new(recordIndex, HasRecord: false, Failure: exception);
         }
     }
 
@@ -190,7 +190,7 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
         }
         catch (Exception exception)
         {
-            return new(recordIndex, HasRecord: false, Envelope: null, exception);
+            return new(recordIndex, HasRecord: false, Envelope: null, Failure: exception);
         }
 
         if (!readResult.HasRecord)
@@ -209,7 +209,7 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
                 return new(
                     recordIndex,
                     HasRecord: true,
-                    ProcessingEnvelope<T>.Create(value),
+                    Envelope: ProcessingEnvelope<T>.Create(value),
                     Failure: null);
             }
 
@@ -220,11 +220,11 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
                     recordIndex,
                     HasRecord: true,
                     Envelope: null,
-                    CreateDataException(recordIndex, nullRecord, MappingCategory));
+                    Failure: CreateDataException(recordIndex, nullRecord, MappingCategory));
         }
         catch (OperationCanceledException exception)
         {
-            return new(recordIndex, HasRecord: true, Envelope: null, exception);
+            return new(recordIndex, HasRecord: true, Envelope: null, Failure: exception);
         }
         catch (Exception exception) when (exception is CsvHelperException or InvalidDataException)
         {
@@ -234,11 +234,11 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
                     recordIndex,
                     HasRecord: true,
                     Envelope: null,
-                    CreateDataException(recordIndex, exception, MappingCategory));
+                    Failure: CreateDataException(recordIndex, exception, MappingCategory));
         }
         catch (Exception exception)
         {
-            return new(recordIndex, HasRecord: true, Envelope: null, exception);
+            return new(recordIndex, HasRecord: true, Envelope: null, Failure: exception);
         }
     }
 
