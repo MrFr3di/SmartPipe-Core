@@ -21,8 +21,8 @@ function Resolve-ArtifactFile([string]$RelativePath) {
     }
     $full = [IO.Path]::GetFullPath([IO.Path]::Combine($root, $RelativePath))
     $prefix = $root.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
-    if (!$full.StartsWith($prefix, [StringComparison]::Ordinal)) { throw "Artifact path escapes root: $RelativePath" }
-    if (!(Test-Path -LiteralPath $full -PathType Leaf)) { throw "Artifact file missing: $RelativePath" }
+    if (-not $full.StartsWith($prefix, [StringComparison]::Ordinal)) { throw "Artifact path escapes root: $RelativePath" }
+    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { throw "Artifact file missing: $RelativePath" }
     $item = Get-Item -LiteralPath $full -Force
     while ($null -ne $item) {
         if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Artifact link is forbidden: $RelativePath" }
@@ -75,13 +75,13 @@ $ids = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnor
 $paths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 if (@($manifest.packages).Count -ne $expected.Count -or $expected.Count -eq 0) { throw 'Package inventory does not match the graph.' }
 foreach ($package in $manifest.packages) {
-    if (!$ids.Add($package.id)) { throw "Duplicate package ID: $($package.id)" }
+    if (-not $ids.Add($package.id)) { throw "Duplicate package ID: $($package.id)" }
     if (!$expected.ContainsKey($package.id) -or $package.id -cne $expected[$package.id].id -or $package.publishOrder -ne $expected[$package.id].publishOrder) { throw "Package inventory/order does not match graph: $($package.id)" }
     if ($package.version -cne $ExpectedVersion) { throw "Package version mismatch: $($package.id)" }
     foreach ($extension in @('nupkg', 'snupkg')) {
         $relative = $package."${extension}Path"
         $path = Resolve-ArtifactFile $relative
-        if ($relative -cne "artifacts/packages/$($package.id).$ExpectedVersion.$extension" -or !$paths.Add($relative)) { throw "Unexpected or duplicate artifact path: $relative" }
+        if ($relative -cne "artifacts/packages/$($package.id).$ExpectedVersion.$extension" -or -not $paths.Add($relative)) { throw "Unexpected or duplicate artifact path: $relative" }
         $expectedHash = $package."${extension}Sha256"
         if ($expectedHash -cnotmatch '^[a-f0-9]{64}$' -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expectedHash) { throw "Artifact hash mismatch: $relative" }
         Assert-Archive $path $package.id $ExpectedVersion
