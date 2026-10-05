@@ -490,7 +490,8 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
 
             try
             {
-                _csv?.Dispose();
+                if (_csv is not null)
+                    await _csv.DisposeAsync().ConfigureAwait(false);
             }
             catch (Exception exception)
             {
@@ -499,7 +500,8 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
 
             try
             {
-                _recordWriter?.Dispose();
+                if (_recordWriter is not null)
+                    await _recordWriter.DisposeAsync().ConfigureAwait(false);
             }
             catch (Exception exception)
             {
@@ -544,7 +546,8 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
         _csv = null;
         try
         {
-            csv?.Dispose();
+            if (csv is not null)
+                await csv.DisposeAsync().ConfigureAwait(false);
         }
         catch (Exception exception)
         {
@@ -555,7 +558,8 @@ internal sealed class StrictCsvFileSink<T> : IPipelineSink<T>
         _recordWriter = null;
         try
         {
-            recordWriter?.Dispose();
+            if (recordWriter is not null)
+                await recordWriter.DisposeAsync().ConfigureAwait(false);
         }
         catch (Exception exception)
         {
