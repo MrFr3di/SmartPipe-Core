@@ -10,7 +10,7 @@ namespace SmartPipe.Extensions.Csv;
 
 internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
 {
-    private const string MappingCategory = MappingCategory;
+    private const string MappingCategory = "mapping";
     private readonly string _path;
     private readonly CsvSourceOptionsSnapshot _options;
     private readonly CsvMapRegistration<T> _map;
