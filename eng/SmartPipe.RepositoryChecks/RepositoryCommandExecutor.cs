@@ -500,7 +500,7 @@ internal static class RepositoryCommandExecutor
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
             cancellationToken).ConfigureAwait(false);
         await Console.Out.WriteLineAsync(
-            $"SP220_RELEASE_NOTES_OK version={options.Version} path={Path.GetRelativePath(options.RepositoryRoot, options.OutputPath).Replace('\', '/')}");
+            $"SP220_RELEASE_NOTES_OK version={options.Version} path={Path.GetRelativePath(options.RepositoryRoot, options.OutputPath).Replace('\\', '/')}");
         return ExitCodes.Success;
     }
 
@@ -525,12 +525,10 @@ internal static class RepositoryCommandExecutor
         ListPackagesOptions options,
         CancellationToken cancellationToken)
     {
-        var graph = await new PackageGraphLoader()
-            .LoadAsync(
-                options.RepositoryRoot,
-                "eng/package-graph.json",
-                cancellationToken)
-            .ConfigureAwait(false);
+        var graph = await new PackageGraphLoader().LoadAsync(
+            options.RepositoryRoot,
+            "eng/package-graph.json",
+            cancellationToken).ConfigureAwait(false);
         foreach (var package in graph.Packages.Where(package => package.Lifecycle == options.Lifecycle))
         {
             await Console.Out.WriteLineAsync(package.Id);
