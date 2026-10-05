@@ -138,7 +138,7 @@ public static class SmartPipeDependencyInjectionExtensions
                 ExceptionDispatchInfo.Capture(error).Throw();
             }
 
-            throw new AggregateException([error, .. rollbackErrors]);
+            throw new AggregateException(rollbackErrors.Prepend(error));
         }
     }
 
@@ -318,7 +318,7 @@ public static class SmartPipeDependencyInjectionExtensions
                 ExceptionDispatchInfo.Capture(error).Throw();
             }
 
-            throw new AggregateException([error, .. rollbackErrors]);
+            throw new AggregateException(rollbackErrors.Prepend(error));
         }
     }
 
