@@ -101,20 +101,23 @@ internal static class HttpOptionsSnapshot
     public static HttpSourceOptionsSnapshot Create(HttpSourceOptions? options)
     {
         options ??= new HttpSourceOptions();
-        ArgumentException.ThrowIfNullOrWhiteSpace(options.OperationName);
-        var timeout = ValidateBodyTimeout(options.BodyTimeout, nameof(options.BodyTimeout));
+        if (string.IsNullOrWhiteSpace(options.OperationName))
+            throw new ArgumentException("OperationName must not be empty or whitespace.", nameof(options));
+        var timeout = ValidateBodyTimeout(options.BodyTimeout, nameof(options));
         return new(options.OperationName, timeout, SnapshotResponsePolicy(options.ResponsePolicy));
     }
 
     public static HttpSinkOptionsSnapshot Create(HttpSinkOptions? options)
     {
         options ??= new HttpSinkOptions();
-        ArgumentException.ThrowIfNullOrWhiteSpace(options.OperationName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(options.IdempotencyHeaderName);
+        if (string.IsNullOrWhiteSpace(options.OperationName))
+            throw new ArgumentException("OperationName must not be empty or whitespace.", nameof(options));
+        if (string.IsNullOrWhiteSpace(options.IdempotencyHeaderName))
+            throw new ArgumentException("IdempotencyHeaderName must not be empty or whitespace.", nameof(options));
         if (!HttpRequestValidation.IsRequestHeaderName(options.IdempotencyHeaderName))
             throw new ArgumentException("The idempotency header name must be a valid HTTP token that can be sent as a request header.", nameof(options));
 
-        var timeout = ValidateBodyTimeout(options.BodyTimeout, nameof(options.BodyTimeout));
+        var timeout = ValidateBodyTimeout(options.BodyTimeout, nameof(options));
         return new(
             options.OperationName,
             timeout,
