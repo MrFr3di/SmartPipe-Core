@@ -71,9 +71,10 @@ internal static class CheckRunNormalizer
             throw new ArgumentException($"Unsupported diagnostic schema version: {run.SchemaVersion}.", nameof(run));
         }
 
-        var check = SingleLine(run.Check, nameof(run.Check), MaxIdentityLength);
-        var profile = OptionalSingleLine(run.Profile, nameof(run.Profile), MaxIdentityLength);
-        ArgumentNullException.ThrowIfNull(run.Diagnostics);
+        var check = SingleLine(run.Check, nameof(run.Check), nameof(run), MaxIdentityLength);
+        var profile = OptionalSingleLine(run.Profile, nameof(run.Profile), nameof(run), MaxIdentityLength);
+        if (run.Diagnostics is null)
+            throw new ArgumentException("Diagnostics must not be null.", nameof(run));
 
         var diagnostics = run.Success
             ? []
@@ -98,7 +99,7 @@ internal static class CheckRunNormalizer
             var sorted = new SortedDictionary<string, int>(StringComparer.Ordinal);
             foreach (var pair in run.Counters)
             {
-                var name = SingleLine(pair.Key, "counter name", MaxIdentityLength);
+                var name = SingleLine(pair.Key, "counter name", nameof(run), MaxIdentityLength);
                 if (pair.Value < 0)
                 {
                     throw new ArgumentException("Counter values must be non-negative.", nameof(run));
@@ -125,10 +126,10 @@ internal static class CheckRunNormalizer
     private static CheckDiagnostic NormalizeDiagnostic(CheckDiagnostic diagnostic)
     {
         ArgumentNullException.ThrowIfNull(diagnostic);
-        var code = SingleLine(diagnostic.Code, nameof(diagnostic.Code), MaxCodeLength);
-        var summary = SingleLine(diagnostic.Summary, nameof(diagnostic.Summary), MaxSummaryLength);
-        var path = RelativePath(diagnostic.Path, nameof(diagnostic.Path));
-        var evidencePath = RelativePath(diagnostic.EvidencePath, nameof(diagnostic.EvidencePath));
+        var code = SingleLine(diagnostic.Code, nameof(diagnostic.Code), nameof(diagnostic), MaxCodeLength);
+        var summary = SingleLine(diagnostic.Summary, nameof(diagnostic.Summary), nameof(diagnostic), MaxSummaryLength);
+        var path = RelativePath(diagnostic.Path, nameof(diagnostic.Path), nameof(diagnostic));
+        var evidencePath = RelativePath(diagnostic.EvidencePath, nameof(diagnostic.EvidencePath), nameof(diagnostic));
         if (diagnostic.Line is <= 0)
         {
             throw new ArgumentException("Diagnostic line must be positive.", nameof(diagnostic));
