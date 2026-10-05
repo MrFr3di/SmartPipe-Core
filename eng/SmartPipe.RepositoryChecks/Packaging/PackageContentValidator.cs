@@ -23,33 +23,113 @@ internal sealed class PackageContentValidator
     private static readonly Guid SourceLinkKind = new("CC110556-A091-4D38-9FEC-25AB9A351A6A");
     private readonly NuGetPackageReaderOptions _options = new();
 
-    public async Task<IReadOnlyList<PackageMetadataViolation>> ValidateAsync(PackageNode node, string version, PackageMetadata metadata, string snupkgPath, PackageGraphMode mode, CancellationToken ct)
+    public async Task<IReadOnlyList<PackageMetadataViolation>> ValidateAsync(
+        PackageNode node,
+        string version,
+        PackageMetadata metadata,
+        string snupkgPath,
+        PackageGraphMode mode,
+        CancellationToken ct)
     {
         var errors = new List<PackageMetadataViolation>();
-        void Add(string code, string rule, string? path = null) => errors.Add(new(code, node.Id, rule, path));
-        if (metadata.Snapshot.Id != node.Id || metadata.Snapshot.Version != version) Add("SPMETA001", $"identity must be {node.Id} {version}");
-        if (metadata.Description.Length < 20 || metadata.Description.Equals("Package Description", StringComparison.OrdinalIgnoreCase)) Add("SPMETA002", "description must be non-empty and package-specific");
-        if (metadata.Authors != "SmartPipe" || metadata.Copyright.Length == 0 || metadata.LicenseExpression != "MIT") Add("SPMETA003", "authors/copyright/license metadata is invalid");
-        if (metadata.RepositoryUrl != "https://github.com/MrFr3di/SmartPipe-Core" || metadata.RepositoryType != "git" || !IsCommit(metadata.RepositoryCommit)) Add("SPMETA004", "repository URL/type/40-hex commit is required");
-        if (metadata.Readme != "README.md" || metadata.Icon != "icon.png" || metadata.Tags.Length == 0) Add("SPMETA005", "readme/icon/tags metadata is invalid");
-        if (mode == PackageGraphMode.Release && metadata.ReleaseNotes is null) Add("SPMETA006", "release notes are required in release mode");
+        void Add(string code, string rule, string? path = null) =>
+            errors.Add(new(code, node.Id, rule, path));
 
-        var files = metadata.Snapshot.Assets.Files.Select(x => x.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var required in new[] { "README.md", "icon.png", $"{node.Id}.nuspec", $"lib/net10.0/{node.Id}.dll", $"lib/net10.0/{node.Id}.xml", "_rels/.rels", "[Content_Types].xml" })
-            if (!files.Contains(required)) Add("SPMETA007", "required package content is missing", required);
+        ValidateMetadata(node, version, metadata, mode, Add);
+
+        var files = metadata.Snapshot.Assets.Files
+            .Select(static asset => asset.Path)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        ValidateRequiredContent(node.Id, files, Add);
+        ValidatePackageContent(node.Id, files, Add);
+
+        var dllPath = $"lib/net10.0/{node.Id}.dll";
+        await ValidatePeAsync(metadata, dllPath, Add, ct).ConfigureAwait(false);
+        await ValidateSymbolsAsync(
+            node,
+            version,
+            snupkgPath,
+            metadata.RepositoryCommit,
+            Add,
+            ct).ConfigureAwait(false);
+        return errors;
+    }
+
+    private static void ValidateMetadata(
+        PackageNode node,
+        string version,
+        PackageMetadata metadata,
+        PackageGraphMode mode,
+        Action<string, string, string?> add)
+    {
+        if (metadata.Snapshot.Id != node.Id || metadata.Snapshot.Version != version)
+            add("SPMETA001", $"identity must be {node.Id} {version}");
+        if (metadata.Description.Length < 20
+            || metadata.Description.Equals("Package Description", StringComparison.OrdinalIgnoreCase))
+            add("SPMETA002", "description must be non-empty and package-specific");
+        if (metadata.Authors != "SmartPipe"
+            || metadata.Copyright.Length == 0
+            || metadata.LicenseExpression != "MIT")
+            add("SPMETA003", "authors/copyright/license metadata is invalid");
+        if (metadata.RepositoryUrl != "https://github.com/MrFr3di/SmartPipe-Core"
+            || metadata.RepositoryType != "git"
+            || !IsCommit(metadata.RepositoryCommit))
+            add("SPMETA004", "repository URL/type/40-hex commit is required");
+        if (metadata.Readme != "README.md" || metadata.Icon != "icon.png" || metadata.Tags.Length == 0)
+            add("SPMETA005", "readme/icon/tags metadata is invalid");
+        if (mode == PackageGraphMode.Release && metadata.ReleaseNotes is null)
+            add("SPMETA006", "release notes are required in release mode");
+    }
+
+    private static void ValidateRequiredContent(
+        string packageId,
+        IReadOnlySet<string> files,
+        Action<string, string, string?> add)
+    {
+        var requiredFiles = new[]
+        {
+            "README.md",
+            "icon.png",
+            $"{packageId}.nuspec",
+            $"lib/net10.0/{packageId}.dll",
+            $"lib/net10.0/{packageId}.xml",
+            "_rels/.rels",
+            "[Content_Types].xml",
+        };
+
+        foreach (var required in requiredFiles.Where(required => !files.Contains(required)))
+            add("SPMETA007", "required package content is missing", required);
+    }
+
+    private static void ValidatePackageContent(
+        string packageId,
+        IEnumerable<string> files,
+        Action<string, string, string?> add)
+    {
         foreach (var file in files)
         {
             var lower = file.ToLowerInvariant();
-            if (lower.EndsWith(".cs") || lower.Contains("/obj/") || lower.Contains("/tests/") || lower.EndsWith(".tests.dll") || lower.EndsWith(".test.dll") || lower.EndsWith("packages.lock.json") || lower.Contains(":\\"))
-                Add("SPMETA008", "forbidden source/test/obj/lock/local-path content", file);
-            if ((lower.StartsWith("lib/") || lower.StartsWith("runtimes/")) && !lower.StartsWith("lib/net10.0/")) Add("SPMETA009", "unexpected TFM or RID", file);
-            if (!IsAllowedPackagePath(node.Id, file)) Add("SPMETA017", "package file is outside the exact content allowlist", file);
+            if (IsForbiddenPackageContent(lower))
+                add("SPMETA008", "forbidden source/test/obj/lock/local-path content", file);
+            if (IsUnexpectedTargetPath(lower))
+                add("SPMETA009", "unexpected TFM or RID", file);
+            if (!IsAllowedPackagePath(packageId, file))
+                add("SPMETA017", "package file is outside the exact content allowlist", file);
         }
-        var dllPath = $"lib/net10.0/{node.Id}.dll";
-        await ValidatePeAsync(metadata, dllPath, Add, ct).ConfigureAwait(false);
-        await ValidateSymbolsAsync(node, version, snupkgPath, metadata.RepositoryCommit, Add, ct).ConfigureAwait(false);
-        return errors;
     }
+
+    private static bool IsForbiddenPackageContent(string path) =>
+        path.EndsWith(".cs")
+        || path.Contains("/obj/")
+        || path.Contains("/tests/")
+        || path.EndsWith(".tests.dll")
+        || path.EndsWith(".test.dll")
+        || path.EndsWith("packages.lock.json")
+        || path.Contains(":\\");
+
+    private static bool IsUnexpectedTargetPath(string path) =>
+        (path.StartsWith("lib/") || path.StartsWith("runtimes/"))
+        && !path.StartsWith("lib/net10.0/");
 
     private async Task ValidatePeAsync(PackageMetadata metadata, string dllPath, Action<string, string, string?> add, CancellationToken ct)
     {
