@@ -19,6 +19,8 @@ namespace SmartPipe.RepositoryChecks;
 
 internal static class RepositoryCommandExecutor
 {
+    private const string DotNetExecutable = DotNetExecutable;
+    private const string GitExecutable = GitExecutable;
     internal static async Task<int> ExecuteAsync(
         RepositoryCheckCommand command,
         ProcessRunner runner,
@@ -61,12 +63,12 @@ internal static class RepositoryCommandExecutor
         using var httpClient = new HttpClient();
         var fetcher = new NuGetPackageFetcher(httpClient, new NuGetServiceIndexClient(httpClient));
         var packageReader = new NuGetPackageReader();
-        var signatureVerifier = new NuGetPackageSignatureVerifier(runner, "dotnet");
-        var repositoryReader = new BaselineRepositorySnapshotReader(runner, "dotnet");
+        var signatureVerifier = new NuGetPackageSignatureVerifier(runner, DotNetExecutable);
+        var repositoryReader = new BaselineRepositorySnapshotReader(runner, DotNetExecutable);
         var verification = new BaselineVerificationService(
-            runner, "git", signatureVerifier, packageReader, repositoryReader);
+            runner, GitExecutable, signatureVerifier, packageReader, repositoryReader);
         await new BaselineCaptureService(
-            runner, "git", "dotnet", fetcher, signatureVerifier, packageReader,
+            runner, GitExecutable, DotNetExecutable, fetcher, signatureVerifier, packageReader,
             repositoryReader, verification)
             .CaptureAsync(options, cancellationToken)
             .ConfigureAwait(false);
@@ -80,10 +82,10 @@ internal static class RepositoryCommandExecutor
         CancellationToken cancellationToken)
     {
         var packageReader = new NuGetPackageReader();
-        var signatureVerifier = new NuGetPackageSignatureVerifier(runner, "dotnet");
-        var repositoryReader = new BaselineRepositorySnapshotReader(runner, "dotnet");
+        var signatureVerifier = new NuGetPackageSignatureVerifier(runner, DotNetExecutable);
+        var repositoryReader = new BaselineRepositorySnapshotReader(runner, DotNetExecutable);
         var verification = new BaselineVerificationService(
-            runner, "git", signatureVerifier, packageReader, repositoryReader);
+            runner, GitExecutable, signatureVerifier, packageReader, repositoryReader);
         var result = await BaselineCommandOrchestrator.VerifyAsync(
             options,
             async (provision, ct) =>
@@ -134,10 +136,6 @@ internal static class RepositoryCommandExecutor
             selected = manifest.Profiles.FirstOrDefault(item =>
                 string.Equals(item.Name, options.Profile, StringComparison.Ordinal))
                 ?? throw new JsonException($"Profile '{options.Profile}' is not defined.");
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
         }
         catch (JsonException)
         {
@@ -245,7 +243,7 @@ internal static class RepositoryCommandExecutor
         ProcessRunner runner,
         CancellationToken cancellationToken)
     {
-        var result = await new Sp220ScopeVerificationService(runner, "git")
+        var result = await new Sp220ScopeVerificationService(runner, GitExecutable)
             .VerifyAsync(options, cancellationToken)
             .ConfigureAwait(false);
         await Console.Out.WriteLineAsync(result.Format());
