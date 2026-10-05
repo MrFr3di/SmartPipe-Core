@@ -8,12 +8,12 @@ internal sealed record PostgreSqlBinaryCopySourceOptionsSnapshot(string Operatio
         ArgumentNullException.ThrowIfNull(options);
         var operationName = PostgreSqlOperationName.Validate(
             options.OperationName,
-            $"{nameof(options)}.{nameof(options.OperationName)}");
+            nameof(options));
 
         if (options.ExpectedColumnCount is int expectedColumnCount && expectedColumnCount <= 0)
         {
             throw new ArgumentOutOfRangeException(
-                $"{nameof(options)}.{nameof(options.ExpectedColumnCount)}",
+                nameof(options),
                 options.ExpectedColumnCount,
                 PostgreSqlErrorMessages.ExpectedColumnCountPositive);
         }
