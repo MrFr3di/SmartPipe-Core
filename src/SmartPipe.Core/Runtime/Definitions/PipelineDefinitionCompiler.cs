@@ -40,7 +40,7 @@ internal static class PipelineDefinitionCompiler
         if (!Enum.IsDefined(state.LineageMode))
         {
             throw new ArgumentOutOfRangeException(
-                nameof(state.LineageMode),
+                nameof(state),
                 state.LineageMode,
                 "Lineage mode is invalid.");
         }
@@ -95,7 +95,7 @@ internal static class PipelineDefinitionCompiler
             if (!Enum.IsDefined(registration.Reliability))
             {
                 throw new ArgumentOutOfRangeException(
-                    nameof(registration.Reliability),
+                    nameof(state),
                     registration.Reliability,
                     $"Observer reliability at index {index} is invalid.");
             }
@@ -103,7 +103,7 @@ internal static class PipelineDefinitionCompiler
             if (!Enum.IsDefined(registration.FailurePolicy))
             {
                 throw new ArgumentOutOfRangeException(
-                    nameof(registration.FailurePolicy),
+                    nameof(state),
                     registration.FailurePolicy,
                     $"Observer failure policy at index {index} is invalid.");
             }

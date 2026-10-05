@@ -247,14 +247,14 @@ internal sealed class StrictCsvFileSource<T> : IPipelineSource<T>
 
     private async ValueTask EnsureInitializedAsync(CancellationToken cancellationToken)
     {
-        if (_initialized)
+        if (!_initialized)
         {
-            _bridge!.SetDefaultCancellationToken(cancellationToken);
-            return;
+            await InitializeAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await InitializeAsync(cancellationToken).ConfigureAwait(false);
-        _bridge!.SetDefaultCancellationToken(cancellationToken);
+        var bridge = _bridge
+            ?? throw new InvalidOperationException("CSV source initialization did not create its record bridge.");
+        bridge.SetDefaultCancellationToken(cancellationToken);
     }
 
     private async ValueTask<CsvReadResult> ReadNextAsync(

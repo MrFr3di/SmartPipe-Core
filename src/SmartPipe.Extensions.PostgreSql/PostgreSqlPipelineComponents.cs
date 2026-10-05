@@ -34,7 +34,7 @@ public static class PostgreSqlPipelineComponents
     {
         var validatedDataSource = PostgreSqlArguments.NonMultiplexingDataSource(dataSource, PostgreSqlErrorMessages.CopyMultiplexingUnsupported);
         var validatedCommand = PostgreSqlArguments.CopyCommand(copyToCommand, nameof(copyToCommand));
-        ArgumentNullException.ThrowIfNull(rowReader, nameof(rowReader));
+        ArgumentNullException.ThrowIfNull(rowReader);
         var snapshot = PostgreSqlBinaryCopySourceOptionsSnapshot.Create(options);
 
         return PipelineComponent.RuntimeOwned<IPipelineSource<T>>(
@@ -68,7 +68,7 @@ public static class PostgreSqlPipelineComponents
     {
         var validatedDataSource = PostgreSqlArguments.NonMultiplexingDataSource(dataSource, PostgreSqlErrorMessages.CopyMultiplexingUnsupported);
         var validatedCommand = PostgreSqlArguments.CopyCommand(copyFromCommand, nameof(copyFromCommand));
-        ArgumentNullException.ThrowIfNull(rowWriter, nameof(rowWriter));
+        ArgumentNullException.ThrowIfNull(rowWriter);
         var snapshot = PostgreSqlBinaryCopySinkOptionsSnapshot.Create(options);
 
         return PipelineComponent.RuntimeOwned<IPipelineSink<IReadOnlyList<T>>>(
