@@ -32,90 +32,11 @@ internal static class PipelineDefinitionCompiler
         PipelineComponent<IPipelineSink<TOutput>>? sink)
     {
         ArgumentNullException.ThrowIfNull(state);
-        PipelineKeyGuard.ThrowIfInvalid(state.Key, nameof(state));
-        if (state.Source is null)
-            throw new ArgumentException("Definition source must not be null.", nameof(state));
-        if (state.RuntimeOptions is null)
-            throw new ArgumentException("Definition runtime options must not be null.", nameof(state));
-        state.RuntimeOptions.Validate();
 
-        if (!Enum.IsDefined(state.LineageMode))
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(state),
-                state.LineageMode,
-                "Lineage mode is invalid.");
-        }
-
-        var topology = new PipelineStageTopologyEntry[state.Stages.Length];
-        for (var index = 0; index < state.Stages.Length; index++)
-        {
-            var stage = state.Stages[index]
-                ?? throw new ArgumentException(
-                    $"Stage descriptor at index {index} is null.",
-                    nameof(state));
-            PipelineStageKeyGuard.ThrowIfInvalid(stage.Key, nameof(state));
-            if (string.IsNullOrWhiteSpace(stage.Name))
-                throw new ArgumentException($"Stage name at index {index} must not be empty or whitespace.", nameof(state));
-            if (stage.InputType is null)
-                throw new ArgumentException($"Stage input type at index {index} must not be null.", nameof(state));
-            if (stage.OutputType is null)
-                throw new ArgumentException($"Stage output type at index {index} must not be null.", nameof(state));
-            if (stage.FailureOptions is null)
-                throw new ArgumentException($"Stage failure options at index {index} must not be null.", nameof(state));
-            if (stage.Metadata is null)
-                throw new ArgumentException($"Stage metadata at index {index} must not be null.", nameof(state));
-            stage.FailureOptions.Validate();
-
-            topology[index] = new(
-                stage.Key.Value,
-                stage.Name,
-                stage.InputType,
-                stage.OutputType);
-        }
-
-        PipelineStageTopologyValidator.Validate(topology);
-        if (topology.Length > 0 && topology[0].InputType != typeof(TInput))
-        {
-            throw new ArgumentException(
-                $"Stage '{topology[0].StageId}' at index 0 expects input type "
-                + $"'{topology[0].InputType}', but the definition input type is '{typeof(TInput)}'.",
-                nameof(state));
-        }
-
-        var actualOutput = topology.Length == 0 ? typeof(TInput) : topology[^1].OutputType;
-        if (actualOutput != typeof(TOutput))
-        {
-            throw new ArgumentException(
-                $"Definition output type '{typeof(TOutput)}' does not match the final stage output "
-                + $"type '{actualOutput}'.",
-                nameof(state));
-        }
-
-        for (var index = 0; index < state.Observers.Length; index++)
-        {
-            var registration = state.Observers[index]
-                ?? throw new ArgumentException(
-                    $"Observer registration at index {index} is null.",
-                    nameof(state));
-            if (registration.Observer is null)
-                throw new ArgumentException($"Observer at index {index} must not be null.", nameof(state));
-            if (!Enum.IsDefined(registration.Reliability))
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(state),
-                    registration.Reliability,
-                    $"Observer reliability at index {index} is invalid.");
-            }
-
-            if (!Enum.IsDefined(registration.FailurePolicy))
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(state),
-                    registration.FailurePolicy,
-                    $"Observer failure policy at index {index} is invalid.");
-            }
-        }
+        ValidateDefinitionState(state);
+        var topology = BuildValidatedTopology(state);
+        ValidateTopologyTypes<TInput, TOutput>(topology, nameof(state));
+        ValidateObservers(state);
 
         _ = sink;
     }
@@ -127,6 +48,141 @@ internal static class PipelineDefinitionCompiler
         && state.Stages.All(stage => stage.IsPerRun && !stage.HasDeadLetterOptions)
         && (sink?.IsPerRun ?? true)
         && state.Observers.Length == 0;
+
+    private static void ValidateDefinitionState<TInput, TOutput>(
+        PipelineDefinitionState<TInput, TOutput> state)
+    {
+        PipelineKeyGuard.ThrowIfInvalid(state.Key, nameof(state));
+        if (state.Source is null)
+            throw new ArgumentException("Definition source must not be null.", nameof(state));
+        if (state.RuntimeOptions is null)
+            throw new ArgumentException("Definition runtime options must not be null.", nameof(state));
+
+        state.RuntimeOptions.Validate();
+
+        if (!Enum.IsDefined(state.LineageMode))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(state),
+                state.LineageMode,
+                "Lineage mode is invalid.");
+        }
+    }
+
+    private static PipelineStageTopologyEntry[] BuildValidatedTopology<TInput, TOutput>(
+        PipelineDefinitionState<TInput, TOutput> state)
+    {
+        var topology = new PipelineStageTopologyEntry[state.Stages.Length];
+        for (var index = 0; index < state.Stages.Length; index++)
+        {
+            var stage = state.Stages[index]
+                ?? throw new ArgumentException(
+                    $"Stage descriptor at index {index} is null.",
+                    nameof(state));
+
+            PipelineStageKeyGuard.ThrowIfInvalid(stage.Key, nameof(state));
+            ValidateStageDescriptor(stage, index, nameof(state));
+            stage.FailureOptions.Validate();
+
+            topology[index] = new(
+                stage.Key.Value,
+                stage.Name,
+                stage.InputType,
+                stage.OutputType);
+        }
+
+        PipelineStageTopologyValidator.Validate(topology);
+        return topology;
+    }
+
+    private static void ValidateStageDescriptor(
+        IPipelineStageDescriptor stage,
+        int index,
+        string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(stage.Name))
+            throw new ArgumentException(
+                $"Stage name at index {index} must not be empty or whitespace.",
+                parameterName);
+        if (stage.InputType is null)
+            throw new ArgumentException(
+                $"Stage input type at index {index} must not be null.",
+                parameterName);
+        if (stage.OutputType is null)
+            throw new ArgumentException(
+                $"Stage output type at index {index} must not be null.",
+                parameterName);
+        if (stage.FailureOptions is null)
+            throw new ArgumentException(
+                $"Stage failure options at index {index} must not be null.",
+                parameterName);
+        if (stage.Metadata is null)
+            throw new ArgumentException(
+                $"Stage metadata at index {index} must not be null.",
+                parameterName);
+    }
+
+    private static void ValidateTopologyTypes<TInput, TOutput>(
+        PipelineStageTopologyEntry[] topology,
+        string parameterName)
+    {
+        if (topology.Length > 0 && topology[0].InputType != typeof(TInput))
+        {
+            throw new ArgumentException(
+                $"Stage '{topology[0].StageId}' at index 0 expects input type "
+                + $"'{topology[0].InputType}', but the definition input type is '{typeof(TInput)}'.",
+                parameterName);
+        }
+
+        var actualOutput = topology.Length == 0 ? typeof(TInput) : topology[^1].OutputType;
+        if (actualOutput != typeof(TOutput))
+        {
+            throw new ArgumentException(
+                $"Definition output type '{typeof(TOutput)}' does not match the final stage output "
+                + $"type '{actualOutput}'.",
+                parameterName);
+        }
+    }
+
+    private static void ValidateObservers<TInput, TOutput>(
+        PipelineDefinitionState<TInput, TOutput> state)
+    {
+        for (var index = 0; index < state.Observers.Length; index++)
+        {
+            var registration = state.Observers[index]
+                ?? throw new ArgumentException(
+                    $"Observer registration at index {index} is null.",
+                    nameof(state));
+
+            ValidateObserverRegistration(registration, index, nameof(state));
+        }
+    }
+
+    private static void ValidateObserverRegistration(
+        PipelineObserverRegistration registration,
+        int index,
+        string parameterName)
+    {
+        if (registration.Observer is null)
+            throw new ArgumentException(
+                $"Observer at index {index} must not be null.",
+                parameterName);
+        if (!Enum.IsDefined(registration.Reliability))
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                registration.Reliability,
+                $"Observer reliability at index {index} is invalid.");
+        }
+
+        if (!Enum.IsDefined(registration.FailurePolicy))
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                registration.FailurePolicy,
+                $"Observer failure policy at index {index} is invalid.");
+        }
+    }
 
     private static bool RequiresServices<TInput, TOutput>(
         PipelineDefinitionState<TInput, TOutput> state,
