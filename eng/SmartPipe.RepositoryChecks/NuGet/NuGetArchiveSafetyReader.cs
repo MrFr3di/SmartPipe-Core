@@ -126,7 +126,7 @@ internal static class NuGetArchiveSafetyReader
         CancellationToken cancellationToken)
     {
         var bytes = new byte[(int)entry.Length];
-        await using var source = entry.Entry.Open();
+        await using var source = await entry.Entry.OpenAsync(cancellationToken).ConfigureAwait(false);
         var offset = 0;
         while (offset < bytes.Length)
         {
@@ -242,10 +242,13 @@ internal static class NuGetArchiveSafetyReader
         }
 
         var payloadSize = BinaryPrimitives.ReadUInt64LittleEndian(record.AsSpan(4));
-        if (payloadSize < 44
-            || payloadSize > long.MaxValue
-            || !TryAdd(recordOffset, 12 + (long)payloadSize, out var recordEnd)
-            || recordEnd > locatorOffset)
+        if (payloadSize < 44 || payloadSize > (ulong)(long.MaxValue - 12))
+        {
+            throw PreflightFailure("ZIP64 end-of-central-directory record is truncated or overflows");
+        }
+
+        var recordLength = 12L + (long)payloadSize;
+        if (!TryAdd(recordOffset, recordLength, out var recordEnd) || recordEnd > locatorOffset)
         {
             throw PreflightFailure("ZIP64 end-of-central-directory record is truncated or overflows");
         }
