@@ -471,6 +471,31 @@ public sealed class BaselineOrchestrationTests
     }
 
     [Fact]
+    public async Task WorkflowBlockBranchLists_AreAccepted()
+    {
+        using var scenario = new BaselineScenario();
+        await File.WriteAllTextAsync(
+            scenario.WorkflowPath,
+            "on:\n" +
+            "  push:\n" +
+            "    branches:\n" +
+            "      - main\n" +
+            "      - release/2.2.0\n" +
+            "  pull_request:\n" +
+            "    branches:\n" +
+            "      - main\n" +
+            "      - release/2.2.0\n",
+            TestContext.Current.CancellationToken);
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.DoesNotContain(result.Diagnostics, item =>
+            item.Code == "SPB016"
+            && item.Actual == ".github/workflows/ci.yml");
+    }
+
+    [Fact]
     public async Task OfflineVerify_PerformsZeroPackageFetches()
     {
         using var scenario = new BaselineScenario();
