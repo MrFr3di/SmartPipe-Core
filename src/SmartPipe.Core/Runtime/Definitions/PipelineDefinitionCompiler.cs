@@ -96,7 +96,7 @@ internal static class PipelineDefinitionCompiler
     }
 
     private static void ValidateStageDescriptor(
-        PipelineStageDescriptor stage,
+        IPipelineStageDescriptor stage,
         int index,
         string parameterName)
     {
