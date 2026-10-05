@@ -105,9 +105,9 @@ internal sealed class CommandLineException(string message) : Exception(message);
 
 internal static class CommandLineParser
 {
-    private const string RepoRootOption = RepoRootOption;
-    private const string RepositoryRootOption = RepositoryRootOption;
-    private const string OutputOption = OutputOption;
+    private const string RepoRootOption = "--repo-root";
+    private const string RepositoryRootOption = "--repository-root";
+    private const string OutputOption = "--output";
     private static readonly HashSet<string> CaptureOptions = new(StringComparer.Ordinal)
     {
         RepoRootOption, "--repository", "--commit", "--target-release", "--baseline-version",
