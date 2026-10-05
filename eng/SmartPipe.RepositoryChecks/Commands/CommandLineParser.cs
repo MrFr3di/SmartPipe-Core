@@ -105,34 +105,37 @@ internal sealed class CommandLineException(string message) : Exception(message);
 
 internal static class CommandLineParser
 {
+    private const string RepoRootOption = "--repo-root";
+    private const string RepositoryRootOption = "--repository-root";
+    private const string OutputOption = "--output";
     private static readonly HashSet<string> CaptureOptions = new(StringComparer.Ordinal)
     {
-        "--repo-root", "--repository", "--commit", "--target-release", "--baseline-version",
+        RepoRootOption, "--repository", "--commit", "--target-release", "--baseline-version",
         "--packages-dir", "--output-dir", "--workflow-evidence",
     };
     private static readonly HashSet<string> VerifyOptions = new(StringComparer.Ordinal)
     {
-        "--repo-root", "--manifest", "--packages-dir", "--offline", "--mode",
+        RepoRootOption, "--manifest", "--packages-dir", "--offline", "--mode",
     };
     private static readonly HashSet<string> ProvisionOptions = new(StringComparer.Ordinal)
     {
-        "--repo-root", "--manifest", "--packages-dir",
+        RepoRootOption, "--manifest", "--packages-dir",
     };
     private static readonly HashSet<string> VerifySp220ScopeOptions = new(StringComparer.Ordinal)
     {
-        "--repo-root", "--base-commit",
+        RepoRootOption, "--base-commit",
     };
     private static readonly HashSet<string> VerifyCentralPackagesOptions = new(StringComparer.Ordinal)
     {
-        "--repository-root", "--repo-root", "--mode",
+        RepositoryRootOption, RepoRootOption, "--mode",
     };
     private static readonly HashSet<string> VerifyPackageProjectsOptionNames = new(StringComparer.Ordinal)
     {
-        "--repository-root", "--repo-root",
+        RepositoryRootOption, RepoRootOption,
     };
     private static readonly HashSet<string> VerifyProfileOptionNames = new(StringComparer.Ordinal)
     {
-        "--repo-root", "--profile", "--format", "--failures-only",
+        RepoRootOption, "--profile", "--format", "--failures-only",
     };
 
     public static RepositoryCheckCommand Parse(string[] args)
@@ -189,10 +192,10 @@ internal static class CommandLineParser
 
             switch (args[i])
             {
-                case "--repo-root" or "--repository-root": root = args[i + 1]; break;
+                case RepoRootOption or RepositoryRootOption: root = args[i + 1]; break;
                 case "--version": version = args[i + 1]; break;
                 case "--changelog": changelog = args[i + 1]; break;
-                case "--output": output = args[i + 1]; break;
+                case OutputOption: output = args[i + 1]; break;
                 default: throw new CommandLineException($"Unknown prepare-release-notes option '{args[i]}'.");
             }
         }
@@ -220,7 +223,7 @@ internal static class CommandLineParser
             root,
             version,
             ResolveWithinRoot(root, changelog, "--changelog"),
-            ResolveWithinRoot(root, output, "--output"));
+            ResolveWithinRoot(root, output, OutputOption));
     }
 
     private static PackPackagesOptions ParsePackPackages(ReadOnlySpan<string> args)
@@ -233,12 +236,12 @@ internal static class CommandLineParser
             if (!seen.Add(args[i])) throw new CommandLineException($"Duplicate option '{args[i]}'.");
             switch (args[i])
             {
-                case "--repo-root" or "--repository-root": root = args[i + 1]; break;
+                case RepoRootOption or RepositoryRootOption: root = args[i + 1]; break;
                 case "--mode" when Enum.TryParse<PackageGraphMode>(args[i + 1], true, out var parsed): mode = parsed; break;
                 case "--mode": throw new CommandLineException("Option '--mode' must be 'current' or 'release'.");
                 case "--configuration": configuration = args[i + 1]; break;
                 case "--package-version": version = args[i + 1]; break;
-                case "--output": output = args[i + 1]; break;
+                case OutputOption: output = args[i + 1]; break;
                 case "--manifest": manifest = args[i + 1]; break;
                 default: throw new CommandLineException($"Unknown pack-packages option '{args[i]}'.");
             }
@@ -246,7 +249,7 @@ internal static class CommandLineParser
         root = Path.GetFullPath(root ?? Directory.GetCurrentDirectory());
         if (!Directory.Exists(root) || mode is null || configuration is not ("Release" or "Debug") || string.IsNullOrWhiteSpace(version) || string.IsNullOrWhiteSpace(output) || string.IsNullOrWhiteSpace(manifest))
             throw new CommandLineException("pack-packages requires valid '--mode', '--configuration', '--package-version', '--output', and '--manifest'.");
-        return new(root, mode.Value, configuration, version, ResolveWithinRoot(root, output, "--output"), ResolveWithinRoot(root, manifest, "--manifest"));
+        return new(root, mode.Value, configuration, version, ResolveWithinRoot(root, output, OutputOption), ResolveWithinRoot(root, manifest, "--manifest"));
     }
 
     private static RunConsumersCommandOptions ParseRunConsumers(ReadOnlySpan<string> args)
@@ -260,7 +263,7 @@ internal static class CommandLineParser
             if (!seen.Add(args[i])) throw new CommandLineException($"Duplicate option '{args[i]}'.");
             switch (args[i])
             {
-                case "--repo-root" or "--repository-root": root = args[i + 1]; break;
+                case RepoRootOption or RepositoryRootOption: root = args[i + 1]; break;
                 case "--set": set = args[i + 1]; break;
                 case "--package-directory": packages = args[i + 1]; break;
                 case "--package-version": version = args[i + 1]; break;
@@ -314,7 +317,7 @@ internal static class CommandLineParser
             switch (option)
             {
                 case "--id": id = args[i]; break;
-                case "--repo-root" or "--repository-root": root = args[i]; break;
+                case RepoRootOption or RepositoryRootOption: root = args[i]; break;
                 case "--output-report": report = args[i]; break;
                 default: throw new CommandLineException($"Unknown scaffold-package option '{option}'.");
             }
@@ -333,7 +336,7 @@ internal static class CommandLineParser
             if (i + 1 >= args.Length) throw new CommandLineException($"Option '{args[i]}' requires a value.");
             switch (args[i])
             {
-                case "--repo-root" or "--repository-root": root = args[i + 1]; break;
+                case RepoRootOption or RepositoryRootOption: root = args[i + 1]; break;
                 case "--lifecycle" when Enum.TryParse<PackageLifecycle>(args[i + 1], true, out var parsed): lifecycle = parsed; break;
                 case "--lifecycle": throw new CommandLineException("Option '--lifecycle' must be 'active', 'planned', or 'compatibility-facade'.");
                 default: throw new CommandLineException($"Unknown list-packages option '{args[i]}'.");
@@ -381,7 +384,7 @@ internal static class CommandLineParser
             var value = args[i];
             switch (option)
             {
-                case "--repo-root" or "--repository-root": root = value; break;
+                case RepoRootOption or RepositoryRootOption: root = value; break;
                 case "--graph": graph = value; break;
                 case "--package-directory" or "--packages": packages = value; break;
                 case "--report": report = value; break;
@@ -423,7 +426,7 @@ internal static class CommandLineParser
             var value = args[i];
             switch (option)
             {
-                case "--repo-root" or "--repository-root": root = value; break;
+                case RepoRootOption or RepositoryRootOption: root = value; break;
                 case "--graph": graph = value; break;
                 case "--packages": packages = value; break;
                 case "--mode" when Enum.TryParse<PackageGraphMode>(value, true, out var parsed): mode = parsed; break;
@@ -440,9 +443,9 @@ internal static class CommandLineParser
     private static VerifyPackageProjectsOptions ParseVerifyPackageProjects(ReadOnlySpan<string> args)
     {
         var values = ParseOptions(args, VerifyPackageProjectsOptionNames);
-        var root = values.TryGetValue("--repository-root", out var repositoryRoot)
+        var root = values.TryGetValue(RepositoryRootOption, out var repositoryRoot)
             ? repositoryRoot
-            : values.GetValueOrDefault("--repo-root");
+            : values.GetValueOrDefault(RepoRootOption);
         if (string.IsNullOrWhiteSpace(root))
         {
             throw new CommandLineException("Missing required option '--repository-root'.");
@@ -450,52 +453,52 @@ internal static class CommandLineParser
 
         return new VerifyPackageProjectsOptions(RequireRoot(new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            ["--repo-root"] = root,
+            [RepoRootOption] = root,
         }));
     }
 
     private static VerifyLockFilesOptions ParseVerifyLockFiles(ReadOnlySpan<string> args)
     {
-        var values = ParseOptions(args, new HashSet<string>(["--repository-root", "--repo-root"], StringComparer.Ordinal));
-        var root = values.TryGetValue("--repository-root", out var repositoryRoot)
+        var values = ParseOptions(args, new HashSet<string>([RepositoryRootOption, RepoRootOption], StringComparer.Ordinal));
+        var root = values.TryGetValue(RepositoryRootOption, out var repositoryRoot)
             ? repositoryRoot
-            : values.GetValueOrDefault("--repo-root");
+            : values.GetValueOrDefault(RepoRootOption);
         if (string.IsNullOrWhiteSpace(root))
             throw new CommandLineException("Missing required option '--repository-root'.");
-        return new VerifyLockFilesOptions(RequireRoot(new Dictionary<string, string?>(StringComparer.Ordinal) { ["--repo-root"] = root }));
+        return new VerifyLockFilesOptions(RequireRoot(new Dictionary<string, string?>(StringComparer.Ordinal) { [RepoRootOption] = root }));
     }
 
     private static VerifyDocumentationOptions ParseVerifyDocumentation(ReadOnlySpan<string> args)
     {
-        var values = ParseOptions(args, new HashSet<string>(["--repository-root", "--repo-root"], StringComparer.Ordinal));
-        var root = values.TryGetValue("--repository-root", out var repositoryRoot)
+        var values = ParseOptions(args, new HashSet<string>([RepositoryRootOption, RepoRootOption], StringComparer.Ordinal));
+        var root = values.TryGetValue(RepositoryRootOption, out var repositoryRoot)
             ? repositoryRoot
-            : values.GetValueOrDefault("--repo-root");
+            : values.GetValueOrDefault(RepoRootOption);
         if (string.IsNullOrWhiteSpace(root))
             throw new CommandLineException("Missing required option '--repository-root'.");
         return new VerifyDocumentationOptions(
-            RequireRoot(new Dictionary<string, string?>(StringComparer.Ordinal) { ["--repo-root"] = root }));
+            RequireRoot(new Dictionary<string, string?>(StringComparer.Ordinal) { [RepoRootOption] = root }));
     }
 
     private static VerifyNuGetAuditOptions ParseVerifyNuGetAudit(ReadOnlySpan<string> args)
     {
-        var values = ParseOptions(args, new HashSet<string>(["--repository-root", "--repo-root", "--report"], StringComparer.Ordinal));
-        var root = values.TryGetValue("--repository-root", out var repositoryRoot)
+        var values = ParseOptions(args, new HashSet<string>([RepositoryRootOption, RepoRootOption, "--report"], StringComparer.Ordinal));
+        var root = values.TryGetValue(RepositoryRootOption, out var repositoryRoot)
             ? repositoryRoot
-            : values.GetValueOrDefault("--repo-root");
+            : values.GetValueOrDefault(RepoRootOption);
         if (string.IsNullOrWhiteSpace(root))
             throw new CommandLineException("Missing required option '--repository-root'.");
 
-        var resolvedRoot = RequireRoot(new Dictionary<string, string?>(StringComparer.Ordinal) { ["--repo-root"] = root });
+        var resolvedRoot = RequireRoot(new Dictionary<string, string?>(StringComparer.Ordinal) { [RepoRootOption] = root });
         return new VerifyNuGetAuditOptions(resolvedRoot, ResolveWithinRoot(resolvedRoot, Require(values, "--report"), "--report"));
     }
 
     private static VerifyCentralPackagesOptions ParseVerifyCentralPackages(ReadOnlySpan<string> args)
     {
         var values = ParseOptions(args, VerifyCentralPackagesOptions);
-        var root = values.TryGetValue("--repository-root", out var repositoryRoot)
+        var root = values.TryGetValue(RepositoryRootOption, out var repositoryRoot)
             ? repositoryRoot
-            : values.GetValueOrDefault("--repo-root");
+            : values.GetValueOrDefault(RepoRootOption);
         if (string.IsNullOrWhiteSpace(root))
         {
             throw new CommandLineException("Missing required option '--repository-root'.");
@@ -509,7 +512,7 @@ internal static class CommandLineParser
 
         return new VerifyCentralPackagesOptions(RequireRoot(new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            ["--repo-root"] = root,
+            [RepoRootOption] = root,
         }), parsedMode);
     }
 
@@ -604,7 +607,7 @@ internal static class CommandLineParser
             var value = args[index];
             switch (option)
             {
-                case "--repo-root":
+                case RepoRootOption:
                     root = value;
                     break;
                 case "--profile":
@@ -642,7 +645,7 @@ internal static class CommandLineParser
     {
         var values = ParseAgentOptions(args, allowTask: true, allowFailuresOnly: false, formatRequired: true, jsonOnly: true);
         return new AgentContextOptions(
-            RequireOptionalRoot(values.GetValueOrDefault("--repo-root")),
+            RequireOptionalRoot(values.GetValueOrDefault(RepoRootOption)),
             RequireAgentEpic(Require(values, "--epic")),
             RequireAgentTask(Require(values, "--task")),
             ProfileOutputFormat.Jsonl);
@@ -652,7 +655,7 @@ internal static class CommandLineParser
     {
         var values = ParseAgentOptions(args, allowTask: true, allowFailuresOnly: true, formatRequired: false, jsonOnly: false);
         return new VerifyTaskOptions(
-            RequireOptionalRoot(values.GetValueOrDefault("--repo-root")),
+            RequireOptionalRoot(values.GetValueOrDefault(RepoRootOption)),
             RequireAgentEpic(Require(values, "--epic")),
             RequireAgentTask(Require(values, "--task")),
             ParseProfileFormat(values.GetValueOrDefault("--format") ?? "text"),
@@ -663,7 +666,7 @@ internal static class CommandLineParser
     {
         var values = ParseAgentOptions(args, allowTask: false, allowFailuresOnly: false, formatRequired: true, jsonOnly: true);
         return new AgentEvidenceOptions(
-            RequireOptionalRoot(values.GetValueOrDefault("--repo-root")),
+            RequireOptionalRoot(values.GetValueOrDefault(RepoRootOption)),
             RequireAgentEpic(Require(values, "--epic")),
             ProfileOutputFormat.Jsonl);
     }
@@ -675,7 +678,7 @@ internal static class CommandLineParser
         bool formatRequired,
         bool jsonOnly)
     {
-        var allowed = new HashSet<string>(StringComparer.Ordinal) { "--epic", "--repo-root", "--format" };
+        var allowed = new HashSet<string>(StringComparer.Ordinal) { "--epic", RepoRootOption, "--format" };
         if (allowTask) allowed.Add("--task");
         if (allowFailuresOnly) allowed.Add("--failures-only");
         var values = new Dictionary<string, string?>(StringComparer.Ordinal);
@@ -810,7 +813,7 @@ internal static class CommandLineParser
 
     private static string RequireRoot(Dictionary<string, string?> values)
     {
-        var root = Path.GetFullPath(Require(values, "--repo-root"));
+        var root = Path.GetFullPath(Require(values, RepoRootOption));
         if (!Directory.Exists(root))
         {
             throw new CommandLineException($"Repository root does not exist: {root}.");

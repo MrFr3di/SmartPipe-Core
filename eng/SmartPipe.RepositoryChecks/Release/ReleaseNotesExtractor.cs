@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace SmartPipe.RepositoryChecks.Release;
 
-internal sealed class ReleaseNotesException(string code, string message) : Exception(message)
+public sealed class ReleaseNotesException(string code, string message) : Exception(message)
 {
     public string Code { get; } = code;
 }

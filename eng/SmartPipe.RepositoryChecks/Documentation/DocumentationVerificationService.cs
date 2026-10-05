@@ -88,14 +88,40 @@ internal sealed class DocumentationVerificationService
         var root = Path.GetFullPath(repositoryRoot);
         var violations = new List<DocumentationViolation>();
 
+        ValidateRequiredRepositoryDocuments(root, violations);
+        ValidateLegacyDocumentationDirectories(root, violations);
+        await ValidateSelfRepositoryLinksAsync(root, violations, cancellationToken).ConfigureAwait(false);
+        await ValidatePackageReadmesAsync(root, graph, violations, cancellationToken).ConfigureAwait(false);
+        await ValidateRootReadmeAsync(root, violations, cancellationToken).ConfigureAwait(false);
+        await ValidateDocumentationIndexAsync(root, violations, cancellationToken).ConfigureAwait(false);
+        await ValidateGettingStartedAsync(root, graph, violations, cancellationToken).ConfigureAwait(false);
+        await ValidateSecurityPolicyAsync(root, violations, cancellationToken).ConfigureAwait(false);
+        await ValidatePackageReferenceAsync(root, graph, violations, cancellationToken).ConfigureAwait(false);
+        await ValidateReleaseDocumentationAsync(root, graph, violations, cancellationToken).ConfigureAwait(false);
+
+        return new(violations);
+    }
+
+    private static void ValidateRequiredRepositoryDocuments(
+        string root,
+        ICollection<DocumentationViolation> violations)
+    {
         foreach (var relativePath in RequiredRepositoryDocuments)
         {
             if (!File.Exists(Resolve(root, relativePath)))
             {
-                violations.Add(new("SPDOC001", relativePath, "required repository documentation is missing"));
+                violations.Add(new(
+                    "SPDOC001",
+                    relativePath,
+                    "required repository documentation is missing"));
             }
         }
+    }
 
+    private static void ValidateLegacyDocumentationDirectories(
+        string root,
+        ICollection<DocumentationViolation> violations)
+    {
         foreach (var legacyDirectory in LegacyDocumentationDirectories)
         {
             if (Directory.Exists(Resolve(root, legacyDirectory)))
@@ -106,139 +132,213 @@ internal sealed class DocumentationVerificationService
                     "legacy documentation layout is forbidden; use docs/maintainers or docs/reference"));
             }
         }
+    }
 
-        await ValidateSelfRepositoryLinksAsync(root, violations, cancellationToken).ConfigureAwait(false);
-
+    private static async Task ValidatePackageReadmesAsync(
+        string root,
+        PackageGraphDocument graph,
+        ICollection<DocumentationViolation> violations,
+        CancellationToken cancellationToken)
+    {
         foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
         {
             var readmePath = PackageReadmePath(package);
             var fullReadmePath = Resolve(root, readmePath);
             if (!File.Exists(fullReadmePath))
             {
-                violations.Add(new("SPDOC002", readmePath, $"package README is missing for {package.Id}"));
+                violations.Add(new(
+                    "SPDOC002",
+                    readmePath,
+                    $"package README is missing for {package.Id}"));
                 continue;
             }
 
             var content = await File.ReadAllTextAsync(fullReadmePath, cancellationToken).ConfigureAwait(false);
-            var normalized = content.TrimStart('﻿', '\r', '\n', ' ', '\t');
-            var lineBreak = normalized.IndexOf('\n');
-            var firstLine = (lineBreak >= 0 ? normalized[..lineBreak] : normalized).TrimEnd('\r');
-            if (!string.Equals(firstLine, $"# {package.Id}", StringComparison.Ordinal))
-            {
-                violations.Add(new("SPDOC003", readmePath, $"first heading must be '# {package.Id}'"));
-            }
+            ValidatePackageReadme(package, readmePath, content, violations);
+        }
+    }
 
-            var installCommand = $"dotnet package add {package.Id}";
-            if (!content.Contains(installCommand, StringComparison.Ordinal))
-            {
-                violations.Add(new("SPDOC004", readmePath, $"README must contain installation command '{installCommand}'"));
-            }
+    private static void ValidatePackageReadme(
+        PackageNode package,
+        string readmePath,
+        string content,
+        ICollection<DocumentationViolation> violations)
+    {
+        var normalized = content.TrimStart('﻿', '\r', '\n', ' ', '\t');
+        var lineBreak = normalized.IndexOf('\n');
+        var firstLine = (lineBreak >= 0 ? normalized[..lineBreak] : normalized).TrimEnd('\r');
+        if (!string.Equals(firstLine, $"# {package.Id}", StringComparison.Ordinal))
+        {
+            violations.Add(new("SPDOC003", readmePath, $"first heading must be '# {package.Id}'"));
+        }
 
-            if (content.Contains("dotnet add package ", StringComparison.Ordinal))
-            {
-                violations.Add(new("SPDOC005", readmePath, "use the .NET 10 noun-first 'dotnet package add' form"));
-            }
+        var installCommand = $"dotnet package add {package.Id}";
+        if (!content.Contains(installCommand, StringComparison.Ordinal))
+        {
+            violations.Add(new(
+                "SPDOC004",
+                readmePath,
+                $"README must contain installation command '{installCommand}'"));
+        }
 
-            if (content.Contains($"{installCommand} --version ", StringComparison.Ordinal))
+        if (content.Contains("dotnet add package ", StringComparison.Ordinal))
+        {
+            violations.Add(new(
+                "SPDOC005",
+                readmePath,
+                "use the .NET 10 noun-first 'dotnet package add' form"));
+        }
+
+        if (content.Contains($"{installCommand} --version ", StringComparison.Ordinal))
+        {
+            violations.Add(new(
+                "SPDOC010",
+                readmePath,
+                "package README install commands must stay version-agnostic; release-specific versions belong in release/migration documentation"));
+        }
+
+        if (EnumerateRelativeMarkdownTargets(content).Any())
+        {
+            violations.Add(new(
+                "SPDOC011",
+                readmePath,
+                "package README links/images must use absolute URLs or in-document anchors so NuGet.org rendering is independent of repository-relative paths"));
+        }
+    }
+
+    private static async Task ValidateRootReadmeAsync(
+        string root,
+        ICollection<DocumentationViolation> violations,
+        CancellationToken cancellationToken)
+    {
+        const string relativePath = "README.md";
+        var path = Resolve(root, relativePath);
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        var content = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+        foreach (var target in new[] { "docs/index.md", "SUPPORT.md", "VERSIONING.md", "SECURITY.md" })
+        {
+            if (!content.Contains(target, StringComparison.Ordinal))
             {
                 violations.Add(new(
-                    "SPDOC010",
-                    readmePath,
-                    "package README install commands must stay version-agnostic; release-specific versions belong in release/migration documentation"));
+                    "SPDOC006",
+                    relativePath,
+                    $"root README must link to {target}"));
             }
+        }
+    }
 
-            if (EnumerateRelativeMarkdownTargets(content).Any())
+    private static async Task ValidateDocumentationIndexAsync(
+        string root,
+        ICollection<DocumentationViolation> violations,
+        CancellationToken cancellationToken)
+    {
+        const string relativePath = "docs/index.md";
+        var path = Resolve(root, relativePath);
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        var content = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+        foreach (var target in RequiredDocumentationIndexLinks)
+        {
+            if (!content.Contains(target, StringComparison.Ordinal))
             {
                 violations.Add(new(
-                    "SPDOC011",
-                    readmePath,
-                    "package README links/images must use absolute URLs or in-document anchors so NuGet.org rendering is independent of repository-relative paths"));
+                    "SPDOC009",
+                    relativePath,
+                    $"documentation index must link to {target}"));
             }
         }
+    }
 
-        var rootReadmePath = Resolve(root, "README.md");
-        if (File.Exists(rootReadmePath))
+    private static async Task ValidateGettingStartedAsync(
+        string root,
+        PackageGraphDocument graph,
+        ICollection<DocumentationViolation> violations,
+        CancellationToken cancellationToken)
+    {
+        const string relativePath = "docs/getting-started.md";
+        var path = Resolve(root, relativePath);
+        if (!File.Exists(path))
         {
-            var rootReadme = await File.ReadAllTextAsync(rootReadmePath, cancellationToken).ConfigureAwait(false);
-            foreach (var target in new[] { "docs/index.md", "SUPPORT.md", "VERSIONING.md", "SECURITY.md" })
-            {
-                if (!rootReadme.Contains(target, StringComparison.Ordinal))
-                {
-                    violations.Add(new("SPDOC006", "README.md", $"root README must link to {target}"));
-                }
-            }
+            return;
         }
 
-        var documentationIndexPath = Resolve(root, "docs/index.md");
-        if (File.Exists(documentationIndexPath))
+        var content = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+        var packageSelection = ExtractLevelTwoSection(content, "## Choose the integration package");
+        if (packageSelection is null)
         {
-            var documentationIndex = await File.ReadAllTextAsync(documentationIndexPath, cancellationToken).ConfigureAwait(false);
-            foreach (var target in RequiredDocumentationIndexLinks)
-            {
-                if (!documentationIndex.Contains(target, StringComparison.Ordinal))
-                {
-                    violations.Add(new("SPDOC009", "docs/index.md", $"documentation index must link to {target}"));
-                }
-            }
+            violations.Add(new(
+                "SPDOC018",
+                relativePath,
+                "getting-started must contain the '## Choose the integration package' release-package selection section"));
+            return;
         }
 
-        var gettingStartedPath = Resolve(root, "docs/getting-started.md");
-        if (File.Exists(gettingStartedPath))
+        foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
         {
-            var gettingStarted = await File.ReadAllTextAsync(gettingStartedPath, cancellationToken).ConfigureAwait(false);
-            var packageSelection = ExtractLevelTwoSection(gettingStarted, "## Choose the integration package");
-            if (packageSelection is null)
+            if (!packageSelection.Contains($"`{package.Id}`", StringComparison.Ordinal))
             {
                 violations.Add(new(
                     "SPDOC018",
-                    "docs/getting-started.md",
-                    "getting-started must contain the '## Choose the integration package' release-package selection section"));
-            }
-            else
-            {
-                foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
-                {
-                    if (!packageSelection.Contains($"`{package.Id}`", StringComparison.Ordinal))
-                    {
-                        violations.Add(new(
-                            "SPDOC018",
-                            "docs/getting-started.md",
-                            $"getting-started package selection is stale; release package is not named: {package.Id}"));
-                    }
-                }
+                    relativePath,
+                    $"getting-started package selection is stale; release package is not named: {package.Id}"));
             }
         }
+    }
 
-        var securityPath = Resolve(root, "SECURITY.md");
-        if (File.Exists(securityPath))
+    private static async Task ValidateSecurityPolicyAsync(
+        string root,
+        ICollection<DocumentationViolation> violations,
+        CancellationToken cancellationToken)
+    {
+        const string relativePath = "SECURITY.md";
+        var path = Resolve(root, relativePath);
+        if (!File.Exists(path))
         {
-            var security = await File.ReadAllTextAsync(securityPath, cancellationToken).ConfigureAwait(false);
-            if (!security.Contains("SUPPORT.md", StringComparison.Ordinal))
-            {
-                violations.Add(new("SPDOC006", "SECURITY.md", "security policy must delegate support status to SUPPORT.md"));
-            }
+            return;
         }
 
-        var packageReferencePath = Resolve(root, "docs/reference/packages.md");
-        if (File.Exists(packageReferencePath))
+        var content = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+        if (!content.Contains("SUPPORT.md", StringComparison.Ordinal))
         {
-            var packageReference = await File.ReadAllTextAsync(packageReferencePath, cancellationToken).ConfigureAwait(false);
-            foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
-            {
-                var expectedRow = BuildPackageReferenceRow(package);
-                if (!packageReference.Contains(expectedRow, StringComparison.Ordinal))
-                {
-                    violations.Add(new(
-                        "SPDOC007",
-                        "docs/reference/packages.md",
-                        $"package graph projection is stale for {package.Id}; expected row: {expectedRow}"));
-                }
-            }
+            violations.Add(new(
+                "SPDOC006",
+                relativePath,
+                "security policy must delegate support status to SUPPORT.md"));
+        }
+    }
+
+    private static async Task ValidatePackageReferenceAsync(
+        string root,
+        PackageGraphDocument graph,
+        ICollection<DocumentationViolation> violations,
+        CancellationToken cancellationToken)
+    {
+        const string relativePath = "docs/reference/packages.md";
+        var path = Resolve(root, relativePath);
+        if (!File.Exists(path))
+        {
+            return;
         }
 
-        await ValidateReleaseDocumentationAsync(root, graph, violations, cancellationToken).ConfigureAwait(false);
-
-        return new(violations);
+        var content = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+        foreach (var package in graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned))
+        {
+            var expectedRow = BuildPackageReferenceRow(package);
+            if (!content.Contains(expectedRow, StringComparison.Ordinal))
+            {
+                violations.Add(new(
+                    "SPDOC007",
+                    relativePath,
+                    $"package graph projection is stale for {package.Id}; expected row: {expectedRow}"));
+            }
+        }
     }
 
     private static async Task ValidateReleaseDocumentationAsync(
@@ -250,68 +350,23 @@ internal sealed class DocumentationVerificationService
         var releaseVersion = graph.ReleaseVersion;
         var changelogRelativePath = "CHANGELOG.md";
         var releaseRelativePath = $"docs/releases/{releaseVersion}.md";
-        var changelogPath = Resolve(root, changelogRelativePath);
-        var releasePath = Resolve(root, releaseRelativePath);
+        var currentReleaseSection = await ValidateCurrentReleaseChangelogAsync(
+            root,
+            releaseVersion,
+            changelogRelativePath,
+            violations,
+            cancellationToken).ConfigureAwait(false);
 
-        string? currentReleaseSection = null;
-        if (!File.Exists(changelogPath))
+        if (currentReleaseSection is not null)
         {
-            violations.Add(new(
-                "SPDOC014",
+            ValidateFirstReleasePackages(
+                graph,
+                currentReleaseSection,
                 changelogRelativePath,
-                $"current release changelog is missing for {releaseVersion}"));
-        }
-        else
-        {
-            var changelog = await File.ReadAllTextAsync(changelogPath, cancellationToken).ConfigureAwait(false);
-            var changelogLines = SplitLines(changelog);
-            var versionHeadingPrefix = $"## [{releaseVersion}]";
-            var developmentHeading = $"{versionHeadingPrefix} — Development";
-            var datedHeadingPrefix = $"{versionHeadingPrefix} - ";
-            var currentHeadingCandidates = changelogLines
-                .Select((line, index) => (Line: line.TrimEnd(), Index: index))
-                .Where(item => item.Line.StartsWith(versionHeadingPrefix, StringComparison.Ordinal))
-                .ToArray();
-
-            var hasValidReleaseState = currentHeadingCandidates.Length == 1
-                && (string.Equals(currentHeadingCandidates[0].Line, developmentHeading, StringComparison.Ordinal)
-                    || currentHeadingCandidates[0].Line.StartsWith(datedHeadingPrefix, StringComparison.Ordinal)
-                    && DateOnly.TryParseExact(
-                        currentHeadingCandidates[0].Line[datedHeadingPrefix.Length..],
-                        "yyyy-MM-dd",
-                        CultureInfo.InvariantCulture,
-                        DateTimeStyles.None,
-                        out _));
-
-            if (currentHeadingCandidates.Length != 1 || !hasValidReleaseState)
-            {
-                violations.Add(new(
-                    "SPDOC014",
-                    changelogRelativePath,
-                    $"current release changelog must contain exactly one heading '## [{releaseVersion}] — Development' or '## [{releaseVersion}] - yyyy-MM-dd' with a valid ISO release date"));
-            }
-            else
-            {
-                currentReleaseSection = ExtractSectionAfterLine(
-                    changelogLines,
-                    currentHeadingCandidates[0].Index,
-                    IsVersionHeadingLine);
-
-                foreach (var package in graph.Packages.Where(package =>
-                             package.Lifecycle != PackageLifecycle.Planned
-                             && package.BaselineVersion is null))
-                {
-                    if (!currentReleaseSection.Contains($"`{package.Id}`", StringComparison.Ordinal))
-                    {
-                        violations.Add(new(
-                            "SPDOC016",
-                            changelogRelativePath,
-                            $"first-release package must be explicitly named in the current release section: {package.Id}"));
-                    }
-                }
-            }
+                violations);
         }
 
+        var releasePath = Resolve(root, releaseRelativePath);
         if (!File.Exists(releasePath))
         {
             violations.Add(new(
@@ -322,6 +377,101 @@ internal sealed class DocumentationVerificationService
         }
 
         var releaseNotes = await File.ReadAllTextAsync(releasePath, cancellationToken).ConfigureAwait(false);
+        ValidateReleasePackageSelection(graph, releaseNotes, releaseRelativePath, violations);
+        ValidateReleaseCrossLinks(graph, releaseNotes, releaseRelativePath, violations);
+    }
+
+    private static async Task<string?> ValidateCurrentReleaseChangelogAsync(
+        string root,
+        string releaseVersion,
+        string changelogRelativePath,
+        ICollection<DocumentationViolation> violations,
+        CancellationToken cancellationToken)
+    {
+        var changelogPath = Resolve(root, changelogRelativePath);
+        if (!File.Exists(changelogPath))
+        {
+            violations.Add(new(
+                "SPDOC014",
+                changelogRelativePath,
+                $"current release changelog is missing for {releaseVersion}"));
+            return null;
+        }
+
+        var changelog = await File.ReadAllTextAsync(changelogPath, cancellationToken).ConfigureAwait(false);
+        var changelogLines = SplitLines(changelog);
+        var versionHeadingPrefix = $"## [{releaseVersion}]";
+        var developmentHeading = $"{versionHeadingPrefix} — Development";
+        var datedHeadingPrefix = $"{versionHeadingPrefix} - ";
+        var currentHeadingCandidates = changelogLines
+            .Select((line, index) => (Line: line.TrimEnd(), Index: index))
+            .Where(item => item.Line.StartsWith(versionHeadingPrefix, StringComparison.Ordinal))
+            .ToArray();
+
+        if (currentHeadingCandidates.Length != 1
+            || !IsValidReleaseHeading(
+                currentHeadingCandidates[0].Line,
+                developmentHeading,
+                datedHeadingPrefix))
+        {
+            violations.Add(new(
+                "SPDOC014",
+                changelogRelativePath,
+                $"current release changelog must contain exactly one heading '## [{releaseVersion}] — Development' or '## [{releaseVersion}] - yyyy-MM-dd' with a valid ISO release date"));
+            return null;
+        }
+
+        return ExtractSectionAfterLine(
+            changelogLines,
+            currentHeadingCandidates[0].Index,
+            IsVersionHeadingLine);
+    }
+
+    private static bool IsValidReleaseHeading(
+        string heading,
+        string developmentHeading,
+        string datedHeadingPrefix)
+    {
+        if (string.Equals(heading, developmentHeading, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return heading.StartsWith(datedHeadingPrefix, StringComparison.Ordinal)
+            && DateOnly.TryParseExact(
+                heading[datedHeadingPrefix.Length..],
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out _);
+    }
+
+    private static void ValidateFirstReleasePackages(
+        PackageGraphDocument graph,
+        string currentReleaseSection,
+        string changelogRelativePath,
+        ICollection<DocumentationViolation> violations)
+    {
+        foreach (var package in graph.Packages.Where(package =>
+                     package.Lifecycle != PackageLifecycle.Planned
+                     && package.BaselineVersion is null))
+        {
+            if (!currentReleaseSection.Contains($"`{package.Id}`", StringComparison.Ordinal))
+            {
+                violations.Add(new(
+                    "SPDOC016",
+                    changelogRelativePath,
+                    $"first-release package must be explicitly named in the current release section: {package.Id}"));
+            }
+        }
+    }
+
+    private static void ValidateReleasePackageSelection(
+        PackageGraphDocument graph,
+        string releaseNotes,
+        string releaseRelativePath,
+        ICollection<DocumentationViolation> violations)
+    {
         var packageSection = ExtractLevelTwoSection(releaseNotes, "## Package selection");
         if (packageSection is null)
         {
@@ -329,34 +479,46 @@ internal sealed class DocumentationVerificationService
                 "SPDOC015",
                 releaseRelativePath,
                 "release notes must contain a '## Package selection' section projected from the package graph"));
+            return;
         }
-        else
+
+        var expected = graph.Packages
+            .Where(package => package.Lifecycle != PackageLifecycle.Planned)
+            .Select(package => package.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var actual = EnumerateReleasePackageIds(packageSection).ToArray();
+        var actualSet = actual.ToHashSet(StringComparer.Ordinal);
+        var missing = expected
+            .Except(actualSet, StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        var unknown = actualSet
+            .Except(expected, StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        var duplicates = actual
+            .GroupBy(id => id, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+
+        if (missing.Length != 0 || unknown.Length != 0 || duplicates.Length != 0)
         {
-            var expected = graph.Packages
-                .Where(package => package.Lifecycle != PackageLifecycle.Planned)
-                .Select(package => package.Id)
-                .ToHashSet(StringComparer.Ordinal);
-
-            var actual = EnumerateReleasePackageIds(packageSection).ToArray();
-            var actualSet = actual.ToHashSet(StringComparer.Ordinal);
-            var missing = expected.Except(actualSet, StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
-            var unknown = actualSet.Except(expected, StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
-            var duplicates = actual
-                .GroupBy(id => id, StringComparer.Ordinal)
-                .Where(group => group.Count() > 1)
-                .Select(group => group.Key)
-                .OrderBy(id => id, StringComparer.Ordinal)
-                .ToArray();
-
-            if (missing.Length != 0 || unknown.Length != 0 || duplicates.Length != 0)
-            {
-                violations.Add(new(
-                    "SPDOC015",
-                    releaseRelativePath,
-                    $"release package table must match the non-planned package graph exactly; missing=[{string.Join(",", missing)}] unknown=[{string.Join(",", unknown)}] duplicates=[{string.Join(",", duplicates)}]"));
-            }
+            violations.Add(new(
+                "SPDOC015",
+                releaseRelativePath,
+                $"release package table must match the non-planned package graph exactly; missing=[{string.Join(",", missing)}] unknown=[{string.Join(",", unknown)}] duplicates=[{string.Join(",", duplicates)}]"));
         }
+    }
 
+    private static void ValidateReleaseCrossLinks(
+        PackageGraphDocument graph,
+        string releaseNotes,
+        string releaseRelativePath,
+        ICollection<DocumentationViolation> violations)
+    {
+        var releaseVersion = graph.ReleaseVersion;
         var requiredCrossLinks = new List<string>
         {
             "../../CHANGELOG.md",
@@ -369,7 +531,8 @@ internal sealed class DocumentationVerificationService
             .ToArray();
         if (baselineVersions.Length == 1)
         {
-            requiredCrossLinks.Add($"../reference/compatibility/{baselineVersions[0]}-to-{releaseVersion}.md");
+            requiredCrossLinks.Add(
+                $"../reference/compatibility/{baselineVersions[0]}-to-{releaseVersion}.md");
         }
 
         foreach (var target in requiredCrossLinks)
