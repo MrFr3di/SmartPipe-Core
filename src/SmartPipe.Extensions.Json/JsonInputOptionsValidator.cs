@@ -57,8 +57,10 @@ internal static class JsonInputOptionsValidator
     internal static DeadLetterSinkOptions Validate(DeadLetterSinkOptions? options, bool loggerAvailable)
     {
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(options.RetryDelays);
-        ArgumentNullException.ThrowIfNull(options.TimeProvider);
+        if (options.RetryDelays is null)
+            throw new ArgumentException("RetryDelays must not be null.", nameof(options));
+        if (options.TimeProvider is null)
+            throw new ArgumentException("TimeProvider must not be null.", nameof(options));
         if (!Enum.IsDefined(options.FailureMode))
             throw new ArgumentOutOfRangeException(nameof(options), options.FailureMode, "The dead-letter failure mode is not defined.");
         if (options.RetryDelays.Any(static delay => delay < TimeSpan.Zero))
