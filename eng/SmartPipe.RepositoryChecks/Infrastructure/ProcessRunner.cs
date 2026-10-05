@@ -893,7 +893,9 @@ internal sealed class BoundedRedactingOutputCollector
         retained.Append(value);
         var overflow = Math.Max(0, retainedCharacters + value.Length - _maximumRetainedCharacters);
         retained.Remove(0, overflow);
-        return (retainedCharacters + value.Length - overflow, overflow > 0);
+        // Sonar S2583 is a false positive here: overflow is exercised by
+        // OutputCollector_ContentBeyondRetentionLimit_PreservesExactTail.
+        return (retainedCharacters + value.Length - overflow, overflow > 0); // NOSONAR
     }
 }
 
