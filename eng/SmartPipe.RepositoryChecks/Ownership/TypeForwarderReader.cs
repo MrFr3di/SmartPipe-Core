@@ -57,12 +57,16 @@ internal sealed class TypeForwarderReader
         var forwarders = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         var assets = new List<OwnedAssemblySnapshot>();
         foreach (var package in packages)
+        {
             foreach (var assembly in package.Assemblies)
             {
                 assets.Add(new(package.Id, assembly));
-                foreach (var type in assembly.ExportedTypes) Add(implementations, type, package.Id);
-                foreach (var type in assembly.TypeForwarders) Add(forwarders, type, package.Id);
+                foreach (var type in assembly.ExportedTypes)
+                    Add(implementations, type, package.Id);
+                foreach (var type in assembly.TypeForwarders)
+                    Add(forwarders, type, package.Id);
             }
+        }
         return new(
             implementations.ToDictionary(x => x.Key, x => (IReadOnlySet<string>)x.Value, StringComparer.Ordinal),
             forwarders.ToDictionary(x => x.Key, x => (IReadOnlySet<string>)x.Value, StringComparer.Ordinal), assets);
