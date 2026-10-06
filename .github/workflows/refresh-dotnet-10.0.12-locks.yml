@@ -32,10 +32,10 @@ jobs:
         run: |
           set -euo pipefail
           for project in \
-            tests/Consumers/Scenarios/csv-di-composition/csv-di-composition.csproj \
-            tests/Consumers/Scenarios/csv-direct/csv-direct.csproj \
-            tests/Consumers/Scenarios/csv-facade-source/csv-facade-source.csproj \
-            tests/Consumers/Scenarios/csv-trim-diagnostic/csv-trim-diagnostic.csproj
+            tests/Consumers/Scenarios/csv-di-composition/Consumer.csproj \
+            tests/Consumers/Scenarios/csv-direct/Consumer.csproj \
+            tests/Consumers/Scenarios/csv-facade-source/Consumer.csproj \
+            tests/Consumers/Scenarios/csv-trim-diagnostic/Consumer.csproj
           do
             dotnet restore "$project" --force-evaluate
           done
