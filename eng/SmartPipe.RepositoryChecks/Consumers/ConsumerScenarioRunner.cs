@@ -378,7 +378,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         return actualSmartPipe;
     }
 
-    private static async Task<IReadOnlyList<string>> ReadExternalPackageIdsAsync(string repositoryRoot, CancellationToken ct)
+    internal static async Task<IReadOnlyList<string>> ReadExternalPackageIdsAsync(string repositoryRoot, CancellationToken ct)
     {
         var path = Path.Combine(repositoryRoot, "Directory.Packages.props");
         await using var stream = File.OpenRead(path);
@@ -394,6 +394,11 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         foreach (var lockPath in EnumerateExternalPackageLockFiles(repositoryRoot))
         {
             await AddExternalPackageIdsFromLockAsync(lockPath, allIds, ct).ConfigureAwait(false);
+        }
+
+        foreach (var baselinePath in EnumerateBaselineRepositoryDependencyFiles(repositoryRoot))
+        {
+            await AddExternalPackageIdsFromBaselineRepositoryAsync(baselinePath, allIds, ct).ConfigureAwait(false);
         }
 
         if (allIds.Count == 0)
@@ -414,6 +419,74 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         allIds.Add($"runtime.{rid}.Microsoft.DotNet.ILCompiler");
 
         return allIds.Order(StringComparer.Ordinal).ToArray();
+    }
+
+    private static IEnumerable<string> EnumerateBaselineRepositoryDependencyFiles(string repositoryRoot)
+    {
+        var baselineRoot = Path.Combine(repositoryRoot, "eng", "baselines");
+        return Directory.Exists(baselineRoot)
+            ? Directory.EnumerateFiles(
+                baselineRoot,
+                "repository-dependencies.json",
+                SearchOption.AllDirectories)
+            : [];
+    }
+
+    private static async Task AddExternalPackageIdsFromBaselineRepositoryAsync(
+        string dependencyPath,
+        ISet<string> packageIds,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = File.OpenRead(dependencyPath);
+        using var document = await JsonDocument
+            .ParseAsync(stream, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!document.RootElement.TryGetProperty("restored", out var restored)
+            || restored.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var project in restored.EnumerateArray())
+        {
+            if (!project.TryGetProperty("frameworks", out var frameworks)
+                || frameworks.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (var framework in frameworks.EnumerateArray())
+            {
+                AddPackageIds(framework, "topLevelPackages", packageIds);
+                AddPackageIds(framework, "transitivePackages", packageIds);
+            }
+        }
+
+        static void AddPackageIds(
+            JsonElement framework,
+            string propertyName,
+            ISet<string> ids)
+        {
+            if (!framework.TryGetProperty(propertyName, out var packages)
+                || packages.ValueKind != JsonValueKind.Array)
+            {
+                return;
+            }
+
+            foreach (var package in packages.EnumerateArray())
+            {
+                if (!package.TryGetProperty("id", out var idElement))
+                    continue;
+
+                var id = idElement.GetString();
+                if (!string.IsNullOrWhiteSpace(id)
+                    && !id.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase))
+                {
+                    ids.Add(id);
+                }
+            }
+        }
     }
 
     private static IEnumerable<string> EnumerateExternalPackageLockFiles(string repositoryRoot)
