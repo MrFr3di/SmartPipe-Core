@@ -522,12 +522,11 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
 
         foreach (var framework in frameworks.EnumerateObject())
         {
-            foreach (var package in framework.Value.EnumerateObject())
+            foreach (var package in framework.Value.EnumerateObject()
+                         .Where(static package =>
+                             !package.Name.StartsWith(SmartPipePackagePrefix, StringComparison.OrdinalIgnoreCase)))
             {
-                if (!package.Name.StartsWith(SmartPipePackagePrefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    packageIds.Add(package.Name);
-                }
+                packageIds.Add(package.Name);
             }
         }
     }
