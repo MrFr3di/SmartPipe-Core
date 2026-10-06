@@ -6,19 +6,19 @@
         "type": "Direct",
         "requested": "[2.2.0, )",
         "resolved": "2.2.0",
-        "contentHash": "0d9V8ZThZpmyS+0gp6b7mihWHP6X8pCCO/DR7al1432Q/ChvalfdmHgwjWbUtQcTA7oLV0alq0dImZke5M7ugw==",
+        "contentHash": "Qtcm8SYNYC+UmH30OD3qLKwGNx+cMqJeh6hkXTSJKzaYznhqdxiPAX3+EDaIOZ2xB4tkDl0je4Gjvmu5MxMNGg==",
         "dependencies": {
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.8"
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.12"
         }
       },
       "SmartPipe.Extensions.Csv": {
         "type": "Direct",
         "requested": "[2.2.0, )",
         "resolved": "2.2.0",
-        "contentHash": "gZLT4tSbsiQtswB+5av1u9PlpBTWjF9Afp0mmOcvEpnbF5ufPVSlKOEcZmZCz6ljqyA9/AGSkTmSUZcx0gCn3A==",
+        "contentHash": "MJGoT24sOfvL/ZAv8Ef0kjQ/EAbHNfmEaJ3xH28RYYB7ymVEy300rikxeLTCRbfgokz4BoFM406ZqBbPDMkBrA==",
         "dependencies": {
           "CsvHelper": "33.1.0",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.11",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.12",
           "SmartPipe.Core": "2.2.0"
         }
       },
@@ -30,17 +30,17 @@
       },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
         "type": "CentralTransitive",
-        "requested": "[10.0.11, )",
-        "resolved": "10.0.11",
-        "contentHash": "/a1aJz4m7ylhEDf25ugQChLQoN5XwoGjWw/BoR/ZWWKsO1v4DdJElS1uyngahz4B/eOzjFk1KNTkarRLE5wsIg=="
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "9/qymSh7hVDMGTGwrLz8MRp5zRyXy9adGDOs4HwRdnLil3oZGYuWeZjbmHgCQ9BL1qBroVfgUK3U/nb61617Cw=="
       },
       "Microsoft.Extensions.Logging.Abstractions": {
         "type": "CentralTransitive",
-        "requested": "[10.0.11, )",
-        "resolved": "10.0.11",
-        "contentHash": "Ljd0Uxoq5XpScD2Bg0nM/r3mwx7Ao5Uq24eo2ARxbGvqJ7Zht6rt2cJtwVRH4Cv+1ZVMdXz6TB43KbpmsxRrvQ==",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "+24lC4plfbEDNfLAdTV/SWKS7dW+16X4HdydO3R++134kSNTzcbYA4KpR1Hdh6uWisB8Za3AzwyOn+K+NxWIug==",
         "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.11"
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12"
         }
       }
     }
