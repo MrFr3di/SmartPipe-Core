@@ -26,6 +26,7 @@ internal sealed record RunConsumersOptions(
 
 internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner = null)
 {
+    private const string SmartPipePackagePrefix = "SmartPipe.";
     private static readonly TimeSpan ExpectedDiagnosticRegexTimeout = TimeSpan.FromSeconds(1);
     private readonly DotNetProcessRunner _processRunner = processRunner ?? new();
 
@@ -52,7 +53,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         }
 
         var externalPackageVersions = centralPackages.Versions
-            .Where(static pair => !pair.Key.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase))
+            .Where(static pair => !pair.Key.StartsWith(SmartPipePackagePrefix, StringComparison.OrdinalIgnoreCase))
             .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         var externalPackageIds = await ReadExternalPackageIdsAsync(options.RepositoryRoot, ct).ConfigureAwait(false);
         return await ConsumerScenarioScheduler.RunAsync(
@@ -371,7 +372,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         await using var stream = File.OpenRead(assetsPath);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
         var libraries = document.RootElement.GetProperty("libraries").EnumerateObject().Select(x => x.Name.Split('/')[0]).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var actualSmartPipe = libraries.Where(x => x.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase)).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+        var actualSmartPipe = libraries.Where(x => x.StartsWith(SmartPipePackagePrefix, StringComparison.OrdinalIgnoreCase)).OrderBy(x => x, StringComparer.Ordinal).ToArray();
         var expectedSmartPipe = scenario.ExpectedSmartPipeDependencies.OrderBy(x => x, StringComparer.Ordinal).ToArray();
         if (!actualSmartPipe.SequenceEqual(expectedSmartPipe, StringComparer.OrdinalIgnoreCase)) throw new ConsumerScenarioException("SPCONS015", $"Scenario '{scenario.Id}' SmartPipe dependency set differs. Expected=[{string.Join(',', expectedSmartPipe)}] Actual=[{string.Join(',', actualSmartPipe)}].");
         foreach (var forbidden in scenario.ForbiddenDependencies) if (libraries.Contains(forbidden)) throw new ConsumerScenarioException("SPCONS016", $"Scenario '{scenario.Id}' contains forbidden dependency '{forbidden}'.");
@@ -385,7 +386,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         var document = await XDocument.LoadAsync(stream, LoadOptions.None, ct).ConfigureAwait(false);
         var ids = document.Root?.Elements("ItemGroup").Elements("PackageVersion")
             .Select(element => (string?)element.Attribute("Include"))
-            .Where(id => !string.IsNullOrWhiteSpace(id) && !id.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase))
+            .Where(id => !string.IsNullOrWhiteSpace(id) && !id.StartsWith(SmartPipePackagePrefix, StringComparison.OrdinalIgnoreCase))
             .Cast<string>()
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Order(StringComparer.Ordinal)
@@ -481,7 +482,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
 
                 var id = idElement.GetString();
                 if (!string.IsNullOrWhiteSpace(id)
-                    && !id.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase))
+                    && !id.StartsWith(SmartPipePackagePrefix, StringComparison.OrdinalIgnoreCase))
                 {
                     ids.Add(id);
                 }
@@ -523,7 +524,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         {
             foreach (var package in framework.Value.EnumerateObject())
             {
-                if (!package.Name.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase))
+                if (!package.Name.StartsWith(SmartPipePackagePrefix, StringComparison.OrdinalIgnoreCase))
                 {
                     packageIds.Add(package.Name);
                 }
@@ -659,7 +660,7 @@ internal sealed class ConsumerScenarioRunner(DotNetProcessRunner? processRunner 
         await using var stream = File.OpenRead(assetsPath);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
         var actual = document.RootElement.GetProperty("libraries").EnumerateObject()
-            .Select(library => library.Name).Where(name => name.StartsWith("SmartPipe.", StringComparison.OrdinalIgnoreCase))
+            .Select(library => library.Name).Where(name => name.StartsWith(SmartPipePackagePrefix, StringComparison.OrdinalIgnoreCase))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var expected = packageIds.Select(id => id + "/" + version).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (!actual.SetEquals(expected))
