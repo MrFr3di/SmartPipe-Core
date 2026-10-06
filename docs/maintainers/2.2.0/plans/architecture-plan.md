@@ -1,0 +1,2167 @@
+% SmartPipe.Core 2.2.0
+% Архитектурный план декомпозиции, интеграции и реализации
+% 15 июля 2026
+
+Связанные нормативные документы: [ADR-0001](../../../adr/0001-smartpipe-2.2-package-boundaries.md), [branch and review policy](../../governance/2.2.0-branch-and-review-policy.md). Детальные планы EPIC: [SP220-00 Governance and Baseline](SP220-00-governance-and-baseline.md).
+
+# Содержание
+
+| № | Раздел |
+|---:|---|
+| 1 | Паспорт документа |
+| 2 | 1. Резюме решения |
+| 3 | 2. Основания и проверенные практики |
+| 4 | 3. Границы релиза 2.2.0 |
+| 5 | 4. Неподлежащие нарушению архитектурные правила |
+| 6 | 5. Целевая модель Core |
+| 7 | 6. Целевая карта пакетов |
+| 8 | 7. Dependency graph и запреты |
+| 9 | 8. Dependency Injection package |
+| 10 | 9. Hosting package |
+| 11 | 10. Health Checks package |
+| 12 | 11. OpenTelemetry package |
+| 13 | 12. Standard packages и перенос существующих типов |
+| 14 | 13. Transforms, DataAnnotations, Logging и Channels |
+| 15 | 14. CSV package |
+| 16 | 15. Dapper package |
+| 17 | 16. Entity Framework Core package |
+| 18 | 17. Mapster package |
+| 19 | 18. HTTP и HTTP.Json |
+| 20 | 19. Polly package |
+| 21 | 20. SmartPipe.Testing |
+| 22 | 21. SmartPipe.Extensions facade |
+| 23 | 22. Namespace и compatibility strategy |
+| 24 | 23. Options и configuration |
+| 25 | 24. AOT/trimming policy |
+| 26 | 25. Target frameworks |
+| 27 | 26. Versioning и dependency ranges |
+| 28 | 27. Repository layout |
+| 29 | 28. Build/package infrastructure |
+| 30 | 29. CI/CD architecture |
+| 31 | 30. Work breakdown structure для Codex |
+| 32 | 31. Порядок реализации и integration checkpoints |
+| 33 | 32. Правила работы Codex |
+| 34 | 33. Definition of Done релиза 2.2.0 |
+| 35 | 34. Риски и меры |
+| 36 | 35. Источники |
+| 37 | 36. Финальная директива |
+
+# Паспорт документа
+
+| Поле | Значение |
+|---|---|
+| Назначение | Исполнимый архитектурный и инженерный план для Codex и сопровождающих SmartPipe.Core |
+| Целевой релиз | **2.2.0** |
+| Базовая ветка | `main` |
+| Проверенный baseline | `8e79902d22de714f493582946f7c260462b0895e` |
+| Текущая опубликованная линия | `2.1.2` |
+| Статус | Нормативный implementation plan |
+| Язык реализации | C# / .NET 10 |
+| Основная платформа | `net10.0` |
+| Основной исполнитель | Codex с обязательным review и CI-gates |
+
+> **Нормативность.** Слова **ДОЛЖЕН**, **НЕЛЬЗЯ**, **СЛЕДУЕТ** и **МОЖНО** используются как требования уровня MUST, MUST NOT, SHOULD и MAY. Отклонение от MUST/MUST NOT требует отдельного ADR с доказательством необходимости и повторного архитектурного review.
+
+# 1. Резюме решения
+
+Релиз 2.2.0 должен завершить переход SmartPipe от модели `Core + монолитный SmartPipe.Extensions` к модульной NuGet-экосистеме с одним стабильным исполнительным ядром, независимыми integration packages и совместимым переходным facade-пакетом.
+
+Целевая модель:
+
+```text
+SmartPipe.Core
+    |
+    +-- SmartPipe.Extensions.DependencyInjection
+    |       +-- SmartPipe.Extensions.Hosting
+    |       +-- SmartPipe.Extensions.HealthChecks
+    |
+    +-- SmartPipe.Extensions.OpenTelemetry
+    +-- SmartPipe.Extensions.Json
+    +-- SmartPipe.Extensions.Csv
+    +-- SmartPipe.Extensions.Http
+    +-- SmartPipe.Extensions.Http.Json
+    +-- SmartPipe.Extensions.Dapper
+    +-- SmartPipe.Extensions.EntityFrameworkCore
+    +-- SmartPipe.Extensions.PostgreSql
+    +-- SmartPipe.Extensions.Mapster
+    +-- SmartPipe.Extensions.Polly
+    +-- SmartPipe.Extensions.Transforms
+    +-- SmartPipe.Extensions.DataAnnotations
+    +-- SmartPipe.Extensions.Logging
+    +-- SmartPipe.Extensions.Channels
+    +-- SmartPipe.Testing
+
+SmartPipe.Extensions
+    = compatibility facade + convenience meta-package
+```
+
+Ключевые решения релиза:
+
+1. `SmartPipe.Core` остаётся владельцем runtime, pipeline contracts, immutable definition model, execution plan, lifecycle и diagnostics.
+2. Описание pipeline отделяется от запуска: `PipelineDefinition -> PipelineExecutionPlan -> PipelineRun`.
+3. `PipelineKey` становится единой идентичностью для DI, Hosting, Health Checks, telemetry и диагностики.
+4. DI использует keyed services, registry/provider и один `AsyncServiceScope` на один run.
+5. Каждая внешняя технология получает отдельный leaf package и не известна Core.
+6. `SmartPipe.Extensions` перестаёт принимать новые реализации. В 2.2.0 он сохраняет type forwarders и замороженный legacy DI/Hosting/Health compatibility cluster, который невозможно разделить без breaking change; четыре composite HTTP identities удаляются по ADR-0004.
+7. Старые namespaces сохраняются для moved identities, кроме явно одобренных удалений ADR-0004. Для остальных уже опубликованных типов применяется type forwarding либо совместимый wrapper.
+8. AOT/trimming contract объявляется и проверяется по каждому пакету отдельно.
+9. Package dependency graph проверяется автоматическим allowlist-gate в CI.
+10. Все перечисленные архитектурные изменения входят в 2.2.0; они не переносятся в 2.2.1/2.3.0 из соображений удобства реализации.
+
+# 2. Основания и проверенные практики
+
+Архитектура опирается на повторяющиеся решения зрелых .NET-экосистем:
+
+- **OpenTelemetry .NET:** маленький общий builder (`IOpenTelemetryBuilder`), который расширяется отдельными instrumentation/exporter packages; базовый слой не знает обо всех интеграциях.
+- **YARP:** `IReverseProxyBuilder` содержит доступ к `IServiceCollection`, а возможности добавляются независимыми extension-методами.
+- **Polly:** runtime и DI/telemetry разделены; именованные pipelines регистрируются по ключу через registry/provider и keyed services.
+- **Serilog:** logging и hosting интеграции поставляются отдельными пакетами.
+- **MassTransit и EF Core:** внешние providers и persistence frameworks имеют отдельные packages, не попадающие в базовый dependency graph.
+- **Microsoft library guidance:** число транзитивных зависимостей следует минимизировать; exact/upper-bound NuGet ranges обычно вредны; trimming требует analyzer + реальный trimmed consumer; type forwarding применяется для переноса типов между assemblies без перекомпиляции consumers.
+
+Источники перечислены в разделе 33. Codex ДОЛЖЕН использовать официальную документацию и официальные репозитории как первичный источник; блоги и агрегаторы не могут переопределять официальные contracts.
+
+# 3. Границы релиза 2.2.0
+
+## 3.1. Обязательный scope
+
+В 2.2.0 ДОЛЖНЫ быть реализованы:
+
+- immutable `PipelineDefinition` в Core;
+- `PipelineKey`, `PipelineStageKey`, activation и ownership contracts;
+- надёжный activation rollback и reverse-order cleanup;
+- новый DI package с keyed registry/provider;
+- один DI scope на run;
+- отдельные Hosting, HealthChecks и OpenTelemetry packages;
+- выделение всех существующих framework-specific компонентов из broad package;
+- чистый HTTP transport API и отдельный JSON codec package;
+- правильный Polly decorator;
+- безопасные options-based APIs для CSV, logging и HTTP;
+- compatibility facade и type-forwarding matrix;
+- Central Package Management;
+- package graph validator;
+- direct/meta/legacy-binary/trimming/AOT consumer matrix;
+- package-specific README, migration guide и release documentation;
+- Trusted Publishing для полного набора 2.2.0 packages.
+
+## 3.2. Явные non-goals
+
+Следующие пункты НЕ входят в 2.2.0, потому что меняют продуктовый класс системы, а не завершают пакетную архитектуру:
+
+- distributed/remote runtime;
+- durable workflow или exactly-once transport;
+- reflection-based plugin discovery;
+- автоматическое сканирование assemblies;
+- альтернативный runtime и отдельный `SmartPipe.Abstractions`;
+- автоматический supervisor с бесконечным restart loop;
+- горячая мутация уже запущенного execution plan;
+- новые внешние frameworks, отсутствующие в текущем коде, например FluentValidation, AutoMapper или Newtonsoft.Json;
+- поддержка `net8.0`, `net9.0` или `netstandard2.0` без отдельного подтверждённого consumer requirement.
+
+Non-goal НЕ означает разрешение сделать временную заглушку. Все contracts, входящие в scope, должны быть production-ready.
+
+# 4. Неподлежащие нарушению архитектурные правила
+
+## 4.1. Dependency direction
+
+- Core НЕЛЬЗЯ ссылать на любой `SmartPipe.Extensions.*` package.
+- Leaf integration package НЕЛЬЗЯ ссылать на `SmartPipe.Extensions` meta-package.
+- Несвязанные leaf packages НЕЛЬЗЯ связывать между собой.
+- Допустимые lateral dependencies ограничены:
+  - `Hosting -> DependencyInjection`;
+  - `HealthChecks -> DependencyInjection`;
+  - `Http.Json -> Http + Json`;
+  - `DataAnnotations -> Transforms`, только если сохраняется `ToFilter` compatibility API.
+- Любая новая зависимость требует изменения allowlist-файла и review причины.
+
+## 4.2. Public API
+
+- Каждый packable project ДОЛЖЕН использовать `Microsoft.CodeAnalysis.PublicApiAnalyzers`.
+- Любое изменение public API сопровождается обновлением `PublicAPI.Shipped.txt`/`PublicAPI.Unshipped.txt`.
+- НЕЛЬЗЯ исправлять API-анализатор массовым suppression без отдельного обоснования.
+- НЕЛЬЗЯ добавлять optional overload, создающий ambiguity со старым `null/default` call-site.
+- Старые namespaces сохраняются для старых типов.
+- Новые package-specific APIs используют однозначный namespace конкретного пакета.
+
+## 4.3. Async и lifecycle
+
+- НЕЛЬЗЯ использовать `.Result`, `.Wait()`, `GetAwaiter().GetResult()` в runtime/library code.
+- НЕЛЬЗЯ запускать fire-and-forget Task без владельца, cancellation и наблюдения exception.
+- CancellationToken передаётся на все I/O и ожидания.
+- Инициализация выполняется в прямом порядке; rollback/disposal — в обратном.
+- Cleanup пытается освободить все уже созданные resources, даже если один dispose завершился ошибкой.
+- Primary exception не маскируется cleanup exception; двойные ошибки агрегируются.
+- Ownership каждого component задаётся явно.
+
+## 4.4. DI
+
+- Регистрация services синхронна и не выполняет I/O.
+- Асинхронная инициализация происходит после resolution через pipeline lifecycle.
+- Singleton НЕЛЬЗЯ заставлять удерживать scoped service instance.
+- Один run создаёт один `AsyncServiceScope` по умолчанию.
+- Duplicate `PipelineKey` является startup error, а не last-registration-wins.
+
+## 4.5. Data safety
+
+- Любой framed input имеет per-record limit.
+- Любой unframed input имеет whole-input limit.
+- НЕЛЬЗЯ читать неограниченную NDJSON/CSV строку в `string` без лимита.
+- Invalid-record recovery допускается только на безопасной framing boundary.
+- Logging payload запрещён по умолчанию.
+- HTTP retries не наслаиваются скрыто на Core retry и HttpClient resilience.
+
+## 4.6. AOT/trimming
+
+- Reflection-free overload документируется первым.
+- Reflection API помечается `RequiresUnreferencedCode`/`RequiresDynamicCode` там, где это необходимо.
+- НЕЛЬЗЯ заявлять AOT support на уровне всей экосистемы.
+- Для AOT-compatible package обязательны analyzer и реальный publish consumer.
+
+# 5. Целевая модель Core
+
+## 5.1. Разделение definition, plan и run
+
+```text
+PipelineDefinition<TInput,TOutput>
+        | Compile / validate
+        v
+PipelineExecutionPlan
+        | Activate per run
+        v
+PipelineRun<TOutput>
+```
+
+`PipelineDefinition`:
+
+- immutable и thread-safe;
+- не содержит открытых файлов, connections, DbContext или HttpResponseMessage;
+- содержит typed component descriptors/factories и policy metadata;
+- reusable для нескольких последовательных или параллельных runs;
+- регистрируется singleton в DI;
+- может кэшировать structural execution plan.
+
+`PipelineExecutionPlan`:
+
+- внутренний скомпилированный граф;
+- содержит проверенные типовые переходы;
+- фиксирует stage ordering, failure/dead-letter policies и lifecycle order;
+- не содержит живых scoped components.
+
+`PipelineRun`:
+
+- single-use;
+- имеет `RunId`;
+- владеет channels, активированными runtime-owned components, cancellation и completion;
+- публикует state и metrics snapshot;
+- корректно завершает drain/abort/dispose.
+
+## 5.2. Идентичности
+
+Предлагаемый contract:
+
+```csharp
+public readonly record struct PipelineKey
+{
+    public string Value { get; }
+
+    public PipelineKey(string value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        Value = value;
+    }
+
+    public override string ToString() => Value;
+}
+
+public readonly record struct PipelineStageKey
+{
+    public string Value { get; }
+
+    public PipelineStageKey(string value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        Value = value;
+    }
+
+    public override string ToString() => Value;
+}
+```
+
+Правила:
+
+- comparison — ordinal и case-sensitive;
+- значение не нормализуется молча;
+- duplicate detection выполняется по полному значению;
+- `PipelineKey` используется в DI key, registry, options name, health name и telemetry;
+- `RunId` не используется как metric dimension;
+- stage key уникален внутри definition.
+
+## 5.3. Activation context
+
+```csharp
+public sealed class PipelineActivationContext
+{
+    public required PipelineKey PipelineKey { get; init; }
+    public required Guid RunId { get; init; }
+    public IServiceProvider? Services { get; init; }
+    public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+}
+```
+
+Core использует только BCL `IServiceProvider`, поэтому не получает dependency на Microsoft DI.
+
+## 5.4. Component descriptor и ownership
+
+Необходимо избежать двусмысленного `leaveOpen` на уровне всей pipeline. Вводится descriptor с factory и lifetime:
+
+```csharp
+public enum PipelineComponentLifetime
+{
+    RuntimeOwned,
+    ActivationScopeOwned,
+    ExternallyOwned,
+}
+```
+
+Семантика:
+
+| Lifetime | Кто создаёт | Кто вызывает InitializeAsync | Кто освобождает object |
+|---|---|---|---|
+| RuntimeOwned | factory definition | Core | Core |
+| ActivationScopeOwned | DI scope | Core | DI scope после завершения Core run |
+| ExternallyOwned | caller/external owner | Core только если явно разрешено descriptor | external owner |
+
+Для исключения ошибочной комбинации рекомендуется не публиковать enum напрямую в каждом overload, а дать factories:
+
+```csharp
+PipelineComponent.RuntimeOwned(factory)
+PipelineComponent.ScopeOwned(factory)
+PipelineComponent.Borrowed(instance, initialize: false)
+```
+
+Внутренний descriptor ДОЛЖЕН содержать явную release strategy. Core не должен угадывать ownership по тому, открыт ли stream/connection.
+
+## 5.5. Definition builder
+
+Новый API не заменяет немедленно существующий `PipelineBuilder`, а предоставляет явный reusable path:
+
+```csharp
+var definition = PipelineDefinitionBuilder
+    .Create<Order>(new PipelineKey("orders-import"))
+    .From(
+        PipelineComponent.ScopeOwned<OrderSource>(
+            context => context.Services!
+                .GetRequiredService<OrderSource>()))
+    .Transform<OrderDto>(
+        new PipelineStageKey("map-order"),
+        PipelineComponent.ScopeOwned<OrderMapper>(
+            context => context.Services!
+                .GetRequiredService<OrderMapper>()))
+    .To(
+        PipelineComponent.ScopeOwned<OrderSink>(
+            context => context.Services!
+                .GetRequiredService<OrderSink>()))
+    .WithRuntimeOptions(options)
+    .Build();
+```
+
+`Build()` выполняет только structural validation. Он НЕЛЬЗЯ открывать файл, DB connection, network socket или DI scope.
+
+## 5.6. Build-time validation
+
+`Build()` ДОЛЖЕН проверять:
+
+- pipeline key задан;
+- source ровно один;
+- sink не более одного и соответствует final output type;
+- stage keys уникальны;
+- component factory не null;
+- component lifetime определён;
+- runtime options валидны;
+- failure/dead-letter policies совместимы;
+- output/input channel capacities положительны;
+- нет unsupported ordering/concurrency combination;
+- definition не содержит direct live component в reusable mode, если ownership не указан явно.
+
+## 5.7. Activation rollback
+
+Обязательный алгоритм:
+
+```text
+create source
+create stage 1
+create stage 2
+create sink
+initialize source
+initialize stage 1
+initialize stage 2  <-- failure
+cleanup stage 1
+cleanup source
+release activation scope
+rethrow primary failure
+```
+
+Требования:
+
+- cleanup идёт reverse order;
+- все cleanup actions выполняются best effort;
+- single primary exception сохраняет identity и stack через ExceptionDispatchInfo;
+- primary + cleanup errors возвращаются как AggregateException с primary первым;
+- cancellation не превращается в generic failure;
+- повторный dispose shared task не запускает cleanup заново.
+
+## 5.8. Совместимость существующего PipelineBuilder
+
+- Текущие instance-based `From/Transform/To/Run` сохраняются.
+- Factory path должен уметь построить новый `PipelineDefinition` без дублирования runtime logic.
+- Новый Core implementation становится единственным источником lifecycle semantics.
+- Старые API адаптируются к definition/plan, а не поддерживают отдельную параллельную реализацию.
+
+# 6. Целевая карта пакетов
+
+| Package | Роль | Прямые dependencies | AOT contract |
+|---|---|---|---|
+| SmartPipe.Core | Runtime, contracts, definition, plan, lifecycle, diagnostics | Logging.Abstractions | Полный |
+| SmartPipe.Extensions.DependencyInjection | Builder, keyed registration, registry, run scopes | Core, DI.Abstractions | Полный без scanning |
+| SmartPipe.Extensions.Hosting | Generic Host orchestration | Core, DependencyInjection, Hosting.Abstractions, Options | Полный |
+| SmartPipe.Extensions.HealthChecks | Liveness/readiness adapters | Core, DependencyInjection, Diagnostics.HealthChecks, Options | Полный |
+| SmartPipe.Extensions.OpenTelemetry | Register Meter/ActivitySource | Core, OpenTelemetry builder API | Проверяемый consumer |
+| SmartPipe.Extensions.Json | STJ files, framing, dead-letter JSON | Core, Logging.Abstractions | Полный через JsonTypeInfo |
+| SmartPipe.Extensions.Csv | CSV sources/sinks | Core, CsvHelper, Logging.Abstractions | Отдельно проверяется |
+| SmartPipe.Extensions.Http | HTTP transport | Core, Microsoft.Extensions.Http, Logging.Abstractions | Полный transport path |
+| SmartPipe.Extensions.Http.Json | JSON codecs over HTTP | Http, Json | Полный через JsonTypeInfo |
+| SmartPipe.Extensions.Dapper | Dapper query/command/batch | Core, Dapper, Logging.Abstractions | Explicit SQL path |
+| SmartPipe.Extensions.EntityFrameworkCore | EF streaming source | Core, EF Core, Logging.Abstractions | Не blanket claim |
+| SmartPipe.Extensions.PostgreSql | Binary COPY и LISTEN/NOTIFY на application-owned `NpgsqlDataSource` | Core, Npgsql 10.0.3, Logging.Abstractions | Положительный `IsAotCompatible` contract для slim/static primitive path с реальным consumer |
+| SmartPipe.Extensions.Mapster | Mapster transform | Core, Mapster | Reflection/dynamic warnings |
+| SmartPipe.Extensions.Polly | Correct decorator | Core, Polly.Core | `verified` decorator path (`polly-trim`, `polly-nativeaot`) |
+| SmartPipe.Extensions.Transforms | BCL transforms | Core | Полный |
+| SmartPipe.Extensions.DataAnnotations | DataAnnotations validation | Core, Transforms, Annotations | Reflection annotated |
+| SmartPipe.Extensions.Logging | Safe logging sink | Core, Logging.Abstractions | Полный |
+| SmartPipe.Extensions.Channels | Channel helpers | Core | Полный |
+| SmartPipe.Testing | Framework-neutral test components | Core | Не runtime dependency |
+| SmartPipe.Extensions | Meta/facade/legacy wrappers | Все official integration packages | Не заявляет общий AOT |
+
+# 7. Dependency graph и запреты
+
+```text
+Core
+ |
+ +-- DependencyInjection --+-- Hosting
+ |                         +-- HealthChecks
+ +-- OpenTelemetry
+ +-- Json
+ +-- Csv
+ +-- Http --------+-- Http.Json --+-- Json
+ +-- Dapper
+ +-- EntityFrameworkCore
+ +-- PostgreSql
+ +-- Mapster
+ +-- Polly
+ +-- Transforms --+-- DataAnnotations
+ +-- Logging
+ +-- Channels
+ +-- Testing
+
+Extensions facade -> все official packages
+```
+
+CI ДОЛЖЕН отклонять:
+
+```text
+Core -> Extensions.*
+Csv -> EF/Dapper/Http/Hosting
+Dapper -> EF
+EF -> Dapper
+PostgreSql -> Dapper/EF/Http
+Http -> Polly
+Hosting -> Json/Csv/Dapper/EF
+HealthChecks -> Hosting
+любой leaf -> SmartPipe.Extensions
+```
+
+# 8. Dependency Injection package
+
+## 8.1. Root builder
+
+```csharp
+public interface ISmartPipeBuilder
+{
+    IServiceCollection Services { get; }
+}
+```
+
+```csharp
+var smartPipe = services.AddSmartPipe();
+```
+
+`AddSmartPipe()` регистрирует только infrastructure:
+
+- registration store/marker;
+- `ISmartPipeRegistry`;
+- `ISmartPipeFactoryProvider`;
+- `ISmartPipeRunRegistry`;
+- scope-aware activator;
+- options infrastructure;
+- validation services.
+
+Он не регистрирует hosted service, health check, JSON, CSV или exporters.
+
+## 8.2. Typed registration builder
+
+```csharp
+public interface ISmartPipeRegistrationBuilder<TInput, TOutput>
+    : ISmartPipeBuilder
+{
+    PipelineKey Key { get; }
+    PipelineDefinition<TInput, TOutput> Definition { get; }
+}
+```
+
+```csharp
+var orders = services
+    .AddSmartPipe()
+    .AddPipeline(orderDefinition);
+```
+
+## 8.3. Keyed services
+
+Для каждой definition регистрируются keyed services:
+
+```csharp
+ISmartPipeFactory<TInput,TOutput>
+PipelineDefinition<TInput,TOutput>
+```
+
+Key: `PipelineKey`.
+
+Так как built-in DI допускает несколько registrations одного key и возвращает последнюю, SmartPipe ДОЛЖЕН самостоятельно выявлять duplicate key во время registration/build validation.
+
+## 8.4. Registry и provider
+
+```csharp
+public interface ISmartPipeFactoryProvider
+{
+    ISmartPipeFactory<TInput,TOutput>
+        GetFactory<TInput,TOutput>(PipelineKey key);
+
+    bool TryGetFactory<TInput,TOutput>(
+        PipelineKey key,
+        out ISmartPipeFactory<TInput,TOutput>? factory);
+}
+```
+
+```csharp
+public sealed record SmartPipeRegistrationDescriptor
+{
+    public required PipelineKey Key { get; init; }
+    public required Type InputType { get; init; }
+    public required Type OutputType { get; init; }
+    public required string DisplayName { get; init; }
+}
+```
+
+Registry хранит definitions/metadata, но не живые scoped components.
+
+## 8.5. Один scope на run
+
+`SmartPipeFactory.StartAsync()`:
+
+1. создаёт `AsyncServiceScope`;
+2. формирует activation context;
+3. активирует definition;
+4. регистрирует run;
+5. возвращает wrapper, который при завершении освобождает run, затем scope.
+
+Factory singleton может хранить только `IServiceScopeFactory`, immutable definition и registry. Он НЕЛЬЗЯ удерживать scoped instances.
+
+## 8.6. Одновременные runs
+
+- `PipelineKey` идентифицирует definition, а не конкретный run.
+- Несколько concurrent runs одной definition разрешены для factory API.
+- `RunId` уникален.
+- `ISmartPipeRunRegistry` хранит composite identity `(PipelineKey, RunId)`.
+- Hosted registration по умолчанию допускает один active run; второй start является invariant violation.
+
+## 8.7. Старый DI API
+
+Существующие типы `ISmartPipeDefinition`, `ISmartPipeFactory`, `SmartPipeDefinitionBuilder`, `SmartPipeDefinition` и `SmartPipeFactory` остаются физически в compatibility facade. Их public Hosting/Health constructor graph и synchronous immediate-return `Start` не допускают безопасный type forwarding в async-only DI leaf в minor-релизе. Ownership strategy — `obsolete-wrapper`; новые leaf packages не ссылаются на эти типы.
+
+Старые методы `SmartPipeServiceCollectionExtensions` остаются физическими compatibility registration entry points в facade и создают замороженный legacy definition/factory/health cluster через существующий Core adapter. Они не делегируют новым DI builders и не помечаются `[Obsolete]` в 2.2.0; obsolete boundary применяется только к synchronous `ISmartPipeFactory.Start` и `SmartPipeFactory.Start`.
+
+# 9. Hosting package
+
+## 9.1. Один orchestrator
+
+Вместо отдельного generic hosted service как основной реализации используется:
+
+```csharp
+internal sealed class SmartPipeHostedOrchestrator : IHostedService
+```
+
+Он получает ordered registrations `IHostedSmartPipeRegistration`.
+
+Преимущества:
+
+- единый partial-start rollback;
+- reverse shutdown;
+- единая failure policy;
+- нет множества некоординированных `BackgroundService`;
+- проще health/diagnostics.
+
+## 9.2. Fluent registration
+
+```csharp
+orders.RunAsHostedService(options =>
+{
+    options.DrainTimeout = TimeSpan.FromSeconds(30);
+    options.FailureBehavior =
+        SmartPipeHostedFailureBehavior.StopApplication;
+});
+```
+
+## 9.3. Start/stop
+
+Default start — последовательно в registration order.
+
+При failure запуска N:
+
+- остановить уже запущенные pipelines N-1..1;
+- освободить runs/scopes;
+- применить configured host failure behavior;
+- сохранить primary startup exception.
+
+Stop — reverse order, с per-pipeline drain timeout и aggregate cleanup report.
+
+## 9.4. Failure behavior
+
+```csharp
+public enum SmartPipeHostedFailureBehavior
+{
+    StopApplication,
+    KeepHostAliveAndMarkUnhealthy,
+    Ignore,
+}
+```
+
+Старое `Rethrow` сохраняется только для compatibility и отображается на новую семантику либо помечается obsolete.
+
+Автоматический бесконечный restart loop НЕ добавляется. Это отдельный supervisor product contract и не нужен для корректной интеграции с Host.
+
+# 10. Health Checks package
+
+## 10.1. Key-based model
+
+Старый monitor, идентифицированный только generic type pair, заменяется key-based run registry.
+
+Snapshot definition-level:
+
+```csharp
+public sealed record SmartPipePipelineHealthSnapshot
+{
+    public required PipelineKey PipelineKey { get; init; }
+    public int ActiveRunCount { get; init; }
+    public PipelineRunState WorstState { get; init; }
+    public DateTimeOffset? LastActivityAtUtc { get; init; }
+    public double MaxInputQueueUtilization { get; init; }
+    public double MaxOutputQueueUtilization { get; init; }
+}
+```
+
+## 10.2. Liveness/readiness
+
+Liveness unhealthy:
+
+- hosted orchestrator faulted;
+- active run в irrecoverable faulted state;
+- registry/lifecycle invariant нарушен.
+
+Readiness degraded/unhealthy:
+
+- hosted pipeline ещё не запущена;
+- draining;
+- queue utilization выше threshold;
+- activity stale при `RequireActivity=true`;
+- output backpressure сохраняется дольше threshold.
+
+## 10.3. Stable names
+
+```text
+smartpipe:{pipeline-key}:live
+smartpipe:{pipeline-key}:ready
+```
+
+Tags:
+
+```text
+smartpipe
+smartpipe-live
+smartpipe-ready
+```
+
+## 10.4. Options
+
+Options именуются `PipelineKey.Value`, используют `ValidateOnStart` и source-generated validator.
+
+# 11. OpenTelemetry package
+
+## 11.1. Exporter-neutral Core
+
+Core сохраняет `Meter` и `ActivitySource`, но публикует стабильные constants:
+
+```csharp
+public static class SmartPipeDiagnostics
+{
+    public const string MeterName = "SmartPipe.Core";
+    public const string ActivitySourceName = "SmartPipe.Core";
+}
+```
+
+## 11.2. Builder extension
+
+```csharp
+services
+    .AddOpenTelemetry()
+    .AddSmartPipeInstrumentation()
+    .UseOtlpExporter();
+```
+
+SmartPipe package регистрирует только Meter/ActivitySource. Он НЕЛЬЗЯ выбирать OTLP, Prometheus, Azure Monitor или другой exporter.
+
+## 11.3. Metrics
+
+Разрешённые low-cardinality dimensions:
+
+- `pipeline_id`;
+- `stage_id`;
+- `outcome`;
+- `error_type`.
+
+Запрещённые:
+
+- `run_id`;
+- `trace_id`;
+- payload;
+- exception message;
+- raw URI/customer/user identifiers.
+
+Существующие metric names сохраняются. Breaking rename units/names не выполняется в 2.2.0. Новые instruments добавляются только при необходимости и с compatibility test.
+
+# 12. Standard packages и перенос существующих типов
+
+## 12.1. Полная migration matrix
+
+| Существующий тип/API | Целевой package | Действие в 2.2.0 |
+|---|---|---|
+| JsonFileSource, JsonFileSink, DeadLetterSource/Sink, JsonTransform | Json | Уже выделены; добавить definition builder integrations |
+| CsvFileSource, CsvFileSink | Csv | Переместить, сохранить namespace, forward |
+| CsvTransform | Csv | Переместить, obsolete; новые docs не используют |
+| DapperSelector | Dapper | Переместить и forward; новые consumers используют explicit-SQL components |
+| DbSink | Dapper | Переместить и forward; legacy auto-SQL path остаётся только внутри forwarded типа |
+| EfCoreSelector | EntityFrameworkCore | Переместить и forward; добавить factory-based source |
+| MapsterTransform | Mapster | Переместить и forward |
+| PollyResilienceTransform | Нет; removed per [ADR-0004](../../../adr/0004-smartpipe-2.2-breaking-migration.md) | No-op identity удалена без forwarder/wrapper; `Removed` записан в ownership matrix; замена — `PollyTransformDecorator`/`PollyPipelineComponents.Decorate` в Polly leaf |
+| FilterTransform, ConditionalTransform, CompositeTransform, CompressionTransform | Transforms | Переместить и forward; исправить lifecycle/API |
+| ValidationTransform, FilterValidationExtensions | DataAnnotations | Переместить и forward |
+| LoggerSink | Logging | Переместить и forward; добавить safe options API |
+| ChannelMerge | Channels | Переместить и forward |
+| Legacy SmartPipe typed factory/definition types | Extensions facade | Сохранить физически как frozen compatibility quarantine; новые async-only contracts находятся в DependencyInjection |
+| Legacy SmartPipeHostedService/options/enums | Extensions facade | Сохранить физически как frozen compatibility quarantine; новый orchestrator находится в Hosting |
+| Legacy HealthCheck/options/snapshots/monitor types | Extensions facade | Сохранить физически как frozen compatibility quarantine; новые key-based contracts находятся в HealthChecks |
+| SmartPipeServiceCollectionExtensions | Extensions facade | Сохранить физические legacy registration entry points; не делегировать canonical builders; obsolete только synchronous `Start` members |
+| `HttpSelector`, `HttpClientFactorySelector`, `HttpSink`, `HttpClientFactorySink` | Нет; removed per [ADR-0004](../../../adr/0004-smartpipe-2.2-breaking-migration.md) | `Removed` с явной заменой записан в ownership matrix; реализаций, forwarders и wrappers нет; consumers обновляют API и перекомпилируются |
+
+## 12.2. Удаление legacy HTTP identities
+
+Четыре composite identities из migration matrix удалены в 2.2.0 согласно
+[ADR-0004](../../../adr/0004-smartpipe-2.2-breaking-migration.md). Их смешанные JSON и
+Polly signatures не переносятся в чистые HTTP leaves и не сохраняются в facade
+через wrappers или forwarders. Consumers переходят на `HttpPipelineComponents`
+и HTTP JSON codecs, затем перекомпилируются. Удаления должны быть отражены в
+existing ownership matrix и покрыты targeted native ApiCompat suppression;
+прочие identities остаются под правилами ADR-0001 и quarantine ADR-0002.
+
+# 13. Transforms, DataAnnotations, Logging и Channels
+
+## 13.1. FilterTransform
+
+Добавить основной async overload:
+
+```csharp
+FilterTransform(
+    Func<T, CancellationToken, ValueTask<bool>> predicate)
+```
+
+Старые `Func<T,bool>` и `Func<T,Task<bool>>` сохраняются и адаптируются.
+
+## 13.2. CompositeTransform lifecycle
+
+Обязательно:
+
+- partial initialization rollback;
+- reverse disposal;
+- dispose всех inner transforms, несмотря на отдельные failures;
+- primary exception preservation;
+- ownership inner transforms документирован: Composite владеет переданными transforms по старому contract.
+
+## 13.3. ConditionalTransform
+
+Добавить options/constructor с explicit ownership inner transform. Старый constructor сохраняет историческую ownership semantics и документируется.
+
+## 13.4. CompressionTransform
+
+Сохранить byte-array contract. Документировать, что transform materializes весь payload и не является streaming compression. Добавить input/output size guard options, чтобы decompression/compression pipelines не создавали неограниченные allocations.
+
+## 13.5. DataAnnotations
+
+`ValidationTransform<T>`:
+
+- rules snapshot фиксируется после Initialize или первый run;
+- mutation rules во время execution запрещена;
+- DataAnnotations reflection path аннотируется для trimming;
+- custom rules могут принимать CancellationToken/ValueTask в новом API;
+- error model не объединяет все ошибки в неструктурированную строку: добавить structured validation error collection в `SmartPipeError.Metadata` либо новый typed details contract без breaking старого StageResult.
+
+## 13.6. LoggerSink
+
+Старый constructor сохраняется и помечается obsolete как потенциально логирующий payload.
+
+Новый безопасный API:
+
+```csharp
+public sealed class LoggerSinkOptions<T>
+{
+    public LogLevel Level { get; init; } = LogLevel.Debug;
+    public bool IncludePayload { get; init; } = false;
+    public Func<T, object?>? PayloadProjection { get; init; }
+    public EventId EventId { get; init; } = new(1000, "SmartPipeItem");
+}
+```
+
+По умолчанию логируются pipeline/stage/trace identifiers, но не payload.
+
+## 13.7. ChannelMerge
+
+Перенести в Channels package. Проверить:
+
+- bounded output обязателен или задаётся безопасный bounded default;
+- cancellation завершает pump tasks;
+- failure одного reader корректно завершает output;
+- оба reader completion наблюдаются;
+- dispose/cancellation не оставляет background tasks.
+
+# 14. CSV package
+
+## 14.1. Options-first API
+
+```csharp
+public sealed class CsvSourceOptions
+{
+    public string Delimiter { get; init; } = ",";
+    public CultureInfo Culture { get; init; } = CultureInfo.InvariantCulture;
+    public bool HasHeaderRecord { get; init; } = true;
+    public long MaxRecordSizeBytes { get; init; } = 1_048_576;
+    public CsvInvalidRecordBehavior InvalidRecordBehavior { get; init; }
+        = CsvInvalidRecordBehavior.Throw;
+}
+```
+
+Новые APIs strict by default.
+
+Старый constructor `(path, delimiter, culture)` сохраняет прежнее поведение для compatibility и помечается obsolete с рекомендацией options API. НЕЛЬЗЯ молча менять его semantics.
+
+## 14.2. Source/sink contracts
+
+Strict CSV definitions are file-only; public stream ownership и `leaveOpen` overloads не входят в этот contract.
+
+- per-record size limit;
+- cancellation;
+- encoding options;
+- header/missing/bad-data policy;
+- safe SkipAndLog только на record boundary;
+- path в exception без раскрытия payload;
+- transactional/atomic file behavior там, где это возможно.
+
+Internal lifecycle явен: runtime `CsvReader`/`CsvWriter` wrappers оставляют свой bridge или record writer открытым, а компонент владеет этими wrappers и file reader/stream. Source cleanup использует atomic field exchange там, где iterator и явный disposal могут сойтись; sink cleanup сериализуется своим write gate. Оба освобождают ресурсы в обратном порядке захвата, пытаются выполнить каждое освобождение и сообщают primary operation failure раньше cleanup failures. Публичный API при этом не расширяется.
+
+## 14.3. CsvTransform
+
+`CsvTransform<TInput,TOutput>` сохраняется только для binary/source compatibility и помечается obsolete. Он не включается в новый quick start, потому что serialize-then-parse является дорогим и неочевидным mapping contract.
+
+# 15. Dapper package
+
+## 15.1. Новые APIs
+
+```csharp
+DapperPipelineComponents.QuerySource<T>(...)
+DapperPipelineComponents.CommandSink<T>(...)
+DapperPipelineComponents.BatchCommandSink<T>(...)
+DapperPipelineDefinitionBuilder.FromQuery<T>(...)
+DapperPipelineDefinitionBuilderExtensions.ToCommand<...>(...)
+DapperPipelineDefinitionBuilderExtensions.ToBatchCommand<...>(...)
+```
+
+Каждый компонент доступен в двух acquisition формах: borrowed `DbDataSource` и async connection factory
+`Func<PipelineActivationContext,CancellationToken,ValueTask<DbConnection>>`. Компоненты возвращают
+`PipelineComponent<IPipelineSource<T>>`/`PipelineComponent<IPipelineSink<T>>` descriptors, а typed builder
+methods делегируют Core `From`/`To` и не вводят Dapper-specific definition или runtime типов.
+
+`DapperSelector<T>` и `DbSink<T>` физически переносятся в leaf с сохранением namespace и type-forwarding
+из `SmartPipe.Extensions`; в ownership matrix обе идентичности записаны как `type-forward` с
+`migrationEpic: SP220-10`, поэтому `Removed` и native ApiCompat suppression в 2.2.0 не применяются.
+
+## 15.2. Explicit SQL first
+
+Основной sink требует explicit SQL. Auto-generated INSERT остаётся legacy path исключительно внутри
+forwarded `DbSink<T>`, потому что identifier quoting, schema, generated columns и dialect отличаются между
+providers.
+
+## 15.3. Connection ownership
+
+- descriptor composition не выполняет I/O: не открывает connection, не создаёт command, не начинает
+  transaction и не выполняет SQL;
+- data source, connection factory и `ILoggerFactory` являются borrowed;
+- каждый run получает fresh connection, владеет ею и освобождает ровно один раз;
+- `leaveOpen`, external `DbTransaction` injection, ambient/по-run transaction, savepoint и
+  shared-connection contract отсутствуют в новом explicit-SQL surface; forwarded legacy-типы
+  сохраняют свои shipped `leaveOpen` конструкторы;
+- cancellation token вызывающего передаётся во все I/O, а cleanup и rollback выполняются с
+  `CancellationToken.None`;
+- cleanup идёт в reverse acquisition order; primary failure сохраняется первым, cleanup/rollback failures
+  агрегируются после него.
+
+## 15.4. Batch sink
+
+Обязательный contract 2.2.0:
+
+- batch — это один preformed bounded `IReadOnlyList<T>` envelope, передаваемый как одна Dapper parameter
+  sequence в одном awaited `ExecuteAsync`; provider может выполнить N commands, поэтому это не bulk API и
+  не single-SQL guarantee;
+- скрытого накопления между envelopes, tail buffer и deferred SQL из `DisposeAsync` нет;
+- `DapperBatchSinkOptions` содержит обязательный `DapperBatchTransactionMode` (`PerBatch` рекомендуется,
+  `None` оставляет provider-defined atomicity) и `MaxBatchItems`; `IsolationLevel = null` оставляет выбор
+  provider, а non-null `IsolationLevel` вместе с `None` отклоняется на composition;
+- пустой batch не выполняет SQL и не открывает transaction;
+- execute или commit failure запускает `RollbackAsync(CancellationToken.None)`; commit, который мог
+  достичь сервера, сохраняет unknown outcome — automatic retry и exactly-once claim отсутствуют;
+- dispose failure не маскирует command failure.
+
+## 15.5. Logging, trimming и AOT
+
+Новый surface логирует operation name, pipeline key, run id, outcome, duration и row/affected counts; SQL,
+parameter values, connection strings, payloads и exception messages в default logs не попадают. Legacy
+forwarded path сохраняет своё shipped поведение, включая собственное логирование.
+
+Reflection и runtime code generation Dapper помечаются `RequiresUnreferencedCode`/`RequiresDynamicCode` на
+executable entry points. Explicit `Func<DbDataReader,T>` row mapper является reflection-free opt-in, но
+blanket NativeAOT claim пакет не делает.
+
+# 16. Entity Framework Core package
+
+## 16.1. Provider-neutral
+
+Package зависит от `Microsoft.EntityFrameworkCore`, но не от SqlServer/Npgsql/Sqlite provider.
+Provider-специфичные пакеты не входят ни в production-граф leaf, ни в его allowlist: artifact-level тест
+фиксирует отсутствие провайдерных сборок среди referenced assemblies, а graph gate — отсутствие
+провайдерных зависимостей.
+
+## 16.2. Новые factory-based sources
+
+```csharp
+EfCorePipelineComponents.QuerySource<TContext,TResult>(...)
+EfCorePipelineComponents.CompiledQuerySource<TContext,TResult>(...)
+EfCorePipelineDefinitionBuilder.FromQuery<TContext,TResult>(...)
+EfCorePipelineDefinitionBuilder.FromCompiledQuery<TContext,TResult>(...)
+```
+
+Каждый источник доступен в двух acquisition формах: borrowed `IDbContextFactory<TContext>` и async
+context factory `Func<PipelineActivationContext,CancellationToken,ValueTask<TContext>>`. Компоненты
+возвращают `PipelineComponent<IPipelineSource<TResult>>` descriptors, а builder methods делегируют Core
+`PipelineDefinitionBuilder.From` и не вводят EF-специфичных definition или runtime типов.
+
+`QuerySource` принимает `Func<TContext,PipelineActivationContext,IQueryable<TResult>>` и
+`EfCoreQueryOptions`, и сохраняет `where TResult : class`, который требуют tracking-операторы.
+`CompiledQuerySource` принимает
+`Func<TContext,PipelineActivationContext,CancellationToken,IAsyncEnumerable<TResult>>` и
+`EfCoreCompiledQueryOptions`, и намеренно не ограничивает `TResult`, чтобы поддерживать scalar и struct
+results; tracking-опции у compiled-пути нет, потому что query shape уже фиксирован делегатом.
+
+`EfCoreSelector<T>` физически переносится в leaf с сохранением namespace и type-forwarding из
+`SmartPipe.Extensions`; в ownership matrix идентичность записана как `type-forward` с
+`migrationEpic: SP220-11`, поэтому `Removed` и native ApiCompat suppression в 2.2.0 не применяются.
+
+## 16.3. Query behavior
+
+- `NoTracking` default; `NoTrackingWithIdentityResolution`, `Tracking` и `PreserveQuery` (оператор не
+  применяется, caller-query сохраняется) выбираются явно через `EfCoreQueryOptions.TrackingMode`;
+- options валидируются и snapshot-ятся на composition: `OperationName` непустой, без control-символов и
+  не длиннее 64 символов, значение enum проверяется явно до создания context;
+- descriptor composition не вызывает context factory и query factory и не выполняет I/O;
+- context создаётся один раз на run при активации, принадлежит run и освобождается ровно один раз;
+- query factory вызывается один раз на run при активации, tracking-оператор применяется один раз, и
+  выполняется одно перечисление; второе перечисление и использование после dispose падают
+  детерминированно;
+- enumerator освобождается до context; cleanup выполняется ровно один раз с `CancellationToken.None`,
+  не заменяет primary failure и не использует отменённый caller-token;
+- один context не переиспользуется concurrent runs; pooled factory может переиспользовать context
+  последовательно после возврата, одновременная аренда одного context недопустима;
+- cancellation передаётся в `AsAsyncEnumerable` enumeration; OCE не проглатывается;
+- provider buffering остаётся поведением провайдера: `ToListAsync` принудительно не вызывается;
+- скрытых timeout и retry loop в package нет; provider exceptions сохраняются.
+
+## 16.4. Logging, trimming и AOT
+
+Новый surface логирует operation name, result type, pipeline key, run id, item count, duration и outcome;
+query text, parameter values, connection strings и payloads в default logs не попадают. Legacy forwarded
+path сохраняет своё shipped поведение, включая собственное логирование и borrowed-context semantics:
+`EfCoreSelector<T>` не освобождает caller-owned `DbContext`, тогда как новый surface владеет context
+каждого run.
+
+Package не делает blanket trimming/NativeAOT claim: query shape, provider, compiled models и generated
+query delegates оценивает consumer. Узкая `[UnconditionalSuppressMessage]` на приватном `ResolveSet()`
+документирует trimming-unsafe legacy path `DbContext.Set<T>()`; публичная и forwarded поверхность
+аннотаций не получает.
+
+# 17. Mapster package
+
+```csharp
+[RequiresUnreferencedCode("Mapster runtime mapping uses reflection metadata.")]
+[RequiresDynamicCode("Mapster runtime mapping compiles expressions at runtime.")]
+public static PipelineComponent<IPipelineTransformer<TInput,TOutput>>
+    Transform<TInput,TOutput>(Action<TypeAdapterConfig>? configure = null);
+
+[RequiresUnreferencedCode("Mapster runtime mapping uses reflection metadata.")]
+[RequiresDynamicCode("Mapster runtime mapping compiles expressions at runtime.")]
+public static PipelineDefinitionBuilder<TInput,TOutput>
+    MapWithMapster<TInput,TOutput>(
+        this PipelineDefinitionBuilder<TInput> builder,
+        PipelineStageKey stageKey,
+        Action<TypeAdapterConfig>? configure = null);
+
+[RequiresUnreferencedCode("Mapster runtime mapping uses reflection metadata.")]
+[RequiresDynamicCode("Mapster runtime mapping compiles expressions at runtime.")]
+public static PipelineDefinitionBuilder<TPipelineInput,TOutput>
+    MapWithMapster<TPipelineInput,TCurrent,TOutput>(
+        this PipelineDefinitionBuilder<TPipelineInput,TCurrent> builder,
+        PipelineStageKey stageKey,
+        Action<TypeAdapterConfig>? configure = null);
+```
+
+Initial and typed builders preserve the original pipeline input and pass the supplied
+`PipelineStageKey` to Core's `Transform`; there is no overload accepting a caller-owned
+mutable `TypeAdapterConfig` and no new options type.
+
+- Существующий transform физически переносится в leaf с сохранением namespace и type-forwarding из
+  `SmartPipe.Extensions`; в ownership matrix идентичность записана как `type-forward` с
+  `migrationEpic: SP220-12`, поэтому `Removed` и native ApiCompat suppression в 2.2.0 не применяются.
+- На composition callback один раз настраивает caller-visible working configuration, делает один private
+  `Clone`, затем получает root delegate через `privateClone.GetMapFunction<TInput,TOutput>()` один раз.
+- Nested mapping pairs могут компилироваться lazy при первом mapping и кэшироваться относительно private
+  clone; composition не обязана заранее обнаруживать все nested configuration errors.
+- Clone изолирует configuration containers, но не является deep immutability: expressions, delegates,
+  custom values и closures могут оставаться caller-owned mutable references.
+- Используются существующие `PipelineTransformer.FromFunc` и `RuntimeOwned`; bespoke initialization class
+  и permanent-failure translation не добавляются.
+- Ошибка configure callback является composition failure; mapping exceptions передаются в Core без
+  отдельной permanent-failure translation.
+- Acceptance проверяет retained working-config mutation, nested mappings, concurrent runs и
+  callback/root-compile counts; per-run compile и новый mapping lifecycle framework не добавляются.
+- Не заявлять blanket AOT compatibility; сохранить `RequiresUnreferencedCode`/`RequiresDynamicCode` на
+  runtime mapping path. Trimming-safe маршрут — hand-written/generated mapper через
+  `PipelineTransformer.FromFunc`; измеренная граница: trimmed publish сообщает aggregate `IL2104` для
+  сборок `Mapster` и `Mapster.Core`, а выполнение composition под `TrimMode=link` падает внутри
+  `TypeAdapterConfig.GetMapFunction`.
+- Не добавлять AutoMapper/Mapperly в этот package; consumer фиксирует ожидаемые trim warnings и
+  отсутствие ложного AOT claim.
+
+# 18. HTTP и HTTP.Json
+
+Контракты этого раздела реализованы в SP220-13 по ADR-0004. Direct, trimmed и
+NativeAOT consumers (`http-*`, `http-json-*`) являются acceptance evidence; до
+exact-head CI NativeAOT evidence не считается полученным.
+
+## 18.1. Transport/codec separation
+
+`SmartPipe.Extensions.Http` владеет transport:
+
+- HttpClient/IHttpClientFactory;
+- request creation;
+- status validation;
+- headers/idempotency;
+- response lifetime;
+- body stream;
+- cancellation.
+
+Пакет зависит от Core, `Microsoft.Extensions.Http` и
+`Microsoft.Extensions.Logging.Abstractions`; он не зависит от Json, Polly,
+Hosting, HealthChecks или facade.
+
+Версии обеих зависимостей берутся из центральной Microsoft cohort
+`10.0.11` в `Directory.Packages.props` и фиксируются lock-файлами. На
+2026-09-24 доступен servicing patch `10.0.12`, но он обновляет всю cohort
+Microsoft.Extensions для всех проектов и lock-файлов и не нужен для HTTP
+контракта; поэтому он выполняется отдельной servicing-задачей с собственной
+NuGet audit проверкой, а не внутри SP220-13.
+
+`SmartPipe.Extensions.Http.Json` владеет:
+
+- JSON request content;
+- JSON array response;
+- NDJSON response;
+- JsonTypeInfo;
+- max depth/record size;
+- invalid record policy.
+
+Пакет зависит только от Http и Json. Array и NDJSON используют
+source-generated `JsonTypeInfo<T>`; reflection serialization не является
+положительным trim/NativeAOT path.
+Acceptance требует реальный trimmed/NativeAOT transport consumer и отдельный
+consumer для `JsonTypeInfo<T>` path; arbitrary callbacks остаются вне claim.
+`HttpJsonResponseReaders.JsonArray` и `Ndjson` создают readers,
+`HttpJsonRequestContent.Post` создаёт request factory.
+
+## 18.2. Transport contracts
+
+```csharp
+public delegate ValueTask<HttpRequestMessage>
+    HttpRequestFactory<T>(
+        ProcessingEnvelope<T> envelope,
+        CancellationToken cancellationToken);
+
+public delegate IAsyncEnumerable<T>
+    HttpResponseReader<out T>(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken);
+```
+
+Новые source/sink APIs не содержат Polly type в public signature.
+
+`HttpPipelineComponents.Source` принимает borrowed `HttpClient` либо
+`IHttpClientFactory`, request factory, response reader и source options.
+`Sink` принимает client/factory, request factory, optional idempotency selector
+и sink options. `FromHttp` задаёт `PipelineKey`; `ToHttp` использует Core `To`
+и не принимает stage key. Initial и typed builder overloads сохраняют input и
+stage keys. Сборка определения не выполняет I/O.
+
+`HttpSourceOptions` и `HttpSinkOptions` задают имя операции, optional
+`BodyTimeout` и `HttpResponsePolicy`; sink также задаёт имя idempotency header.
+Policy ограничивает error preview 16 KiB по умолчанию, а чтение preview
+отключено. Preview требует явного opt-in и может содержать чувствительные
+данные. Body timeout по умолчанию отсутствует.
+
+## 18.3. HttpClient lifecycle
+
+Direct `HttpClient` borrowed. Source с factory получает client только при
+enumeration и освобождает его после завершения reader; sink с factory получает
+и освобождает client на каждый `WriteAsync`. Handler остаётся под управлением
+factory. Запрос становится owned транспортом после успешного возврата factory.
+
+Source является настоящим async iterator, чтобы client/response/stream жили до
+конца enumeration и освобождались при success, early break, cancellation и
+failure. Reader заимствует response/stream и выдаёт материализованные значения;
+enumerator закрывается до response. Cleanup пробует все owned resources в
+обратном порядке и сохраняет первичную ошибку перед ошибками cleanup.
+
+Sink await-ит send полностью до disposal request/response/client. Request
+factory вызывается один раз на adapter `SendAsync`; скрытая handler retry может
+сделать несколько нижних send, но транспорт не клонирует запрос и не обещает
+replayability.
+
+## 18.4. Response ownership
+
+- `HttpResponseMessage` всегда disposed;
+- body stream disposed после reader;
+- reader не возвращает объект, зависящий от уже disposed response;
+- `ResponseHeadersRead` используется для streaming;
+- success status проверяется до чтения тела;
+- error body reading ограничен policy; default ошибка не читает и не логирует body.
+
+Opt-in preview reads at most `MaxErrorBodyBytes` plus one sentinel byte to mark
+truncation; preview text is never logged and may contain sensitive data.
+
+`BodyTimeout` начинает действовать после headers и покрывает получение и
+enumeration body. Только timeout, вызванный этим значением, переводится в
+`TimeoutException`; caller cancellation сохраняет `OperationCanceledException`.
+`HttpClient.Timeout` для `ResponseHeadersRead` покрывает send до headers.
+
+## 18.5. NDJSON
+
+Array и NDJSON ограничивают raw body общим `MaxUnframedBytes` (256 MiB по
+умолчанию); array не материализует неограниченный список. NDJSON ограничивает
+record размером 16 MiB, depth по умолчанию 64, и использует bounded framing.
+Null item и oversized record имеют явные Throw/Skip policies; oversized Skip
+разрешён только для полностью drained строки в пределах общего лимита. Один
+array element может приближаться к общему лимиту. Сырые payload и records не
+попадают в logs или exceptions.
+
+НЕЛЬЗЯ использовать unbounded `ReadLineAsync` в новом path.
+
+Переиспользовать internal bounded UTF-8 framing helper из `src/Shared/JsonFraming`, скомпилированный как internal linked source в Json и Http.Json.
+
+Shared source types:
+
+- internal;
+- не появляются в public API;
+- не публикуются отдельным NuGet package;
+- имеют единый набор golden tests.
+
+Кроме framer, в `src/Shared` лежат `JsonMetadataSnapshot` (clone caller options,
+сохранение source-generated resolver и converters, depth override, freeze) и
+operation-neutral `UnframedInputLimitStream`. Limit stream читает не больше
+remaining budget плюс один sentinel byte, не владеет inner stream и сообщает о
+превышении через exception factory вызывающего пакета: Json выдаёт
+path-qualified `JsonException`, Http.Json — `JsonException` без payload.
+Json и Http.Json подключают эти файлы как linked source.
+
+## 18.6. Idempotency
+
+Опциональный `IdempotencyKeySelector` вызывается один раз до send для каждого
+не-null adapter invocation. `null` не создаёт header; заданный key должен быть
+1–255 printable ASCII characters без whitespace/control. Конфликтующий
+существующий header — ошибка; принимается ровно одно идентичное значение.
+Ключ по умолчанию отсутствует. Стабильный key сам по себе не гарантирует
+server deduplication или exactly-once delivery. Вместо bool
+`useTraceIdIdempotencyKey` используется:
+
+```csharp
+Func<ProcessingEnvelope<T>, string?>? IdempotencyKeySelector
+```
+
+Default — отсутствует. TraceId используется только при explicit configuration и проверке, что он не default/empty.
+
+## 18.7. Resilience layering
+
+Новые HTTP APIs не принимают Polly pipeline.
+
+Пользователь выбирает:
+
+- resilience handler в configured HttpClient; или
+- Core stage retry/timeout; или
+- explicit Polly decorator.
+
+Docs ДОЛЖНЫ предупредить о retry multiplication.
+
+При независимых слоях верхняя граница send attempts — произведение попыток
+Core, configured `HttpClient` handlers и Polly decorator. HTTP adapter не
+добавляет скрытый retry.
+
+# 19. Polly package
+
+## 19.1. Старый no-op transform
+
+`PollyResilienceTransform<T>` удалён из `SmartPipe.Extensions` в SP220-14 по
+[ADR-0004](../../../adr/0004-smartpipe-2.2-breaking-migration.md): его callback
+возвращал `StageResult<T>.Success(envelope.Payload)` и не вызывал inner
+transform. Forwarder и wrapper нет; ownership matrix фиксирует `Removed`, facade
+несёт одну targeted `CP0001` ApiCompat suppression. Consumers переходят на
+decorator и перекомпилируются.
+
+## 19.2. Correct decorator
+
+`SmartPipe.Extensions.Polly` зависит только от `SmartPipe.Core` и `Polly.Core`
+(8.8.0). `Polly.Extensions`, registry/provider, DI, `Polly.RateLimiting`,
+`Microsoft.Extensions.Resilience`, HTTP, Hosting и facade остаются заботой
+приложения. Публичный контракт:
+
+```csharp
+public enum PollyInnerTransformOwnership { Borrowed = 0, Owned = 1 }
+
+public delegate SmartPipeError? PollyTransformExceptionMapper(Exception exception);
+
+public sealed record PollyTransformDecoratorOptions
+{
+    public string? OperationKey { get; init; }
+    public PollyTransformExceptionMapper? ExceptionMapper { get; init; }
+}
+
+public sealed class PollyTransformDecorator<TInput,TOutput>
+    : IPipelineTransformer<TInput,TOutput>
+{
+    public PollyTransformDecorator(
+        IPipelineTransformer<TInput,TOutput> inner,
+        ResiliencePipeline<StageResult<TOutput>> pipeline,
+        PollyInnerTransformOwnership innerOwnership,
+        PollyTransformDecoratorOptions? options = null);
+}
+
+public static class PollyPipelineComponents
+{
+    // pipelineFactory вызывается на каждую activation до innerFactory.
+    public static PipelineComponent<IPipelineTransformer<TInput,TOutput>> Decorate<TInput,TOutput>(
+        Func<PipelineActivationContext,CancellationToken,ValueTask<IPipelineTransformer<TInput,TOutput>>> innerFactory,
+        Func<PipelineActivationContext,ResiliencePipeline<StageResult<TOutput>>> pipelineFactory,
+        PollyInnerTransformOwnership innerOwnership,
+        PollyTransformDecoratorOptions? options = null);
+
+    public static PipelineComponent<IPipelineTransformer<TInput,TOutput>> Decorate<TInput,TOutput>(
+        Func<PipelineActivationContext,CancellationToken,ValueTask<IPipelineTransformer<TInput,TOutput>>> innerFactory,
+        ResiliencePipeline<StageResult<TOutput>> pipeline,
+        PollyInnerTransformOwnership innerOwnership,
+        PollyTransformDecoratorOptions? options = null);
+}
+```
+
+Polly-specific builder extensions нет: component передаётся в существующие
+initial и typed `Transform(stageKey, component)` Core.
+
+Execution:
+
+- context арендуется через `ResilienceContextPool.Shared.Get(operationKey,
+  continueOnCapturedContext: false, callerToken)` и возвращается в `finally`
+  на всех путях;
+- static `ExecuteOutcomeAsync` callback с явным `(inner, envelope)` state
+  вызывает реальный `inner.TransformAsync(envelope, context.CancellationToken)`
+  один раз на Polly attempt и возвращает exception как `Outcome`;
+- envelope/payload не попадает в context properties или logs; hedged attempts
+  получают тот же envelope без clone;
+- финальный result возвращается без изменений (`Success`, `Failure`,
+  `Filtered`, `Cancelled`, `TimedOut`), даже если caller token отменён после
+  завершения;
+- финальный exception пробрасывается с исходной identity и stack; Polly
+  `TimeoutRejectedException`, `BrokenCircuitException`,
+  `IsolatedCircuitException` сохраняют тип; caller cancellation не
+  превращается в timeout;
+- opt-in `ExceptionMapper` вызывается один раз только для финального
+  non-cancellation exception; `null` пробрасывает original, `SmartPipeError`
+  даёт `StageResult.Failure`, сбой mapper даёт `AggregateException(original,
+  mapperFailure)`;
+- верхняя граница inner attempts при Core retry:
+  `(1 + Rcore) × (1 + Rpolly)`.
+
+Lifecycle `Created → Initializing → Initialized → Disposing → Disposed`:
+single-flight initialize/dispose с общей completion (включая failure), отказ
+transform до успешной initialization и после начала disposal, operation lease на
+всю Polly execution (включая retry delays), drain перед disposal owned inner,
+borrowed inner и pipeline никогда не disposed. Component factory не
+инициализирует inner; Core сохраняет lease decorator до initialization и
+rollback-ом disposes decorator, который disposes owned inner один раз. Сбой
+activation после acquisition owned inner (например, отмена старта) disposes
+inner один раз, cleanup failure добавляется после primary.
+
+## 19.3. AOT contract
+
+`aotContract` пакета — `verified` для decorator/`Polly.Core` path.
+Acceptance evidence — consumers `polly-direct`, `polly-trim`,
+`polly-nativeaot` (один проект `tests/Consumers/Scenarios/polly-consumer`),
+которые публикуют и выполняют Core pipeline с owned inner и Polly retry, а
+также прямой decorator с borrowed inner и mapper. Произвольные strategies,
+callbacks, registry packages и dynamic application code вне этого claim.
+
+# 20. SmartPipe.Testing
+
+`SmartPipe.Testing` содержит ровно два framework-neutral helper:
+`TestActivation.Create(string pipelineKey)` создаёт контекст с точным ключом и
+новым run ID; `SourceReader.ReadEnvelopesAsync<T>(source, maxItems, token)`
+собирает исходные envelope в порядке выдачи. Предел обязателен: первый
+лишний элемент вызывает `InvalidOperationException`. Reader освобождает
+только enumerator; инициализация и освобождение source принадлежат вызывающему
+коду. При одновременном сбое чтения и cleanup сохраняется порядок причин.
+
+Пакет зависит только от Core, используется в Dapper и EF тестах и в
+`testing-direct` consumer. Он не является runtime dependency и не входит в
+`SmartPipe.Extensions`; xUnit/NUnit/FluentAssertions и provider dependencies
+не входят в его пакет.
+
+# 21. SmartPipe.Extensions facade
+
+## 21.1. 2.2.0 contract
+
+`SmartPipe.Extensions`:
+
+- convenience bundle;
+- compatibility facade;
+- references на Core и 16 runtime integration leaves из releaseDependencies в `eng/package-graph.json`; `SmartPipe.Testing` и optional `SmartPipe.Extensions.PostgreSql` не входят в bundle;
+- type forwarders для всех перемещённых public types;
+- legacy wrappers только для composite types, которые нельзя разделить безопасным forwarding;
+- не получает новые feature APIs.
+
+Package README начинает с предупреждения:
+
+> New applications should reference only the specific SmartPipe.Extensions.* packages they use. SmartPipe.Extensions is a compatibility bundle and installs the complete integration set.
+
+## 21.2. Разрешённый код facade
+
+Разрешено:
+
+- `TypeForwarders.cs`;
+- frozen legacy DI/Hosting/Health identities и `SmartPipeServiceCollectionExtensions` registration entry points из compatibility quarantine; новые capabilities запрещены, obsolete только synchronous `Start` members;
+- wrappers and forwarders only for identities retained by ADR-0001; the four HTTP composites are removed by ADR-0004;
+- compatibility aliases и migration diagnostics.
+
+Запрещено:
+
+- новые source/sink/transform implementations;
+- auto-discovery;
+- reflection scanning;
+- новый общесистемный registry;
+- новые dependencies, не представленные dedicated package.
+
+# 22. Namespace и compatibility strategy
+
+## 22.1. Сохранение namespaces
+
+Существующие типы сохраняют:
+
+```text
+SmartPipe.Extensions.Selectors
+SmartPipe.Extensions.Sinks
+SmartPipe.Extensions.Transforms
+SmartPipe.Extensions
+```
+
+Это сохраняет source/binary compatibility для retained identities. Четыре
+composite HTTP identities из ADR-0004 удаляются без forwarding и требуют
+обновления API с перекомпиляцией.
+
+Новые APIs используют:
+
+```text
+SmartPipe.Extensions.DependencyInjection
+SmartPipe.Extensions.Hosting
+SmartPipe.Extensions.HealthChecks
+SmartPipe.Extensions.OpenTelemetry
+SmartPipe.Extensions.Http
+SmartPipe.Extensions.Http.Json
+...
+```
+
+## 22.2. Type forwarding workflow
+
+Для каждого сохраняемого moved type:
+
+1. переместить source в destination project;
+2. сохранить namespace/full type name;
+3. добавить reference facade -> destination;
+4. добавить `[assembly: TypeForwardedTo(typeof(...))]`;
+5. обновить PublicAPI baselines;
+6. ownership test;
+7. forwarding consumer;
+8. binary consumer, собранный против 2.1.2;
+9. source compile consumer с `null/default` overload cases.
+
+# 23. Options и configuration
+
+- Code-first options являются основным API.
+- DI использует named options по `PipelineKey.Value`.
+- Все library-owned options валидируются source-generated `IValidateOptions` и `ValidateOnStart`.
+- Configuration binding generator включается в AOT consumers.
+- Активный run получает snapshot options на старте.
+- `IOptionsMonitor` change НЕЛЬЗЯ мутировать active execution plan.
+- Автоматический restart при config change не реализуется скрыто.
+
+# 24. AOT/trimming policy
+
+## 24.1. Project properties
+
+Для заявленных compatible packages:
+
+```xml
+<IsAotCompatible>true</IsAotCompatible>
+<EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+<EnableAotAnalyzer>true</EnableAotAnalyzer>
+<VerifyReferenceAotCompatibility>true</VerifyReferenceAotCompatibility>
+```
+
+Для packages с mixed API:
+
+- analyzer включён;
+- reflection methods annotated;
+- package не получает blanket `IsAotCompatible` до подтверждения consumer.
+
+## 24.2. Consumer tests
+
+Для каждого package с AOT claim:
+
+- reflection-disabled code path;
+- `PublishTrimmed=true`;
+- `PublishAot=true`;
+- real RID;
+- run published binary;
+- no unexpected IL warnings;
+- expected annotations documented.
+
+# 25. Target frameworks
+
+Все новые packages target `net10.0`.
+
+Причины:
+
+- текущая архитектура уже net10-only;
+- .NET 10 — актуальная LTS линия;
+- .NET 8/9 завершают support в ноябре 2026;
+- добавление старых TFMs увеличит conditional code и compatibility surface до завершения package redesign.
+
+НЕЛЬЗЯ добавлять `netstandard2.0` как формальную совместимость без реального runtime contract.
+
+# 26. Versioning и dependency ranges
+
+- Release version: `2.2.0`.
+- Все official packages выпускаются lockstep `2.2.0`.
+- Tag: `v2.2.0`.
+- Package dependency указывает minimum `2.2.0`, без exact range и без upper bound, если отдельное доказательство не требует ограничения.
+- AssemblyVersion следует major-line policy.
+- InformationalVersion формируется Source Link/CI.
+- Все package versions, docs, artifacts и tag проверяются одним script gate.
+
+# 27. Repository layout
+
+```text
+src/
+  SmartPipe.Core/
+  SmartPipe.Extensions/
+  SmartPipe.Extensions.DependencyInjection/
+  SmartPipe.Extensions.Hosting/
+  SmartPipe.Extensions.HealthChecks/
+  SmartPipe.Extensions.OpenTelemetry/
+  SmartPipe.Extensions.Json/
+  SmartPipe.Extensions.Csv/
+  SmartPipe.Extensions.Http/
+  SmartPipe.Extensions.Http.Json/
+  SmartPipe.Extensions.Dapper/
+  SmartPipe.Extensions.EntityFrameworkCore/
+  SmartPipe.Extensions.PostgreSql/
+  SmartPipe.Extensions.Mapster/
+  SmartPipe.Extensions.Polly/
+  SmartPipe.Extensions.Transforms/
+  SmartPipe.Extensions.DataAnnotations/
+  SmartPipe.Extensions.Logging/
+  SmartPipe.Extensions.Channels/
+  SmartPipe.Testing/
+  Shared/JsonFraming/
+  Shared/Guard/
+
+tests/
+  <one test project per production package>
+  Consumers/Direct/
+  Consumers/Meta/
+  Consumers/LegacyBinary/
+  Consumers/Trimming/
+  Consumers/NativeAot/
+
+eng/
+  package-graph.json
+  validate-package-graph.*
+  validate-package-ownership.*
+  validate-release-version.*
+  validate-consumers.*
+```
+
+# 28. Build/package infrastructure
+
+## 28.1. Central Package Management
+
+Добавить `Directory.Packages.props`:
+
+- `ManagePackageVersionsCentrally=true`;
+- версии всех third-party packages определены один раз;
+- project files не содержат version attributes;
+- transitive pinning не включать без необходимости;
+- lock files остаются и обновляются контролируемо.
+
+## 28.2. Common package props
+
+Централизовать:
+
+- authors/license/repository;
+- Source Link;
+- symbols;
+- deterministic build;
+- package validation defaults;
+- PublicApiAnalyzers;
+- README/icon packing;
+- warnings as errors;
+- NuGet audit.
+
+Package-specific description/tags/AOT остаются в project.
+
+## 28.3. Metadata
+
+Каждый package имеет:
+
+- уникальный PackageId;
+- precise description;
+- README;
+- tags;
+- icon;
+- MIT expression;
+- repository URL/type;
+- release notes;
+- copyright;
+- symbols;
+- Source Link.
+
+Зарезервировать NuGet prefix `SmartPipe.`.
+
+# 29. CI/CD architecture
+
+## 29.1. Обязательные gates каждого package
+
+- locked restore;
+- format;
+- Release build `-warnaserror`;
+- unit tests;
+- Public API analyzer;
+- package validation;
+- pack;
+- package content inspection;
+- dependency allowlist;
+- direct consumer;
+- facade/forwarding consumer;
+- binary 2.1.2 consumer;
+- trimming/AOT consumer по contract;
+- vulnerable/deprecated audit;
+- README/link validation.
+
+## 29.2. Package graph validator
+
+`eng/package-graph.json` является нормативным allowlist. Скрипт анализирует packed nuspec/project.assets и отклоняет лишние direct dependencies.
+
+## 29.3. Consumer matrix
+
+**Direct:** устанавливается только specific package; проверяется отсутствие unrelated dependencies.
+
+**Meta:** устанавливается только `SmartPipe.Extensions`; старый source компилируется.
+
+**Legacy binary:** assembly заранее собрана против 2.1.2, затем запускается с 2.2.0 без recompilation.
+
+**Trim/AOT:** отдельный root assembly consumer на package.
+
+## 29.4. Publish order
+
+```text
+1  SmartPipe.Core
+2  SmartPipe.Extensions.Channels
+3  SmartPipe.Extensions.Transforms
+4  SmartPipe.Extensions.Logging
+5  SmartPipe.Extensions.Json
+6  SmartPipe.Extensions.Csv
+7  SmartPipe.Extensions.Dapper
+8  SmartPipe.Extensions.EntityFrameworkCore
+9  SmartPipe.Extensions.Mapster
+10 SmartPipe.Extensions.Polly
+11 SmartPipe.Extensions.Http
+12 SmartPipe.Testing
+13 SmartPipe.Extensions.Http.Json
+14 SmartPipe.Extensions.DependencyInjection
+15 SmartPipe.Extensions.OpenTelemetry
+16 SmartPipe.Extensions.Hosting
+17 SmartPipe.Extensions.HealthChecks
+18 SmartPipe.Extensions.DataAnnotations
+19 SmartPipe.Extensions
+20 SmartPipe.Extensions.PostgreSql
+```
+
+`SmartPipe.Extensions.PostgreSql` depends only on Core, so it is publishable last without
+violating topological order, and it is deliberately absent from the facade bundle. Индекс
+`publishOrder` в `eng/package-graph.json` является нормативным: значения строго возрастают
+в порядке массива, а эта таблица повторяет их.
+
+Фактический publish script ДОЛЖЕН вычислять topological order из package graph либо проверять hard-coded order тестом.
+
+## 29.5. Release artifact
+
+Один validation job создаёт immutable artifact со всеми `.nupkg`/`.snupkg`, digest и manifest. Publish job:
+
+- не выполняет повторный build;
+- получает OIDC token непосредственно перед push;
+- публикует из validated artifact;
+- обычный release не использует `--skip-duplicate`;
+- recoverable rerun explicit;
+- после push проверяет доступность всех packages/symbols.
+
+# 30. Work breakdown structure для Codex
+
+## EPIC SP220-00 — Governance и baseline
+
+**Зависимости:** нет.
+
+**Задачи:**
+
+- [ ] Создать release branch `release/2.2.0` от актуальной `main`.
+- [ ] Повторно зафиксировать baseline SHA и успешный CI.
+- [ ] Добавить ADR package boundaries.
+- [ ] Добавить данный plan в `docs/maintainers/2.2.0/plans/architecture-plan.md`.
+- [ ] Зафиксировать правило: новые framework-specific types не добавляются в broad package.
+- [ ] Сохранить 2.1.2 nupkg как baseline для ApiCompat и binary consumers.
+- [ ] Снять текущий package dependency graph и public API snapshots.
+
+**Acceptance:** документация и baseline tests проходят; ни одного runtime change.
+
+## EPIC SP220-01 — Package infrastructure
+
+**Зависимости:** SP220-00.
+
+- [ ] Добавить Central Package Management.
+- [ ] Создать common pack props/targets.
+- [ ] Создать package project template/checklist.
+- [ ] Добавить package graph allowlist и validator.
+- [ ] Добавить ownership/forwarding validation framework.
+- [ ] Расширить release-version tests на все package IDs.
+- [ ] Создать consumer test harness, не копировать scripts для каждого package.
+
+**Acceptance:** существующие 2.1.2 projects строятся и пакуются без изменения API; graph validator зелёный.
+
+## EPIC SP220-02 — Core definition model
+
+**Зависимости:** SP220-01.
+
+- [ ] Реализовать PipelineKey/StageKey.
+- [ ] Реализовать ActivationContext.
+- [ ] Реализовать component descriptors/lifetimes.
+- [ ] Реализовать immutable typed PipelineDefinition builder.
+- [ ] Реализовать compile/cache execution plan.
+- [ ] Реализовать activation rollback и aggregate cleanup.
+- [ ] Адаптировать существующий PipelineBuilder к общей implementation.
+- [ ] Добавить concurrency/reuse tests.
+- [ ] Добавить benchmark definition compile/start overhead.
+
+**Acceptance:** одна definition безопасно запускается многократно; failure каждого activation step освобождает предыдущие components; old Core API tests зелёные.
+
+## EPIC SP220-03 — Dependency Injection
+
+**Зависимости:** SP220-02.
+
+- [ ] Создать package/project/test project.
+- [ ] Реализовать ISmartPipeBuilder/AddSmartPipe.
+- [ ] Реализовать AddPipeline и typed registration builder.
+- [ ] Реализовать duplicate-key detection.
+- [ ] Зарегистрировать keyed factories/definitions.
+- [ ] Реализовать registry/provider.
+- [ ] Реализовать one-AsyncScope-per-run.
+- [ ] Реализовать run registry с `(PipelineKey,RunId)`.
+- [ ] Сохранить legacy typed factory cluster физически в facade и запретить его ссылки из leaf package.
+- [ ] Сделать old sync Start obsolete; StartAsync primary.
+- [ ] Добавить multi-pipeline same-type tests.
+
+**Acceptance:** две pipelines с одинаковыми generic types и разными keys корректно разрешаются; duplicate key fails; scoped services не переживают run.
+
+Текущая реализация canonical leaf использует атомарную регистрацию exact keyed
+definition/factory, глобальный ordinal key registry, async-only provider, один
+`AsyncServiceScope` на run и lease-based active-run registry. Эффективные
+capacities публикуются Core через `PipelineRun`, а DI не зависит от Options,
+Hosting, HealthChecks или broad facade. Legacy synchronous `Start` помечен
+obsolete, сохраняет immediate-return semantics и использует тот же Core
+compiler/activator/executor без async bridge; весь coupled legacy cluster остаётся
+facade-owned до следующего major release.
+
+## EPIC SP220-04 — Hosting
+
+**Зависимости:** SP220-03.
+
+- [ ] Создать Hosting package.
+- [ ] Реализовать single orchestrator.
+- [ ] Реализовать sequential start/reverse stop.
+- [ ] Реализовать partial startup rollback.
+- [ ] Реализовать drain timeout.
+- [ ] Реализовать failure behaviors.
+- [ ] Перенести/forward legacy hosted types.
+- [ ] Добавить host integration tests.
+
+**Acceptance:** partial start не оставляет активных runs/scopes; stop всегда пытается остановить все pipelines.
+
+## EPIC SP220-05 — Health Checks
+
+**Зависимости:** SP220-03; интеграционные tests используют SP220-04.
+
+- [ ] Создать package.
+- [ ] Реализовать liveness/readiness checks.
+- [ ] Реализовать named options/validators.
+- [ ] Реализовать stable names/tags.
+- [ ] Адаптировать legacy snapshots/monitor.
+- [ ] Добавить multi-run aggregate tests.
+
+**Acceptance:** health identity использует key, а не только generic pair; snapshots observational.
+
+## EPIC SP220-06 — OpenTelemetry
+
+**Зависимости:** SP220-02.
+
+- [ ] Публичные diagnostic constants в Core.
+- [ ] Создать package и AddSmartPipeInstrumentation.
+- [ ] Не добавлять exporter dependency.
+- [ ] Добавить OTel builder tests.
+- [ ] Добавить cardinality tests/documentation.
+- [ ] Добавить trimmed/AOT consumer.
+
+**Acceptance:** host может добавить OTLP/Prometheus независимо; Core package graph не изменён кроме собственных constants.
+
+## EPIC SP220-07 — Channels/Transforms/DataAnnotations/Logging
+
+**Зависимости:** SP220-01, SP220-02.
+
+- [ ] Создать четыре packages.
+- [ ] Перенести типы и forwarders.
+- [ ] Исправить Composite lifecycle.
+- [ ] Добавить cancellation-aware Filter API.
+- [ ] Добавить safe Logger options.
+- [ ] Зафиксировать Validation rules snapshot и trimming annotations.
+- [ ] Усилить ChannelMerge cancellation/completion.
+- [ ] Добавить direct/meta/binary consumers.
+
+**Acceptance:** broad consumers совместимы; specific packages не тянут внешние frameworks.
+
+## EPIC SP220-08 — Json integration with definitions
+
+**Зависимости:** SP220-02, SP220-01.
+
+- [ ] Добавить definition builder extensions.
+- [ ] Вынести internal reusable JSON framing source.
+- [ ] Сохранить current public contracts.
+- [ ] Расширить AOT consumers на definition/DI paths.
+- [ ] Проверить ownership/leaveOpen/lifecycle.
+
+**Acceptance:** Json остаётся leaf package; direct Json consumer не получает Http/DI.
+
+## EPIC SP220-09 — CSV
+
+**Зависимости:** SP220-07, SP220-01.
+
+- [ ] Создать package.
+- [ ] Перенести source/sink/legacy transform.
+- [ ] Добавить strict options APIs.
+- [ ] Добавить stream variants и limits.
+- [ ] Сохранить old constructor behavior и пометить obsolete.
+- [ ] Добавить malformed/oversized/cancellation tests.
+
+**Acceptance:** новый default strict; старый source compatible; no unrelated dependencies.
+
+## EPIC SP220-10 — Dapper
+
+**Зависимости:** SP220-01, SP220-02.
+
+- [ ] Создать package.
+- [ ] Перенести legacy types и forwarders.
+- [ ] Добавить DapperPipelineComponents и typed FromQuery/ToCommand/ToBatchCommand builders.
+- [ ] Добавить explicit connection ownership.
+- [ ] Реализовать bounded preformed-batch sink с explicit transaction mode.
+- [ ] Добавить provider-neutral fake/integration tests.
+- [ ] Аннотировать reflection auto-SQL path.
+
+**Acceptance:** explicit SQL path primary; batch memory bounded; cancellation/transactions корректны.
+
+## EPIC SP220-11 — Entity Framework Core
+
+**Зависимости:** SP220-01, SP220-02.
+
+- [ ] Создать package.
+- [ ] Перенести/forward EfCoreSelector.
+- [ ] Добавить factory-based source.
+- [ ] Проверить no-tracking/tracking.
+- [ ] Проверить context per run и disposal.
+- [ ] Добавить SQLite in-memory integration tests.
+
+**Acceptance:** provider-neutral; concurrent runs не разделяют DbContext.
+
+## EPIC SP220-12 — Mapster
+
+**Зависимости:** принятый true merge SP220-11, SP220-01.
+
+- [x] Создать package.
+- [x] Перенести/forward transform.
+- [x] Сохранить trim/dynamic annotations.
+- [x] Добавить direct/meta/binary consumer и trim-diagnostic consumer.
+- [x] Не заявлять AOT compatibility.
+
+## EPIC SP220-13 — HTTP/HTTP.Json
+
+**Зависимости:** SP220-08, SP220-03 для factory scenarios.
+
+- [x] Создать Http и Http.Json packages.
+- [x] Реализовать clean transport contracts.
+- [x] Реализовать proper response/client lifetime.
+- [x] Реализовать bounded JSON array/NDJSON readers.
+- [x] Реализовать error body limit.
+- [x] Реализовать idempotency selector.
+- [x] Удалить Polly из новых signatures.
+- [x] Удалить `HttpSelector`, `HttpClientFactorySelector`, `HttpSink` и `HttpClientFactorySink` без wrappers или forwarders по ADR-0004.
+- [x] Добавить partial-read/one-byte/cancellation/oversize tests.
+- [x] Добавить configured IHttpClientFactory integration tests.
+
+**Acceptance:** clean Http package не зависит от Polly/Json; Http.Json не имеет unbounded line path; no hidden retry multiplication.
+
+## EPIC SP220-14 — Polly
+
+**Зависимости:** SP220-02.
+
+- [x] Создать package.
+- [x] Удалить legacy no-op type по ADR-0004 (`Removed`, targeted `CP0001`).
+- [x] Реализовать correct generic decorator.
+- [x] Реализовать ownership/lifecycle.
+- [x] Добавить retry/timeout/circuit/fallback/hedging/result tests.
+- [x] Добавить direct, trim и NativeAOT consumer для `verified` contract.
+
+**Acceptance:** Polly callback выполняет inner operation; old no-op не используется в docs.
+
+## EPIC SP220-15 — PostgreSQL
+
+**Зависимости:** SP220-02.
+
+- [x] Создать package `SmartPipe.Extensions.PostgreSql` с production dependencies Core,
+  `Npgsql` 10.0.3 и Logging.Abstractions.
+- [x] Реализовать binary `COPY … TO STDOUT (FORMAT BINARY)` как streaming source и binary
+  `COPY … FROM STDIN (FORMAT BINARY)` как batch sink, где один batch envelope равен одной
+  завершённой COPY operation.
+- [x] Реализовать `LISTEN`/`NOTIFY` source с bounded bridge и явным overflow fault вместо
+  тихого drop.
+- [x] Принять application-owned `NpgsqlDataSource` как единственную provider boundary:
+  не принимать connection string, не создавать, не конфигурировать, не мутировать и не
+  освобождать data source, не принимать caller-owned connection или transaction.
+- [x] Отклонять ambient `System.Transactions.Transaction.Current` с `InvalidOperationException`
+  до открытия connection и повторно до начала COPY/LISTEN protocol work.
+- [x] Зафиксировать отсутствие retry, LISTEN reconnect, generic batching runtime, text/CSV
+  COPY, NOTIFY sink, CDC, advisory locks, health checks, connection pooling и provider
+  failover abstraction, а также отсутствие dependency на Dapper, EF Core, Polly, DI, OTel и
+  facade.
+- [x] Добавить direct, trim/NativeAOT и integration consumers на PostgreSQL 18.6 и 17.11.
+
+**Baselines:** PostgreSQL 18.6 (primary) и PostgreSQL 17.11 (compatibility), provider
+`Npgsql` 10.0.3 (последний stable release; Npgsql 11 не существует, включая prerelease);
+поведение provider проверено 2026-09-26 по опубликованным source v10.0.3.
+
+**Acceptance:** успешный `WriteAsync` означает, что `CompleteAsync` уже завершился; LISTEN
+source не заявляет durable delivery, exactly-once или at-least-once и не переподключается;
+direct consumer не получает facade, Dapper, EF Core, HTTP или Polly dependency.
+
+## EPIC SP220-16 — SmartPipe.Testing
+
+**Зависимости:** SP220-13–15, принятый Checkpoint F.
+
+- [x] Выпустить два helper из раздела 20 с API baseline и Core-only graph.
+- [x] Перевести Dapper/EF тесты на explicit finite bounds без потери envelope metadata.
+- [x] Выполнить focused tests, direct consumer, package inspection и проверки зависимостей.
+
+## EPIC SP220-17 — Facade и migration
+
+**Зависимости:** SP220-03..16.
+
+- [ ] Добавить все type forwarders.
+- [ ] Оставить только разрешённые compatibility wrappers.
+- [ ] Удалить перемещённые implementation files.
+- [ ] Обновить package references/meta description.
+- [ ] Добавить complete ownership test.
+- [ ] Добавить compile/binary compatibility matrix.
+- [ ] Добавить migration doc от 2.1.2.
+
+**Acceptance:** baseline facade inventory полностью классифицирован: 23 forwarded,
+13 retained, 6 removed identities. Packed assemblies подтверждают точные owners,
+forwarder destinations и отсутствие лишнего public facade API. Source и binary
+consumers сохраняемого API работают; binary consumer, собранный против 2.1.2,
+запускается с 2.2.0 без перекомпиляции и с неизменным SHA DLL. Шесть HTTP/Polly
+removals ADR-0004 требуют миграции и перекомпиляции, не wrappers/forwarders.
+Фасад содержит 17 прямых SmartPipe dependencies (18 IDs вместе с фасадом);
+Testing/PostgreSql исключены. Direct leaf consumers не устанавливают broad
+meta package. Native Package Validation, graph/ownership current и release
+gates и миграционные примеры проходят на одном candidate SHA.
+
+Детальный план: [SP220-17 implementation](SP220-17-implementation.md).
+
+## EPIC SP220-18 — Release validation
+
+Implementation: [SP220-18 plan](SP220-18-implementation.md),
+[candidate evidence](../evidence/sp220-18-evidence.md),
+[owner gates and publication sequence](../readiness/sp220-18-release-readiness.md).
+The acceptance checklist remains open until exact-head remote evidence and owner approvals are recorded.
+
+**Зависимости:** все.
+
+- [ ] Полный package graph gate.
+- [ ] Package Validation against 2.1.2 для существующих IDs.
+- [ ] First-release validation для новых IDs.
+- [ ] Full Linux/Windows matrix.
+- [ ] All package consumers.
+- [ ] AOT/trimming matrix.
+- [ ] Vulnerability/deprecation audit.
+- [ ] Documentation/link check.
+- [ ] Trusted Publishing policy verification.
+- [ ] Build one immutable package artifact.
+- [ ] Release tag/version contract.
+
+# 31. Порядок реализации и integration checkpoints
+
+Все epics выполняются в 2.2.0, но не одним неразделимым commit.
+
+Рекомендуемый integration order:
+
+```text
+Checkpoint A: SP220-00 + 01
+Checkpoint B: SP220-02
+Checkpoint C: SP220-03 + 04 + 05 + 06
+Checkpoint D: SP220-07 + 08
+Checkpoint E: SP220-09–12 (accepted)
+Checkpoint F: SP220-13–16 (13 HTTP/HTTP.Json, 14 Polly, 15 PostgreSQL, 16 Testing)
+Checkpoint G: SP220-17–18 (17 facade/package kind, 18 release validation)
+```
+
+F starts from the accepted E true merge. Do not re-promote E. Task changes
+integrate into the active checkpoint; only the completed checkpoint is promoted
+to `release/2.2.0` through a reviewable merge. G starts from accepted F.
+
+Каждый checkpoint:
+
+- task PRs target the active checkpoint integration branch; the checkpoint PR targets `release/2.2.0`;
+- полный CI на release branch;
+- no broken intermediate public packages are published;
+- final PR `release/2.2.0 -> main` содержит полный release candidate.
+
+# 32. Правила работы Codex
+
+## 32.1. Перед каждой задачей
+
+- [ ] Прочитать ADR, этот plan, актуальный `AGENTS.md` и package README.
+- [ ] Проверить текущий SHA и отсутствие новых изменений в затрагиваемых файлах.
+- [ ] Сформулировать invariant, который меняется.
+- [ ] Добавить/обновить failing regression test до implementation, где это возможно.
+- [ ] Проверить dependency boundaries.
+
+## 32.2. Во время реализации
+
+- [ ] Не создавать параллельную runtime implementation.
+- [ ] Не копировать JSON framing code; использовать internal shared source.
+- [ ] Не добавлять reflection scanning.
+- [ ] Не ослаблять analyzers/warnings.
+- [ ] Не скрывать test failure retry/re-run без root-cause.
+- [ ] Не изменять old behavior молча; использовать new options API + obsolete legacy path.
+- [ ] Каждый public type получает XML docs.
+- [ ] Каждый resource path имеет ownership test.
+
+## 32.3. Перед commit
+
+- [ ] `git diff --check`.
+- [ ] Format.
+- [ ] Targeted tests.
+- [ ] Full affected project tests.
+- [ ] Public API baseline review.
+- [ ] Package graph validation.
+- [ ] Документация обновлена в том же commit.
+- [ ] Commit scope соответствует одной логической задаче.
+
+## 32.4. Перед завершением epic
+
+- [ ] Full solution build Release.
+- [ ] Full package tests affected by graph.
+- [ ] Direct consumer.
+- [ ] Meta/forwarding consumer.
+- [ ] Legacy binary consumer при переносе типов.
+- [ ] AOT/trim consumer при заявленном contract.
+- [ ] No tracked `.work` artifacts.
+- [ ] No TODO без issue/explicit plan item.
+
+# 33. Definition of Done релиза 2.2.0
+
+## Architecture
+
+- [ ] Core не имеет dependencies на integration packages.
+- [ ] Каждый framework выделен.
+- [ ] Broad package не владеет новыми feature implementations.
+- [ ] Dependency graph соответствует allowlist.
+- [ ] Immutable definition используется DI/Hosting.
+- [ ] PipelineKey используется во всех application integrations.
+
+## Compatibility
+
+- [ ] Старые namespaces сохранены для retained identities; HTTP removals следуют ADR-0004.
+- [ ] Retained moved types forwarded; все шесть HTTP/Polly removals ADR-0004 не имеют forwarders.
+- [ ] Legacy DI/Hosting/Health cluster остаётся физически в facade по ADR-0002; все шесть removed identities не имеют реализации или wrappers.
+- [ ] Source consumer сохраняемого API 2.1.2 компилируется.
+- [ ] Binary consumer 2.1.2 запускается для retained moves.
+- [ ] Consumers пяти удалённых HTTP identities и PollyResilienceTransform обновлены и перекомпилируются.
+- [ ] Нет новых overload ambiguities.
+
+## Runtime/lifecycle
+
+- [ ] Activation rollback tested на каждом step.
+- [ ] Reverse disposal tested.
+- [ ] Concurrent dispose shares completion.
+- [ ] Scope disposal следует run disposal.
+- [ ] Cancellation не маскируется.
+- [ ] Cleanup failures не теряются.
+
+## Packages
+
+- [ ] Все package IDs существуют и имеют metadata/README.
+- [ ] Lockstep version 2.2.0.
+- [ ] Package Validation зелёный.
+- [ ] Dependency allowlist зелёный.
+- [ ] Symbols созданы.
+- [ ] Source Link metadata присутствует.
+
+## Data integrations
+
+- [ ] CSV strict options path.
+- [ ] JSON framing bounded.
+- [ ] HTTP NDJSON bounded.
+- [ ] Dapper batch bounded.
+- [ ] EF context per run.
+- [ ] Logging payload opt-in.
+- [x] Polly decorator выполняет inner operation.
+
+## Application integrations
+
+- [ ] Same generic types + different keys работают.
+- [ ] Duplicate key fails.
+- [ ] Hosted partial start rollback.
+- [ ] Liveness/readiness разделены.
+- [ ] OTel package не содержит exporter.
+
+## CI/release
+
+- [ ] Linux и Windows зелёные.
+- [ ] Full consumer matrix зелёная.
+- [ ] Full AOT/trim matrix зелёная.
+- [ ] CodeQL/dependency review зелёные.
+- [ ] Vulnerability/deprecated scans зелёные.
+- [ ] Immutable artifact digest сохранён.
+- [ ] Trusted Publishing settings проверены вручную.
+- [ ] Tag `v2.2.0` совпадает со всеми packages.
+
+# 34. Риски и меры
+
+| Риск | Мера |
+|---|---|
+| Package explosion ухудшит onboarding | Root README содержит scenario-based install table; `SmartPipe.Extensions` остаётся bundle |
+| Type forwarding пропустит тип | Автоматический diff old PublicAPI -> forwarding ownership matrix |
+| DI keyed registrations silently override | SmartPipe duplicate-key marker/validation до provider build |
+| Scope leaked after fault | Factory wrapper и lifecycle fault-injection tests |
+| HTTP получает тройные retries | New API без Polly signature + explicit docs/tests |
+| Retained legacy wrappers становятся второй реализацией | Wrapper только адаптирует new API; implementation tests сравнивают behavior |
+| AOT claim ложный из-за dependency | Real consumer per package и no blanket claim |
+| Release workflow слишком велик | Reusable per-package jobs + aggregated immutable artifact |
+| New strict defaults ломают old source | Old constructors сохраняют semantics; strict behavior только options-first API |
+| Plan размывается во время Codex работы | ADR + normative task IDs + package graph gate + checkpoint reviews |
+
+# 35. Источники
+
+1. [Microsoft — Dependencies and .NET libraries](https://learn.microsoft.com/en-us/dotnet/standard/library-guidance/dependencies)
+2. [Microsoft — Prepare .NET libraries for trimming](https://learn.microsoft.com/en-us/dotnet/core/deploying/trimming/prepare-libraries-for-trimming)
+3. [Microsoft — .NET Package Validation](https://learn.microsoft.com/en-us/dotnet/fundamentals/apicompat/package-validation/overview)
+4. [Microsoft — Dependency injection guidelines](https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection/guidelines)
+5. [Microsoft — AddKeyedSingleton](https://learn.microsoft.com/en-us/dotnet/api/microsoft.extensions.dependencyinjection.servicecollectionserviceextensions.addkeyedsingleton?view=net-10.0-pp)
+6. [Microsoft — Options guidance for library authors](https://learn.microsoft.com/en-us/dotnet/core/extensions/options-library-authors)
+7. [Microsoft — Compile-time options validation](https://learn.microsoft.com/en-us/dotnet/core/extensions/options-validation-generator)
+8. [Microsoft — Central Package Management](https://learn.microsoft.com/en-us/nuget/consume-packages/central-package-management)
+9. [Microsoft — NuGet package authoring best practices](https://learn.microsoft.com/en-us/nuget/create-packages/package-authoring-best-practices)
+10. [Microsoft — Versioning and .NET libraries](https://learn.microsoft.com/en-us/dotnet/standard/library-guidance/versioning)
+11. [Microsoft — Type forwarding](https://learn.microsoft.com/en-us/dotnet/standard/assembly/type-forwarding)
+12. [Microsoft — NuGet ID prefix reservation](https://learn.microsoft.com/en-us/nuget/nuget-org/id-prefix-reservation)
+13. [Microsoft — .NET support policy](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core)
+14. [OpenTelemetry .NET — IOpenTelemetryBuilder](https://github.com/open-telemetry/opentelemetry-dotnet/blob/main/src/OpenTelemetry.Api.ProviderBuilderExtensions/IOpenTelemetryBuilder.cs)
+15. [OpenTelemetry .NET — builder extensions](https://github.com/open-telemetry/opentelemetry-dotnet/tree/main/src)
+16. [YARP — IReverseProxyBuilder](https://github.com/dotnet/yarp/blob/main/src/ReverseProxy/Management/IReverseProxyBuilder.cs)
+17. [YARP — service collection extensions](https://github.com/dotnet/yarp/blob/main/src/ReverseProxy/Management/ReverseProxyServiceCollectionExtensions.cs)
+18. [Polly — DI pipeline registry](https://github.com/App-vNext/Polly/blob/main/src/Polly.Extensions/DependencyInjection/PollyServiceCollectionExtensions.cs)
+19. [Serilog.Extensions.Hosting](https://github.com/serilog/serilog-extensions-hosting)
+20. [MassTransit EntityFrameworkCore integration](https://github.com/MassTransit/MassTransit/tree/develop/src/Persistence/MassTransit.EntityFrameworkCoreIntegration)
+21. SmartPipe.Core baseline commit `8e79902d22de714f493582946f7c260462b0895e`; [tracked baseline manifest](../../../../eng/baselines/2.1.2/manifest.json)
+
+# 36. Финальная директива
+
+Codex должен реализовать 2.2.0 как завершённую архитектурную миграцию, а не как серию временных перемещений файлов.
+
+При выборе между:
+
+- быстрым переносом, сохраняющим скрытую связанность; и
+- более фундаментальным решением с явными contracts, ownership, tests и compatibility bridge,
+
+следует выбирать второе.
+
+Релиз считается готовым только тогда, когда specific package consumer получает исключительно нужную integration surface, Core остаётся независимым, старые 2.1.2 consumers продолжают работать, а все runtime/lifecycle guarantees подтверждены автоматическими tests и package consumers.

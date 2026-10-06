@@ -1,5 +1,188 @@
 # Changelog
 
+## [2.2.0] - 2026-10-04
+
+User-facing overview: [2.2.0 release notes](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/releases/2.2.0.md). Upgrade details: [2.1.2 → 2.2.0 integration migration](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md).
+
+### Package architecture
+
+- First standalone framework/runtime integration packages: `SmartPipe.Extensions.DependencyInjection`,
+  `SmartPipe.Extensions.Hosting`, `SmartPipe.Extensions.HealthChecks`, and
+  `SmartPipe.Extensions.OpenTelemetry`.
+- First standalone processing/data packages: `SmartPipe.Extensions.Channels`,
+  `SmartPipe.Extensions.Transforms`, `SmartPipe.Extensions.DataAnnotations`,
+  `SmartPipe.Extensions.Logging`, `SmartPipe.Extensions.Csv`,
+  `SmartPipe.Extensions.Dapper`, `SmartPipe.Extensions.EntityFrameworkCore`, and
+  `SmartPipe.Extensions.Mapster`.
+- First standalone transport/resilience packages: `SmartPipe.Extensions.Http`,
+  `SmartPipe.Extensions.Http.Json`, and `SmartPipe.Extensions.Polly`.
+- Added the optional `SmartPipe.Extensions.PostgreSql` provider integration and
+  the test-only `SmartPipe.Testing` helpers as separate packages. Neither is
+  part of the broad compatibility facade bundle.
+- The immutable 2.1.2 facade baseline contains 42 relevant public identities.
+  In 2.2.0, 23 are preserved through type forwarding, 13 remain physically in
+  `SmartPipe.Extensions`, and six HTTP/Polly identities are intentionally
+  removed and require migration/recompilation.
+
+### Runtime, integrations, and behavior
+
+- Extracted Channels, Transforms, Logging, and DataAnnotations implementations
+  into narrow packages while preserving broad-facade type identities through
+  forwarding.
+- Added NativeAOT-safe channel, rule-transform, and safe logging paths; annotated
+  the reflection-based DataAnnotations invocation boundary for trimming.
+- Added `SmartPipe.Extensions.Http`, a streaming transport with explicit
+  client, request, and response ownership, an optional body timeout, bounded
+  opt-in error previews, and no hidden retry. Added
+  `SmartPipe.Extensions.Http.Json`, which adds bounded source-generated JSON
+  array and NDJSON readers and JSON request content.
+- **Breaking:** removed `HttpSelector<T>`, `HttpClientFactorySelector<T>`,
+  `HttpSink<T>`, `HttpClientFactorySink<T>`, and `HttpSelectorStreamingMode` from
+  `SmartPipe.Extensions` per ADR-0004. There are no wrappers or forwarders;
+  migrate to the HTTP leaves and recompile.
+- Added `SmartPipe.Extensions.Polly`, a decorator that runs the real inner
+  transform once per attempt of an application-owned typed Polly pipeline, with
+  explicit inner ownership, single-flight lifecycle, final-outcome preservation,
+  and an opt-in final-exception mapper. It depends only on Core and
+  `Polly.Core` 8.8.0.
+- **Breaking:** removed the no-op `PollyResilienceTransform<T>` from
+  `SmartPipe.Extensions` per ADR-0004; it never ran an inner transform. There is
+  no wrapper or forwarder; migrate to `SmartPipe.Extensions.Polly` and
+  recompile. The facade no longer depends on `Microsoft.Extensions.Resilience`.
+- Added `SmartPipe.Extensions.PostgreSql`, a PostgreSQL-native package with
+  binary `COPY … TO STDOUT (FORMAT BINARY)` as a streaming source, binary
+  `COPY … FROM STDIN (FORMAT BINARY)` as a batch sink where one envelope is
+  one complete COPY, and `LISTEN`/`NOTIFY` as a notification source over an
+  application-owned `NpgsqlDataSource`. It depends only on Core, `Npgsql`
+  10.0.3, and `Microsoft.Extensions.Logging.Abstractions`.
+- Hosted shutdown now bounds waiting for run disposal by the host stopping
+  token: a stage that ignores cancellation can no longer hold shutdown past
+  `ShutdownTimeout`. Abandoned disposal is logged and continues in the
+  background, and `StopAsync` reports cancellation.
+- Fixed unobserved task exceptions from hosted runs: a stop that arrived right
+  after startup could cancel the orchestrator's monitor before it ran, and a
+  run whose disposal was abandoned could fault after `StopAsync` returned.
+  Stop and rollback now observe each run's completion.
+- Fixed a circuit-breaker race where a half-open permit taken from a stale
+  generation could occupy a probe slot of the next generation for good, and a
+  path where a failing `StageStarted` notification leaked the half-open slot.
+  Probe accounting is now owned by each half-open generation.
+- `TryDrainAsync` and `DrainAsync` throw `ArgumentOutOfRangeException` for a
+  negative (non-infinite) or oversized timeout before requesting a drain,
+  instead of reporting `PipelineDrainStatus.Faulted`.
+- Notable readiness behavior change: a run that has reached a terminal state
+  but has not yet published its terminal observation is evaluated by that
+  provisional outcome instead of being treated as an active non-running
+  failure. With `ActiveOrSuccessfulCompletion`, a finite run no longer flickers
+  unhealthy between completion and cleanup. With `RegistrationOnly`, the
+  provisional outcome is evaluated like a latest terminal: a provisional
+  `Faulted` fails readiness when `FailOnLatestFailure` is set, and a
+  provisional `Completed` replaces an older committed failure. When several
+  runs are finishing at once, the most severe outcome is used and reported as
+  `smartpipe.finishing_outcome`; `smartpipe.problem_run_count` counts each
+  failing run. `ActiveRunRequired` is unchanged: it already rejected terminal
+  active snapshots and still requires a running run.
+- Metrics from runs with a stable pipeline identity carry the
+  `smartpipe.pipeline_id` tag, so pipelines in one process no longer share a
+  single series.
+- Circuit-breaker window samples are timestamped inside the window lock, so a
+  concurrent record can no longer enqueue an older sample behind a newer one
+  and escape expiry.
+- Performance: stages without a circuit breaker no longer take a lock per item,
+  circuit-breaker threshold evaluation no longer scans the sliding window,
+  lineage append is amortized O(1) instead of copying the whole chain per
+  stage, and the strict CSV sink encodes records directly into a pooled buffer
+  with no per-record allocation. Measurements are in
+  `benchmarks/SmartPipe.Benchmarks/ReleaseHardening-results.md`.
+
+### OpenTelemetry
+
+- Added exporter-neutral `SmartPipe.Extensions.OpenTelemetry` with the single
+  `AddSmartPipeInstrumentation(IOpenTelemetryBuilder)` extension registering the
+  existing Core `Meter("SmartPipe.Core")` and `ActivitySource("SmartPipe.Core")`
+  sources with the OpenTelemetry provider builders.
+- Added collection-local idempotency for repeated successful registrations;
+  different service collections remain independent, idempotency is detected
+  from a marker descriptor stored in the current service collection — there is
+  no static global registration state. Same-collection retry after a
+  configuration exception is documented as unsupported.
+- Added stable diagnostic name constants `SmartPipeDiagnostics.MeterName` and
+  `SmartPipeDiagnostics.ActivitySourceName` to `SmartPipe.Core`; the production
+  dependency surface is Core plus `OpenTelemetry.Api.ProviderBuilderExtensions`
+  only — no exporter, hosting, or instrumentation dependency.
+- Added direct, OTLP, facade composition, trimmed, and NativeAOT package
+  consumers.
+
+### Health checks
+
+- Added `SmartPipe.Extensions.HealthChecks` with exact-`PipelineKey` liveness, readiness, aggregate checks, isolated named options, stable names/tags, and bounded primitive result data.
+- Added one latest immutable terminal observation per key to canonical DI lifecycle tracking, including activation failures without exception/run/scope retention.
+- Preserved the 2.1 generic-pair health API physically in `SmartPipe.Extensions`; canonical checks are an explicit migration and do not type-forward legacy health identities.
+- Added direct, ASP.NET endpoint-tag, trimmed, and NativeAOT package consumers.
+
+### Generic Host integration
+
+- Added `SmartPipe.Extensions.Hosting`, with one deterministic orchestrator for
+  canonical DI pipeline registrations keyed by `PipelineKey`.
+- Hosted pipelines start sequentially, stop in reverse order, roll back partial
+  startup, and abort before disposal when bounded graceful drain cannot finish.
+- Added explicit per-pipeline completion and failure policies, structured
+  lifecycle logging, real Generic Host integration tests, and direct, legacy,
+  trimming, and NativeAOT package consumers.
+- Preserved the 2.1 Hosting API physically in `SmartPipe.Extensions`; migration
+  to `AddPipeline(...).RunAsHostedService(...)` is explicit and does not redirect
+  legacy behavior into the canonical orchestrator.
+
+### Core definition and lifecycle model
+
+- Added immutable typed definitions with explicit pipeline/stage keys, per-run
+  activation context, ownership descriptors, cached structural compilation,
+  ordered rollback, readiness-aware startup, and exact run identity.
+- Existing `PipelineBuilder` signatures now route through the sole legacy adapter
+  into the generic compiler, activator, start operation, and executor. Factory
+  chains remain reusable and legacy stage/ID behavior is preserved.
+- Legacy instance sources, stages, sinks, and observers are intentionally
+  single-use, including instances marked `Reusable` or `SingletonExternal`.
+  Repeated and concurrent runs must use `FromFactory`, `TransformFactory`, and
+  `ToFactory`; losing starts fail before activation.
+- Non-generic definition metadata now exposes defensive read-only collections and
+  rejects duplicate stage IDs with the shared structural topology validator.
+
+### JSON definition integration
+
+- Added source-generated-metadata JSON definition builders and runtime-owned
+  source, transform, and sink components with lazy per-run activation.
+- Added direct, trimmed, NativeAOT, and DependencyInjection composition
+  consumers for the canonical JSON definitions while preserving the existing
+  facade-source and 2.1.2 binary compatibility scenarios.
+
+### Build and package infrastructure
+
+- Central package management, lock-file reconciliation, package graph and
+  ownership manifests now drive current and release validation.
+- Release validation produces one immutable package artifact, records its source
+  commit, mode, version, inventory, and hashes, and replays that exact artifact
+  through Windows and PostgreSQL validation instead of repacking. Publication
+  and recovery revalidate the recorded payload and fail closed on mismatches;
+  publishing credentials are acquired only after the required validation gates.
+- Consumer smoke workspaces use fail-closed source mapping and bounded package
+  archive extraction; package metadata validation rejects CI version drift.
+- Added contributor and architecture guides for package authoring and release
+  gates.
+
+### Fixed
+
+- Parallel runs (`MaxConcurrency > 1`) now cancel the source when a stage
+  requests `FaultPipeline` or `StopPipeline`, so the run completes promptly
+  instead of waiting for the source to yield its next item.
+- Dead-letter records written by parallel workers are serialized per run and no
+  longer interleave on the shared dead-letter stream.
+- `DrainAsync` and `TryDrainAsync` on a run whose activation is still pending
+  honor the drain timeout; the drain request is applied once activation
+  completes.
+- Canonical DI terminal observations clamp the completion timestamp to the run
+  start when the wall clock moves backwards, instead of faulting run cleanup.
+
 ## [2.1.2] — 2026-07-15
 
 Patch release that separates JSON integrations into a dedicated package while

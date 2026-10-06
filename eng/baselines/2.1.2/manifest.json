@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "baselineName": "smartpipe-core-2.1.2",
+  "targetRelease": "2.2.0",
+  "repository": {
+    "fullName": "MrFr3di/SmartPipe-Core",
+    "defaultBranch": "main",
+    "captureCommitSha": "c90d74addbc671c74d6c5f33b069e38116a8a40c",
+    "sdkVersion": "10.0.302",
+    "solutionPath": "SmartPipe.Core.slnx",
+    "requiredWorkflows": [
+      {
+        "name": "CI",
+        "runId": 29639574106,
+        "headSha": "c90d74addbc671c74d6c5f33b069e38116a8a40c",
+        "url": "https://github.com/MrFr3di/SmartPipe-Core/actions/runs/29639574106",
+        "conclusion": "success"
+      },
+      {
+        "name": "CodeQL",
+        "runId": 29639574015,
+        "headSha": "c90d74addbc671c74d6c5f33b069e38116a8a40c",
+        "url": "https://github.com/MrFr3di/SmartPipe-Core/actions/runs/29639574015",
+        "conclusion": "success"
+      },
+      {
+        "name": "Dependency Review",
+        "runId": 29639574014,
+        "headSha": "c90d74addbc671c74d6c5f33b069e38116a8a40c",
+        "url": "https://github.com/MrFr3di/SmartPipe-Core/actions/runs/29639574014",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "id": "SmartPipe.Core",
+      "version": "2.1.2",
+      "source": "https://api.nuget.org/v3/index.json",
+      "fileName": "SmartPipe.Core.2.1.2.nupkg",
+      "sha256": "ba558e9d9820d6c02a01c5a4a4778ffdefd342bab687c726f5de1d9d74f1f7bd",
+      "requireRepositorySignature": true
+    },
+    {
+      "id": "SmartPipe.Extensions",
+      "version": "2.1.2",
+      "source": "https://api.nuget.org/v3/index.json",
+      "fileName": "SmartPipe.Extensions.2.1.2.nupkg",
+      "sha256": "4969036a7ffeedc609ddc55e2a6381f175d76fc31b3e03e103ce4d1174772028",
+      "requireRepositorySignature": true
+    },
+    {
+      "id": "SmartPipe.Extensions.Json",
+      "version": "2.1.2",
+      "source": "https://api.nuget.org/v3/index.json",
+      "fileName": "SmartPipe.Extensions.Json.2.1.2.nupkg",
+      "sha256": "10d843e65cd15251e972297d2f8b05406e56ac6c7ddffe35f6e25fb158841630",
+      "requireRepositorySignature": true
+    }
+  ],
+  "publicApi": {
+    "path": "eng/baselines/2.1.2/public-api.json",
+    "sha256": "8cf59228175f82104b700dd6286ede0cce4ec4723b1e7726ad1be66e981447dd"
+  },
+  "packageAssets": {
+    "path": "eng/baselines/2.1.2/package-assets.json",
+    "sha256": "7007e362145a93a045bb62c94b0a37a03bf8e12291eadd0ffc50db544f0fadf6"
+  },
+  "packageDependencies": {
+    "path": "eng/baselines/2.1.2/package-dependencies.json",
+    "sha256": "13cf1b93f8729edd2680fb835404f065ad563b037383ee00166a224f5991f355"
+  },
+  "repositoryDependencies": {
+    "path": "eng/baselines/2.1.2/repository-dependencies.json",
+    "sha256": "bbd265834ab37f78f53f1309a2d055237052398193984533bf895103d7d8c7db"
+  }
+}

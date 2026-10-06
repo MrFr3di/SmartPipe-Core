@@ -219,6 +219,42 @@ public sealed class PipelineRuntimeOptions
     private PipelineOutputMode _outputMode = PipelineOutputMode.EmitAll;
     private PipelineOutputPolicy _outputPolicy =
         PipelineOutputPolicy.SuppressSuccessWhenSinkAttached;
+    private IPipelineClock _clock = SystemPipelineClock.Instance;
+
+    /// <summary>Creates runtime options with the documented defaults.</summary>
+    public PipelineRuntimeOptions()
+    {
+    }
+
+    internal PipelineRuntimeOptions(PipelineRuntimeOptionsSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        MaxConcurrency = snapshot.MaxConcurrency;
+        InputCapacity = snapshot.InputCapacity;
+        InputFullMode = snapshot.InputFullMode;
+        OutputCapacity = snapshot.OutputCapacity;
+        OutputFullMode = snapshot.OutputFullMode;
+        _outputMode = snapshot.OutputMode;
+        IsOutputModeConfigured = snapshot.IsOutputModeConfigured;
+        MaxDegreeOfParallelism = snapshot.MaxDegreeOfParallelism;
+        _outputPolicy = snapshot.OutputPolicy;
+        IsOutputPolicyConfigured = snapshot.IsOutputPolicyConfigured;
+        OrderingMode = snapshot.OrderingMode;
+        ObserverDispatch = snapshot.ObserverDispatch.Materialize();
+        AdaptiveParallelism = snapshot.AdaptiveParallelism.Materialize();
+        _clock = snapshot.Clock;
+        IsClockConfigured = snapshot.IsClockConfigured;
+    }
+
+    internal PipelineRuntimeOptions(
+        PipelineRuntimeOptionsSnapshot snapshot,
+        IPipelineClock resolvedClock)
+        : this(snapshot)
+    {
+        _clock = resolvedClock ?? throw new ArgumentNullException(nameof(resolvedClock));
+        IsClockConfigured = true;
+    }
 
     /// <summary>Gets the maximum number of typed envelopes processed concurrently.</summary>
     public int MaxConcurrency { get; init; } = 1;
@@ -281,11 +317,21 @@ public sealed class PipelineRuntimeOptions
     public AdaptiveParallelismOptions AdaptiveParallelism { get; init; } = new();
 
     /// <summary>Gets the runtime clock. The system clock is the default.</summary>
-    public IPipelineClock Clock { get; init; } = SystemPipelineClock.Instance;
+    public IPipelineClock Clock
+    {
+        get => _clock;
+        init
+        {
+            _clock = value;
+            IsClockConfigured = true;
+        }
+    }
 
     internal bool IsOutputModeConfigured { get; private init; }
 
     internal bool IsOutputPolicyConfigured { get; private init; }
+
+    internal bool IsClockConfigured { get; private init; }
 
     internal bool UseCompatibilityOutputMode =>
         IsOutputModeConfigured && !IsOutputPolicyConfigured;

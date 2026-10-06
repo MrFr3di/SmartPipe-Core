@@ -1,0 +1,91 @@
+[
+  {
+    "packageId": "SmartPipe.Core",
+    "version": "2.1.2",
+    "groups": [
+      {
+        "targetFramework": "net10.0",
+        "dependencies": [
+          {
+            "id": "Microsoft.Extensions.Logging.Abstractions",
+            "versionRange": "10.0.8"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "packageId": "SmartPipe.Extensions",
+    "version": "2.1.2",
+    "groups": [
+      {
+        "targetFramework": "net10.0",
+        "dependencies": [
+          {
+            "id": "CsvHelper",
+            "versionRange": "33.1.0"
+          },
+          {
+            "id": "Dapper",
+            "versionRange": "2.1.79"
+          },
+          {
+            "id": "Mapster",
+            "versionRange": "10.0.10"
+          },
+          {
+            "id": "Microsoft.EntityFrameworkCore",
+            "versionRange": "10.0.8"
+          },
+          {
+            "id": "Microsoft.Extensions.Diagnostics.HealthChecks",
+            "versionRange": "10.0.8"
+          },
+          {
+            "id": "Microsoft.Extensions.Hosting.Abstractions",
+            "versionRange": "10.0.8"
+          },
+          {
+            "id": "Microsoft.Extensions.Http",
+            "versionRange": "10.0.8"
+          },
+          {
+            "id": "Microsoft.Extensions.Logging.Abstractions",
+            "versionRange": "10.0.8"
+          },
+          {
+            "id": "Microsoft.Extensions.Resilience",
+            "versionRange": "10.6.0"
+          },
+          {
+            "id": "SmartPipe.Core",
+            "versionRange": "2.1.2"
+          },
+          {
+            "id": "SmartPipe.Extensions.Json",
+            "versionRange": "2.1.2"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "packageId": "SmartPipe.Extensions.Json",
+    "version": "2.1.2",
+    "groups": [
+      {
+        "targetFramework": "net10.0",
+        "dependencies": [
+          {
+            "id": "Microsoft.Extensions.Logging.Abstractions",
+            "versionRange": "10.0.8"
+          },
+          {
+            "id": "SmartPipe.Core",
+            "versionRange": "2.1.2"
+          }
+        ]
+      }
+    ]
+  }
+]

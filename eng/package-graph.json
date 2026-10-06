@@ -1,0 +1,979 @@
+{
+  "schemaVersion": 1,
+  "releaseVersion": "2.2.0",
+  "packages": [
+    {
+      "id": "SmartPipe.Core",
+      "projectPath": "src/SmartPipe.Core/SmartPipe.Core.csproj",
+      "lifecycle": "active",
+      "activationEpic": "existing",
+      "scaffoldKind": null,
+      "publishOrder": 1,
+      "baselineVersion": "2.1.2",
+      "aotContract": "full",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions*"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions*"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "core-direct",
+        "json-direct",
+        "legacy-binary-2.1.2",
+        "core-trim",
+        "core-nativeaot",
+        "json-nativeaot",
+        "json-trim",
+        "json-dependency-injection-direct",
+        "dependency-injection-direct",
+        "dependency-injection-keyed",
+        "dependency-injection-from-keyed-services",
+        "dependency-injection-facade-source",
+        "dependency-injection-facade-binary-2.1.2",
+        "dependency-injection-trim",
+        "dependency-injection-nativeaot",
+        "hosting-direct",
+        "hosting-facade-source",
+        "hosting-facade-binary-2.1.2",
+        "hosting-trim",
+        "hosting-nativeaot",
+        "health-checks-direct",
+        "health-checks-aspnet",
+        "health-checks-trim",
+        "health-checks-nativeaot",
+        "opentelemetry-direct",
+        "opentelemetry-otlp",
+        "opentelemetry-trim",
+        "opentelemetry-nativeaot",
+        "csv-direct",
+        "csv-di-composition",
+        "csv-facade-source",
+        "csv-facade-binary-2.1.2",
+        "csv-trim-diagnostic",
+        "dapper-direct",
+        "dapper-di-composition",
+        "dapper-facade-source",
+        "dapper-facade-binary-2.1.2",
+        "dapper-trim-diagnostic",
+        "entity-framework-core-direct",
+        "entity-framework-core-di-composition",
+        "entity-framework-core-facade-source",
+        "entity-framework-core-facade-binary-2.1.2",
+        "entity-framework-core-trim-diagnostic",
+        "mapster-direct",
+        "mapster-facade-binary-2.1.2",
+        "mapster-trim-diagnostic",
+        "http-direct",
+        "http-trim",
+        "http-nativeaot",
+        "http-json-direct",
+        "http-json-trim",
+        "http-json-nativeaot",
+        "polly-direct",
+        "polly-trim",
+        "polly-nativeaot",
+        "postgresql-direct",
+        "postgresql-dapper-composition",
+        "postgresql-efcore-composition",
+        "postgresql-di-composition",
+        "postgresql-opentelemetry-composition",
+        "postgresql-trim",
+        "postgresql-nativeaot"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.Channels",
+      "projectPath": "src/SmartPipe.Extensions.Channels/SmartPipe.Extensions.Channels.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-07",
+      "scaffoldKind": null,
+      "publishOrder": 2,
+      "baselineVersion": null,
+      "aotContract": "full",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "channels-direct"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.Transforms",
+      "projectPath": "src/SmartPipe.Extensions.Transforms/SmartPipe.Extensions.Transforms.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-07",
+      "scaffoldKind": null,
+      "publishOrder": 3,
+      "baselineVersion": null,
+      "aotContract": "full",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "transforms-direct"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.Logging",
+      "projectPath": "src/SmartPipe.Extensions.Logging/SmartPipe.Extensions.Logging.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-07",
+      "scaffoldKind": null,
+      "publishOrder": 4,
+      "baselineVersion": null,
+      "aotContract": "full",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "logging-direct"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.Json",
+      "projectPath": "src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj",
+      "lifecycle": "active",
+      "activationEpic": "existing/SP220-08",
+      "scaffoldKind": null,
+      "publishOrder": 5,
+      "baselineVersion": "2.1.2",
+      "aotContract": "full-json-type-info",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "json-direct",
+        "legacy-binary-2.1.2",
+        "json-nativeaot",
+        "json-trim",
+        "json-dependency-injection-direct",
+        "dependency-injection-facade-binary-2.1.2",
+        "hosting-facade-binary-2.1.2"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.Csv",
+      "projectPath": "src/SmartPipe.Extensions.Csv/SmartPipe.Extensions.Csv.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-09",
+      "scaffoldKind": null,
+      "publishOrder": 6,
+      "baselineVersion": null,
+      "aotContract": "verified-no-blanket",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "CsvHelper",
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "CsvHelper",
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "csv-direct",
+        "csv-di-composition",
+        "csv-trim-diagnostic"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.Dapper",
+      "projectPath": "src/SmartPipe.Extensions.Dapper/SmartPipe.Extensions.Dapper.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-10",
+      "scaffoldKind": null,
+      "publishOrder": 7,
+      "baselineVersion": null,
+      "aotContract": "explicit-sql",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Dapper",
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Dapper",
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "dapper-direct",
+        "dapper-di-composition",
+        "dapper-trim-diagnostic",
+        "postgresql-dapper-composition"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.EntityFrameworkCore",
+      "projectPath": "src/SmartPipe.Extensions.EntityFrameworkCore/SmartPipe.Extensions.EntityFrameworkCore.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-11",
+      "scaffoldKind": null,
+      "publishOrder": 8,
+      "baselineVersion": null,
+      "aotContract": "no-blanket",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.EntityFrameworkCore",
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.EntityFrameworkCore",
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "entity-framework-core-direct",
+        "entity-framework-core-di-composition",
+        "entity-framework-core-trim-diagnostic",
+        "postgresql-efcore-composition"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.Mapster",
+      "projectPath": "src/SmartPipe.Extensions.Mapster/SmartPipe.Extensions.Mapster.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-12",
+      "scaffoldKind": null,
+      "publishOrder": 9,
+      "baselineVersion": null,
+      "aotContract": "unsupported-blanket",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Mapster"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Mapster"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "mapster-direct",
+        "mapster-trim-diagnostic"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.Polly",
+      "projectPath": "src/SmartPipe.Extensions.Polly/SmartPipe.Extensions.Polly.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-14",
+      "scaffoldKind": null,
+      "publishOrder": 10,
+      "baselineVersion": null,
+      "aotContract": "verified",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Polly.Core"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Polly.Core"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "polly-direct",
+        "polly-trim",
+        "polly-nativeaot"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.Http",
+      "projectPath": "src/SmartPipe.Extensions.Http/SmartPipe.Extensions.Http.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-13",
+      "scaffoldKind": null,
+      "publishOrder": 11,
+      "baselineVersion": null,
+      "aotContract": "transport-full",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Http",
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions",
+          "SmartPipe.Extensions.Polly"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Http",
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions",
+          "SmartPipe.Extensions.Polly"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "http-direct",
+        "http-trim",
+        "http-nativeaot",
+        "http-json-direct",
+        "http-json-trim",
+        "http-json-nativeaot"
+      ]
+    },
+    {
+      "id": "SmartPipe.Testing",
+      "projectPath": "src/SmartPipe.Testing/SmartPipe.Testing.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-16",
+      "scaffoldKind": null,
+      "publishOrder": 12,
+      "baselineVersion": null,
+      "aotContract": "not-runtime",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "testing-direct"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.Http.Json",
+      "projectPath": "src/SmartPipe.Extensions.Http.Json/SmartPipe.Extensions.Http.Json.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-13",
+      "scaffoldKind": null,
+      "publishOrder": 13,
+      "baselineVersion": null,
+      "aotContract": "full-json-type-info",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Extensions.Http",
+          "SmartPipe.Extensions.Json"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions",
+          "SmartPipe.Extensions.Polly"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Extensions.Http",
+          "SmartPipe.Extensions.Json"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions",
+          "SmartPipe.Extensions.Polly"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "http-json-direct",
+        "http-json-trim",
+        "http-json-nativeaot"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.DependencyInjection",
+      "projectPath": "src/SmartPipe.Extensions.DependencyInjection/SmartPipe.Extensions.DependencyInjection.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-03",
+      "scaffoldKind": null,
+      "publishOrder": 14,
+      "baselineVersion": null,
+      "aotContract": "full",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.DependencyInjection.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.DependencyInjection.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "dependency-injection-direct",
+        "json-dependency-injection-direct",
+        "csv-di-composition",
+        "dapper-di-composition",
+        "entity-framework-core-di-composition",
+        "dependency-injection-keyed",
+        "dependency-injection-from-keyed-services",
+        "dependency-injection-facade-source",
+        "dependency-injection-facade-binary-2.1.2",
+        "dependency-injection-trim",
+        "dependency-injection-nativeaot",
+        "hosting-direct",
+        "hosting-facade-binary-2.1.2",
+        "hosting-trim",
+        "hosting-nativeaot",
+        "health-checks-direct",
+        "health-checks-aspnet",
+        "health-checks-trim",
+        "health-checks-nativeaot",
+        "postgresql-di-composition"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.OpenTelemetry",
+      "projectPath": "src/SmartPipe.Extensions.OpenTelemetry/SmartPipe.Extensions.OpenTelemetry.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-06",
+      "scaffoldKind": null,
+      "publishOrder": 15,
+      "baselineVersion": null,
+      "aotContract": "verified",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "OpenTelemetry.Api.ProviderBuilderExtensions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "OpenTelemetry.Api.ProviderBuilderExtensions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "opentelemetry-direct",
+        "opentelemetry-otlp",
+        "opentelemetry-trim",
+        "opentelemetry-nativeaot",
+        "postgresql-opentelemetry-composition"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.Hosting",
+      "projectPath": "src/SmartPipe.Extensions.Hosting/SmartPipe.Extensions.Hosting.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-04",
+      "scaffoldKind": null,
+      "publishOrder": 16,
+      "baselineVersion": null,
+      "aotContract": "full",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core",
+          "SmartPipe.Extensions.DependencyInjection"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.DependencyInjection.Abstractions",
+          "Microsoft.Extensions.Hosting.Abstractions",
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core",
+          "SmartPipe.Extensions.DependencyInjection"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.DependencyInjection.Abstractions",
+          "Microsoft.Extensions.Hosting.Abstractions",
+          "Microsoft.Extensions.Logging.Abstractions"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "hosting-direct",
+        "hosting-facade-source",
+        "hosting-facade-binary-2.1.2",
+        "hosting-trim",
+        "hosting-nativeaot"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.HealthChecks",
+      "projectPath": "src/SmartPipe.Extensions.HealthChecks/SmartPipe.Extensions.HealthChecks.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-05",
+      "scaffoldKind": null,
+      "publishOrder": 17,
+      "baselineVersion": null,
+      "aotContract": "full",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core",
+          "SmartPipe.Extensions.DependencyInjection"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.DependencyInjection.Abstractions",
+          "Microsoft.Extensions.Diagnostics.HealthChecks",
+          "Microsoft.Extensions.Options"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions",
+          "SmartPipe.Extensions.Hosting"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core",
+          "SmartPipe.Extensions.DependencyInjection"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.DependencyInjection.Abstractions",
+          "Microsoft.Extensions.Diagnostics.HealthChecks",
+          "Microsoft.Extensions.Options"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions",
+          "SmartPipe.Extensions.Hosting"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "health-checks-direct",
+        "health-checks-aspnet",
+        "health-checks-trim",
+        "health-checks-nativeaot"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.DataAnnotations",
+      "projectPath": "src/SmartPipe.Extensions.DataAnnotations/SmartPipe.Extensions.DataAnnotations.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-07",
+      "scaffoldKind": null,
+      "publishOrder": 18,
+      "baselineVersion": null,
+      "aotContract": "annotated-reflection",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core",
+          "SmartPipe.Extensions.Transforms"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core",
+          "SmartPipe.Extensions.Transforms"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "data-annotations-direct",
+        "data-annotations-runtime"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions",
+      "projectPath": "src/SmartPipe.Extensions/SmartPipe.Extensions.csproj",
+      "lifecycle": "compatibility-facade",
+      "activationEpic": "existing/SP220-17",
+      "scaffoldKind": null,
+      "publishOrder": 19,
+      "baselineVersion": "2.1.2",
+      "aotContract": "no-blanket",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core",
+          "SmartPipe.Extensions.Channels",
+          "SmartPipe.Extensions.Transforms",
+          "SmartPipe.Extensions.Logging",
+          "SmartPipe.Extensions.Json",
+          "SmartPipe.Extensions.Csv",
+          "SmartPipe.Extensions.Dapper",
+          "SmartPipe.Extensions.EntityFrameworkCore",
+          "SmartPipe.Extensions.Mapster",
+          "SmartPipe.Extensions.Polly",
+          "SmartPipe.Extensions.Http",
+          "SmartPipe.Extensions.Http.Json",
+          "SmartPipe.Extensions.DependencyInjection",
+          "SmartPipe.Extensions.OpenTelemetry",
+          "SmartPipe.Extensions.Hosting",
+          "SmartPipe.Extensions.HealthChecks",
+          "SmartPipe.Extensions.DataAnnotations"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Logging.Abstractions",
+          "CsvHelper",
+          "Dapper",
+          "Mapster",
+          "Microsoft.EntityFrameworkCore"
+        ],
+        "forbiddenPackagePatterns": []
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core",
+          "SmartPipe.Extensions.Channels",
+          "SmartPipe.Extensions.Transforms",
+          "SmartPipe.Extensions.Logging",
+          "SmartPipe.Extensions.Json",
+          "SmartPipe.Extensions.Csv",
+          "SmartPipe.Extensions.Dapper",
+          "SmartPipe.Extensions.EntityFrameworkCore",
+          "SmartPipe.Extensions.Mapster",
+          "SmartPipe.Extensions.Polly",
+          "SmartPipe.Extensions.Http",
+          "SmartPipe.Extensions.Http.Json",
+          "SmartPipe.Extensions.DependencyInjection",
+          "SmartPipe.Extensions.OpenTelemetry",
+          "SmartPipe.Extensions.Hosting",
+          "SmartPipe.Extensions.HealthChecks",
+          "SmartPipe.Extensions.DataAnnotations"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Diagnostics.HealthChecks",
+          "Microsoft.Extensions.Hosting.Abstractions",
+          "Microsoft.Extensions.Options",
+          "Microsoft.Extensions.Logging.Abstractions",
+          "CsvHelper",
+          "Dapper",
+          "Mapster",
+          "Microsoft.EntityFrameworkCore"
+        ],
+        "forbiddenPackagePatterns": []
+      },
+      "temporaryAllowances": [
+        {
+          "dependency": "Microsoft.Extensions.Logging.Abstractions",
+          "reason": "Compatibility facade public signatures require logging abstractions",
+          "ownerEpic": "SP220-17",
+          "expiresBeforeRelease": false,
+          "evidence": "public LoggerSink and logging extension signatures"
+        },
+        {
+          "dependency": "Microsoft.Extensions.Hosting.Abstractions",
+          "reason": "Legacy SmartPipeHosted public identities remain facade-owned",
+          "ownerEpic": "SP220-04",
+          "expiresBeforeRelease": false,
+          "evidence": "SmartPipe.Extensions shipped SmartPipeHosted public API"
+        },
+        {
+          "dependency": "Microsoft.Extensions.Diagnostics.HealthChecks",
+          "reason": "Legacy health monitor, options, and check identities remain facade-owned",
+          "ownerEpic": "SP220-05",
+          "expiresBeforeRelease": false,
+          "evidence": "SmartPipe.Extensions shipped health-check public API"
+        },
+        {
+          "dependency": "Microsoft.Extensions.Options",
+          "reason": "Legacy Hosting and Health public signatures expose IOptions",
+          "ownerEpic": "SP220-04/SP220-05",
+          "expiresBeforeRelease": false,
+          "evidence": "SmartPipe.Extensions shipped Hosting and Health IOptions signatures"
+        }
+      ],
+      "consumerScenarios": [
+        "extensions-meta",
+        "legacy-binary-2.1.2",
+        "dependency-injection-facade-source",
+        "dependency-injection-facade-binary-2.1.2",
+        "hosting-facade-source",
+        "hosting-facade-binary-2.1.2",
+        "csv-facade-source",
+        "csv-facade-binary-2.1.2",
+        "dapper-facade-source",
+        "dapper-facade-binary-2.1.2",
+        "entity-framework-core-facade-source",
+        "entity-framework-core-facade-binary-2.1.2",
+        "mapster-facade-binary-2.1.2",
+        "opentelemetry-facade"
+      ]
+    },
+    {
+      "id": "SmartPipe.Extensions.PostgreSql",
+      "projectPath": "src/SmartPipe.Extensions.PostgreSql/SmartPipe.Extensions.PostgreSql.csproj",
+      "lifecycle": "active",
+      "activationEpic": "SP220-15",
+      "scaffoldKind": null,
+      "publishOrder": 20,
+      "baselineVersion": null,
+      "aotContract": "verified",
+      "currentDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Logging.Abstractions",
+          "Npgsql"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions",
+          "SmartPipe.Extensions.Dapper"
+        ]
+      },
+      "releaseDependencies": {
+        "requiredSmartPipePackages": [
+          "SmartPipe.Core"
+        ],
+        "allowedSmartPipePackages": [],
+        "allowedExternalPackages": [
+          "Microsoft.Extensions.Logging.Abstractions",
+          "Npgsql"
+        ],
+        "forbiddenPackagePatterns": [
+          "SmartPipe.Extensions",
+          "SmartPipe.Extensions.Dapper"
+        ]
+      },
+      "temporaryAllowances": [],
+      "consumerScenarios": [
+        "postgresql-direct",
+        "postgresql-dapper-composition",
+        "postgresql-efcore-composition",
+        "postgresql-di-composition",
+        "postgresql-opentelemetry-composition",
+        "postgresql-trim",
+        "postgresql-nativeaot"
+      ]
+    }
+  ]
+}

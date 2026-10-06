@@ -1,0 +1,55 @@
+#nullable enable
+override SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.Equals(object? obj) -> bool
+override SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.GetHashCode() -> int
+override SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.ToString() -> string!
+override SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.Equals(object? obj) -> bool
+override SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.GetHashCode() -> int
+override SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.ToString() -> string!
+SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions
+SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.<Clone>$() -> SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions!
+SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.Equals(SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions? other) -> bool
+SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.HttpJsonArrayOptions() -> void
+SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.MaxDepth.get -> int
+SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.MaxDepth.init -> void
+SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.MaxUnframedBytes.get -> long
+SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.MaxUnframedBytes.init -> void
+SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.NullItemPolicy.get -> SmartPipe.Extensions.Http.Json.HttpJsonNullItemPolicy
+SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.NullItemPolicy.init -> void
+SmartPipe.Extensions.Http.Json.HttpJsonNullItemPolicy
+SmartPipe.Extensions.Http.Json.HttpJsonNullItemPolicy.Skip = 1 -> SmartPipe.Extensions.Http.Json.HttpJsonNullItemPolicy
+SmartPipe.Extensions.Http.Json.HttpJsonNullItemPolicy.Throw = 0 -> SmartPipe.Extensions.Http.Json.HttpJsonNullItemPolicy
+SmartPipe.Extensions.Http.Json.HttpJsonOversizeRecordPolicy
+SmartPipe.Extensions.Http.Json.HttpJsonOversizeRecordPolicy.Skip = 1 -> SmartPipe.Extensions.Http.Json.HttpJsonOversizeRecordPolicy
+SmartPipe.Extensions.Http.Json.HttpJsonOversizeRecordPolicy.Throw = 0 -> SmartPipe.Extensions.Http.Json.HttpJsonOversizeRecordPolicy
+SmartPipe.Extensions.Http.Json.HttpJsonPipelineDefinitionBuilderExtensions
+SmartPipe.Extensions.Http.Json.HttpJsonRequestContent
+SmartPipe.Extensions.Http.Json.HttpJsonResponseReaders
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.<Clone>$() -> SmartPipe.Extensions.Http.Json.HttpNdjsonOptions!
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.Equals(SmartPipe.Extensions.Http.Json.HttpNdjsonOptions? other) -> bool
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.HttpNdjsonOptions() -> void
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.MaxDepth.get -> int
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.MaxDepth.init -> void
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.MaxRecordSizeBytes.get -> int
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.MaxRecordSizeBytes.init -> void
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.MaxUnframedBytes.get -> long
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.MaxUnframedBytes.init -> void
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.NullItemPolicy.get -> SmartPipe.Extensions.Http.Json.HttpJsonNullItemPolicy
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.NullItemPolicy.init -> void
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.OversizeRecordPolicy.get -> SmartPipe.Extensions.Http.Json.HttpJsonOversizeRecordPolicy
+SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.OversizeRecordPolicy.init -> void
+static SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.operator !=(SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions? left, SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions? right) -> bool
+static SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions.operator ==(SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions? left, SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions? right) -> bool
+static SmartPipe.Extensions.Http.Json.HttpJsonPipelineDefinitionBuilderExtensions.FromHttpJsonArray<T>(SmartPipe.Core.PipelineKey pipelineKey, System.Net.Http.HttpClient! client, System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Net.Http.HttpRequestMessage!>>! requestFactory, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! itemTypeInfo, SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions? jsonOptions = null, SmartPipe.Extensions.Http.HttpSourceOptions? httpOptions = null) -> SmartPipe.Core.PipelineDefinitionBuilder<T>!
+static SmartPipe.Extensions.Http.Json.HttpJsonPipelineDefinitionBuilderExtensions.FromHttpJsonArray<T>(SmartPipe.Core.PipelineKey pipelineKey, System.Net.Http.IHttpClientFactory! clientFactory, string! clientName, System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Net.Http.HttpRequestMessage!>>! requestFactory, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! itemTypeInfo, SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions? jsonOptions = null, SmartPipe.Extensions.Http.HttpSourceOptions? httpOptions = null) -> SmartPipe.Core.PipelineDefinitionBuilder<T>!
+static SmartPipe.Extensions.Http.Json.HttpJsonPipelineDefinitionBuilderExtensions.FromHttpNdjson<T>(SmartPipe.Core.PipelineKey pipelineKey, System.Net.Http.HttpClient! client, System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Net.Http.HttpRequestMessage!>>! requestFactory, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! itemTypeInfo, SmartPipe.Extensions.Http.Json.HttpNdjsonOptions? jsonOptions = null, SmartPipe.Extensions.Http.HttpSourceOptions? httpOptions = null) -> SmartPipe.Core.PipelineDefinitionBuilder<T>!
+static SmartPipe.Extensions.Http.Json.HttpJsonPipelineDefinitionBuilderExtensions.FromHttpNdjson<T>(SmartPipe.Core.PipelineKey pipelineKey, System.Net.Http.IHttpClientFactory! clientFactory, string! clientName, System.Func<SmartPipe.Core.PipelineActivationContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Net.Http.HttpRequestMessage!>>! requestFactory, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! itemTypeInfo, SmartPipe.Extensions.Http.Json.HttpNdjsonOptions? jsonOptions = null, SmartPipe.Extensions.Http.HttpSourceOptions? httpOptions = null) -> SmartPipe.Core.PipelineDefinitionBuilder<T>!
+static SmartPipe.Extensions.Http.Json.HttpJsonPipelineDefinitionBuilderExtensions.ToHttpJson<T>(this SmartPipe.Core.PipelineDefinitionBuilder<T>! builder, System.Net.Http.HttpClient! client, System.Uri! requestUri, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo, System.Func<SmartPipe.Core.ProcessingEnvelope<T>!, string?>? idempotencyKeySelector = null, SmartPipe.Extensions.Http.HttpSinkOptions? httpOptions = null) -> SmartPipe.Core.PipelineDefinition<T, T>!
+static SmartPipe.Extensions.Http.Json.HttpJsonPipelineDefinitionBuilderExtensions.ToHttpJson<T>(this SmartPipe.Core.PipelineDefinitionBuilder<T>! builder, System.Net.Http.IHttpClientFactory! clientFactory, string! clientName, System.Uri! requestUri, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo, System.Func<SmartPipe.Core.ProcessingEnvelope<T>!, string?>? idempotencyKeySelector = null, SmartPipe.Extensions.Http.HttpSinkOptions? httpOptions = null) -> SmartPipe.Core.PipelineDefinition<T, T>!
+static SmartPipe.Extensions.Http.Json.HttpJsonPipelineDefinitionBuilderExtensions.ToHttpJson<TPipelineInput, TCurrent>(this SmartPipe.Core.PipelineDefinitionBuilder<TPipelineInput, TCurrent>! builder, System.Net.Http.HttpClient! client, System.Uri! requestUri, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TCurrent>! typeInfo, System.Func<SmartPipe.Core.ProcessingEnvelope<TCurrent>!, string?>? idempotencyKeySelector = null, SmartPipe.Extensions.Http.HttpSinkOptions? httpOptions = null) -> SmartPipe.Core.PipelineDefinition<TPipelineInput, TCurrent>!
+static SmartPipe.Extensions.Http.Json.HttpJsonPipelineDefinitionBuilderExtensions.ToHttpJson<TPipelineInput, TCurrent>(this SmartPipe.Core.PipelineDefinitionBuilder<TPipelineInput, TCurrent>! builder, System.Net.Http.IHttpClientFactory! clientFactory, string! clientName, System.Uri! requestUri, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TCurrent>! typeInfo, System.Func<SmartPipe.Core.ProcessingEnvelope<TCurrent>!, string?>? idempotencyKeySelector = null, SmartPipe.Extensions.Http.HttpSinkOptions? httpOptions = null) -> SmartPipe.Core.PipelineDefinition<TPipelineInput, TCurrent>!
+static SmartPipe.Extensions.Http.Json.HttpJsonRequestContent.Post<T>(System.Uri! requestUri, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo) -> SmartPipe.Extensions.Http.HttpRequestFactory<T>!
+static SmartPipe.Extensions.Http.Json.HttpJsonResponseReaders.JsonArray<T>(System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! itemTypeInfo, SmartPipe.Extensions.Http.Json.HttpJsonArrayOptions? options = null) -> SmartPipe.Extensions.Http.HttpResponseReader<T>!
+static SmartPipe.Extensions.Http.Json.HttpJsonResponseReaders.Ndjson<T>(System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! itemTypeInfo, SmartPipe.Extensions.Http.Json.HttpNdjsonOptions? options = null) -> SmartPipe.Extensions.Http.HttpResponseReader<T>!
+static SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.operator !=(SmartPipe.Extensions.Http.Json.HttpNdjsonOptions? left, SmartPipe.Extensions.Http.Json.HttpNdjsonOptions? right) -> bool
+static SmartPipe.Extensions.Http.Json.HttpNdjsonOptions.operator ==(SmartPipe.Extensions.Http.Json.HttpNdjsonOptions? left, SmartPipe.Extensions.Http.Json.HttpNdjsonOptions? right) -> bool

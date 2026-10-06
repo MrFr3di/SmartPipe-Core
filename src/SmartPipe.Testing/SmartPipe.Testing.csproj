@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><SmartPipePackage>true</SmartPipePackage></PropertyGroup>
+  <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
+  <PropertyGroup>
+    <PackageId>SmartPipe.Testing</PackageId>
+    <Description>Framework-neutral helpers for testing SmartPipe.Core sources and activations.</Description>
+    <PackageReleaseNotes>First release in 2.2.0. Framework-neutral helpers for finite source consumption and activation testing with a Core-only dependency graph. Test-only package; not in the facade convenience bundle.</PackageReleaseNotes>
+    <PackageTags>smartpipe;pipeline;testing</PackageTags>
+    <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)/README.md</SmartPipePackageReadmeSource>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SmartPipe.Core/SmartPipe.Core.csproj" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

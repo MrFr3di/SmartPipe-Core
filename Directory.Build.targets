@@ -1,0 +1,4 @@
+<Project>
+  <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.targets"
+          Condition="'$(SmartPipePackage)' == 'true'" />
+</Project>

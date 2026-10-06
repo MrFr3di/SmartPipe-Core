@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SmartPipePackage>true</SmartPipePackage>
+  </PropertyGroup>
+  <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
+  <PropertyGroup>
+    <PackageId>SmartPipe.Extensions.Dapper</PackageId>
+    <Description>Explicit-SQL Dapper sources and sinks for SmartPipe.Core.</Description>
+    <PackageReleaseNotes>First standalone release in 2.2.0. DapperSelector and DbSink move from the facade with forwarding; explicit-SQL paths keep connections and transactions under documented ownership. NativeAOT support is conditional on the selected mapping path.</PackageReleaseNotes>
+    <PackageTags>smartpipe;pipeline;dapper;sql;streaming</PackageTags>
+    <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SmartPipe.Core\SmartPipe.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SmartPipe.Extensions.Dapper.Tests" />
+  </ItemGroup>
+</Project>

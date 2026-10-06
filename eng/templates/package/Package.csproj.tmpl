@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <SmartPipePackage>true</SmartPipePackage>
+  </PropertyGroup>
+  <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
+  <PropertyGroup>
+    <PackageId>{{PACKAGE_ID}}</PackageId>
+    <Description>{{DESCRIPTION}}</Description>
+    <PackageTags>{{TAGS}}</PackageTags>
+    <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)/README.md</SmartPipePackageReadmeSource>
+{{AOT_PROPERTIES}}  </PropertyGroup>
+
+{{PROJECT_REFERENCES}}{{PACKAGE_REFERENCES}}  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="{{PACKAGE_ID}}.Tests" />
+  </ItemGroup>
+
+</Project>

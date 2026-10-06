@@ -1,20 +1,30 @@
 
 # SmartPipe.Extensions
 
-Ready-to-use integrations for SmartPipe.Core: file, HTTP, database, mapping, validation, resilience, hosting, and health check components.
+New applications should reference only the specific `SmartPipe.Extensions.*`
+packages they use. `SmartPipe.Extensions` is a compatibility bundle: it installs
+Core and 16 runtime integration leaves, including HealthChecks and OpenTelemetry.
+Its dependency closure contains 18 SmartPipe IDs including the facade itself.
+Optional `SmartPipe.Extensions.PostgreSql` and test-only `SmartPipe.Testing` are
+published separately and are excluded from this bundle.
+
+The facade DLL preserves 23 forwarded and 13 frozen legacy public identities
+from 2.1.2. Six HTTP/Polly identities were intentionally removed and require
+migration and recompilation. See the
+[2.1.2 → 2.2.0 migration guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.0-integration-packages.md)
+and [compatibility matrix](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/reference/compatibility/2.1.2-to-2.2.0.md).
 
 ## Selectors (Data Sources)
 
 | Selector | Library | Description |
 |----------|---------|-------------|
-| `HttpSelector<T>` | HttpClient + Polly | Fetch data from REST APIs |
-| `EfCoreSelector<T>` | Entity Framework Core | Stream entities from database |
+| `EfCoreSelector<T>` | Entity Framework Core (forwarded to `SmartPipe.Extensions.EntityFrameworkCore`) | Stream entities from database |
 | `DapperSelector<T>` | Dapper | High-performance SQL queries |
 | `CsvFileSource<T>` | CsvHelper | Read CSV files |
 | `JsonFileSource<T>` | SmartPipe.Extensions.Json / System.Text.Json | Read JSON arrays and NDJSON |
 | `DeadLetterSource<T>` | SmartPipe.Extensions.Json / System.Text.Json | Read persisted failed-item records |
 
-`EfCoreSelector<T>` uses no-tracking queries by default for read-only pipeline
+`EfCoreSelector<T>` (forwarded from `SmartPipe.Extensions.EntityFrameworkCore`) uses no-tracking queries by default for read-only pipeline
 source scenarios. Call `.WithTracking()` when returned entities must remain
 tracked by the supplied `DbContext`.
 
@@ -33,7 +43,6 @@ connection.
 | `CsvTransform<TIn,TOut>` | CsvHelper | CSV parsing |
 | `MapsterTransform<TIn,TOut>` | Mapster | Runtime object mapping |
 | `CompressionTransform` | System.IO.Compression | Brotli/GZip compression |
-| `PollyResilienceTransform<T>` | Polly v8 | Retry/CircuitBreaker/Hedging |
 | `FilterTransform<T>` | — | Predicate-based filtering with And/Or/Not |
 | `ValidationTransform<T>` | DataAnnotations | Data validation with custom rules |
 | `ConditionalTransform<T>` | — | Apply transform only when condition met |
@@ -45,45 +54,61 @@ connection.
 |------|---------|-------------|
 | `LoggerSink<T>` | ILogger | Structured logging |
 | `DeadLetterSink<T>` | SmartPipe.Extensions.Json / System.Text.Json | Persist failed items to JSON |
-| `HttpSink<T>` | HttpClient + Polly | Send data to REST APIs |
 | `DbSink<T>` | Dapper | Insert into any database |
 | `CsvFileSink<T>` | CsvHelper | Write CSV files |
 | `JsonFileSink<T>` | SmartPipe.Extensions.Json / System.Text.Json | Write JSON files |
 
 ## HTTP Integrations
 
-Use `HttpClientFactorySelector<T>` and `HttpClientFactorySink<T>` in DI-based
-applications so clients come from `IHttpClientFactory` named or default client
-configuration. Low-level `HttpSelector<T>` and `HttpSink<T>` remain available
-for callers that already own an `HttpClient`.
+`HttpSelector<T>`, `HttpClientFactorySelector<T>`, `HttpSink<T>`,
+`HttpClientFactorySink<T>`, and `HttpSelectorStreamingMode` were removed in 2.2.0 by
+[ADR-0004](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/adr/0004-smartpipe-2.2-breaking-migration.md), with no
+wrappers or type forwarders. This bundle references
+`SmartPipe.Extensions.Http` (streaming transport) and
+`SmartPipe.Extensions.Http.Json` (bounded source-generated JSON codecs); use
+`HttpPipelineComponents`, `FromHttp`/`ToHttp`, and the HTTP JSON readers and
+request content from those packages, then recompile.
 
-HTTP JSON components accept source-generated `JsonTypeInfo<T>` /
-`JsonTypeInfo<List<T>>` overloads for NativeAOT and trimming-sensitive apps.
-`HttpSelector<T>` can read either buffered JSON arrays or streaming responses
-using `HttpSelectorStreamingMode.JsonArray` and
-`HttpSelectorStreamingMode.Ndjson`; the factory-backed selector exposes the
-same streaming modes.
-`HttpSink<T>` can send the envelope `TraceId` as an `Idempotency-Key` header for
-idempotent endpoints.
+The HTTP adapters never retry. Avoid configuring retry in several of the
+following for the same operation unless that layered retry budget is
+intentional: SmartPipe stage policies, `HttpClient` handlers, and the
+`SmartPipe.Extensions.Polly` decorator.
 
-Avoid configuring retry in both SmartPipe stage policies and HTTP/Polly client
-pipelines for the same operation unless that layered retry budget is
-intentional.
+## Polly
+
+`PollyResilienceTransform<T>` was removed in 2.2.0 by
+[ADR-0004](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/adr/0004-smartpipe-2.2-breaking-migration.md), with no wrapper
+or type forwarder: it returned success without running an inner transform. This
+bundle references `SmartPipe.Extensions.Polly`; use `PollyPipelineComponents.Decorate`
+or `PollyTransformDecorator<TInput,TOutput>` with a typed `ResiliencePipeline<StageResult<TOutput>>`
+and explicit inner ownership, then recompile.
 
 ## Health Checks
 
 | Component | Description |
 |-----------|-------------|
-| `SmartPipeLivenessCheck` | Is pipeline alive? (Kubernetes liveness probe) |
-| `SmartPipeReadinessCheck` | Can pipeline accept data? (Kubernetes readiness probe) |
+| `AddLiveness()` | Canonical key-based liveness, from `SmartPipe.Extensions.HealthChecks` |
+| `AddReadiness()` | Canonical key-based readiness, from `SmartPipe.Extensions.HealthChecks` |
+
+The legacy `SmartPipeHealthCheckOptions` and `SmartPipeRunHealthMonitor<TIn,TOut>`
+remain facade-owned for compatibility. New code uses canonical registration
+and the [HealthChecks leaf](https://github.com/MrFr3di/SmartPipe-Core/blob/main/src/SmartPipe.Extensions.HealthChecks/README.md).
 
 ## Hosting
 
 | Component | Description |
 |-----------|-------------|
-| `SmartPipeHostedService` | ASP.NET Core BackgroundService |
-| `AddSmartPipe<TIn,TOut>()` | Typed definition/factory DI registration |
-| `AddSmartPipeHostedService<TIn,TOut>()` | Typed hosted-service registration |
+| `SmartPipeHostedService<TIn,TOut>` | Frozen legacy Generic Host adapter |
+| `AddSmartPipe<TIn,TOut>()` | Retained legacy definition/factory DI registration |
+| `AddSmartPipeHostedService<TIn,TOut>()` | Retained legacy hosted-service registration |
+
+Canonical keyed registration and orchestration live in the
+[DependencyInjection](https://github.com/MrFr3di/SmartPipe-Core/blob/main/src/SmartPipe.Extensions.DependencyInjection/README.md) and
+[Hosting](https://github.com/MrFr3di/SmartPipe-Core/blob/main/src/SmartPipe.Extensions.Hosting/README.md) leaves. Legacy synchronous
+factory `Start` retains its obsolete diagnostic and immediate-return behavior;
+prefer the canonical factory `StartAsync` for new applications. Do not combine
+similarly named legacy and canonical extension methods without choosing the
+appropriate namespace/API explicitly.
 
 `SmartPipeHostedServiceOptions` controls hosted fault behavior and drain
 timeout. The default fault behavior is `StopApplication`; use `Rethrow`,
@@ -104,13 +129,18 @@ token remains available.
 ## Installation
 
 ```bash
-dotnet add package SmartPipe.Extensions --version 2.1.2
+dotnet package add SmartPipe.Extensions
 ```
+
+For narrow SP220-07 integrations, install `SmartPipe.Extensions.Channels`,
+`SmartPipe.Extensions.Transforms`, `SmartPipe.Extensions.Logging`, or
+`SmartPipe.Extensions.DataAnnotations` directly. The broad package forwards the
+existing public types and pulls these leaves only as a compatibility facade.
 
 For JSON-only integrations, prefer:
 
 ```bash
-dotnet add package SmartPipe.Extensions.Json --version 2.1.2
+dotnet package add SmartPipe.Extensions.Json
 ```
 
 ## JSON Package Migration
@@ -121,29 +151,37 @@ JSON file, transform, and JSON dead-letter implementations moved to
 `SmartPipe.Extensions` 2.1.2 retains type forwarders and a transitive package
 dependency, so existing 2.x source and binary consumers remain compatible. New
 applications should reference `SmartPipe.Extensions.Json` directly. The bridge
-is planned for removal in SmartPipe 3.0.
+remains part of the SmartPipe 2.x compatibility contract; any future removal
+requires a separately documented major-version compatibility decision.
 
 ## Requirements
 
 - .NET 10.0+
-- SmartPipe.Core 2.1.2 (included as dependency)
+- SmartPipe.Core (included as a package dependency)
 - This package intentionally includes integration dependencies for the features below.
 - Individual features pull their own dependencies:
-  - `HttpSelector` / `HttpSink` → Polly (via Microsoft.Extensions.Resilience)
-  - `EfCoreSelector` → Entity Framework Core
+  - HTTP transport and codecs → `SmartPipe.Extensions.Http` / `SmartPipe.Extensions.Http.Json`
+  - `EfCoreSelector` → Entity Framework Core (forwarded; the leaf owns the implementation)
   - `DapperSelector` / `DbSink` → Dapper
-  - `MapsterTransform` → Mapster
+  - `MapsterTransform` → Mapster (forwarded; the `SmartPipe.Extensions.Mapster` leaf owns the
+    implementation and the new composition API)
   - `CsvFileSource` / `CsvFileSink` / `CsvTransform` → CsvHelper
-  - `PollyResilienceTransform` → Polly.Core
+  - Polly decorator → `SmartPipe.Extensions.Polly` (`Polly.Core` only)
   - `SmartPipeHostedService` / `SmartPipeHealthCheck` → Microsoft.Extensions.Hosting / HealthChecks
   - Other components use platform APIs or dependencies already carried by this package.
 
 ### Trimming and NativeAOT
 
+The broad bundle has no blanket trimming or NativeAOT guarantee. Choose specific
+leaves and follow their verified consumer contracts. Forwarding compatibility
+does not make the transitive runtime integration set AOT-safe.
+
 `MapsterTransform<TIn,TOut>` uses Mapster runtime mapping metadata and runtime
 expression compilation. It is supported for normal runtime consumers, but is not
 trim- or NativeAOT-safe. For trimmed or NativeAOT applications, prefer a
 hand-written mapper, a source-generated mapper, or `PipelineTransformer.FromFunc`.
+The type is forwarded from `SmartPipe.Extensions.Mapster`, which also exposes
+`MapsterPipelineComponents.Transform<TIn,TOut>` and the `MapWithMapster` builder extensions for new code.
 
 
 ## License

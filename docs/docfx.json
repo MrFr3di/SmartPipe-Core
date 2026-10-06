@@ -1,0 +1,75 @@
+{
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": "../src",
+          "files": [
+            "**/*.csproj"
+          ],
+          "exclude": [
+            "**/bin/**",
+            "**/obj/**"
+          ]
+        }
+      ],
+      "dest": "api",
+      "properties": {
+        "TargetFramework": "net10.0"
+      },
+      "includePrivateMembers": false,
+      "disableDefaultFilter": false,
+      "disableGitFeatures": false,
+      "noRestore": true,
+      "namespaceLayout": "nested",
+      "memberLayout": "samePage",
+      "allowCompilationErrors": false
+    }
+  ],
+  "build": {
+    "content": [
+      {
+        "src": "..",
+        "files": [
+          "README.md",
+          "CONTRIBUTING.md",
+          "SECURITY.md",
+          "SUPPORT.md",
+          "VERSIONING.md",
+          "CHANGELOG.md"
+        ]
+      },
+      {
+        "files": [
+          "**/*.md",
+          "toc.yml"
+        ],
+        "exclude": [
+          "api/**",
+          "_site/**",
+          "maintainers/**"
+        ]
+      },
+      {
+        "files": [
+          "api/**/*.yml"
+        ]
+      }
+    ],
+    "globalMetadata": {
+      "_appName": "SmartPipe.Core",
+      "_appTitle": "SmartPipe documentation",
+      "_enableSearch": true,
+      "_enableNewTab": true,
+      "_lang": "en"
+    },
+    "template": [
+      "default",
+      "modern"
+    ],
+    "output": "_site",
+    "keepFileLink": false,
+    "disableGitFeatures": false,
+    "cleanupCacheHistory": true
+  }
+}

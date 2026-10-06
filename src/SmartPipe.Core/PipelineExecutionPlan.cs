@@ -32,17 +32,19 @@ public sealed class PipelineExecutionPlan
 
     private static void ValidateStages(PipelineDefinition definition)
     {
-        for (int i = 1; i < definition.Stages.Count; i++)
+        var topology = new PipelineStageTopologyEntry[definition.Stages.Count];
+        for (var index = 0; index < definition.Stages.Count; index++)
         {
-            var previous = definition.Stages[i - 1];
-            var current = definition.Stages[i];
-            if (previous.OutputType != current.InputType)
-            {
-                throw new InvalidOperationException(
-                    $"Stage '{current.StageName}' expects input type '{current.InputType.FullName}', "
-                        + $"but previous stage '{previous.StageName}' outputs '{previous.OutputType.FullName}'."
-                );
-            }
+            var stage = definition.Stages[index]
+                ?? throw new InvalidOperationException(
+                    $"Stage definition at index {index} is null.");
+            topology[index] = new(
+                stage.StageId,
+                stage.StageName,
+                stage.InputType,
+                stage.OutputType);
         }
+
+        PipelineStageTopologyValidator.Validate(topology);
     }
 }

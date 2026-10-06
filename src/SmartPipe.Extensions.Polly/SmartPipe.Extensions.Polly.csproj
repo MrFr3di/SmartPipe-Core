@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SmartPipePackage>true</SmartPipePackage>
+  </PropertyGroup>
+  <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
+  <PropertyGroup>
+    <PackageId>SmartPipe.Extensions.Polly</PackageId>
+    <Description>Polly resilience decorator for SmartPipe.Core transforms with explicit inner-transform ownership.</Description>
+    <PackageReleaseNotes>First standalone release in 2.2.0. Adds the canonical Polly resilience decorator with explicit inner-transform ownership. Removed PollyResilienceTransform callers must migrate and recompile. Trimming and NativeAOT supported.</PackageReleaseNotes>
+    <PackageTags>smartpipe;pipeline;polly;resilience;retry;transform</PackageTags>
+    <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SmartPipe.Core\SmartPipe.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <PackageReference Include="Polly.Core" />
+  </ItemGroup>
+</Project>

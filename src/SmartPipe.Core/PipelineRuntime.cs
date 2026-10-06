@@ -13,10 +13,16 @@ public sealed class PipelineRuntime
     /// <param name="executionPlan">Execution plan to run.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="executionPlan"/> is null.</exception>
     public PipelineRuntime(PipelineExecutionPlan executionPlan)
+        : this(executionPlan, Guid.NewGuid().ToString("N"))
+    {
+    }
+
+    internal PipelineRuntime(PipelineExecutionPlan executionPlan, string runId)
     {
         ExecutionPlan = executionPlan ?? throw new ArgumentNullException(nameof(executionPlan));
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
         ExecutionPlan.Definition.MarkRuntimeCreated();
-        RunId = Guid.NewGuid().ToString("N");
+        RunId = runId;
         Options = ExecutionPlan.Definition.RuntimeOptions;
     }
 

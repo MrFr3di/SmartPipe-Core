@@ -1,22 +1,22 @@
 name: Publish NuGet
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
-      recoverable-rerun:
-        description: Allow already-published packages to be skipped when recovering a partial release
+      version:
+        description: Exact canonical SemVer package version, for example 2.2.0 or 2.3.0-rc.1
+        required: true
+        type: string
+      publish_nuget:
+        description: Publish the validated packages, then create the immutable tag and GitHub Release
         required: true
         type: boolean
         default: false
-
 permissions:
   contents: read
 
 concurrency:
-  group: publish-nuget-${{ github.ref }}
+  group: publish-nuget-${{ inputs.version }}
   cancel-in-progress: false
 
 jobs:
@@ -31,26 +31,79 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Require main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Release publication must be dispatched from main." >&2
+            exit 1
+          fi
+
       - name: Setup .NET
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           global-json-file: global.json
 
-      - name: Require a release tag and resolve package version
+      - name: Restore release request validator
+        run: dotnet restore eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --locked-mode -p:DisableImplicitLibraryPacksFolder=true
+
+      - name: Build release request validator
+        run: dotnet build eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-restore -warnaserror
+
+      - name: Validate requested release
         id: version
         shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          PUBLISH_NUGET: ${{ inputs.publish_nuget }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
-            echo "Run this workflow against the release tag." >&2
+          set -euo pipefail
+
+          if [[ "$RUN_ATTEMPT" != "1" ]]; then
+            echo "Do not rerun the whole release workflow: that would rebuild an already validated version. For partial publication recovery use GitHub 'Re-run failed jobs' so the successful producer artifact is reused." >&2
             exit 1
           fi
-          CORE_VERSION="$(dotnet msbuild src/SmartPipe.Core/SmartPipe.Core.csproj -getProperty:Version -nologo)"
-          JSON_VERSION="$(dotnet msbuild src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj -getProperty:Version -nologo)"
-          EXT_VERSION="$(dotnet msbuild src/SmartPipe.Extensions/SmartPipe.Extensions.csproj -getProperty:Version -nologo)"
-          VERSION_OUTPUT="$(bash eng/validate-release-version.sh "$GITHUB_REF_NAME" "$CORE_VERSION" "$JSON_VERSION" "$EXT_VERSION")"
-          PACKAGE_VERSION="$(awk -F= '/^PACKAGE_VERSION=/{print $2}' <<< "$VERSION_OUTPUT")"
-          echo "package-version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "artifact-name=nuget-packages-$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+
+          dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj \
+            --configuration Release --no-build --no-restore -- prepare-release-notes \
+            --repo-root . --version "$VERSION" --changelog CHANGELOG.md \
+            --output artifacts/release-request/RELEASE_NOTES.md
+
+          repository_version="$(python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("Directory.Build.props").getroot()
+          values = [
+              (node.text or "").strip()
+              for group in root.findall("PropertyGroup")
+              for node in group.findall("Version")
+              if (node.text or "").strip()
+          ]
+          if len(values) != 1:
+              raise SystemExit(f"Expected exactly one repository Version, found {len(values)}.")
+          print(values[0])
+          PY
+          )"
+          graph_version="$(jq -r '.releaseVersion' eng/package-graph.json)"
+          stable_core="${VERSION%%-*}"
+
+          if [[ -z "$repository_version" || "$stable_core" != "$repository_version" ]]; then
+            echo "Requested version core $stable_core does not match repository Version $repository_version." >&2
+            exit 1
+          fi
+          if [[ -z "$graph_version" || "$graph_version" == "null" || "$stable_core" != "$graph_version" ]]; then
+            echo "Requested version core $stable_core does not match package-graph releaseVersion $graph_version." >&2
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "Tag v$VERSION already exists; releases never reuse or move tags." >&2
+            exit 1
+          fi
+
+          echo "package-version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "artifact-name=nuget-packages-$VERSION" >> "$GITHUB_OUTPUT"
 
   validation:
     needs: version
@@ -58,23 +111,132 @@ jobs:
     permissions:
       contents: read
     with:
+      validation-mode: release
       package-version: ${{ needs.version.outputs.package-version }}
       artifact-name: ${{ needs.version.outputs.artifact-name }}
+      prepare-release-assets: true
+
+  windows-validation:
+    needs: [version, validation]
+    uses: ./.github/workflows/reusable-release-validation.yml
+    permissions:
+      contents: read
+    with:
+      validation-mode: release
+      runner-labels: '["windows-latest"]'
+      package-version: ${{ needs.version.outputs.package-version }}
+      package-artifact-id: ${{ needs.validation.outputs.artifact-id }}
+      artifact-name: windows-release-validation-reports
+
+  postgresql-validation:
+    needs: [version, validation]
+    uses: ./.github/workflows/reusable-postgresql-validation.yml
+    permissions:
+      contents: read
+    with:
+      validation-mode: release
+      package-version: ${{ needs.version.outputs.package-version }}
+      artifact-id: ${{ needs.validation.outputs.artifact-id }}
 
   publish:
-    needs: [version, validation]
+    if: ${{ inputs.publish_nuget }}
+    needs: [version, validation, windows-validation, postgresql-validation]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
+      attestations: write
+      artifact-metadata: write
     environment: nuget-production
 
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
       - name: Download validated packages
         uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
-          name: ${{ needs.version.outputs.artifact-name }}
-          path: artifacts/packages
+          artifact-ids: ${{ needs.validation.outputs.artifact-id }}
+          path: .
+          merge-multiple: true
+
+      - name: Validate downloaded package artifact
+        shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
+        run: ./eng/validate-package-artifact.ps1 -ArtifactRoot . -ExpectedVersion "$env:PACKAGE_VERSION" -GraphPath eng/package-graph.json -ExpectedMode release -ExpectedCommit (git rev-parse HEAD)
+
+      - name: Verify release asset checksums
+        working-directory: artifacts/packages
+        run: sha256sum --check --strict SHA256SUMS
+
+      - name: Preflight recoverable published packages
+        if: github.run_attempt > 1
+        shell: pwsh
+        env:
+          PACKAGE_MANIFEST: artifacts/packages/manifest.json
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifest = Get-Content -LiteralPath $env:PACKAGE_MANIFEST -Raw | ConvertFrom-Json
+          $downloadRoot = Join-Path $env:RUNNER_TEMP ("nuget-recovery-preflight-" + [Guid]::NewGuid().ToString('N'))
+          $statePath = 'artifacts/recovery-state.json'
+          $state = [Collections.Generic.List[object]]::new()
+          New-Item -ItemType Directory -Path $downloadRoot | Out-Null
+          try {
+            foreach ($package in @($manifest.packages | Sort-Object publishOrder)) {
+              $id = [string]$package.id
+              $version = [string]$package.version
+              $lowerId = $id.ToLowerInvariant()
+              $lowerVersion = $version.ToLowerInvariant()
+
+              $primaryPublished = $false
+              $url = "https://api.nuget.org/v3-flatcontainer/$lowerId/$lowerVersion/$lowerId.$lowerVersion.nupkg"
+              $published = Join-Path $downloadRoot "$id.$version.nupkg"
+              $response = Invoke-WebRequest -Uri $url -OutFile $published -SkipHttpErrorCheck -PassThru
+              if ($response.StatusCode -eq 200) {
+                ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.nupkgPath) -PublishedPackage $published
+                $primaryPublished = $true
+              }
+              elseif ($response.StatusCode -ne 404) {
+                throw "Unable to establish recovery state for $id $version. HTTP $($response.StatusCode)."
+              }
+              Remove-Item -LiteralPath $published -Force -ErrorAction SilentlyContinue
+
+              $symbolsPublished = $false
+              $symbolUrl = "https://www.nuget.org/api/v2/symbolpackage/$id/$version"
+              $publishedSymbol = Join-Path $downloadRoot "$id.$version.snupkg"
+              $symbolResponse = Invoke-WebRequest -Uri $symbolUrl -OutFile $publishedSymbol -SkipHttpErrorCheck -PassThru
+              if ($symbolResponse.StatusCode -eq 200) {
+                ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage ([string]$package.snupkgPath) -PublishedPackage $publishedSymbol
+                $symbolsPublished = $true
+              }
+              elseif ($symbolResponse.StatusCode -ne 404) {
+                throw "Unable to establish symbol recovery state for $id $version. HTTP $($symbolResponse.StatusCode)."
+              }
+              Remove-Item -LiteralPath $publishedSymbol -Force -ErrorAction SilentlyContinue
+
+              $state.Add([pscustomobject]@{
+                id = $id
+                version = $version
+                primaryPublished = $primaryPublished
+                symbolsPublished = $symbolsPublished
+              })
+            }
+
+            $state | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $statePath -Encoding utf8
+          }
+          finally {
+            Remove-Item -LiteralPath $downloadRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+
+      - name: Attest release package provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            artifacts/packages/*.nupkg
+            artifacts/packages/*.snupkg
 
       - name: NuGet login
         id: nuget-login
@@ -86,35 +248,227 @@ jobs:
         shell: bash
         env:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+          NUGET_SYMBOL_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
           PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
-          RECOVERABLE_RERUN: ${{ github.event_name == 'workflow_dispatch' && inputs.recoverable-rerun }}
+          RECOVERY_MODE: ${{ github.run_attempt > 1 }}
         run: |
-          skip_duplicate=()
-          if [[ "$RECOVERABLE_RERUN" == "true" ]]; then
-            skip_duplicate=(--skip-duplicate)
+          manifest="artifacts/packages/manifest.json"
+          recovery_state="artifacts/recovery-state.json"
+          if [[ "$RECOVERY_MODE" == "true" && ! -f "$recovery_state" ]]; then
+            echo "Recovery rerun requires preflight state." >&2
+            exit 1
           fi
-          dotnet nuget push "artifacts/packages/SmartPipe.Core.${PACKAGE_VERSION}.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json "${skip_duplicate[@]}"
-          dotnet nuget push "artifacts/packages/SmartPipe.Extensions.Json.${PACKAGE_VERSION}.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json "${skip_duplicate[@]}"
-          dotnet nuget push "artifacts/packages/SmartPipe.Extensions.${PACKAGE_VERSION}.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json "${skip_duplicate[@]}"
-
-      - name: Verify published package versions are available
-        shell: bash
-        env:
-          PACKAGE_VERSION: ${{ needs.version.outputs.package-version }}
-        run: |
-          for package in smartpipe.core smartpipe.extensions.json smartpipe.extensions; do
-            url="https://api.nuget.org/v3-flatcontainer/${package}/${PACKAGE_VERSION}/${package}.${PACKAGE_VERSION}.nupkg"
-            available=false
-            for attempt in {1..12}; do
-              if curl --fail --silent --show-error --head "$url" >/dev/null; then
-                available=true
-                break
-              fi
-              echo "Waiting for $package $PACKAGE_VERSION to become available (attempt $attempt/12)."
-              sleep 10
-            done
-            if [[ "$available" != true ]]; then
-              echo "$package $PACKAGE_VERSION is not available from NuGet after publication." >&2
+          mapfile -t packages < <(jq -r '.packages | sort_by(.publishOrder)[] | .nupkgPath' "$manifest")
+          if (( ${#packages[@]} == 0 )); then
+            echo "Package manifest contains no publishable packages." >&2
+            exit 1
+          fi
+          for package in "${packages[@]}"; do
+            expected_hash="$(jq -r --arg path "$package" '.packages[] | select(.nupkgPath == $path) | .nupkgSha256' "$manifest")"
+            actual_hash="$(sha256sum "$package" | awk '{print tolower($1)}')"
+            if [[ -z "$expected_hash" || "$actual_hash" != "$expected_hash" ]]; then
+              echo "Package hash does not match immutable manifest: $package" >&2
               exit 1
             fi
+
+            symbol_package="$(jq -r --arg path "$package" '.packages[] | select(.nupkgPath == $path) | .snupkgPath' "$manifest")"
+            expected_symbol_hash="$(jq -r --arg path "$package" '.packages[] | select(.nupkgPath == $path) | .snupkgSha256' "$manifest")"
+            if [[ -z "$symbol_package" || "$symbol_package" == "null" || ! -f "$symbol_package" || -z "$expected_symbol_hash" || "$expected_symbol_hash" == "null" ]]; then
+              echo "Symbol package is missing from immutable manifest/artifact: $package" >&2
+              exit 1
+            fi
+            actual_symbol_hash="$(sha256sum "$symbol_package" | awk '{print tolower($1)}')"
+            if [[ "$actual_symbol_hash" != "$expected_symbol_hash" ]]; then
+              echo "Symbol package hash does not match immutable manifest: $symbol_package" >&2
+              exit 1
+            fi
+
+            if [[ "$RECOVERY_MODE" != "true" ]]; then
+              dotnet nuget push "$package" --source https://api.nuget.org/v3/index.json
+              continue
+            fi
+
+            package_id="$(jq -r --arg path "$package" '.packages[] | select(.nupkgPath == $path) | .id' "$manifest")"
+            primary_published="$(jq -r --arg id "$package_id" '.[] | select(.id == $id) | .primaryPublished' "$recovery_state")"
+            symbols_published="$(jq -r --arg id "$package_id" '.[] | select(.id == $id) | .symbolsPublished' "$recovery_state")"
+            if [[ "$primary_published" != "true" && "$primary_published" != "false" ]] || \
+               [[ "$symbols_published" != "true" && "$symbols_published" != "false" ]]; then
+              echo "Recovery state is missing or invalid for $package_id." >&2
+              exit 1
+            fi
+
+            if [[ "$primary_published" == "true" ]]; then
+              echo "$package_id primary package already matches the validated producer payload; skipping push."
+            else
+              dotnet nuget push "$package" --source https://api.nuget.org/v3/index.json --no-symbols
+            fi
+
+            if [[ "$symbols_published" == "true" ]]; then
+              echo "$package_id symbol package already matches the validated producer payload; skipping push."
+            else
+              dotnet nuget push "$symbol_package" --source https://api.nuget.org/v3/index.json
+            fi
           done
+
+      - name: Verify published package payloads
+        shell: pwsh
+        env:
+          PACKAGE_MANIFEST: artifacts/packages/manifest.json
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifest = Get-Content -LiteralPath $env:PACKAGE_MANIFEST -Raw | ConvertFrom-Json
+          $downloadRoot = Join-Path $env:RUNNER_TEMP ("nuget-published-" + [Guid]::NewGuid().ToString('N'))
+          $pending = [Collections.Generic.List[object]]::new()
+          New-Item -ItemType Directory -Path $downloadRoot | Out-Null
+          try {
+            foreach ($package in @($manifest.packages | Sort-Object publishOrder)) {
+              $id = [string]$package.id
+              $version = [string]$package.version
+              $lowerId = $id.ToLowerInvariant()
+              $lowerVersion = $version.ToLowerInvariant()
+              $pending.Add([pscustomobject]@{
+                id = $id
+                version = $version
+                kind = 'nupkg'
+                url = "https://api.nuget.org/v3-flatcontainer/$lowerId/$lowerVersion/$lowerId.$lowerVersion.nupkg"
+                expected = [string]$package.nupkgPath
+                downloaded = Join-Path $downloadRoot "$id.$version.nupkg"
+              })
+              $pending.Add([pscustomobject]@{
+                id = $id
+                version = $version
+                kind = 'snupkg'
+                url = "https://www.nuget.org/api/v2/symbolpackage/$id/$version"
+                expected = [string]$package.snupkgPath
+                downloaded = Join-Path $downloadRoot "$id.$version.snupkg"
+              })
+            }
+
+            $deadline = [DateTimeOffset]::UtcNow.AddMinutes(15)
+            while ($pending.Count -gt 0 -and [DateTimeOffset]::UtcNow -lt $deadline) {
+              foreach ($item in @($pending)) {
+                if ([DateTimeOffset]::UtcNow -ge $deadline) { break }
+                Remove-Item -LiteralPath $item.downloaded -Force -ErrorAction SilentlyContinue
+                try {
+                  $response = Invoke-WebRequest -Uri $item.url -OutFile $item.downloaded -SkipHttpErrorCheck -PassThru -TimeoutSec 15
+                }
+                catch {
+                  Write-Output "NuGet propagation check for $($item.id) $($item.kind) failed transiently: $($_.Exception.Message)"
+                  continue
+                }
+
+                if ($response.StatusCode -eq 200) {
+                  ./eng/compare-nuget-package-payload.ps1 -ExpectedPackage $item.expected -PublishedPackage $item.downloaded
+                  Remove-Item -LiteralPath $item.downloaded -Force
+                  [void]$pending.Remove($item)
+                  continue
+                }
+
+                Remove-Item -LiteralPath $item.downloaded -Force -ErrorAction SilentlyContinue
+                if ($response.StatusCode -notin @(404, 408, 425, 429, 500, 502, 503, 504)) {
+                  throw "Unexpected NuGet response for $($item.id) $($item.kind): HTTP $($response.StatusCode)."
+                }
+              }
+
+              if ($pending.Count -gt 0 -and [DateTimeOffset]::UtcNow -lt $deadline) {
+                $remaining = ($pending | ForEach-Object { "$($_.id):$($_.kind)" }) -join ', '
+                Write-Output "Waiting for NuGet propagation: $remaining"
+                Start-Sleep -Seconds 10
+              }
+            }
+
+            if ($pending.Count -gt 0) {
+              $missing = ($pending | ForEach-Object { "$($_.id) $($_.version) $($_.kind)" }) -join ', '
+              throw "NuGet publication did not become verifiable within the 15-minute propagation window: $missing"
+            }
+          }
+          finally {
+            Remove-Item -LiteralPath $downloadRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+  github-release:
+    if: ${{ inputs.publish_nuget }}
+    needs: [version, validation, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download validated packages
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          artifact-ids: ${{ needs.validation.outputs.artifact-id }}
+          path: .
+          merge-multiple: true
+
+      - name: Verify release asset checksums
+        working-directory: artifacts/packages
+        run: sha256sum --check --strict SHA256SUMS
+
+      - name: Create release tag and publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.package-version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+
+          existing="$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/${tag}" \
+            --jq ".[] | select(.ref == \"refs/tags/${tag}\") | .object.sha")"
+          if [[ -z "${existing}" ]]; then
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${tag}" \
+              -f sha="${GITHUB_SHA}" > /dev/null
+          elif [[ "${existing}" != "${GITHUB_SHA}" ]]; then
+            echo "Tag ${tag} already points to ${existing}, not ${GITHUB_SHA}; it is never moved." >&2
+            exit 1
+          fi
+
+          assets=(
+            artifacts/packages/*.nupkg
+            artifacts/packages/*.snupkg
+            artifacts/packages/SHA256SUMS
+            artifacts/packages/RELEASE_NOTES.md
+          )
+          state="$(gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" --json isDraft -q .isDraft 2>/dev/null || echo missing)"
+
+          case "${state}" in
+            missing)
+              flags=()
+              if [[ "${VERSION}" == *-* ]]; then
+                flags=(--prerelease --latest=false)
+              else
+                flags=(--latest)
+              fi
+              gh release create "${tag}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --verify-tag \
+                --draft \
+                "${flags[@]}" \
+                --title "SmartPipe ${VERSION}" \
+                --notes-file artifacts/packages/RELEASE_NOTES.md \
+                "${assets[@]}"
+              ;;
+            true)
+              gh release edit "${tag}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "SmartPipe ${VERSION}" \
+                --notes-file artifacts/packages/RELEASE_NOTES.md
+              gh release upload "${tag}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --clobber \
+                "${assets[@]}"
+              ;;
+            false)
+              echo "Release ${tag} is already published."
+              exit 0
+              ;;
+            *)
+              echo "Unexpected GitHub Release state for ${tag}: ${state}" >&2
+              exit 1
+              ;;
+          esac
+
+          gh release edit "${tag}" --repo "${GITHUB_REPOSITORY}" --draft=false
+          gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" --json url,isDraft,isImmutable -q .

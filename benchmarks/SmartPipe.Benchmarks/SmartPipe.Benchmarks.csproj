@@ -2,10 +2,21 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SmartPipe.Core\SmartPipe.Core.csproj" />
+    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Channels\SmartPipe.Extensions.Channels.csproj" />
+    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Transforms\SmartPipe.Extensions.Transforms.csproj" />
+    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Logging\SmartPipe.Extensions.Logging.csproj" />
+    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Json\SmartPipe.Extensions.Json.csproj" />
+    <ProjectReference Include="..\..\src\SmartPipe.Extensions.Csv\SmartPipe.Extensions.Csv.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\Shared\JsonFraming\Utf8LineRecordReader.cs" Link="JsonFraming\Utf8LineRecordReader.cs" />
   </ItemGroup>
 
   <PropertyGroup>

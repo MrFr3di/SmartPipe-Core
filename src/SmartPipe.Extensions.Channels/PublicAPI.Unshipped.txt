@@ -1,0 +1,6 @@
+#nullable enable
+SmartPipe.Extensions.ChannelMerge
+static SmartPipe.Extensions.ChannelMerge.Merge<T>(System.Threading.Channels.ChannelReader<T>! first, System.Threading.Channels.ChannelReader<T>! second, System.Threading.Channels.BoundedChannelOptions? options = null) -> System.Threading.Channels.ChannelReader<T>!
+static SmartPipe.Extensions.ChannelMerge.Merge<T>(System.Threading.Channels.ChannelReader<T>! first, System.Threading.Channels.ChannelReader<T>! second, System.Threading.Channels.BoundedChannelOptions? options, System.Threading.CancellationToken cancellationToken) -> System.Threading.Channels.ChannelReader<T>!
+static SmartPipe.Extensions.ChannelMerge.Merge<T>(System.Collections.Generic.IReadOnlyList<System.Threading.Channels.ChannelReader<T>!>! readers) -> System.Threading.Channels.ChannelReader<T>!
+static SmartPipe.Extensions.ChannelMerge.MergeMany<T>(System.Collections.Generic.IReadOnlyList<System.Threading.Channels.ChannelReader<T>!>! readers, System.Threading.Channels.BoundedChannelOptions? options, System.Threading.CancellationToken cancellationToken) -> System.Threading.Channels.ChannelReader<T>!

@@ -1,0 +1,389 @@
+[
+  {
+    "packageId": "SmartPipe.Core",
+    "version": "2.1.2",
+    "files": [
+      {
+        "path": ".signature.p7s",
+        "uncompressedLength": 12982,
+        "sha256": "9eebf3e89313ec538d5441657f08e37020b9859b3335324793bff41ef25958dc",
+        "category": "other"
+      },
+      {
+        "path": "icon.png",
+        "uncompressedLength": 2840,
+        "sha256": "9f1525585220b0f707ece629426b41658843b6304a0e7decf85b99debc88c43d",
+        "category": "icon"
+      },
+      {
+        "path": "lib/net10.0/SmartPipe.Core.dll",
+        "uncompressedLength": 350208,
+        "sha256": "03feda1696a73bc983198125da7e507708da45bfb3e5e96ab3d6d18dffd38a7c",
+        "category": "assembly"
+      },
+      {
+        "path": "lib/net10.0/SmartPipe.Core.xml",
+        "uncompressedLength": 175791,
+        "sha256": "b2ec2de9b6f9fea8692114e0b33c01c53a7747a8157ba0abc349ada0980ae87f",
+        "category": "xml-doc"
+      },
+      {
+        "path": "package/services/metadata/core-properties/513dc9e69ad54d06bf7bacecb349a702.psmdcp",
+        "uncompressedLength": 862,
+        "sha256": "ea462d520881bdd955e8517435bbea0ba175bdd25a0a736adac8fb6ab48bb68a",
+        "category": "other"
+      },
+      {
+        "path": "README.md",
+        "uncompressedLength": 11530,
+        "sha256": "3e0580f3e734d2a7416afadd5c1a8f3ff7bbd9cfd9dc9b019fe8bac0395cffd8",
+        "category": "readme"
+      },
+      {
+        "path": "SmartPipe.Core.nuspec",
+        "uncompressedLength": 1133,
+        "sha256": "35a4417125935970de570a73a97c7067178b7183afeaaeb0d133e37963cf9843",
+        "category": "nuspec"
+      },
+      {
+        "path": "[Content_Types].xml",
+        "uncompressedLength": 644,
+        "sha256": "b858fadd5794c5a53fcbaa7a45db7aa5f6ab1fd173ba71cc2625214ee1509c6a",
+        "category": "xml-doc"
+      },
+      {
+        "path": "_rels/.rels",
+        "uncompressedLength": 504,
+        "sha256": "a7a2f559ae5af8f0790b1a07d00c8aa86d9de882938c50fc63fb8b3b23f77958",
+        "category": "other"
+      }
+    ],
+    "assemblies": [
+      {
+        "name": "SmartPipe.Core",
+        "version": "2.1.2.0",
+        "culture": "",
+        "publicKeyToken": "",
+        "assetFamily": "lib",
+        "assetPath": "lib/net10.0/SmartPipe.Core.dll",
+        "targetFramework": "net10.0",
+        "exportedTypes": [
+          "SmartPipe.Core.AdaptiveParallelismOptions",
+          "SmartPipe.Core.BackoffStrategy",
+          "SmartPipe.Core.BackpressureStrategy",
+          "SmartPipe.Core.CircuitBreaker",
+          "SmartPipe.Core.CircuitBreakerClosedEvent",
+          "SmartPipe.Core.CircuitBreakerEvaluationMode",
+          "SmartPipe.Core.CircuitBreakerOpenedEvent",
+          "SmartPipe.Core.CircuitBreakerOptions",
+          "SmartPipe.Core.CircuitBreakerPermit",
+          "SmartPipe.Core.CircuitBreakerPolicy",
+          "SmartPipe.Core.CircuitBreakerProbe",
+          "SmartPipe.Core.CircuitBreakerRejectedEvent",
+          "SmartPipe.Core.CircuitState",
+          "SmartPipe.Core.ComponentOwnershipOptions",
+          "SmartPipe.Core.CuckooFilter",
+          "SmartPipe.Core.DeadLetterEnvelope\u00601",
+          "SmartPipe.Core.DeadLetterWrittenEvent",
+          "SmartPipe.Core.DeduplicationFilter",
+          "SmartPipe.Core.ErrorType",
+          "SmartPipe.Core.ExponentialHistogram",
+          "SmartPipe.Core.FailureAction",
+          "SmartPipe.Core.HyperLogLogEstimator",
+          "SmartPipe.Core.IClock",
+          "SmartPipe.Core.IDeadLetterRedactor\u00601",
+          "SmartPipe.Core.IDeadLetterSerializer\u00601",
+          "SmartPipe.Core.IPipelineClock",
+          "SmartPipe.Core.IPipelineComponentDescriptor",
+          "SmartPipe.Core.IPipelineObserver",
+          "SmartPipe.Core.IPipelineSink\u00601",
+          "SmartPipe.Core.IPipelineSource\u00601",
+          "SmartPipe.Core.IPipelineTransformer\u00602",
+          "SmartPipe.Core.InputDroppedEvent",
+          "SmartPipe.Core.ItemFilteredEvent",
+          "SmartPipe.Core.JsonLinesDeadLetterSerializer\u00601",
+          "SmartPipe.Core.JumpHash",
+          "SmartPipe.Core.LineageEntry",
+          "SmartPipe.Core.LineageMode",
+          "SmartPipe.Core.MetadataBag",
+          "SmartPipe.Core.NoOpDeadLetterRedactor\u00601",
+          "SmartPipe.Core.ObjectPool\u00601",
+          "SmartPipe.Core.ObserverDispatchMode",
+          "SmartPipe.Core.ObserverDispatchOptions",
+          "SmartPipe.Core.ObserverEventDroppedEvent",
+          "SmartPipe.Core.ObserverFailedEvent",
+          "SmartPipe.Core.ObserverFailureMode",
+          "SmartPipe.Core.ObserverFailurePolicy",
+          "SmartPipe.Core.ObserverQueueOverflowPolicy",
+          "SmartPipe.Core.ObserverReliability",
+          "SmartPipe.Core.OutputDroppedEvent",
+          "SmartPipe.Core.PipelineBuilder",
+          "SmartPipe.Core.PipelineBuilder\u00601",
+          "SmartPipe.Core.PipelineBuilder\u00602",
+          "SmartPipe.Core.PipelineCancelledEvent",
+          "SmartPipe.Core.PipelineCompletedEvent",
+          "SmartPipe.Core.PipelineComponentLifetime",
+          "SmartPipe.Core.PipelineComponentRegistration",
+          "SmartPipe.Core.PipelineDefinition",
+          "SmartPipe.Core.PipelineDrainResult",
+          "SmartPipe.Core.PipelineDrainStatus",
+          "SmartPipe.Core.PipelineEvent",
+          "SmartPipe.Core.PipelineExecutionPlan",
+          "SmartPipe.Core.PipelineFailureActionException",
+          "SmartPipe.Core.PipelineFaultedEvent",
+          "SmartPipe.Core.PipelineObserverRegistration",
+          "SmartPipe.Core.PipelineOrderingMode",
+          "SmartPipe.Core.PipelineOutputMode",
+          "SmartPipe.Core.PipelineOutputPolicy",
+          "SmartPipe.Core.PipelineOutput\u00601",
+          "SmartPipe.Core.PipelineResultKind",
+          "SmartPipe.Core.PipelineResult\u00601",
+          "SmartPipe.Core.PipelineRunState",
+          "SmartPipe.Core.PipelineRun\u00601",
+          "SmartPipe.Core.PipelineRuntime",
+          "SmartPipe.Core.PipelineRuntimeOptions",
+          "SmartPipe.Core.PipelineSink",
+          "SmartPipe.Core.PipelineSource",
+          "SmartPipe.Core.PipelineStageDefinition",
+          "SmartPipe.Core.PipelineStartedEvent",
+          "SmartPipe.Core.PipelineTransformer",
+          "SmartPipe.Core.ProcessingEnvelope\u00601",
+          "SmartPipe.Core.ReservoirSampler\u00601",
+          "SmartPipe.Core.RetryAttemptedEvent",
+          "SmartPipe.Core.RetryExhaustedEvent",
+          "SmartPipe.Core.RetryPolicy",
+          "SmartPipe.Core.RetryScheduledEvent",
+          "SmartPipe.Core.SecretScanResult",
+          "SmartPipe.Core.SecretScanner",
+          "SmartPipe.Core.SinkWriteFailedEvent",
+          "SmartPipe.Core.SinkWriteStartedEvent",
+          "SmartPipe.Core.SmartPipeError",
+          "SmartPipe.Core.SmartPipeEventSource",
+          "SmartPipe.Core.SmartPipeMeter",
+          "SmartPipe.Core.SmartPipeMetrics",
+          "SmartPipe.Core.SmartPipeMetricsRecorder",
+          "SmartPipe.Core.SmartPipeMetricsSnapshot",
+          "SmartPipe.Core.StageDeadLetterOptions\u00601",
+          "SmartPipe.Core.StageFailedEvent",
+          "SmartPipe.Core.StageFailureOptions",
+          "SmartPipe.Core.StageOutcome",
+          "SmartPipe.Core.StageResultKind",
+          "SmartPipe.Core.StageResult\u00601",
+          "SmartPipe.Core.StageStartedEvent",
+          "SmartPipe.Core.StageSucceededEvent",
+          "SmartPipe.Core.SystemPipelineClock",
+          "SmartPipe.Core.TimeProviderClock",
+          "SmartPipe.Core.TimeProviderPipelineClock",
+          "SmartPipe.Core.TimeoutPolicy",
+          "SmartPipe.Core.TimeoutRetryMode"
+        ],
+        "typeForwarders": []
+      }
+    ]
+  },
+  {
+    "packageId": "SmartPipe.Extensions",
+    "version": "2.1.2",
+    "files": [
+      {
+        "path": ".signature.p7s",
+        "uncompressedLength": 12981,
+        "sha256": "3891ae3f708d9c0252dc6f95036da4d9fc8781be22e7e4b3d0994a43de5af51e",
+        "category": "other"
+      },
+      {
+        "path": "icon.png",
+        "uncompressedLength": 2840,
+        "sha256": "9f1525585220b0f707ece629426b41658843b6304a0e7decf85b99debc88c43d",
+        "category": "icon"
+      },
+      {
+        "path": "lib/net10.0/SmartPipe.Extensions.dll",
+        "uncompressedLength": 119808,
+        "sha256": "cd1e14ff3388001e6a261cc74a549f714a2899e792e97df2761975eab73fd16d",
+        "category": "assembly"
+      },
+      {
+        "path": "lib/net10.0/SmartPipe.Extensions.xml",
+        "uncompressedLength": 70946,
+        "sha256": "0504ed3395c40f549466ab94bc5b244b3c9cdc3fac5ef298ece2c5d67fe4a5d7",
+        "category": "xml-doc"
+      },
+      {
+        "path": "package/services/metadata/core-properties/9a78c8953ed94241bbdd9879c5a77e39.psmdcp",
+        "uncompressedLength": 888,
+        "sha256": "31b830a185b8bb5ad6dbafb7d168730e37164e479822d0d508e704d60f6a7526",
+        "category": "other"
+      },
+      {
+        "path": "README.md",
+        "uncompressedLength": 6543,
+        "sha256": "dc81c3f168b63515376bc5e79b72740ab96f44fd5da14d34e7948e204a79da37",
+        "category": "readme"
+      },
+      {
+        "path": "SmartPipe.Extensions.nuspec",
+        "uncompressedLength": 2110,
+        "sha256": "716c27170b53d2cdd7172d523a4baf5edee92e085a5e1530dd346a33582e23c0",
+        "category": "nuspec"
+      },
+      {
+        "path": "[Content_Types].xml",
+        "uncompressedLength": 644,
+        "sha256": "b858fadd5794c5a53fcbaa7a45db7aa5f6ab1fd173ba71cc2625214ee1509c6a",
+        "category": "xml-doc"
+      },
+      {
+        "path": "_rels/.rels",
+        "uncompressedLength": 510,
+        "sha256": "5df8fb5fa4bef0b5812ac5ba78947bf7330e8ea458277892f34275f1743f838e",
+        "category": "other"
+      }
+    ],
+    "assemblies": [
+      {
+        "name": "SmartPipe.Extensions",
+        "version": "2.1.2.0",
+        "culture": "",
+        "publicKeyToken": "",
+        "assetFamily": "lib",
+        "assetPath": "lib/net10.0/SmartPipe.Extensions.dll",
+        "targetFramework": "net10.0",
+        "exportedTypes": [
+          "SmartPipe.Extensions.ChannelMerge",
+          "SmartPipe.Extensions.ISmartPipeDefinition\u00602",
+          "SmartPipe.Extensions.ISmartPipeFactory\u00602",
+          "SmartPipe.Extensions.ISmartPipeRunHealthMonitor\u00602",
+          "SmartPipe.Extensions.Selectors.CsvFileSource\u00601",
+          "SmartPipe.Extensions.Selectors.DapperSelector\u00601",
+          "SmartPipe.Extensions.Selectors.EfCoreSelector\u00601",
+          "SmartPipe.Extensions.Selectors.HttpClientFactorySelector\u00601",
+          "SmartPipe.Extensions.Selectors.HttpSelectorStreamingMode",
+          "SmartPipe.Extensions.Selectors.HttpSelector\u00601",
+          "SmartPipe.Extensions.Sinks.CsvFileSink\u00601",
+          "SmartPipe.Extensions.Sinks.DbSink\u00601",
+          "SmartPipe.Extensions.Sinks.HttpClientFactorySink\u00601",
+          "SmartPipe.Extensions.Sinks.HttpSink\u00601",
+          "SmartPipe.Extensions.Sinks.LoggerSink\u00601",
+          "SmartPipe.Extensions.SmartPipeDefinitionBuilder\u00602",
+          "SmartPipe.Extensions.SmartPipeDefinition\u00602",
+          "SmartPipe.Extensions.SmartPipeFactory\u00602",
+          "SmartPipe.Extensions.SmartPipeHealthCheckOptions",
+          "SmartPipe.Extensions.SmartPipeHealthSnapshot",
+          "SmartPipe.Extensions.SmartPipeHostedFailureBehavior",
+          "SmartPipe.Extensions.SmartPipeHostedServiceOptions",
+          "SmartPipe.Extensions.SmartPipeHostedService\u00602",
+          "SmartPipe.Extensions.SmartPipeRunHealthMonitor\u00602",
+          "SmartPipe.Extensions.SmartPipeServiceCollectionExtensions",
+          "SmartPipe.Extensions.Transforms.CompositeTransform\u00601",
+          "SmartPipe.Extensions.Transforms.CompressionAlgorithm",
+          "SmartPipe.Extensions.Transforms.CompressionTransform",
+          "SmartPipe.Extensions.Transforms.ConditionalTransform\u00601",
+          "SmartPipe.Extensions.Transforms.CsvTransform\u00602",
+          "SmartPipe.Extensions.Transforms.FilterTransform\u00601",
+          "SmartPipe.Extensions.Transforms.FilterValidationExtensions",
+          "SmartPipe.Extensions.Transforms.MapsterTransform\u00602",
+          "SmartPipe.Extensions.Transforms.PollyResilienceTransform\u00601",
+          "SmartPipe.Extensions.Transforms.ValidationTransform\u00601"
+        ],
+        "typeForwarders": [
+          "SmartPipe.Extensions.Selectors.DeadLetterSource\u00601",
+          "SmartPipe.Extensions.Selectors.JsonFileSource\u00601",
+          "SmartPipe.Extensions.Sinks.DeadLetterSink\u00601",
+          "SmartPipe.Extensions.Sinks.DeadLetterWriteException",
+          "SmartPipe.Extensions.Sinks.DeadLetterWriteFailureMode",
+          "SmartPipe.Extensions.Sinks.JsonFileSink\u00601",
+          "SmartPipe.Extensions.Transforms.JsonTransform\u00602"
+        ]
+      }
+    ]
+  },
+  {
+    "packageId": "SmartPipe.Extensions.Json",
+    "version": "2.1.2",
+    "files": [
+      {
+        "path": ".signature.p7s",
+        "uncompressedLength": 12981,
+        "sha256": "0b2fd19fee7589797979d185b9eb0e140ba14da52f45c743a708d769858ae4a6",
+        "category": "other"
+      },
+      {
+        "path": "icon.png",
+        "uncompressedLength": 2840,
+        "sha256": "9f1525585220b0f707ece629426b41658843b6304a0e7decf85b99debc88c43d",
+        "category": "icon"
+      },
+      {
+        "path": "lib/net10.0/SmartPipe.Extensions.Json.dll",
+        "uncompressedLength": 124928,
+        "sha256": "b86f5b0fdc290cd11691e2c8cdb7fc958a677e8a229696571c37ab2e936b0c34",
+        "category": "assembly"
+      },
+      {
+        "path": "lib/net10.0/SmartPipe.Extensions.Json.xml",
+        "uncompressedLength": 24283,
+        "sha256": "6af8f65b1a55d6a9ded21d67f435bbdfcac4b8c3a79a494b6b25d13c2d06dc79",
+        "category": "xml-doc"
+      },
+      {
+        "path": "package/services/metadata/core-properties/9619fbffac964ef78d23edce1267ffa1.psmdcp",
+        "uncompressedLength": 816,
+        "sha256": "03235740b4cfae6c85507c51247f7449e7d7f109fb39e2eb9ff7e0ebd5eb6829",
+        "category": "other"
+      },
+      {
+        "path": "README.md",
+        "uncompressedLength": 3669,
+        "sha256": "cf53f5a1f2bf2fe62d0297fabe642a899eae0978209db59b3c6b079e5e8fa3f9",
+        "category": "readme"
+      },
+      {
+        "path": "SmartPipe.Extensions.Json.nuspec",
+        "uncompressedLength": 1172,
+        "sha256": "893781379082426bba9d03b4d61bfcd80bb06797a1e577a74b8934008bc10955",
+        "category": "nuspec"
+      },
+      {
+        "path": "[Content_Types].xml",
+        "uncompressedLength": 644,
+        "sha256": "b858fadd5794c5a53fcbaa7a45db7aa5f6ab1fd173ba71cc2625214ee1509c6a",
+        "category": "xml-doc"
+      },
+      {
+        "path": "_rels/.rels",
+        "uncompressedLength": 515,
+        "sha256": "90128aaaff97aca403e340a7a379e069b89027003df1d5bd08538925883f277c",
+        "category": "other"
+      }
+    ],
+    "assemblies": [
+      {
+        "name": "SmartPipe.Extensions.Json",
+        "version": "2.1.2.0",
+        "culture": "",
+        "publicKeyToken": "",
+        "assetFamily": "lib",
+        "assetPath": "lib/net10.0/SmartPipe.Extensions.Json.dll",
+        "targetFramework": "net10.0",
+        "exportedTypes": [
+          "SmartPipe.Extensions.DeadLetterSinkOptions",
+          "SmartPipe.Extensions.DeadLetterSourceOptions",
+          "SmartPipe.Extensions.InvalidJsonRecordBehavior",
+          "SmartPipe.Extensions.JsonFileFormat",
+          "SmartPipe.Extensions.JsonFileOpenMode",
+          "SmartPipe.Extensions.JsonFileSinkOptions",
+          "SmartPipe.Extensions.JsonFileSourceOptions",
+          "SmartPipe.Extensions.Selectors.DeadLetterSource\u00601",
+          "SmartPipe.Extensions.Selectors.JsonFileSource\u00601",
+          "SmartPipe.Extensions.Sinks.DeadLetterSink\u00601",
+          "SmartPipe.Extensions.Sinks.DeadLetterWriteException",
+          "SmartPipe.Extensions.Sinks.DeadLetterWriteFailureMode",
+          "SmartPipe.Extensions.Sinks.JsonFileSink\u00601",
+          "SmartPipe.Extensions.Transforms.JsonTransform\u00602"
+        ],
+        "typeForwarders": []
+      }
+    ]
+  }
+]

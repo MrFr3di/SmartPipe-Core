@@ -1,0 +1,395 @@
+using System.Text.Json;
+using SmartPipe.RepositoryChecks.Consumers;
+using SmartPipe.RepositoryChecks.PackageGraph;
+using SmartPipe.RepositoryChecks.Tests.Repository;
+
+namespace SmartPipe.RepositoryChecks.Tests.Consumers;
+
+[Trait("Category", "PackageInfrastructure")]
+[Trait("Category", "Mutation")]
+public sealed class ConsumerScenarioSchemaTests
+{
+    [Fact]
+    public async Task Loader_AcceptsManifestWithMoreThanFiftyThreeScenarios()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        var ids = Enumerable.Range(0, 54).Select(index => $"scenario-{index:D2}").ToArray();
+        fixture.Write("eng/consumer-scenarios.json", ManifestJson(ids));
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+
+        var document = await new ConsumerScenarioLoader().LoadAsync(
+            fixture.Path,
+            "eng/consumer-scenarios.json",
+            FixtureGraphWithScenarios(graph, ids),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ids, document.Scenarios.Select(scenario => scenario.Id));
+        using var schema = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "eng/consumer-scenarios.schema.json")));
+        var scenariosSchema = schema.RootElement.GetProperty("properties").GetProperty("scenarios");
+        Assert.True(
+            !scenariosSchema.TryGetProperty("maxItems", out var maximum) || maximum.GetInt32() >= ids.Length,
+            "The consumer scenario schema must allow at least 54 scenarios.");
+    }
+
+    [Fact]
+    public async Task Loader_RejectsDuplicateIdsInExpandedManifest()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        var ids = Enumerable.Range(0, 54).Select(index => $"scenario-{index:D2}").ToArray();
+        ids[^1] = ids[0];
+        fixture.Write("eng/consumer-scenarios.json", ManifestJson(ids));
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() => new ConsumerScenarioLoader().LoadAsync(
+            fixture.Path,
+            "eng/consumer-scenarios.json",
+            FixtureGraphWithScenarios(graph, ids.Distinct(StringComparer.Ordinal).ToArray()),
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal("SPCONS003", error.Code);
+    }
+
+    [Fact]
+    public async Task Loader_RejectsExpandedManifestWithMissingGraphMembership()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        var ids = Enumerable.Range(0, 54).Select(index => $"scenario-{index:D2}").ToArray();
+        fixture.Write("eng/consumer-scenarios.json", ManifestJson(ids));
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() => new ConsumerScenarioLoader().LoadAsync(
+            fixture.Path,
+            "eng/consumer-scenarios.json",
+            FixtureGraphWithScenarios(graph, ids[..^1]),
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal("SPCONS009", error.Code);
+        Assert.Contains(ids[^1], error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CurrentManifest_HasExpectedStrictScenarios()
+    {
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+        var document = await new ConsumerScenarioLoader().LoadAsync(root, "eng/consumer-scenarios.json", graph, TestContext.Current.CancellationToken);
+        var actualIds = document.Scenarios.Select(scenario => scenario.Id).ToArray();
+        Assert.Equal(actualIds.Length, actualIds.Distinct(StringComparer.Ordinal).Count());
+        AssertRequiredScenarioCoverage(actualIds);
+        var testing = Assert.Single(document.Scenarios, scenario => scenario.Id == "testing-direct");
+        Assert.Equal("current", testing.Set);
+        Assert.Equal(["SmartPipe.Testing"], testing.PackageIds);
+        Assert.Equal(["SmartPipe.Core", "SmartPipe.Testing"], testing.ExpectedSmartPipeDependencies);
+        Assert.All(
+            document.Scenarios.Where(scenario => scenario.Id.StartsWith("postgresql-", StringComparison.Ordinal)),
+            scenario => Assert.Equal("postgresql", scenario.Category));
+        Assert.All(
+            document.Scenarios.Where(scenario => scenario.Id.StartsWith("hosting-", StringComparison.Ordinal)),
+            scenario => Assert.Equal("hosting", scenario.Category));
+        Assert.All(
+            document.Scenarios.Where(scenario => scenario.Id.StartsWith("health-checks-", StringComparison.Ordinal)),
+            scenario => Assert.Equal("health-checks", scenario.Category));
+        Assert.All(
+            document.Scenarios.Where(scenario => scenario.Id.StartsWith("opentelemetry-", StringComparison.Ordinal)),
+            scenario => Assert.Equal("opentelemetry", scenario.Category));
+        Assert.All(
+            document.Scenarios.Where(scenario => scenario.Id is "channels-direct" or "transforms-direct" or "logging-direct" or "data-annotations-direct" or "data-annotations-runtime"),
+            scenario => Assert.Equal("sp220-07", scenario.Category));
+        var dataAnnotations = Assert.Single(document.Scenarios, scenario => scenario.Id == "data-annotations-direct");
+        Assert.Equal(
+            ["EnableTrimAnalyzer=true", "InvokeReflectionValidation=true"],
+            Assert.IsType<ExpectedPublishDiagnostic>(dataAnnotations.ExpectedPublishDiagnostic).MsBuildProperties);
+    }
+
+    [Theory]
+    [InlineData("duplicate", "SPCONS003")]
+    [InlineData("traversal", "SPCONS005")]
+    [InlineData("absolute", "SPCONS005")]
+    [InlineData("unknown-package", "SPCONS006")]
+    [InlineData("zero-timeout", "SPCONS007")]
+    [InlineData("large-timeout", "SPCONS007")]
+    [InlineData("shell-command", "SPCONS001")]
+    [InlineData("unknown-mode", "SPCONS001")]
+    [InlineData("baseline-missing", "SPCONS008")]
+    [InlineData("required-present", "SPCONS003")]
+    [InlineData("required-missing", "SPCONS001")]
+    public async Task Loader_RejectsSecurityAndSemanticMutations(string mutation, string code)
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        var json = ValidJson();
+        json = mutation switch
+        {
+            "duplicate" => json.Replace("  ]", ",\n" + Scenario("fixture") + "\n  ]", StringComparison.Ordinal),
+            "traversal" => json.Replace("tests/Consumers/Scenarios/fixture/Consumer.csproj", "../Consumer.csproj", StringComparison.Ordinal),
+            "absolute" => json.Replace("tests/Consumers/Scenarios/fixture/Consumer.csproj", "C:/outside/Consumer.csproj", StringComparison.Ordinal),
+            "unknown-package" => json.Replace("SmartPipe.Core", "SmartPipe.Unknown", StringComparison.Ordinal),
+            "zero-timeout" => json.Replace("00:01:00", "00:00:00", StringComparison.Ordinal),
+            "large-timeout" => json.Replace("00:01:00", "00:31:00", StringComparison.Ordinal),
+            "shell-command" => json.Replace("\"set\": \"current\"", "\"set\": \"current\", \"command\": \"cmd /c evil\"", StringComparison.Ordinal),
+            "unknown-mode" => json.Replace("build-and-run", "shell", StringComparison.Ordinal),
+            "baseline-missing" => json.Replace("build-and-run", "binary-compatibility", StringComparison.Ordinal),
+            "required-present" => json.Replace("\"requiredAtRelease\": []", "\"requiredAtRelease\": [\"fixture\"]", StringComparison.Ordinal),
+            "required-missing" => json.Replace("  \"requiredAtRelease\": [],\n", string.Empty, StringComparison.Ordinal),
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
+        };
+        fixture.Write("eng/consumer-scenarios.json", json);
+        var graphRoot = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(graphRoot, "eng/package-graph.json", TestContext.Current.CancellationToken);
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() => new ConsumerScenarioLoader().LoadAsync(fixture.Path, "eng/consumer-scenarios.json", FixtureGraph(graph), TestContext.Current.CancellationToken));
+        Assert.Equal(code, error.Code);
+    }
+
+    [Fact]
+    public async Task Loader_AcceptsThirtyMinutePolicyBoundary()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        fixture.Write("eng/consumer-scenarios.json", ValidJson().Replace("00:01:00", "00:30:00", StringComparison.Ordinal));
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+        var result = await new ConsumerScenarioLoader().LoadAsync(fixture.Path, "eng/consumer-scenarios.json", FixtureGraph(graph), TestContext.Current.CancellationToken);
+        Assert.Equal(TimeSpan.FromMinutes(30), result.Scenarios[0].Timeout);
+    }
+
+    [Fact]
+    public async Task Loader_AcceptsManifestDrivenExpectedPublishDiagnostic()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        fixture.Write("tests/Consumers/Scenarios/fixture/Program.cs", "return 0;");
+        var json = ValidJson()
+            .Replace("\"mode\": \"build-and-run\"", "\"mode\": \"publish-trimmed\"", StringComparison.Ordinal)
+            .Replace("\"baselineVersion\": null,", """
+                "baselineVersion": null,
+                      "expectedPublishDiagnostic": {
+                        "code": "IL2026",
+                        "sourcePath": "Program.cs",
+                        "line": 1,
+                        "msBuildProperties": ["InvokeReflectionValidation=true"]
+                      },
+                """, StringComparison.Ordinal);
+        fixture.Write("eng/consumer-scenarios.json", json);
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+
+        var result = await new ConsumerScenarioLoader().LoadAsync(
+            fixture.Path,
+            "eng/consumer-scenarios.json",
+            FixtureGraph(graph),
+            TestContext.Current.CancellationToken);
+
+        var expectation = result.Scenarios[0].ExpectedPublishDiagnostic;
+        Assert.NotNull(expectation);
+        Assert.Equal("IL2026", expectation.Code);
+        Assert.Equal("Program.cs", expectation.SourcePath);
+        Assert.Equal(1, expectation.Line);
+        Assert.Equal(["InvokeReflectionValidation=true"], expectation.MsBuildProperties);
+    }
+
+    [Theory]
+    [InlineData("mode")]
+    [InlineData("code")]
+    [InlineData("source")]
+    [InlineData("line")]
+    [InlineData("property")]
+    [InlineData("duplicate-property")]
+    public async Task Loader_RejectsInvalidExpectedPublishDiagnostic(string mutation)
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        fixture.Write("tests/Consumers/Scenarios/fixture/Program.cs", "return 0;");
+        var json = ValidJson()
+            .Replace("\"mode\": \"build-and-run\"", "\"mode\": \"publish-trimmed\"", StringComparison.Ordinal)
+            .Replace("\"baselineVersion\": null,", """
+                "baselineVersion": null,
+                      "expectedPublishDiagnostic": {
+                        "code": "IL2026",
+                        "sourcePath": "Program.cs",
+                        "line": 1,
+                        "msBuildProperties": ["InvokeReflectionValidation=true"]
+                      },
+                """, StringComparison.Ordinal);
+        json = mutation switch
+        {
+            "mode" => json.Replace("publish-trimmed", "build-and-run", StringComparison.Ordinal),
+            "code" => json.Replace("IL2026", "CS2026", StringComparison.Ordinal),
+            "source" => json.Replace("Program.cs", "../Program.cs", StringComparison.Ordinal),
+            "line" => json.Replace("\"line\": 1", "\"line\": 0", StringComparison.Ordinal),
+            "property" => json.Replace("InvokeReflectionValidation=true", "Bad Property=true", StringComparison.Ordinal),
+            "duplicate-property" => json.Replace(
+                "[\"InvokeReflectionValidation=true\"]",
+                "[\"InvokeReflectionValidation=true\", \"InvokeReflectionValidation=true\"]",
+                StringComparison.Ordinal),
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
+        };
+        fixture.Write("eng/consumer-scenarios.json", json);
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() => new ConsumerScenarioLoader().LoadAsync(
+            fixture.Path,
+            "eng/consumer-scenarios.json",
+            FixtureGraph(graph),
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal("SPCONS023", error.Code);
+    }
+
+    [Fact]
+    public async Task Loader_RejectsCurrentScenarioAbsentFromPackageGraph()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        fixture.Write("eng/consumer-scenarios.json", ValidJson());
+        var root = RepositoryRoot();
+        var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+        var mutated = FixtureGraph(graph) with
+        {
+            Packages = graph.Packages.Select(package => package.Id == "SmartPipe.Core"
+                ? package with { ConsumerScenarios = [] }
+                : package).ToArray(),
+        };
+
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() => new ConsumerScenarioLoader()
+            .LoadAsync(fixture.Path, "eng/consumer-scenarios.json", mutated, TestContext.Current.CancellationToken));
+
+        Assert.Equal("SPCONS009", error.Code);
+    }
+
+    private static PackageGraphDocument FixtureGraph(PackageGraphDocument graph) => graph with
+    {
+        Packages = graph.Packages.Select(package => package with
+        {
+            ConsumerScenarios = package.Id == "SmartPipe.Core" ? ["fixture"] : [],
+        }).ToArray(),
+    };
+
+    private static PackageGraphDocument FixtureGraphWithScenarios(PackageGraphDocument graph, IReadOnlyList<string> ids) => graph with
+    {
+        Packages = graph.Packages.Select(package => package with
+        {
+            ConsumerScenarios = package.Id == "SmartPipe.Core" ? ids : [],
+        }).ToArray(),
+    };
+
+    [Fact]
+    public void RequiredScenarioCoverage_RejectsDeletionOfPollyConsumer()
+    {
+        var ids = ReadCurrentScenarioIds().Where(id => id != "polly-direct");
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertRequiredScenarioCoverage(ids));
+    }
+
+    [Fact]
+    public void RequiredScenarioCoverage_AllowsAdditionalConsumer()
+    {
+        AssertRequiredScenarioCoverage(ReadCurrentScenarioIds().Append("future-direct"));
+    }
+
+    private static string[] ReadCurrentScenarioIds()
+    {
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(RepositoryRoot(), "eng/consumer-scenarios.json")));
+        return manifest.RootElement.GetProperty("scenarios").EnumerateArray()
+            .Select(scenario => scenario.GetProperty("id").GetString()!).ToArray();
+    }
+
+    private static void AssertRequiredScenarioCoverage(IEnumerable<string> actualIds)
+    {
+        var expectedIds = new HashSet<string>(StringComparer.Ordinal)
+        {
+                "csv-direct",
+                "csv-di-composition",
+                "csv-facade-source",
+                "csv-facade-binary-2.1.2",
+                "csv-trim-diagnostic",
+                "core-direct",
+                "testing-direct",
+                "json-direct",
+                "extensions-meta",
+                "legacy-binary-2.1.2",
+                "core-trim",
+                "core-nativeaot",
+                "json-nativeaot",
+                "json-trim",
+                "json-dependency-injection-direct",
+                "dependency-injection-direct",
+                "dependency-injection-keyed",
+                "dependency-injection-from-keyed-services",
+                "dependency-injection-facade-source",
+                "dependency-injection-facade-binary-2.1.2",
+                "dependency-injection-trim",
+                "dependency-injection-nativeaot",
+                "hosting-direct",
+                "hosting-facade-source",
+                "hosting-facade-binary-2.1.2",
+                "hosting-trim",
+                "hosting-nativeaot",
+                "health-checks-direct",
+                "health-checks-aspnet",
+                "health-checks-trim",
+                "health-checks-nativeaot",
+                "opentelemetry-direct",
+                "opentelemetry-otlp",
+                "opentelemetry-facade",
+                "opentelemetry-trim",
+                "opentelemetry-nativeaot",
+                "channels-direct",
+                "transforms-direct",
+                "logging-direct",
+                "data-annotations-direct",
+                "data-annotations-runtime",
+                "dapper-direct",
+                "dapper-di-composition",
+                "dapper-facade-source",
+                "dapper-facade-binary-2.1.2",
+                "dapper-trim-diagnostic",
+                "entity-framework-core-direct",
+                "entity-framework-core-di-composition",
+                "entity-framework-core-facade-source",
+                "entity-framework-core-facade-binary-2.1.2",
+                "entity-framework-core-trim-diagnostic",
+                "mapster-direct",
+                "mapster-facade-binary-2.1.2",
+                "mapster-trim-diagnostic",
+                "http-direct",
+                "http-trim",
+                "http-nativeaot",
+                "http-json-direct",
+                "http-json-trim",
+                "http-json-nativeaot",
+                "polly-direct",
+                "polly-trim",
+                "polly-nativeaot",
+                "postgresql-direct",
+                "postgresql-dapper-composition",
+                "postgresql-efcore-composition",
+                "postgresql-di-composition",
+                "postgresql-opentelemetry-composition",
+                "postgresql-trim",
+                "postgresql-nativeaot",
+        };
+        Assert.Superset(expectedIds, actualIds.ToHashSet(StringComparer.Ordinal));
+    }
+
+    private static string ValidJson() => "{\n  \"schemaVersion\": 1,\n  \"requiredAtRelease\": [],\n  \"scenarios\": [\n" + Scenario("fixture") + "\n  ]\n}\n";
+    private static string ManifestJson(IEnumerable<string> ids) => "{\n  \"schemaVersion\": 1,\n  \"requiredAtRelease\": [],\n  \"scenarios\": [\n" + string.Join(",\n", ids.Select(Scenario)) + "\n  ]\n}\n";
+    private static string Scenario(string id) => $$"""
+        {
+          "id": "{{id}}",
+          "set": "current",
+          "mode": "build-and-run",
+          "templatePath": "tests/Consumers/Scenarios/fixture/Consumer.csproj",
+          "packageIds": ["SmartPipe.Core"],
+          "expectedSmartPipeDependencies": ["SmartPipe.Core"],
+          "forbiddenDependencies": [],
+          "baselineVersion": null,
+          "timeout": "00:01:00",
+          "runSecondLockedRestore": true
+        }
+        """;
+    private static string RepositoryRoot() => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+}

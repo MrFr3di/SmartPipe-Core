@@ -332,7 +332,9 @@ public sealed class HealthCheckTests
         var factory = provider.GetRequiredService<ISmartPipeFactory<int, Guid>>();
         var monitor = provider.GetRequiredService<ISmartPipeRunHealthMonitor<int, Guid>>();
 
+#pragma warning disable CS0618 // Explicit coverage for the shipped synchronous compatibility member.
         await factory.Start().Completion.WaitAsync(TimeSpan.FromSeconds(5));
+#pragma warning restore CS0618
 
         var snapshot = monitor.CaptureSnapshot();
         snapshot.State.Should().Be(PipelineRunState.Completed);

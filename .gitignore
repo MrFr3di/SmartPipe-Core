@@ -3,6 +3,12 @@
 **/obj/
 **/artifacts/
 **/nuget
+!assets/nuget/
+!assets/nuget/icon.png
+!eng/SmartPipe.RepositoryChecks/NuGet/
+!eng/SmartPipe.RepositoryChecks/NuGet/**
+!tests/SmartPipe.RepositoryChecks.Tests/NuGet/
+!tests/SmartPipe.RepositoryChecks.Tests/NuGet/**
 
 # BenchmarkDotNet
 **/BenchmarkDotNet.Artifacts/
@@ -42,3 +48,15 @@ AGENTS.md
 .opencode
 opencode.jsonc
 .codex
+
+# Local workflow handoff documents
+/agent_docs/project_progress.md
+/agent_docs/project_diary.md
+/agent_docs/latest_session_work.md
+
+# Python workflow contract imports
+/eng/tests/__pycache__/
+
+# Generated documentation
+/docs/api/
+/docs/_site/

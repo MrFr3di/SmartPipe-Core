@@ -15,11 +15,15 @@ public sealed class PipelineComponentLifetimeManagerTests
     {
         var cleanup = new InvalidOperationException("source cleanup boom");
         var source = new BlockingDisposeSource<int>(cleanup);
+        var lifetime = new PipelineActivationLedger();
+        lifetime.Append(new ActivatedComponentLease
+        {
+            Role = "source",
+            Ownership = PipelineComponentOwnership.RuntimeOwned,
+            RuntimeOwnedCleanup = source.DisposeAsync,
+        });
         var manager = new PipelineComponentLifetimeManager<int, int>(
-            source,
-            [],
-            sink: null,
-            ComponentOwnershipOptions.Default,
+            lifetime,
             new LateStageAttemptRegistry(new PipelineTime(SystemPipelineClock.Instance)));
 
         var first = manager.DisposeAsync().AsTask();
@@ -35,6 +39,118 @@ public sealed class PipelineComponentLifetimeManagerTests
         results[0].CompletionErrors.Should().ContainSingle().Which.Should().BeSameAs(cleanup);
         results[1].CompletionErrors.Should().ContainSingle().Which.Should().BeSameAs(cleanup);
         source.DisposeCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_UsesActivationLedgerInReverseOrder()
+    {
+        var calls = new List<string>();
+        var lifetime = new PipelineActivationLedger();
+        lifetime.Append(new ActivatedComponentLease
+        {
+            Role = "source",
+            Ownership = PipelineComponentOwnership.RuntimeOwned,
+            RuntimeOwnedCleanup = () => RecordAsync(calls, "source"),
+        });
+        lifetime.Append(new ActivatedComponentLease
+        {
+            Role = "stage",
+            Ownership = PipelineComponentOwnership.RuntimeOwned,
+            StageKey = new PipelineStageKey("normalize"),
+            RuntimeOwnedCleanup = () => RecordAsync(calls, "stage"),
+        });
+        lifetime.Append(new ActivatedComponentLease
+        {
+            Role = "sink",
+            Ownership = PipelineComponentOwnership.RuntimeOwned,
+            RuntimeOwnedCleanup = () => RecordAsync(calls, "sink"),
+        });
+
+        var manager = new PipelineComponentLifetimeManager<int, int>(
+            lifetime,
+            new LateStageAttemptRegistry(new PipelineTime(SystemPipelineClock.Instance)));
+
+        var result = await manager.DisposeAsync();
+
+        calls.Should().Equal("sink", "stage", "source");
+        result.CompletionErrors.Should().BeEmpty();
+        result.DisposeErrors.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DisposeAsync_SkipsNonRuntimeOwnedLeases()
+    {
+        var calls = new List<string>();
+        var lifetime = new PipelineActivationLedger();
+        lifetime.Append(new ActivatedComponentLease
+        {
+            Role = "source",
+            Ownership = PipelineComponentOwnership.ScopeOwned,
+        });
+        lifetime.Append(new ActivatedComponentLease
+        {
+            Role = "stage",
+            Ownership = PipelineComponentOwnership.ExternallyOwned,
+        });
+        lifetime.Append(new ActivatedComponentLease
+        {
+            Role = "sink",
+            Ownership = PipelineComponentOwnership.RuntimeOwned,
+            RuntimeOwnedCleanup = () => RecordAsync(calls, "sink"),
+        });
+
+        var manager = new PipelineComponentLifetimeManager<int, int>(
+            lifetime,
+            new LateStageAttemptRegistry(new PipelineTime(SystemPipelineClock.Instance)));
+
+        var result = await manager.DisposeAsync();
+
+        calls.Should().Equal("sink");
+        result.CompletionErrors.Should().BeEmpty();
+        result.DisposeErrors.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DisposeAsync_DefersStageLeaseUntilLateAttemptCompletes()
+    {
+        var calls = new List<string>();
+        var lifetime = new PipelineActivationLedger();
+        lifetime.Append(new ActivatedComponentLease
+        {
+            Role = "stage",
+            Ownership = PipelineComponentOwnership.RuntimeOwned,
+            StageKey = new PipelineStageKey("normalize"),
+            RuntimeOwnedCleanup = () => RecordAsync(calls, "stage"),
+        });
+        var registry = new LateStageAttemptRegistry(new PipelineTime(SystemPipelineClock.Instance));
+        using var timeoutCancellation = new CancellationTokenSource();
+        var execution = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        registry.Register(
+            "normalize",
+            "Normalize",
+            traceId: 42,
+            attempt: 1,
+            execution.Task,
+            timeoutCancellation,
+            TimeSpan.Zero);
+
+        var manager = new PipelineComponentLifetimeManager<int, int>(lifetime, registry);
+        var result = await manager.DisposeAsync();
+
+        result.CompletionErrors.Should().ContainSingle().Which.Should().BeOfType<TimeoutException>();
+        calls.Should().BeEmpty();
+
+        execution.SetResult();
+        var deferredErrors = await manager.DisposeDeferredStagesAsync();
+
+        deferredErrors.Should().BeEmpty();
+        calls.Should().Equal("stage");
+    }
+
+    private static ValueTask RecordAsync(List<string> calls, string role)
+    {
+        calls.Add(role);
+        return ValueTask.CompletedTask;
     }
 
     private sealed class BlockingDisposeSource<T> : IPipelineSource<T>

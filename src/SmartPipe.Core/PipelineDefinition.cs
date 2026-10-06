@@ -69,8 +69,8 @@ public sealed class PipelineDefinition
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pipelineId);
         PipelineId = pipelineId;
-        Components = (components ?? []).ToArray();
-        Stages = (stages ?? []).ToArray();
+        Components = Array.AsReadOnly((components ?? []).ToArray());
+        Stages = Array.AsReadOnly((stages ?? []).ToArray());
         OwnershipOptions = ownershipOptions ?? new ComponentOwnershipOptions();
         LineageMode = lineageMode;
         RuntimeOptions = new PipelineRuntimeOptions();

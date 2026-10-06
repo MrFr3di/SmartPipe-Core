@@ -1,0 +1,9 @@
+#nullable enable
+SmartPipe.Extensions.Transforms.FilterValidationExtensions
+SmartPipe.Extensions.Transforms.ValidationTransform<T>
+SmartPipe.Extensions.Transforms.ValidationTransform<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.ValidationTransform<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Transforms.ValidationTransform<T>.Require(System.Func<T, bool>! condition, string! message) -> SmartPipe.Extensions.Transforms.ValidationTransform<T>!
+SmartPipe.Extensions.Transforms.ValidationTransform<T>.TransformAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SmartPipe.Core.StageResult<T>>
+SmartPipe.Extensions.Transforms.ValidationTransform<T>.ValidationTransform() -> void
+static SmartPipe.Extensions.Transforms.FilterValidationExtensions.ToFilter<T>(this SmartPipe.Extensions.Transforms.ValidationTransform<T>! validator) -> SmartPipe.Extensions.Transforms.FilterTransform<T>!

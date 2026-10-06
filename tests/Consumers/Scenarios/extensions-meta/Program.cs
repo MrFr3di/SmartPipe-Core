@@ -1,0 +1,86 @@
+using Microsoft.Extensions.Logging.Abstractions;
+using SmartPipe.Extensions;
+using SmartPipe.Consumers.ExtensionsMeta;
+using SmartPipe.Extensions.Sinks;
+using Mapster;
+using SmartPipe.Core;
+using SmartPipe.Extensions.Transforms;
+
+_ = typeof(PipelineBuilder);
+_ = typeof(JsonTransform<string, string>);
+FacadeChecks.Verify();
+
+// Preserve untyped null, typed default and named argument call sites.
+ExpectNullMetadata(() => new JsonFileSink<string>(path: "unused.json", batchTypeInfo: null!));
+ExpectNullMetadata(() => new JsonFileSink<string>("unused.json", default(System.Text.Json.Serialization.Metadata.JsonTypeInfo<List<string>>)!));
+_ = new SmartPipe.Extensions.Selectors.CsvFileSource<int>(path: "unused.csv", culture: null);
+await using var csvSink = new CsvFileSink<int>(path: "unused.csv", culture: default);
+
+var composite = new CompositeTransform<int>(new FilterTransform<int>(static value => value > 0));
+await composite.InitializeAsync();
+_ = new FilterTransform<int>(static value => value > 0)
+    & !new FilterTransform<int>(static value => value < 100);
+_ = new ValidationTransform<int>().Require(static value => value > 0, "positive required");
+_ = new LoggerSink<int>(NullLogger<LoggerSink<int>>.Instance);
+
+var forwarded = typeof(SmartPipeHostedService<,>).Assembly.GetForwardedTypes();
+Type[] expectedForwarded =
+[
+    typeof(ChannelMerge), typeof(CompositeTransform<>), typeof(FilterTransform<>),
+    typeof(LoggerSink<>), typeof(ValidationTransform<>),
+];
+if (expectedForwarded.Except(forwarded).Any())
+    throw new InvalidOperationException("SP220-07 facade reflection identity failed.");
+
+var defaultTransform = new MapsterTransform<DefaultSource, DefaultDestination>();
+var defaultResult = await defaultTransform.TransformAsync(
+    ProcessingEnvelope<DefaultSource>.Create(new DefaultSource { Name = "Alice", Age = 25 }));
+if (!defaultResult.IsSuccess || defaultResult.Value?.Name != "Alice" || defaultResult.Value.Age != 25)
+{
+    throw new InvalidOperationException("Default Mapster facade mapping failed.");
+}
+
+var config = new TypeAdapterConfig();
+config.NewConfig<ConfiguredSource, ConfiguredDestination>()
+    .Map(destination => destination.DisplayName, source => source.Name);
+var configuredTransform = new MapsterTransform<ConfiguredSource, ConfiguredDestination>(config);
+var configuredResult = await configuredTransform.TransformAsync(
+    ProcessingEnvelope<ConfiguredSource>.Create(new ConfiguredSource { Name = "Bob" }));
+if (!configuredResult.IsSuccess || configuredResult.Value?.DisplayName != "Bob")
+{
+    throw new InvalidOperationException("Configured Mapster facade mapping failed.");
+}
+
+await Console.Out.WriteLineAsync("CONSUMER_OK extensions-meta");
+
+static void ExpectNullMetadata(Action call)
+{
+    try { call(); }
+    catch (ArgumentNullException error) when (error.ParamName == "batchTypeInfo") { return; }
+    throw new InvalidOperationException("Legacy JSON null/default metadata behavior changed.");
+}
+
+namespace SmartPipe.Consumers.ExtensionsMeta
+{
+    internal sealed class DefaultSource
+    {
+        public required string Name { get; init; }
+        public int Age { get; init; }
+    }
+
+    internal sealed class DefaultDestination
+    {
+        public string? Name { get; init; }
+        public int Age { get; init; }
+    }
+
+    internal sealed class ConfiguredSource
+    {
+        public required string Name { get; init; }
+    }
+
+    internal sealed class ConfiguredDestination
+    {
+        public string? DisplayName { get; init; }
+    }
+}

@@ -1,0 +1,12 @@
+Runtime=.NET 10.0.11; OS=Debian GNU/Linux 13 (trixie); architecture=X64; Stopwatch.Frequency=1000000000
+n,kind,iterations,median_ns_per_op,allocated_B_per_op,checksum
+1,unique,5660,196.5,288.0,39639
+1,duplicate-at-end,3973,3167.5,552.0,27830
+10,unique,35294,683.0,944.0,2470770
+10,duplicate-at-end,5714,3783.4,1208.0,40017
+100,unique,5882,3553.0,8280.0,4119300
+100,duplicate-at-end,3092,6999.4,8544.0,21663
+1000,unique,504,30131.1,81256.0,3547000
+1000,duplicate-at-end,606,35060.0,81520.0,4261
+10000,unique,32,440246.9,753152.0,2430000
+10000,duplicate-at-end,35,469699.6,753416.0,264

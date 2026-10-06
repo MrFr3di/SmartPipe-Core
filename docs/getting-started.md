@@ -4,26 +4,56 @@ SmartPipe.Core has one runtime model: typed envelopes.
 
 ## Choose the integration package
 
+Install `SmartPipe.Core` for the runtime:
+
 ```bash
-dotnet add package SmartPipe.Core
+dotnet package add SmartPipe.Core --version 2.2.0
 ```
 
 Use `SmartPipe.Extensions.Json` for JSON files, JSON transforms, and JSON
 dead-letter persistence:
 
 ```bash
-dotnet add package SmartPipe.Extensions.Json
+dotnet package add SmartPipe.Extensions.Json --version 2.2.0
 ```
 
-Use `SmartPipe.Extensions` for HTTP, database, CSV, mapping, resilience,
-hosting, and health-check integrations:
+For integrations, prefer the narrow package that owns the capability. This table is
+kept aligned with the release package graph so a newly activated leaf cannot disappear
+from the primary package-selection path:
+
+| Capability | Package |
+|---|---|
+| Channel merge primitives | `SmartPipe.Extensions.Channels` |
+| Composable transforms | `SmartPipe.Extensions.Transforms` |
+| Logging sink | `SmartPipe.Extensions.Logging` |
+| DataAnnotations validation | `SmartPipe.Extensions.DataAnnotations` |
+| JSON files/transforms/dead-letter | `SmartPipe.Extensions.Json` |
+| CSV files | `SmartPipe.Extensions.Csv` |
+| Explicit SQL / Dapper | `SmartPipe.Extensions.Dapper` |
+| Entity Framework Core queries | `SmartPipe.Extensions.EntityFrameworkCore` |
+| Mapster | `SmartPipe.Extensions.Mapster` |
+| HTTP transport | `SmartPipe.Extensions.Http` |
+| HTTP JSON codecs | `SmartPipe.Extensions.Http.Json` |
+| Polly resilience | `SmartPipe.Extensions.Polly` |
+| Dependency injection | `SmartPipe.Extensions.DependencyInjection` |
+| Generic Host | `SmartPipe.Extensions.Hosting` |
+| Health checks | `SmartPipe.Extensions.HealthChecks` |
+| OpenTelemetry registration | `SmartPipe.Extensions.OpenTelemetry` |
+| PostgreSQL binary COPY / LISTEN | `SmartPipe.Extensions.PostgreSql` |
+| Test helpers | `SmartPipe.Testing` |
+
+Use the broad compatibility bundle only when its complete integration dependency
+set is intentional:
 
 ```bash
-dotnet add package SmartPipe.Extensions
+dotnet package add SmartPipe.Extensions --version 2.2.0
 ```
 
-`SmartPipe.Extensions` forwards the JSON types for 2.x compatibility.
-Direct JSON package references are recommended for new applications.
+`SmartPipe.Extensions` preserves retained 2.x facade identities and forwards
+moved types where compatibility is supported. It does not include the optional
+PostgreSQL package or the test-only Testing package. New applications should
+prefer leaf references. See the [2.2.0 release notes](releases/2.2.0.md) and
+[2.1.2 → 2.2.0 migration guide](migration/2.2.0-integration-packages.md).
 
 ```text
 IPipelineSource<TInput>
@@ -106,23 +136,53 @@ remain sequential; cross-envelope output order is not guaranteed.
 - `JsonFileSink<T>`
 - `DeadLetterSink<T>`
 
+### SmartPipe.Extensions.PostgreSql
+
+- sources: `PostgreSqlPipelineDefinitionBuilder.FromBinaryCopy<T>`,
+  `FromNotifications`;
+- sink: `ToPostgreSqlBinaryCopy`.
+
+Binary `COPY` and `LISTEN`/`NOTIFY` over an application-owned `NpgsqlDataSource`. See the
+[PostgreSQL subsystem reference](postgresql.md).
+
 ### SmartPipe.Extensions
 
-- selectors: `HttpSelector<T>`, `CsvFileSource<T>`, `EfCoreSelector<T>`,
+- selectors: `CsvFileSource<T>`, `EfCoreSelector<T>`,
   `DapperSelector<T>`;
 - transforms: `CsvTransform<TInput,TOutput>`, `MapsterTransform<TInput,TOutput>`,
-  `FilterTransform<T>`, `ValidationTransform<T>`,
-  `PollyResilienceTransform<T>`;
-- sinks: `LoggerSink<T>`, `HttpSink<T>`, `CsvFileSink<T>`, `DbSink<T>`.
+  `FilterTransform<T>`, `ValidationTransform<T>`;
+- sinks: `LoggerSink<T>`, `CsvFileSink<T>`, `DbSink<T>`.
 
-`MapsterTransform<TInput,TOutput>` uses Mapster runtime mapping and is not
-trim- or NativeAOT-safe. Use a hand-written mapper, a source-generated mapper,
-or `PipelineTransformer.FromFunc` for trimmed or NativeAOT applications.
+The 2.1.2 `HttpSelector<T>`, `HttpClientFactorySelector<T>`, `HttpSink<T>`, and
+`HttpClientFactorySink<T>` were removed in 2.2.0. Use `SmartPipe.Extensions.Http`
+(`HttpPipelineComponents`, `FromHttp`/`ToHttp`) for the transport and
+`SmartPipe.Extensions.Http.Json` (`HttpJsonResponseReaders`,
+`HttpJsonRequestContent`, `FromHttpNdjson`/`FromHttpJsonArray`/`ToHttpJson`) for
+source-generated JSON bodies.
+
+The 2.1.2 `PollyResilienceTransform<T>` was also removed: it never ran an inner
+transform. Use `SmartPipe.Extensions.Polly` (`PollyPipelineComponents.Decorate`
+with Core's `Transform(stageKey, component)`, or `PollyTransformDecorator<TInput,TOutput>`)
+with an application-owned `ResiliencePipeline<StageResult<TOutput>>`.
+
+`EfCoreSelector<T>` is forwarded from `SmartPipe.Extensions.EntityFrameworkCore`; new code uses
+`EfCorePipelineComponents.QuerySource`/`CompiledQuerySource` or the typed `FromQuery`/`FromCompiledQuery`
+builders from that leaf.
+
+`MapsterTransform<TInput,TOutput>` is forwarded from `SmartPipe.Extensions.Mapster`; new code uses
+`MapsterPipelineComponents.Transform<TInput,TOutput>` or the `MapWithMapster` builder extensions from
+that leaf, which isolate the caller callback, clone the working configuration once, and compile the
+requested root pair once at composition.
+
+`MapsterTransform<TInput,TOutput>` and the Mapster composition API both use Mapster runtime mapping and
+are not trim- or NativeAOT-safe. Use a hand-written mapper, a source-generated mapper, or
+`PipelineTransformer.FromFunc` for trimmed or NativeAOT applications.
 
 Next links:
 
 - [Configuration](configuration.md)
 - [Runtime contracts](runtime-contracts.md)
 - [Resilience](resilience.md)
-- [API reference](api-reference.md)
+- [PostgreSQL](postgresql.md)
+- [API reference](reference/api-overview.md)
 - [Migration guide](migration/legacy-to-typed.md)

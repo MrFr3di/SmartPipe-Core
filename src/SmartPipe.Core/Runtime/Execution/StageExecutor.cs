@@ -161,47 +161,51 @@ internal sealed class StageExecutor
                 }
             }
 
-            await _emitAsync(
-                    new StageStartedEvent(
-                        _pipelineId,
-                        _runId,
-                        correlation.TraceId,
-                        stage.StageId,
-                        stage.StageName,
-                        correlation.Attempt,
-                        _clock.GetUtcNow()
-                    ),
-                    ct
-                )
-                .ConfigureAwait(false);
-
             TypedStageExecutionResult outcome;
             try
             {
-                outcome = await _executeStageAttemptAsync(stage, current, stageStartedTimestamp, ct)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
+                // A half-open probe slot must be released even when emitting the start event throws.
                 await _emitAsync(
-                        new StageFailedEvent(
+                        new StageStartedEvent(
                             _pipelineId,
                             _runId,
                             correlation.TraceId,
                             stage.StageId,
+                            stage.StageName,
                             correlation.Attempt,
-                            _clock.GetUtcNow(),
-                            new SmartPipeError(
-                                ex.Message,
-                                ErrorType.Permanent,
-                                "StageException",
-                                ex
-                            )
+                            _clock.GetUtcNow()
                         ),
                         ct
                     )
                     .ConfigureAwait(false);
-                throw;
+
+                try
+                {
+                    outcome = await _executeStageAttemptAsync(stage, current, stageStartedTimestamp, ct)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    await _emitAsync(
+                            new StageFailedEvent(
+                                _pipelineId,
+                                _runId,
+                                correlation.TraceId,
+                                stage.StageId,
+                                correlation.Attempt,
+                                _clock.GetUtcNow(),
+                                new SmartPipeError(
+                                    ex.Message,
+                                    ErrorType.Permanent,
+                                    "StageException",
+                                    ex
+                                )
+                            ),
+                            ct
+                        )
+                        .ConfigureAwait(false);
+                    throw;
+                }
             }
             finally
             {

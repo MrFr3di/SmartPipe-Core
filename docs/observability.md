@@ -61,6 +61,14 @@ current execution path.
 
 ## Meter instruments
 
+Stable diagnostic source names are published as constants on
+`SmartPipeDiagnostics`:
+
+- `SmartPipeDiagnostics.MeterName` — meter name for all SmartPipe runtime
+  metrics.
+- `SmartPipeDiagnostics.ActivitySourceName` — activity source name for all
+  SmartPipe runtime activities.
+
 Meter name:
 
 ```text
@@ -72,6 +80,11 @@ ActivitySource name:
 ```text
 SmartPipe.Core
 ```
+
+`SmartPipeMeter.Name` remains as an alias of `SmartPipeDiagnostics.MeterName`.
+External tooling that needs the exact source names (for example an
+OpenTelemetry `AddMeter`/`AddSource` registration) must use these constants
+instead of hard-coded strings.
 
 Current instruments:
 
@@ -89,6 +102,20 @@ Current instruments:
 
 Allowed low-cardinality metric dimensions are `pipeline_id`, `stage_id`,
 `outcome`, and `error_type`.
+
+Runs started from a `PipelineDefinition` (including DI-registered and hosted
+pipelines) and legacy builders with an explicit `WithPipelineId` tag every
+measurement with `smartpipe.pipeline_id`, so several pipelines in one process
+produce separate series. Legacy builders without an explicit id generate a
+unique id per run; their measurements stay untagged to avoid unbounded
+cardinality.
+
+The pipeline id is a metric dimension, so it must name a stable logical
+pipeline. Do not derive it per run, per message, per tenant, or from user data:
+every distinct value creates new time series. SmartPipe does not hash or
+truncate ids. When an OpenTelemetry SDK cardinality limit is exceeded, further
+series are aggregated into an overflow series; totals stay correct but the
+per-pipeline breakdown is lost.
 
 Meter measurements must not include high-cardinality dimensions such as
 `run_id`, `trace_id`, `exception_message`, `payload_value`, or `raw_payload`.

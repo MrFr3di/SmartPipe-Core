@@ -85,3 +85,11 @@ services.AddSmartPipe<TInput, TOutput>(
 
 Factories create a fresh runtime per run and preserve scoped dependency
 ownership.
+
+## Narrow extension packages
+
+Existing `SmartPipe.Extensions` source and binaries keep the same namespaces and
+type identities through forwarding. New applications should install
+`SmartPipe.Extensions.Channels`, `.Transforms`, `.Logging`, or `.DataAnnotations`
+directly. The legacy `LoggerSink<T>(ILogger<LoggerSink<T>>)` constructor is not
+obsolete in 2.2.0; choose the options constructor to disable raw payload logging.

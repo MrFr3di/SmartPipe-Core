@@ -1,0 +1,29 @@
+#nullable enable
+
+SmartPipe.Extensions.Sinks.LoggerSink<T>
+SmartPipe.Extensions.Sinks.LoggerSink<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Sinks.LoggerSink<T>.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Sinks.LoggerSink<T>.LoggerSink(Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Sinks.LoggerSink<T>!>! logger) -> void
+SmartPipe.Extensions.Sinks.LoggerSink<T>.LoggerSink(Microsoft.Extensions.Logging.ILogger<SmartPipe.Extensions.Sinks.LoggerSink<T>!>! logger, SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>! options) -> void
+SmartPipe.Extensions.Sinks.LoggerSink<T>.WriteAsync(SmartPipe.Core.ProcessingEnvelope<T>! envelope, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>
+SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.<Clone>$() -> SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>!
+override SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.Equals(object? obj) -> bool
+SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.Equals(SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>? other) -> bool
+SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.Formatter.get -> System.Func<T, string?>?
+SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.Formatter.init -> void
+override SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.GetHashCode() -> int
+SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.IncludeTraceId.get -> bool
+SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.IncludeTraceId.init -> void
+SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.LoggerSinkOptions() -> void
+SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.MaximumFormattedPayloadLength.get -> int
+SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.MaximumFormattedPayloadLength.init -> void
+SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.PayloadMode.get -> SmartPipe.Extensions.Sinks.LoggerSinkPayloadMode
+SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.PayloadMode.init -> void
+override SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.ToString() -> string!
+static SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.operator !=(SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>? left, SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>? right) -> bool
+static SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>.operator ==(SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>? left, SmartPipe.Extensions.Sinks.LoggerSinkOptions<T>? right) -> bool
+SmartPipe.Extensions.Sinks.LoggerSinkPayloadMode
+SmartPipe.Extensions.Sinks.LoggerSinkPayloadMode.Formatted = 1 -> SmartPipe.Extensions.Sinks.LoggerSinkPayloadMode
+SmartPipe.Extensions.Sinks.LoggerSinkPayloadMode.None = 0 -> SmartPipe.Extensions.Sinks.LoggerSinkPayloadMode
+SmartPipe.Extensions.Sinks.LoggerSinkPayloadMode.UnsafeRaw = 2 -> SmartPipe.Extensions.Sinks.LoggerSinkPayloadMode

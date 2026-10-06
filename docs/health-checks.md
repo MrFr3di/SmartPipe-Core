@@ -1,6 +1,52 @@
 # Health Checks
 
-SmartPipe.Extensions provides typed health checks for DI-registered pipelines.
+`SmartPipe.Extensions.HealthChecks` adds exact-key liveness and readiness checks to canonical pipelines registered with `SmartPipe.Extensions.DependencyInjection`.
+
+## Installation
+
+```bash
+dotnet package add SmartPipe.Extensions.HealthChecks --version 2.2.0
+```
+
+```csharp
+var registration = services.AddSmartPipe().AddPipeline(orderDefinition);
+registration.AddLiveness();
+registration.AddReadiness(options =>
+{
+    options.RunRequirement = SmartPipeReadinessRunRequirement.ActiveRunRequired;
+    options.StaleAfter = TimeSpan.FromMinutes(1);
+    options.QueueUtilizationDegradedThreshold = 0.90;
+});
+```
+
+Liveness answers whether restart may be justified. Idle, active, completed, cancelled, and aborted pipelines are healthy. A latest runtime fault fails by default; activation failure is opt-in because it usually indicates dependency/configuration readiness. An active replacement suppresses an older terminal failure.
+
+Readiness answers whether the pipeline can serve work. `ActiveRunRequired` is the default. Use `RegistrationOnly` for on-demand pipelines and `ActiveOrSuccessfulCompletion` for finite jobs. `Draining` is not ready. A run that has already reached a terminal state but is still finishing cleanup is evaluated as that terminal outcome, so a finite job with `ActiveOrSuccessfulCompletion` does not briefly report a failure between completion and cleanup. Run snapshots do not record completion order, so when several runs are finishing at once the most severe outcome is used (`Faulted`, then `Aborted`, then `Cancelled`, then `Completed`), and the result data carries it as `smartpipe.finishing_outcome`. Once cleanup publishes the terminal observation, readiness returns to the latest terminal outcome (`smartpipe.latest_outcome`). `smartpipe.problem_run_count` counts runs that fail readiness: each live run and each finishing run is counted by its own result, so two finishing `Faulted` runs report 2 while the status is decided by the most severe outcome. Only when no run is registered at all does a failing requirement (for example, no active run, or a latest terminal failure) count as a single problem. Initial-activity, stale-activity, and per-run queue policies apply only to running runs. `Degraded` normally maps to HTTP 200 in ASP.NET Core, so missing-run readiness uses the registration's hard failure status by default.
+
+Default names are `smartpipe:liveness:{exact-key}` and `smartpipe:readiness:{exact-key}`. Default tags are `smartpipe`, the check-kind tag, and `smartpipe-pipeline:{exact-key}`. Aggregate defaults are `smartpipe:liveness` and `smartpipe:readiness`, with `smartpipe-aggregate`.
+
+```csharp
+services.AddHealthChecks()
+    .AddSmartPipeAggregateLiveness()
+    .AddSmartPipeAggregateReadiness();
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains(SmartPipeHealthCheckTags.Liveness),
+});
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains(SmartPipeHealthCheckTags.Readiness),
+});
+```
+
+Options are isolated by health registration name. Invalid options fail Generic Host startup through `ValidateOnStart`, or first named materialization without a host. Active runs come from the canonical registry; DI retains at most one immutable latest terminal value per key. Multi-run and aggregate evaluation use explicit worst-status ranking and deterministic registration order.
+
+Result data is bounded to primitive counts, exact strings, `Guid` strings, UTC ISO-8601 timestamps, and queue/capacity totals. The number of data entries and reported problem keys/runs is bounded; exact identity values such as `PipelineKey` are preserved without length truncation, hashing, normalization, or case change. Aggregate descriptions remain bounded by reporting counts instead of identities. Exceptions, payloads, metadata, providers, scopes, and delegates are not retained or emitted.
+
+## Legacy 2.1 behavior
+
+The legacy `SmartPipe.Extensions` facade provides the 2.1 typed health-check API for DI-registered pipelines.
 Health checks read a typed run monitor; they do not require a singleton runtime
 instance.
 

@@ -1,0 +1,139 @@
+#nullable enable
+override SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.Equals(object? obj) -> bool
+override SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.GetHashCode() -> int
+override SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.ToString() -> string!
+override SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.Equals(object? obj) -> bool
+override SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.GetHashCode() -> int
+override SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.ToString() -> string!
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRunObservationSource
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRunObservationSource.Capture(SmartPipe.Core.PipelineKey pipelineKey) -> SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation!
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRunObservationSource.CaptureAll() -> System.Collections.Generic.IReadOnlyList<SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation!>!
+SmartPipe.Extensions.DependencyInjection.SmartPipeDependencyInjectionExtensions
+SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation
+SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.<Clone>$() -> SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation!
+SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.ActiveRuns.get -> System.Collections.Generic.IReadOnlyList<SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot!>!
+SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.ActiveRuns.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.CapturedAtUtc.get -> System.DateTimeOffset
+SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.CapturedAtUtc.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.Equals(SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation? other) -> bool
+SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.LatestTerminal.get -> SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation?
+SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.LatestTerminal.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.PipelineKey.get -> SmartPipe.Core.PipelineKey
+SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.PipelineKey.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.SmartPipePipelineObservation() -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome.Aborted = 3 -> SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome.ActivationFailed = 5 -> SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome.Cancelled = 2 -> SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome.Completed = 1 -> SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome.Faulted = 4 -> SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome.None = 0 -> SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.<Clone>$() -> SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation!
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.CompletedAtUtc.get -> System.DateTimeOffset
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.CompletedAtUtc.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.Equals(SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation? other) -> bool
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.Identity.get -> SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity!
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.Identity.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.InputCapacity.get -> int
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.InputCapacity.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.InputType.get -> System.Type!
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.InputType.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.Metrics.get -> SmartPipe.Core.SmartPipeMetricsSnapshot!
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.Metrics.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.Outcome.get -> SmartPipe.Extensions.DependencyInjection.SmartPipeRunObservationOutcome
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.Outcome.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.OutputCapacity.get -> int
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.OutputCapacity.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.OutputType.get -> System.Type!
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.OutputType.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.Sequence.get -> long
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.Sequence.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.SmartPipeTerminalRunObservation() -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.StartedAtUtc.get -> System.DateTimeOffset
+SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.StartedAtUtc.init -> void
+static SmartPipe.Extensions.DependencyInjection.SmartPipeDependencyInjectionExtensions.AddPipeline<TInput, TOutput>(this SmartPipe.Extensions.DependencyInjection.ISmartPipeBuilder! builder, SmartPipe.Core.PipelineDefinition<TInput, TOutput>! definition) -> SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistrationBuilder<TInput, TOutput>!
+static SmartPipe.Extensions.DependencyInjection.SmartPipeDependencyInjectionExtensions.AddSmartPipe(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> SmartPipe.Extensions.DependencyInjection.ISmartPipeBuilder!
+override SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.Equals(object? obj) -> bool
+override SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.GetHashCode() -> int
+override SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.ToString() -> string!
+override SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity.Equals(object? obj) -> bool
+override SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity.GetHashCode() -> int
+override SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity.ToString() -> string!
+override SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.Equals(object? obj) -> bool
+override SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.GetHashCode() -> int
+override SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.ToString() -> string!
+SmartPipe.Extensions.DependencyInjection.ISmartPipeBuilder
+SmartPipe.Extensions.DependencyInjection.ISmartPipeBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SmartPipe.Extensions.DependencyInjection.ISmartPipeFactoryProvider
+SmartPipe.Extensions.DependencyInjection.ISmartPipeFactoryProvider.GetFactory<TInput, TOutput>(SmartPipe.Core.PipelineKey key) -> SmartPipe.Extensions.DependencyInjection.ISmartPipeRunFactory<TInput, TOutput>!
+SmartPipe.Extensions.DependencyInjection.ISmartPipeFactoryProvider.TryGetFactory<TInput, TOutput>(SmartPipe.Core.PipelineKey key, out SmartPipe.Extensions.DependencyInjection.ISmartPipeRunFactory<TInput, TOutput>? factory) -> bool
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistrationBuilder<TInput, TOutput>
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistrationBuilder<TInput, TOutput>.Definition.get -> SmartPipe.Core.PipelineDefinition<TInput, TOutput>!
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistrationBuilder<TInput, TOutput>.Key.get -> SmartPipe.Core.PipelineKey
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistry
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistry.GetRegistration(SmartPipe.Core.PipelineKey key) -> SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor!
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistry.GetRegistrations() -> System.Collections.Generic.IReadOnlyList<SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor!>!
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistry.TryGetRegistration(SmartPipe.Core.PipelineKey key, out SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor? registration) -> bool
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRunFactory<TInput, TOutput>
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRunFactory<TInput, TOutput>.StartAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SmartPipe.Core.PipelineRun<TOutput>!>!
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRunRegistry
+SmartPipe.Extensions.DependencyInjection.ISmartPipeRunRegistry.GetActiveRuns(SmartPipe.Core.PipelineKey pipelineKey) -> System.Collections.Generic.IReadOnlyList<SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot!>!
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.<Clone>$() -> SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor!
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.DefinitionType.get -> System.Type!
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.DefinitionType.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.DisplayName.get -> string!
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.DisplayName.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.Equals(SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor? other) -> bool
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.FactoryType.get -> System.Type!
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.FactoryType.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.InputType.get -> System.Type!
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.InputType.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.IsReusable.get -> bool
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.IsReusable.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.Key.get -> SmartPipe.Core.PipelineKey
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.Key.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.OutputType.get -> System.Type!
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.OutputType.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.RegistrationOrder.get -> int
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.RegistrationOrder.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.SmartPipeRegistrationDescriptor() -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity.<Clone>$() -> SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity!
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity.Equals(SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity? other) -> bool
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity.PipelineKey.get -> SmartPipe.Core.PipelineKey
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity.PipelineKey.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity.RunId.get -> System.Guid
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity.RunId.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity.SmartPipeRunIdentity() -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.<Clone>$() -> SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot!
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.Equals(SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot? other) -> bool
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.Identity.get -> SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity!
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.Identity.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.InputCapacity.get -> int
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.InputCapacity.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.InputType.get -> System.Type!
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.InputType.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.Metrics.get -> SmartPipe.Core.SmartPipeMetricsSnapshot!
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.Metrics.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.OutputCapacity.get -> int
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.OutputCapacity.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.OutputType.get -> System.Type!
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.OutputType.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.SmartPipeRunSnapshot() -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.StartedAtUtc.get -> System.DateTimeOffset
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.StartedAtUtc.init -> void
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.State.get -> SmartPipe.Core.PipelineRunState
+SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.State.init -> void
+static SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.operator !=(SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation? left, SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation? right) -> bool
+static SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation.operator ==(SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation? left, SmartPipe.Extensions.DependencyInjection.SmartPipePipelineObservation? right) -> bool
+static SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.operator !=(SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor? left, SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor? right) -> bool
+static SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor.operator ==(SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor? left, SmartPipe.Extensions.DependencyInjection.SmartPipeRegistrationDescriptor? right) -> bool
+static SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity.operator !=(SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity? left, SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity? right) -> bool
+static SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity.operator ==(SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity? left, SmartPipe.Extensions.DependencyInjection.SmartPipeRunIdentity? right) -> bool
+static SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.operator !=(SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot? left, SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot? right) -> bool
+static SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot.operator ==(SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot? left, SmartPipe.Extensions.DependencyInjection.SmartPipeRunSnapshot? right) -> bool
+static SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.operator !=(SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation? left, SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation? right) -> bool
+static SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation.operator ==(SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation? left, SmartPipe.Extensions.DependencyInjection.SmartPipeTerminalRunObservation? right) -> bool

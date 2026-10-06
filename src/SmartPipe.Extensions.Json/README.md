@@ -6,7 +6,7 @@ for SmartPipe.Core.
 ## Installation
 
 ```bash
-dotnet add package SmartPipe.Extensions.Json --version 2.1.2
+dotnet package add SmartPipe.Extensions.Json
 ```
 
 ## Package graph
@@ -23,6 +23,8 @@ health-check, or Newtonsoft.Json dependencies.
 - `JsonTransform<TInput,TOutput>`
 - `DeadLetterSource<T>`
 - `DeadLetterSink<T>`
+- `JsonPipelineComponents`, `JsonPipelineDefinitionBuilder`, and
+  `JsonPipelineDefinitionBuilderExtensions`
 
 The related `JsonLinesDeadLetterSerializer<T>` remains part of
 `SmartPipe.Core`.
@@ -32,6 +34,19 @@ The related `JsonLinesDeadLetterSerializer<T>` remains part of
 The package uses `System.Text.Json` from the .NET 10 shared framework, so an
 additional `System.Text.Json` NuGet dependency is neither required nor pinned.
 Newtonsoft.Json is not a dependency and is not selected at runtime.
+
+Line-framed input uses the internal, bounded UTF-8 reader linked from
+`src/Shared/JsonFraming/Utf8LineRecordReader.cs`. The reader is BCL-only and
+knows only about LF/CRLF boundaries, BOM bytes, and the configured record-size
+limit. JSON validation, path diagnostics, and invalid-record policy remain in
+this package; the framer is not a public API or a separate package.
+
+The framer, the internal source-generated metadata snapshot, and the
+unframed-input limit stream live under `src/Shared` as compile-linked internal
+source. `SmartPipe.Extensions.Http.Json` links the same files, so the HTTP
+NDJSON and array readers enforce the same framing and limits. The package gains
+no public helper and no friend-assembly coupling from this. Physical CSV/RFC
+framing stays separate.
 
 ## Trimming and NativeAOT
 
@@ -53,9 +68,9 @@ source-generated paths. Explicitly line-framed records (`Ndjson`,
 (`MaxRecordSizeBytes`); root arrays and auto-detected legacy top-level value
 sequences use a 256 MiB unframed input limit (`MaxUnframedInputSizeBytes`).
 `SkipAndLog` requires a logger and is supported only when the source is reading
-independently line-framed records. `JsonFileSource<T>` requires explicit
-`Ndjson` or `BatchJsonLines`; dead-letter `Auto` recovery depends on whether it
-detects a framed stream rather than a root array.
+independently line-framed records. `JsonFileSource<T>` defaults to `Auto` and
+also accepts explicit `Ndjson` or `BatchJsonLines`; dead-letter `Auto` recovery
+depends on whether it detects a framed stream rather than a root array.
 
 Append mode preserves existing bytes. If a non-empty destination has no final
 LF, the sink inserts one before the next record; an existing partial row is not
@@ -80,8 +95,8 @@ result.
 
 ## Migration from SmartPipe.Extensions
 
-The public namespaces remain unchanged. `SmartPipe.Extensions` 2.1.2 retains
-type forwarders and a transitive dependency on this package so existing 2.x
+The public namespaces remain unchanged. `SmartPipe.Extensions` 2.2.0 retains
+type forwarders and a transitive dependency on this package so retained 2.x
 source and binary consumers continue to resolve the moved types. New
 applications should reference `SmartPipe.Extensions.Json` directly.
 

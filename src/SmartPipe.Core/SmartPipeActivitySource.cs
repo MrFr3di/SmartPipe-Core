@@ -6,7 +6,7 @@ namespace SmartPipe.Core;
 
 internal static class SmartPipeActivitySource
 {
-    public const string Name = "SmartPipe.Core";
+    public const string Name = SmartPipeDiagnostics.ActivitySourceName;
 
     public static readonly ActivitySource Source = new(
         Name,

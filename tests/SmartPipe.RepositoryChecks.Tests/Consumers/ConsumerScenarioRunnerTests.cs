@@ -1,0 +1,907 @@
+using System.Diagnostics;
+using System.Text.Json;
+using SmartPipe.RepositoryChecks.Consumers;
+using SmartPipe.RepositoryChecks.Infrastructure;
+using SmartPipe.RepositoryChecks.NuGet;
+using SmartPipe.RepositoryChecks.Serialization;
+using SmartPipe.RepositoryChecks.Tests.Repository;
+using SmartPipe.RepositoryChecks.Tests.NuGet;
+
+namespace SmartPipe.RepositoryChecks.Tests.Consumers;
+
+[Trait("Category", "PackageInfrastructure")]
+[Collection(ExternalProcessCollection.Name)]
+public sealed class ConsumerScenarioRunnerTests
+{
+    [Fact]
+    public async Task RunConsumers_DefaultStartsTwoIsolatedProcessesAndDrainsCancellation()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var process = new GatedConsumerProcessRunner();
+        var run = new ConsumerScenarioRunner(new DotNetProcessRunner(process)).RunAsync(
+            new(root, "current", Path.Combine(root, "artifacts/packages"), "2.2.0",
+                "eng/consumer-scenarios.json", Category: "hosting"), cancellation.Token);
+        try
+        {
+            await process.TwoStarted.Task.WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+        }
+        catch (TimeoutException) { }
+        finally
+        {
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+        }
+
+        try
+        {
+            Assert.Equal(2, process.Requests.Count);
+            Assert.Equal(0, process.Active);
+            Assert.Equal(2, process.Requests.Select(request => request.WorkingDirectory).Distinct().Count());
+            Assert.Equal(2, process.Requests.Select(request => request.OutputLogDirectory).Distinct().Count());
+            Assert.Equal(2, process.Requests.Select(request => request.Arguments[request.Arguments.ToList().IndexOf("--packages") + 1]).Distinct().Count());
+        }
+        finally
+        {
+            foreach (var request in process.Requests)
+                Directory.Delete(Path.GetDirectoryName(request.WorkingDirectory!)!, recursive: true);
+        }
+    }
+
+    private sealed class GatedConsumerProcessRunner : IProcessRunner
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<ProcessRequest> Requests { get; } = new();
+        public TaskCompletionSource TwoStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _active;
+        public int Active => Volatile.Read(ref _active);
+
+        public async Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken)
+        {
+            Requests.Enqueue(request);
+            if (Interlocked.Increment(ref _active) == 2) TwoStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("A gated process must be canceled.");
+            }
+            finally { Interlocked.Decrement(ref _active); }
+        }
+    }
+
+    [Fact]
+    public void NativeAotLibraryPreflight_IsNoOpOutsideWindows()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var path = WriteLibraryAtEffectiveLength(fixture.Path, 260);
+
+        ConsumerScenarioRunner.ValidateNativeAotLibraryPaths(fixture.Path, isWindows: false);
+
+        Assert.True(File.Exists(path));
+    }
+
+    [Fact]
+    public void NativeAotLibraryPreflight_AllowsEffectiveLengthBelowWindowsLimit()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        WriteLibraryAtEffectiveLength(fixture.Path, 258);
+
+        ConsumerScenarioRunner.ValidateNativeAotLibraryPaths(fixture.Path, isWindows: true);
+    }
+
+    [Fact]
+    public void NativeAotLibraryPreflight_RejectsEffectiveLengthAtWindowsLimitWithoutAbsolutePath()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var path = WriteLibraryAtEffectiveLength(fixture.Path, 260);
+
+        var error = Assert.Throws<ConsumerScenarioException>(() =>
+            ConsumerScenarioRunner.ValidateNativeAotLibraryPaths(fixture.Path, isWindows: true));
+
+        Assert.Equal("SPCONS025", error.Code);
+        Assert.Contains("260", error.Message, StringComparison.Ordinal);
+        Assert.Contains(Path.GetRelativePath(fixture.Path, path).Replace('\\', '/'), error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(fixture.Path, error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RunConsumers_UnknownScenarioUsesExistingSelectionDiagnostic()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var options = new RunConsumersOptions(
+            root,
+            "current",
+            Path.Combine(root, "artifacts", "packages"),
+            "2.2.0",
+            "eng/consumer-scenarios.json",
+            Scenario: "does-not-exist");
+
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() =>
+            new ConsumerScenarioRunner().RunAsync(options, TestContext.Current.CancellationToken));
+
+        Assert.Equal("SPCONS010", error.Code);
+        Assert.Contains("does-not-exist", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RunConsumers_CurrentPostgreSqlAndExcludedPartitionsCoverAllScenarios()
+    {
+        var current = Enumerable.Range(1, 7)
+            .Select(index => CreateScenario($"postgresql-{index}", "postgresql"))
+            .Append(CreateScenario("core-direct", "core"))
+            .Append(CreateScenario("hosting-direct", "hosting"))
+            .Append(CreateScenario("unclassified", null))
+            .ToArray();
+        var postgresql = ConsumerScenarioRunner.SelectScenarios(
+            current,
+            new(string.Empty, "current", string.Empty, string.Empty, string.Empty, Category: "postgresql"));
+        var withoutPostgreSql = ConsumerScenarioRunner.SelectScenarios(
+            current,
+            new(string.Empty, "current", string.Empty, string.Empty, string.Empty, ExcludeCategory: "postgresql"));
+        var conflictingFilters = ConsumerScenarioRunner.SelectScenarios(
+            current,
+            new(string.Empty, "current", string.Empty, string.Empty, string.Empty,
+                Category: "postgresql", ExcludeCategory: "postgresql"));
+
+        Assert.Equal(7, postgresql.Count);
+        Assert.All(postgresql, scenario => Assert.Equal("postgresql", scenario.Category));
+        Assert.All(withoutPostgreSql, scenario => Assert.NotEqual("postgresql", scenario.Category));
+        Assert.Empty(conflictingFilters);
+        Assert.Equal(
+            current.Select(scenario => scenario.Id).Order(StringComparer.Ordinal),
+            postgresql.Concat(withoutPostgreSql).Select(scenario => scenario.Id).Order(StringComparer.Ordinal));
+
+        static ConsumerScenario CreateScenario(string id, string? category) => new()
+        {
+            Id = id,
+            Set = "current",
+            Category = category,
+            Mode = ConsumerMode.BuildAndRun,
+            TemplatePath = string.Empty,
+            PackageIds = [],
+            ExpectedSmartPipeDependencies = [],
+            ForbiddenDependencies = [],
+            Timeout = TimeSpan.FromSeconds(1),
+            RunSecondLockedRestore = false,
+        };
+    }
+
+    [Fact]
+    public async Task ExternalPackageSourceMapping_IncludesBaselineRestoredDependencyClosure()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write(
+            "Directory.Packages.props",
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="CsvHelper" Version="33.1.0" />
+              </ItemGroup>
+            </Project>
+            """);
+        fixture.Write(
+            "eng/baselines/2.1.2/repository-dependencies.json",
+            """
+            {
+              "restored": [
+                {
+                  "projectPath": "src/SmartPipe.Extensions/SmartPipe.Extensions.csproj",
+                  "frameworks": [
+                    {
+                      "framework": "net10.0",
+                      "topLevelPackages": [
+                        { "id": "Microsoft.Extensions.Resilience", "resolvedVersion": "10.6.0" },
+                        { "id": "SmartPipe.Extensions", "resolvedVersion": "2.1.2" }
+                      ],
+                      "transitivePackages": [
+                        { "id": "Microsoft.Extensions.Compliance.Abstractions", "resolvedVersion": "10.6.0" },
+                        { "id": "Polly.Extensions", "resolvedVersion": "8.4.2" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        var packageIds = await ConsumerScenarioRunner.ReadExternalPackageIdsAsync(
+            fixture.Path,
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains("CsvHelper", packageIds);
+        Assert.Contains("Microsoft.Extensions.Resilience", packageIds);
+        Assert.Contains("Microsoft.Extensions.Compliance.Abstractions", packageIds);
+        Assert.Contains("Polly.Extensions", packageIds);
+        Assert.DoesNotContain("SmartPipe.Extensions", packageIds);
+    }
+
+    [Fact]
+    public void ProcessFailure_IsBoundedSingleLineAndPointsToRelativeRetainedEvidence()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var relativeLog = "artifacts/consumers/failure/run/logs/stderr.log";
+        var logPath = fixture.Write(relativeLog, "secret=do-not-print\n" + new string('x', 32));
+        var result = new DotNetProcessResult(
+            17,
+            "",
+            "secret=do-not-print\r\n" + new string('x', 100_000),
+            Path.Combine(fixture.Path, "artifacts/consumers/failure/run/logs/stdout.log"),
+            logPath,
+            Path.Combine(fixture.Path, "dotnet") + " restore --configfile <argument>",
+            DateTimeOffset.UnixEpoch,
+            12);
+
+        var error = ConsumerScenarioRunner.BuildProcessFailure(result, fixture.Path);
+
+        Assert.Equal("SPCONS014", error.Code);
+        Assert.InRange(error.Message.Length, 1, 1024);
+        Assert.DoesNotContain('\r', error.Message);
+        Assert.DoesNotContain('\n', error.Message);
+        Assert.DoesNotContain("do-not-print", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Consumer command failed (17)", error.Message, StringComparison.Ordinal);
+        Assert.Contains(relativeLog, error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(fixture.Path, error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(File.Exists(logPath));
+    }
+
+    [Fact]
+    public void ProcessFailure_RejectsNewlineAndOversizedEvidencePaths()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var hostilePath = Path.Combine(
+            fixture.Path,
+            "artifacts",
+            "consumers",
+            "failure",
+            "run",
+            "logs",
+            new string('x', 2_000) + "\nsecret.log");
+        var result = new DotNetProcessResult(
+            9,
+            "",
+            "stderr",
+            hostilePath,
+            hostilePath,
+            "dotnet",
+            DateTimeOffset.UnixEpoch,
+            1);
+
+        var error = Assert.Throws<ConsumerScenarioException>(() =>
+            ConsumerScenarioRunner.BuildProcessFailure(result, fixture.Path));
+
+        Assert.Equal("SPCONS009", error.Code);
+        Assert.DoesNotContain('\r', error.Message);
+        Assert.DoesNotContain('\n', error.Message);
+        Assert.InRange(error.Message.Length, 1, 1024);
+        Assert.DoesNotContain("secret.log", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ProcessFailure_RejectsEvidenceOutsideRepositoryRoot()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var outsideLog = Path.Combine(fixture.Path, "..", "consumer.stderr.log");
+        var result = new DotNetProcessResult(
+            3,
+            "",
+            "stderr",
+            outsideLog,
+            outsideLog,
+            "dotnet",
+            DateTimeOffset.UnixEpoch,
+            1);
+
+        var error = Assert.Throws<ConsumerScenarioException>(() =>
+            ConsumerScenarioRunner.BuildProcessFailure(result, fixture.Path));
+
+        Assert.Equal("SPCONS009", error.Code);
+        Assert.DoesNotContain("consumer.stderr.log", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain('\r', error.Message);
+        Assert.DoesNotContain('\n', error.Message);
+    }
+
+    [Fact]
+    public void ExpectedPublishDiagnostic_AppendsDeclaredPropertiesAndWarningsAsErrors()
+    {
+        var expectation = new ExpectedPublishDiagnostic
+        {
+            Code = "IL2026",
+            SourcePath = "Program.cs",
+            Line = 9,
+            MsBuildProperties = ["EnableTrimAnalyzer=true", "InvokeReflectionValidation=true"],
+        };
+
+        var arguments = ConsumerScenarioRunner.BuildExpectedDiagnosticPublishArguments(
+            ["publish", "Consumer.csproj", "--no-restore"],
+            expectation);
+
+        Assert.Equal(
+            ["publish", "Consumer.csproj", "--no-restore", "-warnaserror", "-p:EnableTrimAnalyzer=true", "-p:InvokeReflectionValidation=true"],
+            arguments);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ExpectedPublishDiagnostic_AcceptsExactConsumerCallSiteFromEitherLog(bool useStandardOutput)
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var source = fixture.Write("source/Program.cs", new string('\n', 8) + "CallRuc();\n");
+        var diagnostic = $"{source}(9,1): Trim analysis error IL2026: Using member requires unreferenced code.\n";
+        var stdout = useStandardOutput ? diagnostic : string.Empty;
+        var stderr = useStandardOutput ? string.Empty : diagnostic;
+        var result = DiagnosticResult(fixture, 1, stdout, stderr);
+
+        await ConsumerScenarioRunner.ValidateExpectedPublishDiagnosticAsync(
+            result,
+            DiagnosticExpectation(),
+            source,
+            fixture.Path,
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task ExpectedPublishDiagnostic_AcceptsExactConsumerCallSiteWithRedactedHomePath()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        Assert.False(string.IsNullOrWhiteSpace(home));
+        var source = Path.Combine(home, "SmartPipe.RepositoryChecks.Tests", Guid.NewGuid().ToString("N"), "Program.cs");
+        var reportedSource = DiagnosticRedactor.Redact(source);
+        Assert.StartsWith("<home>", reportedSource, StringComparison.Ordinal);
+        var diagnostic = $"{reportedSource}(9,1): Trim analysis error IL2026: Using member requires unreferenced code.\n";
+
+        await ConsumerScenarioRunner.ValidateExpectedPublishDiagnosticAsync(
+            DiagnosticResult(fixture, 1, diagnostic, string.Empty),
+            DiagnosticExpectation(),
+            source,
+            fixture.Path,
+            TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [InlineData("wrong-source")]
+    [InlineData("missing-boundary")]
+    [InlineData("embedded-token")]
+    public async Task ExpectedPublishDiagnostic_RejectsNonExactRedactedHomePath(string mutation)
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        Assert.False(string.IsNullOrWhiteSpace(home));
+        var source = Path.Combine(home, "SmartPipe.RepositoryChecks.Tests", Guid.NewGuid().ToString("N"), "Program.cs");
+        var reportedSource = DiagnosticRedactor.Redact(source);
+        Assert.StartsWith("<home>", reportedSource, StringComparison.Ordinal);
+        var mutatedSource = mutation switch
+        {
+            "wrong-source" => reportedSource.Replace("Program.cs", "Other.cs", StringComparison.Ordinal),
+            "missing-boundary" => reportedSource.Replace("<home>", "<home>suffix", StringComparison.Ordinal),
+            "embedded-token" => "prefix" + reportedSource,
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
+        };
+        var diagnostic = $"{mutatedSource}(9,1): Trim analysis error IL2026: Using member requires unreferenced code.\n";
+
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() =>
+            ConsumerScenarioRunner.ValidateExpectedPublishDiagnosticAsync(
+                DiagnosticResult(fixture, 1, diagnostic, string.Empty),
+                DiagnosticExpectation(),
+                source,
+                fixture.Path,
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal("SPCONS024", error.Code);
+    }
+
+    [Fact]
+    public async Task ExpectedPublishDiagnosticPhase_RunsDeclaredFailureAndRecordsItsEvent()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var source = fixture.Write("source/Program.cs", new string('\n', 8) + "CallRuc();\n");
+        var diagnostic = $"{source}(9,1): Trim analysis error IL2026: Using member requires unreferenced code.\n";
+        var stdoutLog = fixture.Write("logs/stdout.log", diagnostic);
+        var stderrLog = fixture.Write("logs/stderr.log", string.Empty);
+        var process = new FakeProcessRunner(
+            new ProcessResult(0, string.Empty, string.Empty, stdoutLog, stderrLog),
+            new ProcessResult(1, diagnostic, string.Empty, stdoutLog, stderrLog));
+        var runner = new ConsumerScenarioRunner(new DotNetProcessRunner(process));
+        var events = new List<ConsumerCommandEvent>();
+
+        await runner.RunExpectedPublishDiagnosticAsync(
+            ["restore", "Consumer.csproj", "--locked-mode"],
+            ["publish", "Consumer.csproj", "--no-restore"],
+            DiagnosticExpectation(),
+            fixture.Path,
+            Path.Combine(fixture.Path, "logs"),
+            fixture.Path,
+            source,
+            TimeSpan.FromMinutes(1),
+            events,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            ["restore", "Consumer.csproj", "--locked-mode", "-p:EnableTrimAnalyzer=true", "-p:InvokeReflectionValidation=true"],
+            process.Requests[0].Arguments);
+        Assert.Equal(
+            ["publish", "Consumer.csproj", "--no-restore", "-warnaserror", "-p:EnableTrimAnalyzer=true", "-p:InvokeReflectionValidation=true"],
+            process.Requests[1].Arguments);
+        Assert.Equal("process", events[0].Phase);
+        var command = events[1];
+        Assert.Equal("expected-publish-diagnostic", command.Phase);
+        Assert.Equal(1, command.ExitCode);
+    }
+
+    [Theory]
+    [InlineData("success", "SPCONS024")]
+    [InlineData("wrong-code", "SPCONS014")]
+    [InlineData("wrong-line", "SPCONS014")]
+    [InlineData("wrong-source", "SPCONS024")]
+    [InlineData("duplicate", "SPCONS024")]
+    [InlineData("infrastructure", "SPCONS014")]
+    [InlineData("expected-plus-infrastructure", "SPCONS014")]
+    public async Task ExpectedPublishDiagnostic_RejectsSuccessAndNonExactFailures(string mutation, string code)
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var source = fixture.Write("source/Program.cs", new string('\n', 8) + "CallRuc();\n");
+        var otherSource = fixture.Write("source/Other.cs", new string('\n', 8) + "CallRuc();\n");
+        var exact = $"{source}(9,1): Trim analysis error IL2026: Using member requires unreferenced code.\n";
+        var (exitCode, output) = mutation switch
+        {
+            "success" => (0, exact),
+            "wrong-code" => (1, exact.Replace("IL2026", "IL2055", StringComparison.Ordinal)),
+            "wrong-line" => (1, exact.Replace("(9,1)", "(8,1)", StringComparison.Ordinal)),
+            "wrong-source" => (1, exact.Replace(source, otherSource, StringComparison.Ordinal)),
+            "duplicate" => (1, exact + exact),
+            "infrastructure" => (1, "error NETSDK1047: Assets file has no target.\n"),
+            "expected-plus-infrastructure" => (1, exact + "error NETSDK1047: Assets file has no target.\n"),
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
+        };
+
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(() =>
+            ConsumerScenarioRunner.ValidateExpectedPublishDiagnosticAsync(
+                DiagnosticResult(fixture, exitCode, output, string.Empty),
+                DiagnosticExpectation(),
+                source,
+                fixture.Path,
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(code, error.Code);
+    }
+
+    [Fact]
+    public void SuccessfulConsumerResult_SerializesWithSchemaVersionOneShape()
+    {
+        var result = new ConsumerScenarioResult(
+            1,
+            "fixture",
+            "passed",
+            "2.2.0",
+            true,
+            12,
+            ["SmartPipe.Core"],
+            [new("process", "dotnet build", 0, DateTimeOffset.UnixEpoch, 4, "logs/stdout.log", "logs/stderr.log")]);
+
+        var json = JsonSerializer.Serialize(result, RepositoryChecksJsonContext.Default.ConsumerScenarioResult)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .TrimEnd('\n');
+
+        Assert.Equal("""
+{
+  "schemaVersion": 1,
+  "scenario": "fixture",
+  "status": "passed",
+  "packageVersion": "2.2.0",
+  "restoreLocked": true,
+  "durationMs": 12,
+  "observedSmartPipeDependencies": [
+    "SmartPipe.Core"
+  ],
+  "commands": [
+    {
+      "phase": "process",
+      "command": "dotnet build",
+      "exitCode": 0,
+      "startedUtc": "1970-01-01T00:00:00+00:00",
+      "durationMs": 4,
+      "standardOutputLog": "logs/stdout.log",
+      "standardErrorLog": "logs/stderr.log"
+    }
+  ]
+}
+""".TrimEnd('\n'), json);
+    }
+
+    [Fact]
+    public async Task ProcessRunner_UsesArgumentListSpillsAndRedactsSecrets()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var baseRunner = new SmartPipe.RepositoryChecks.Infrastructure.ProcessRunner(maximumRetainedOutputCharacters: 64, maximumSpillOutputCharacters: 5 * 1024 * 1024);
+        var runner = new DotNetProcessRunner(baseRunner, maximumCapturedCharacters: 64);
+        var result = await runner.RunAsync(new(FixtureExecutable(), ["spill-pressure"], fixture.Path, fixture.Path, TimeSpan.FromSeconds(30)), TestContext.Current.CancellationToken);
+        Assert.Equal(0, result.ExitCode);
+        Assert.True(File.Exists(result.StandardOutputLog));
+        Assert.InRange(result.StandardOutput.Length, 1, 128);
+        Assert.Contains("SPILL-END", result.StandardOutput);
+        var log = await File.ReadAllTextAsync(result.StandardOutputLog, TestContext.Current.CancellationToken);
+        Assert.True(log.Length > 4 * 1024 * 1024);
+        Assert.Contains("[spill log truncated]", log);
+        Assert.DoesNotContain("?token=", result.Command, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ProcessRunner_UsesExplicitIsolatedWorkingDirectory()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var logs = Path.Combine(fixture.Path, "logs");
+        var result = await new DotNetProcessRunner().RunAsync(new(FixtureExecutable(), ["touch", "cwd-proof.txt"], fixture.Path, logs, TimeSpan.FromSeconds(10)), TestContext.Current.CancellationToken);
+        Assert.Equal(0, result.ExitCode);
+        Assert.True(File.Exists(Path.Combine(fixture.Path, "cwd-proof.txt")));
+    }
+
+    [Fact]
+    public void TemplateCopy_RejectsDirectoryReparsePointBeforeDescent()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/fixture/Consumer.csproj", "<Project />");
+        fixture.Write("outside/secret.txt", "secret");
+        if (!fixture.TryCreateDirectoryLink("tests/Consumers/Scenarios/fixture/linked", "outside")) return;
+        var destination = Path.Combine(fixture.Path, "destination"); Directory.CreateDirectory(destination);
+        var error = Assert.Throws<ConsumerScenarioException>(() => ConsumerScenarioRunner.CopyTemplateDirectory(
+            fixture.Path, "tests/Consumers/Scenarios/fixture/Consumer.csproj", destination));
+        Assert.Equal("SPCONS005", error.Code);
+        Assert.False(File.Exists(Path.Combine(destination, "linked", "secret.txt")));
+    }
+
+    [Fact]
+    public void TemplateCopy_RejectsSourceAncestorReparsePointBeforeCopyAndKeepsMissingPathsResolvable()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("outside/Consumers/Scenarios/postgresql-direct/Consumer.csproj", "<Project />");
+        fixture.Write("outside/Consumers/Scenarios/_shared/PostgreSqlConsumerSupport.cs", "// external support");
+        var linkPath = Path.Combine(fixture.Path, "tests");
+        try
+        {
+            CreateSourceAncestorDirectoryLink(linkPath, Path.Combine(fixture.Path, "outside"));
+
+            var source = Path.Combine(fixture.Path, "workspace", "source");
+            Directory.CreateDirectory(source);
+
+            var error = Assert.Throws<ConsumerScenarioException>(() => ConsumerScenarioRunner.CopyTemplateDirectory(
+                fixture.Path, "tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", source));
+
+            Assert.Equal("SPCONS005", error.Code);
+            Assert.Empty(Directory.EnumerateFileSystemEntries(source));
+            Assert.Equal(
+                Path.Combine(fixture.Path, "missing", "source.cs"),
+                ConsumerScenarioLoader.ResolveContained(fixture.Path, "missing/source.cs", "missing source"));
+        }
+        finally
+        {
+            DeleteDirectoryLink(linkPath);
+        }
+    }
+
+    private static void CreateSourceAncestorDirectoryLink(string linkPath, string targetPath)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Directory.CreateSymbolicLink(linkPath, targetPath);
+            Assert.NotNull(new DirectoryInfo(linkPath).LinkTarget);
+            return;
+        }
+
+        var startInfo = new ProcessStartInfo(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+        };
+        startInfo.ArgumentList.Add("/c");
+        startInfo.ArgumentList.Add("mklink");
+        startInfo.ArgumentList.Add("/J");
+        startInfo.ArgumentList.Add(linkPath);
+        startInfo.ArgumentList.Add(targetPath);
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Unable to start cmd.exe to create the directory junction.");
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.True(
+            process.ExitCode == 0
+                && (File.GetAttributes(linkPath) & FileAttributes.ReparsePoint) != 0,
+            $"Unable to create the source-ancestor directory junction: {standardOutput} {standardError}");
+    }
+
+    private static void DeleteDirectoryLink(string linkPath)
+    {
+        try
+        {
+            if ((File.GetAttributes(linkPath) & FileAttributes.ReparsePoint) != 0)
+                Directory.Delete(linkPath);
+        }
+        catch (FileNotFoundException)
+        {
+        }
+        catch (DirectoryNotFoundException)
+        {
+        }
+    }
+
+    [Fact]
+    public void TemplateCopy_PostgreSqlScenarioCopiesSharedSupportToItsContainedWorkspaceSibling()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", "<Project />");
+        fixture.Write("tests/Consumers/Scenarios/_shared/PostgreSqlConsumerSupport.cs", "// shared PostgreSQL support");
+        var workspace = Path.Combine(fixture.Path, "workspace");
+        var source = Path.Combine(workspace, "source");
+        Directory.CreateDirectory(source);
+
+        var project = ConsumerScenarioRunner.CopyTemplateDirectory(
+            fixture.Path, "tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", source);
+
+        var copiedSupport = Path.Combine(workspace, "_shared", "PostgreSqlConsumerSupport.cs");
+        Assert.Equal(Path.Combine(source, "Consumer.csproj"), project);
+        Assert.Equal("// shared PostgreSQL support", File.ReadAllText(copiedSupport));
+
+        fixture.Write("tests/Consumers/Scenarios/http-direct/Consumer.csproj", "<Project />");
+        var nonPostgreSqlWorkspace = Path.Combine(fixture.Path, "non-postgresql-workspace");
+        var nonPostgreSqlSource = Path.Combine(nonPostgreSqlWorkspace, "source");
+        Directory.CreateDirectory(nonPostgreSqlSource);
+        ConsumerScenarioRunner.CopyTemplateDirectory(
+            fixture.Path, "tests/Consumers/Scenarios/http-direct/Consumer.csproj", nonPostgreSqlSource);
+        Assert.False(Directory.Exists(Path.Combine(nonPostgreSqlWorkspace, "_shared")));
+    }
+
+    [Fact]
+    public void TemplateCopy_PostgreSqlSharedSupportRejectsSourceFileReparsePoint()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", "<Project />");
+        fixture.Write("outside/PostgreSqlConsumerSupport.cs", "outside");
+        if (!fixture.TryCreateFileLink(
+                "tests/Consumers/Scenarios/_shared/PostgreSqlConsumerSupport.cs",
+                "outside/PostgreSqlConsumerSupport.cs"))
+        {
+            return;
+        }
+
+        var source = Path.Combine(fixture.Path, "workspace", "source");
+        Directory.CreateDirectory(source);
+
+        var error = Assert.Throws<ConsumerScenarioException>(() => ConsumerScenarioRunner.CopyTemplateDirectory(
+            fixture.Path, "tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", source));
+
+        Assert.Equal("SPCONS005", error.Code);
+        Assert.False(File.Exists(Path.Combine(fixture.Path, "workspace", "_shared", "PostgreSqlConsumerSupport.cs")));
+    }
+
+    [Fact]
+    public void TemplateCopy_PostgreSqlSharedSupportRejectsDestinationDirectoryReparsePoint()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", "<Project />");
+        fixture.Write("tests/Consumers/Scenarios/_shared/PostgreSqlConsumerSupport.cs", "// support");
+        fixture.Write("outside/placeholder.txt", "outside");
+        if (!fixture.TryCreateDirectoryLink("workspace/_shared", "outside"))
+            return;
+
+        var source = Path.Combine(fixture.Path, "workspace", "source");
+        Directory.CreateDirectory(source);
+
+        var error = Assert.Throws<ConsumerScenarioException>(() => ConsumerScenarioRunner.CopyTemplateDirectory(
+            fixture.Path, "tests/Consumers/Scenarios/postgresql-direct/Consumer.csproj", source));
+
+        Assert.Equal("SPCONS005", error.Code);
+        Assert.False(File.Exists(Path.Combine(fixture.Path, "outside", "PostgreSqlConsumerSupport.cs")));
+    }
+
+    [Fact]
+    public void TemplateCopy_SelectsDeclaredProjectAmongMultipleProjectsAndKeepsSourceTemplates()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write("templates/shared/HttpConsumer.csproj", "<Project />");
+        fixture.Write("templates/shared/HttpJsonConsumer.csproj", "<Project />");
+        fixture.Write("templates/shared/Program.cs", "// shared fixture");
+        var sharedDestination = Path.Combine(fixture.Path, "shared-copy");
+        Directory.CreateDirectory(sharedDestination);
+
+        var selected = ConsumerScenarioRunner.CopyTemplateDirectory(
+            fixture.Path, "templates/shared/HttpJsonConsumer.csproj", sharedDestination);
+
+        Assert.Equal(Path.Combine(sharedDestination, "HttpJsonConsumer.csproj"), selected);
+        Assert.True(File.Exists(Path.Combine(sharedDestination, "HttpConsumer.csproj")));
+        Assert.True(File.Exists(Path.Combine(sharedDestination, "Program.cs")));
+
+        fixture.Write("templates/source/Consumer.csproj", "<Project />");
+        fixture.Write("templates/source/Program.cs", "// source fixture");
+        var sourceDestination = Path.Combine(fixture.Path, "source-copy");
+        Directory.CreateDirectory(sourceDestination);
+        Assert.Equal(
+            Path.Combine(sourceDestination, "Consumer.csproj"),
+            ConsumerScenarioRunner.CopyTemplateDirectory(
+                fixture.Path, "templates/source/Program.cs", sourceDestination));
+    }
+
+    [Fact]
+    public void BinaryPhaseEvidence_ProvesSingleBuildThenDeploymentMetadataAndHashReplacement()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var hash = new string('a', 64);
+        var events = new ConsumerCommandEvent[]
+        {
+            new("process", "dotnet restore Consumer.csproj", 0, now, 1, "logs/a", "logs/b"),
+            new("process", "dotnet build Consumer.csproj --no-restore", 0, now.AddSeconds(1), 1, "logs/c", "logs/d"),
+            new("process", "dotnet restore Consumer.csproj --use-lock-file --force-evaluate", 0, now.AddSeconds(2), 1, "logs/e", "logs/f"),
+            new("process", "dotnet msbuild Consumer.csproj -t:GenerateBuildDependencyFile -p:Configuration=Release", 0, now.AddSeconds(3), 1, "logs/g", "logs/h"),
+            new("binary-deployment-metadata", $"refresh-deps consumer-before-sha256={hash} consumer-after-sha256={hash}", 0, now.AddSeconds(4), 0, "", ""),
+            new("binary-runtime-replacement", "replace-runtime package=SmartPipe.Core sha256=" + hash, 0, now.AddSeconds(5), 0, "", ""),
+            new("process", "dotnet Consumer.dll", 0, now.AddSeconds(6), 1, "logs/i", "logs/j"),
+        };
+        ConsumerScenarioRunner.ValidateBinaryCompatibilityPhases(events, 1);
+        var missingMetadata = events.Where(item => item.Phase != "binary-deployment-metadata").ToArray();
+        Assert.Equal("SPCONS020", Assert.Throws<ConsumerScenarioException>(() => ConsumerScenarioRunner.ValidateBinaryCompatibilityPhases(missingMetadata, 1)).Code);
+        var changedBinary = events.Select(item => item.Phase == "binary-deployment-metadata"
+            ? item with { Command = item.Command.Replace("consumer-after-sha256=" + hash, "consumer-after-sha256=" + new string('b', 64), StringComparison.Ordinal) }
+            : item).ToArray();
+        Assert.Equal("SPCONS020", Assert.Throws<ConsumerScenarioException>(() => ConsumerScenarioRunner.ValidateBinaryCompatibilityPhases(changedBinary, 1)).Code);
+        var invalid = events.Append(new("process", "dotnet build Consumer.csproj", 0, now.AddSeconds(7), 1, "logs/k", "logs/l")).ToArray();
+        Assert.Equal("SPCONS020", Assert.Throws<ConsumerScenarioException>(() => ConsumerScenarioRunner.ValidateBinaryCompatibilityPhases(invalid, 1)).Code);
+    }
+
+    [Fact]
+    public async Task BinaryDeploymentMetadata_UsesCurrentRestoreAndDepsTargetWithoutChangingConsumerBinary()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        var project = fixture.Write("source/Consumer.csproj", "<Project />");
+        var output = Path.Combine(fixture.Path, "source", "bin", "Release", "net10.0");
+        Directory.CreateDirectory(output);
+        var consumerAssembly = Path.Combine(output, "Consumer.dll");
+        var binary = new byte[] { 1, 3, 3, 7 };
+        fixture.Write("source/obj/project.assets.json", """
+            {"libraries":{"SmartPipe.Core/2.2.0":{},"SmartPipe.Extensions/2.2.0":{},"SmartPipe.Extensions.Channels/2.2.0":{}}}
+            """);
+        fixture.Write("source/bin/Release/net10.0/Consumer.deps.json", """
+            {"libraries":{"SmartPipe.Core/2.2.0":{},"SmartPipe.Extensions/2.2.0":{},"SmartPipe.Extensions.Channels/2.2.0":{}}}
+            """);
+        await File.WriteAllBytesAsync(consumerAssembly, binary, TestContext.Current.CancellationToken);
+        var stdoutLog = fixture.Write("logs/stdout.log", string.Empty);
+        var stderrLog = fixture.Write("logs/stderr.log", string.Empty);
+        var process = new FakeProcessRunner(
+            new ProcessResult(0, string.Empty, string.Empty, stdoutLog, stderrLog),
+            new ProcessResult(0, string.Empty, string.Empty, stdoutLog, stderrLog));
+        var runner = new ConsumerScenarioRunner(new DotNetProcessRunner(process));
+        var events = new List<ConsumerCommandEvent>();
+
+        await runner.RefreshBinaryCompatibilityDeploymentMetadataAsync(
+            fixture.Path,
+            project,
+            output,
+            ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Channels"],
+            Path.Combine(fixture.Path, "current-feed"),
+            "2.2.0",
+            new Dictionary<string, string> { ["Microsoft.Extensions.Logging.Abstractions"] = "10.0.8" },
+            ["Microsoft.Extensions.*"],
+            fixture.Path,
+            TimeSpan.FromMinutes(1),
+            events,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            ["restore", project, "--configfile", Path.Combine(fixture.Path, "NuGet.Config"), "--packages", Path.Combine(fixture.Path, "packages"), "--use-lock-file", "--force-evaluate"],
+            process.Requests[0].Arguments);
+        Assert.Equal(
+            ["msbuild", project, "-t:GenerateBuildDependencyFile;_CopyFilesMarkedCopyLocal", "-p:Configuration=Release", "-p:BuildProjectReferences=false", "-p:SkipCopyUnchangedFiles=false"],
+            process.Requests[1].Arguments);
+        Assert.Equal(binary, await File.ReadAllBytesAsync(consumerAssembly, TestContext.Current.CancellationToken));
+        Assert.Equal("binary-deployment-metadata", events[^1].Phase);
+        var expectedHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(binary));
+        Assert.Contains($"consumer-before-sha256={expectedHash}", events[^1].Command, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains($"consumer-after-sha256={expectedHash}", events[^1].Command, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SmartPipe.Extensions.Channels\" Version=\"2.2.0", await File.ReadAllTextAsync(Path.Combine(fixture.Path, "Directory.Packages.props"), TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BinaryReplacementClosure_IncludesCurrentFacadeForwardingDependencies()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var graph = await new SmartPipe.RepositoryChecks.PackageGraph.PackageGraphLoader().LoadAsync(
+            root, "eng/package-graph.json", TestContext.Current.CancellationToken);
+
+        var closure = ConsumerScenarioRunner.CurrentSmartPipeClosure(
+            graph, ["SmartPipe.Core", "SmartPipe.Extensions", "SmartPipe.Extensions.Json"]);
+
+        Assert.Equal(
+            ["SmartPipe.Core", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Csv", "SmartPipe.Extensions.Dapper", "SmartPipe.Extensions.Transforms",
+             "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection",
+             "SmartPipe.Extensions.EntityFrameworkCore",
+             "SmartPipe.Extensions.HealthChecks", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Http", "SmartPipe.Extensions.Json",
+             "SmartPipe.Extensions.Http.Json",
+             "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.Mapster", "SmartPipe.Extensions.OpenTelemetry", "SmartPipe.Extensions.Polly", "SmartPipe.Extensions"],
+            closure);
+    }
+
+    [Fact]
+    public void Redact_RemovesUserInfoQueryAndCredentials()
+    {
+        var redacted = DotNetProcessRunner.Redact("https://user:pass@example.test/v3/index.json?token=secret password=hunter2");
+        Assert.DoesNotContain("user", redacted);
+        Assert.DoesNotContain("secret", redacted);
+        Assert.DoesNotContain("hunter2", redacted);
+    }
+
+    [Fact]
+    public async Task RuntimeReplacement_RejectsOversizedEntryBeforeWriting()
+    {
+        using var package = SyntheticNuGetPackage.Create(entries:
+        [
+            ($"lib/net10.0/SmartPipe.Core.dll", new byte[4096]),
+        ]);
+        using var fixture = new RepositoryTestDirectory();
+        var target = Path.Combine(fixture.Path, "SmartPipe.Core.dll");
+
+        await Assert.ThrowsAsync<RepositoryCheckException>(() => ConsumerScenarioRunner.ExtractValidatedEntryAsync(
+            package.Path,
+            "lib/net10.0/SmartPipe.Core.dll",
+            target,
+            TestContext.Current.CancellationToken,
+            new NuGetPackageReaderOptions { MaxEntryUncompressedBytes = 1024 }));
+        Assert.False(File.Exists(target));
+    }
+
+    [Fact]
+    public async Task RuntimeReplacement_RejectsSuspiciousCompressionRatioBeforeWriting()
+    {
+        using var package = SyntheticNuGetPackage.Create(entries:
+        [
+            ($"lib/net10.0/SmartPipe.Core.dll", new byte[1024 * 1024]),
+        ]);
+        using var fixture = new RepositoryTestDirectory();
+        var target = Path.Combine(fixture.Path, "SmartPipe.Core.dll");
+
+        await Assert.ThrowsAsync<RepositoryCheckException>(() => ConsumerScenarioRunner.ExtractValidatedEntryAsync(
+            package.Path,
+            "lib/net10.0/SmartPipe.Core.dll",
+            target,
+            TestContext.Current.CancellationToken,
+            new NuGetPackageReaderOptions { MaxCompressionRatio = 10 }));
+        Assert.False(File.Exists(target));
+    }
+
+
+    private static string FixtureExecutable()
+    {
+        var output = new DirectoryInfo(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar));
+        var configuration = output.Parent!.Name;
+        var root = output.Parent!.Parent!.Parent!.Parent!.Parent!.FullName;
+        return Path.Combine(root, "tests", "SmartPipe.RepositoryChecks.ProcessFixture", "bin", configuration, "net10.0",
+            "SmartPipe.RepositoryChecks.ProcessFixture" + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
+    }
+
+    private static string WriteLibraryAtEffectiveLength(string root, int effectiveLength)
+    {
+        var relativeLength = effectiveLength - Path.GetFullPath(root).Length - 2;
+        var directoryLength = relativeLength - "native.lib".Length - 1;
+        Assert.InRange(directoryLength, 1, 240);
+        var path = Path.Combine(root, new string('d', directoryLength), "native.lib");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, []);
+        Assert.Equal(effectiveLength, Path.GetFullPath(path).Length + 1);
+        return path;
+    }
+
+    private static ExpectedPublishDiagnostic DiagnosticExpectation() => new()
+    {
+        Code = "IL2026",
+        SourcePath = "Program.cs",
+        Line = 9,
+        MsBuildProperties = ["EnableTrimAnalyzer=true", "InvokeReflectionValidation=true"],
+    };
+
+    private static DotNetProcessResult DiagnosticResult(RepositoryTestDirectory fixture, int exitCode, string stdout, string stderr)
+    {
+        var stdoutLog = fixture.Write("logs/stdout.log", stdout);
+        var stderrLog = fixture.Write("logs/stderr.log", stderr);
+        return new(exitCode, stdout, stderr, stdoutLog, stderrLog, "dotnet publish", DateTimeOffset.UnixEpoch, 1);
+    }
+}

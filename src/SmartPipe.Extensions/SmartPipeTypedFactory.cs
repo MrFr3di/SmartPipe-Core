@@ -23,6 +23,7 @@ public interface ISmartPipeFactory<TInput, TOutput>
     /// <summary>Creates and starts a fresh typed pipeline runtime.</summary>
     /// <param name="ct">Cancellation token linked to the run.</param>
     /// <returns>A started pipeline run.</returns>
+    [Obsolete("Use SmartPipe.Extensions.DependencyInjection.ISmartPipeRunFactory<TInput,TOutput>.StartAsync. This compatibility member will be removed in the next major version.")]
     PipelineRun<TOutput> Start(CancellationToken ct = default);
 
     /// <summary>Asynchronously creates and starts a fresh typed pipeline runtime.</summary>
@@ -211,6 +212,7 @@ public sealed class SmartPipeFactory<TInput, TOutput> : ISmartPipeFactory<TInput
     }
 
     /// <inheritdoc />
+    [Obsolete("Use SmartPipe.Extensions.DependencyInjection.ISmartPipeRunFactory<TInput,TOutput>.StartAsync. This compatibility member will be removed in the next major version.")]
     public PipelineRun<TOutput> Start(CancellationToken ct = default)
     {
         var scope = _scopeFactory.CreateAsyncScope();

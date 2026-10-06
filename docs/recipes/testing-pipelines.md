@@ -4,6 +4,26 @@ Prefer small typed pipeline tests that use real sources, transformers, sinks,
 and observers. Avoid sleeping for timing-sensitive behavior when a clock or
 channel signal can make the test deterministic.
 
+## Source helper package
+
+Test projects can reference `SmartPipe.Testing` to create a fresh
+`PipelineActivationContext` and collect source envelopes without a test
+framework or provider dependency:
+
+```csharp
+var activation = TestActivation.Create("orders-test");
+await using IPipelineSource<int> source = CreateSource(activation);
+await source.InitializeAsync(cancellationToken);
+var envelopes = await SourceReader.ReadEnvelopesAsync(source, 32, cancellationToken);
+Assert.Equal(expectedTraceId, envelopes[0].TraceId);
+```
+
+Choose a finite `maxItems` for the scenario. The helper checks one pull beyond
+the limit to distinguish an exact-length stream from overflow, so pass a token
+when the source can wait there. The caller owns source initialization and
+disposal; the helper disposes its enumerator. If reading and enumerator cleanup
+both fail, it reports both in that order.
+
 ## Success Path
 
 ```csharp

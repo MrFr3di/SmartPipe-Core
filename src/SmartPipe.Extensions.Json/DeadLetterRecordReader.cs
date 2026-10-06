@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using SmartPipe.Core;
+using SmartPipe.Shared.JsonFraming;
 
 namespace SmartPipe.Extensions;
 

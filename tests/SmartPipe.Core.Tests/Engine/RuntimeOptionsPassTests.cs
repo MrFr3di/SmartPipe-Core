@@ -402,9 +402,10 @@ public class RuntimeOptionsPassTests
     {
         var observer = new RecordingObserver();
         var transformer = new BlockingTrackingTransformer<int>(expectedConcurrentCalls: 2);
+        var source = new EnvelopeSource<int>(Enumerable.Range(1, 20).ToArray());
 
         var run = PipelineBuilder
-            .From(new EnvelopeSource<int>(Enumerable.Range(1, 20).ToArray()))
+            .From(source)
             .Transform(transformer)
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
@@ -416,6 +417,7 @@ public class RuntimeOptionsPassTests
             .Run();
 
         await transformer.ExpectedConcurrentCallsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await source.EnumerationCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
         transformer.Release();
 
         _ = await ReadOutputsAsync(run.Outputs);
@@ -1737,6 +1739,9 @@ public class RuntimeOptionsPassTests
             _items = items;
         }
 
+        public TaskCompletionSource EnumerationCompleted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
         public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync(
@@ -1749,6 +1754,8 @@ public class RuntimeOptionsPassTests
                 yield return item;
                 await Task.Yield();
             }
+
+            EnumerationCompleted.TrySetResult();
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
