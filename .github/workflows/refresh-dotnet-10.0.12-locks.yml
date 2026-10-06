@@ -27,17 +27,34 @@ jobs:
       - name: Regenerate solution lock files
         run: dotnet restore SmartPipe.Core.slnx --force-evaluate
 
+      - name: Pack local SmartPipe 2.2.0 feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts/packages
+          while IFS= read -r project
+          do
+            dotnet pack "$project" \
+              --configuration Release \
+              --no-restore \
+              --output .artifacts/packages
+          done < <(jq -r '.packages[] | select(.lifecycle != "planned") | .projectPath' eng/package-graph.json)
+
       - name: Regenerate consumer scenario lock files
         shell: bash
         run: |
           set -euo pipefail
+          local_feed="$PWD/.artifacts/packages"
           for project in \
             tests/Consumers/Scenarios/csv-di-composition/Consumer.csproj \
             tests/Consumers/Scenarios/csv-direct/Consumer.csproj \
             tests/Consumers/Scenarios/csv-facade-source/Consumer.csproj \
             tests/Consumers/Scenarios/csv-trim-diagnostic/Consumer.csproj
           do
-            dotnet restore "$project" --force-evaluate
+            dotnet restore "$project" \
+              --force-evaluate \
+              --source "$local_feed" \
+              --source https://api.nuget.org/v3/index.json
           done
 
       - name: Commit regenerated lock files
