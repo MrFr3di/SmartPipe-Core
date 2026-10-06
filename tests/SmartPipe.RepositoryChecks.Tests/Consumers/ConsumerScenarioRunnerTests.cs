@@ -166,6 +166,55 @@ public sealed class ConsumerScenarioRunnerTests
     }
 
     [Fact]
+    public async Task ExternalPackageSourceMapping_IncludesBaselineRestoredDependencyClosure()
+    {
+        using var fixture = new RepositoryTestDirectory();
+        fixture.Write(
+            "Directory.Packages.props",
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="CsvHelper" Version="33.1.0" />
+              </ItemGroup>
+            </Project>
+            """);
+        fixture.Write(
+            "eng/baselines/2.1.2/repository-dependencies.json",
+            """
+            {
+              "restored": [
+                {
+                  "projectPath": "src/SmartPipe.Extensions/SmartPipe.Extensions.csproj",
+                  "frameworks": [
+                    {
+                      "framework": "net10.0",
+                      "topLevelPackages": [
+                        { "id": "Microsoft.Extensions.Resilience", "resolvedVersion": "10.6.0" },
+                        { "id": "SmartPipe.Extensions", "resolvedVersion": "2.1.2" }
+                      ],
+                      "transitivePackages": [
+                        { "id": "Microsoft.Extensions.Compliance.Abstractions", "resolvedVersion": "10.6.0" },
+                        { "id": "Polly.Extensions", "resolvedVersion": "8.4.2" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        var packageIds = await ConsumerScenarioRunner.ReadExternalPackageIdsAsync(
+            fixture.Path,
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains("CsvHelper", packageIds);
+        Assert.Contains("Microsoft.Extensions.Resilience", packageIds);
+        Assert.Contains("Microsoft.Extensions.Compliance.Abstractions", packageIds);
+        Assert.Contains("Polly.Extensions", packageIds);
+        Assert.DoesNotContain("SmartPipe.Extensions", packageIds);
+    }
+
+    [Fact]
     public void ProcessFailure_IsBoundedSingleLineAndPointsToRelativeRetainedEvidence()
     {
         using var fixture = new RepositoryTestDirectory();
