@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.2.1] - Development
+## [2.2.1] — Development
 
 ### Servicing and hardening
 
