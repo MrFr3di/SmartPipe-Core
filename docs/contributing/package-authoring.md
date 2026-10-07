@@ -105,8 +105,8 @@ dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.c
 dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-package-graph --repository-root . --mode current --packages artifacts\packages
 dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-package-metadata --repository-root . --mode current --packages artifacts\packages
 dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-package-ownership --mode current --baseline eng\baselines\2.1.2 --packages artifacts\packages
-dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-release-version --mode current --tag v2.2.0 --packages artifacts\packages
-dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- run-consumers --repository-root . --set current --package-directory artifacts\packages --package-version 2.2.0
+dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-release-version --mode current --tag v2.2.1 --packages artifacts\packages
+dotnet run --project eng\SmartPipe.RepositoryChecks\SmartPipe.RepositoryChecks.csproj -c Release --no-build -- run-consumers --repository-root . --set current --package-directory artifacts\packages --package-version 2.2.1
 ```
 
 `run-consumers` runs at most two scenarios concurrently by default, with at most

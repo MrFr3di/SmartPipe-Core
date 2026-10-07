@@ -342,7 +342,7 @@ Package work is graph-driven. A typical current-mode validation sequence
 includes:
 
 ```bash
-dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj -c Release --no-build -- pack-packages --mode current --configuration Release --package-version 2.2.0 --output artifacts/packages --manifest artifacts/packages/manifest.json
+dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj -c Release --no-build -- pack-packages --mode current --configuration Release --package-version 2.2.1 --output artifacts/packages --manifest artifacts/packages/manifest.json
 
 dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-package-graph --mode current --packages artifacts/packages
 
@@ -350,7 +350,7 @@ dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.c
 
 dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-package-ownership --baseline eng/baselines/2.1.2 --packages artifacts/packages --mode current
 
-dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj -c Release --no-build -- run-consumers --set current --package-directory artifacts/packages --package-version 2.2.0
+dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj -c Release --no-build -- run-consumers --set current --package-directory artifacts/packages --package-version 2.2.1
 ```
 
 Use a fresh package version when an ad-hoc consumer restore could otherwise hit
