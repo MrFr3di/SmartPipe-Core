@@ -17,7 +17,9 @@ public sealed class PackageMetadataTargetTests
         Assert.Contains("<PackageLicenseExpression>MIT</PackageLicenseExpression>", content, StringComparison.Ordinal);
         Assert.Contains("<PackageReadmeFile>README.md</PackageReadmeFile>", content, StringComparison.Ordinal);
         Assert.Contains("<SymbolPackageFormat>snupkg</SymbolPackageFormat>", content, StringComparison.Ordinal);
-        Assert.Contains("<PackageValidationBaselineVersion>2.2.0</PackageValidationBaselineVersion>", content, StringComparison.Ordinal);
+        Assert.Contains("PackageValidationBaselineVersion", content, StringComparison.Ordinal);
+        Assert.Contains(">2.2.0</PackageValidationBaselineVersion>", content, StringComparison.Ordinal);
+        Assert.Contains("'$(Version)' == '2.2.1'", content, StringComparison.Ordinal);
     }
 
     [Fact]
