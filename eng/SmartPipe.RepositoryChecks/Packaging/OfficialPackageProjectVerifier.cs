@@ -22,12 +22,12 @@ internal sealed class OfficialPackageProjectVerifier
         "Authors", "Copyright", "PackageLicenseExpression", "RepositoryUrl", "RepositoryType", "PackageProjectUrl",
         "PublishRepositoryUrl", "EmbedUntrackedSources", "DebugType", "IncludeSymbols", "SymbolPackageFormat",
         "EnablePackageValidation", "ApiCompatEnableRuleCannotChangeParameterName", "EnableStrictModeForCompatibleTfms",
-        "PackageIcon", "PackageReadmeFile", "PackageValidationBaselineVersion",
+        "PackageIcon", "PackageReadmeFile",
     ];
     private static readonly HashSet<string> AllowedProjectProperties = new(
         [
             "SmartPipePackage", "PackageId", "Description", "PackageTags", "SmartPipePackageReadmeSource",
-            "IsPackable",
+            "PackageValidationBaselineVersion", "IsPackable",
         ],
         StringComparer.Ordinal);
 
