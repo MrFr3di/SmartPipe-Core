@@ -2355,27 +2355,6 @@ def main() -> int:
         documents, _relax_ci_scenario_id_validation, "safe dotted ID grammar"
     )
     for mutate, expected in (
-        (_remove_ci_checkpoint_e_push_branch, "ci.yml push must include sp220/checkpoint-e"),
-        (_remove_ci_checkpoint_e_branch, "ci.yml pull_request must include sp220/checkpoint-e"),
-        (_remove_codeql_checkpoint_e_push_branch, "codeql.yml push must include sp220/checkpoint-e"),
-        (_remove_codeql_checkpoint_e_branch, "codeql.yml pull_request must include sp220/checkpoint-e"),
-        (_remove_dependency_review_checkpoint_e_branch,
-         "dependency-review.yml pull_request must include sp220/checkpoint-e"),
-        (_remove_ci_checkpoint_f_push_branch, "ci.yml push must include sp220/checkpoint-f"),
-        (_remove_ci_checkpoint_f_branch, "ci.yml pull_request must include sp220/checkpoint-f"),
-        (_remove_codeql_checkpoint_f_push_branch, "codeql.yml push must include sp220/checkpoint-f"),
-        (_remove_codeql_checkpoint_f_branch, "codeql.yml pull_request must include sp220/checkpoint-f"),
-        (_remove_dependency_review_checkpoint_f_branch,
-         "dependency-review.yml pull_request must include sp220/checkpoint-f"),
-        (_remove_ci_checkpoint_g_push_branch, "ci.yml push must include sp220/checkpoint-g"),
-        (_remove_ci_checkpoint_g_branch, "ci.yml pull_request must include sp220/checkpoint-g"),
-        (_remove_codeql_checkpoint_g_push_branch, "codeql.yml push must include sp220/checkpoint-g"),
-        (_remove_codeql_checkpoint_g_branch, "codeql.yml pull_request must include sp220/checkpoint-g"),
-        (_remove_dependency_review_checkpoint_g_branch,
-         "dependency-review.yml pull_request must include sp220/checkpoint-g"),
-    ):
-        assert_mutation_rejected(documents, mutate, expected)
-    for mutate, expected in (
         (_remove_csv_integration_job, "define the CSV file integration matrix job"),
         (_change_csv_integration_name, "stable matrix check name"),
         (_change_csv_integration_matrix, "Windows/Linux hosted matrix"),
@@ -2524,37 +2503,19 @@ def main() -> int:
         _restore_floating_sdk_selection,
         "global.json",
     )
-    assert_mutation_rejected(documents, _remove_release_branch, "release/2.2.0")
-    assert_mutation_rejected(
-        documents,
-        _remove_ci_checkpoint_branch,
-        "ci.yml pull_request must include sp220/checkpoint-c",
-    )
-    assert_mutation_rejected(
-        documents,
-        _remove_ci_checkpoint_d_branch,
-        "ci.yml pull_request must include sp220/checkpoint-d",
-    )
-    assert_mutation_rejected(
-        documents,
-        _remove_codeql_checkpoint_branch,
-        "codeql.yml pull_request must include sp220/checkpoint-c",
-    )
-    assert_mutation_rejected(
-        documents,
-        _remove_codeql_checkpoint_d_branch,
-        "codeql.yml pull_request must include sp220/checkpoint-d",
-    )
-    assert_mutation_rejected(
-        documents,
-        _remove_dependency_review_checkpoint_branch,
-        "dependency-review.yml pull_request must include sp220/checkpoint-c",
-    )
-    assert_mutation_rejected(
-        documents,
-        _remove_dependency_review_checkpoint_d_branch,
-        "dependency-review.yml pull_request must include sp220/checkpoint-d",
-    )
+    for mutate, expected in (
+        (lambda d: d["ci.yml"]["on"]["push"]["branches"].remove("main"),
+         "ci.yml push must target main only"),
+        (lambda d: d["ci.yml"]["on"]["pull_request"]["branches"].remove("main"),
+         "ci.yml pull_request must target main only"),
+        (lambda d: d["codeql.yml"]["on"]["push"]["branches"].remove("main"),
+         "codeql.yml push must target main only"),
+        (lambda d: d["codeql.yml"]["on"]["pull_request"]["branches"].remove("main"),
+         "codeql.yml pull_request must target main only"),
+        (lambda d: d["dependency-review.yml"]["on"]["pull_request"]["branches"].remove("main"),
+         "dependency-review.yml pull_request must target main only"),
+    ):
+        assert_mutation_rejected(documents, mutate, expected)
     assert_mutation_rejected(documents, _remove_linux_offline_verification, "Verify 2.1.2 baseline offline")
     assert_mutation_rejected(documents, _make_windows_offline_network_capable, "must not be network-capable")
     assert_mutation_rejected(documents, _remove_repository_test_minimum, "--minimum-expected-tests 1")
