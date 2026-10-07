@@ -231,8 +231,12 @@ public class DapperSelectorTests
         await connection.ExecuteAsync("CREATE TABLE Test (Id INTEGER PRIMARY KEY)");
         await connection.ExecuteAsync("INSERT INTO Test (Id) VALUES (1)");
 
+        const string secretSqlLiteral = "TOP_SECRET_SQL_LITERAL";
         var mockLogger = new Mock<ILogger<DapperSelector<TestEntity>>>();
-        var selector = new DapperSelector<TestEntity>(connection, "SELECT * FROM Test", logger: mockLogger.Object);
+        var selector = new DapperSelector<TestEntity>(
+            connection,
+            $"SELECT * FROM Test /* {secretSqlLiteral} */",
+            logger: mockLogger.Object);
         await selector.InitializeAsync();
 
         var results = new List<ProcessingEnvelope<TestEntity>>();
@@ -249,6 +253,14 @@ public class DapperSelectorTests
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
+        mockLogger.Verify(
+            x => x.Log(
+                It.IsAny<LogLevel>(),
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v != null && v.ToString()!.Contains(secretSqlLiteral)),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Never);
 
         await selector.DisposeAsync();
     }
