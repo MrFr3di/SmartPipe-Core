@@ -6,12 +6,13 @@ package or compatibility baseline exists.
 
 ## Current release state
 
-- `2.2.0` is the active release train in this repository until it is published.
-  A release candidate is not treated as a supported stable release merely
-  because its version is present in source.
-- `2.1.2` is the immutable compatibility baseline used to validate the 2.2
-  migration. Baseline status is evidence for compatibility testing, not by
-  itself a maintenance or support promise.
+- `2.2.x` is the current stable release line. `2.2.0` was published on
+  2026-10-07; subsequent `2.2.x` changes are backward-compatible servicing
+  work under the repository's PATCH policy.
+- `2.2.0` is the immediate Package Validation baseline for `2.2.1` servicing.
+  `2.1.2` remains immutable historical migration evidence for the 2.2
+  transition. Baseline status is compatibility evidence, not by itself a
+  maintenance or support promise.
 - Earlier 1.x support labels previously present in `SECURITY.md` are not
   repeated here because the current repository does not contain an accepted
   support-window policy that substantiates them.

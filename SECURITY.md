@@ -5,9 +5,9 @@
 Support status is defined in [SUPPORT.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/SUPPORT.md). Do not infer security
 support from package availability or the compatibility baseline.
 
-The current `2.2.0` tree is a release train until publication; release-candidate
-source is not labeled as a supported stable line merely because the version is
-present in the repository.
+`2.2.x` is the current stable release line. `2.2.0` was published on
+2026-10-07, and security fixes for this line are handled as PATCH servicing
+changes unless an incompatible contract change requires a different release.
 
 ## Reporting a vulnerability
 

@@ -3,11 +3,11 @@
 ## Runtime and language
 
 - C# targeting `net10.0`.
-- Repository SDK is pinned to `10.0.303` with `rollForward: disable` in
-  `global.json`.
+- Repository SDK is the exact version pinned by `global.json`, with
+  `rollForward: disable`.
 - Nullable reference types, implicit usings, deterministic builds, current
   analyzer level, locked restore, and warnings-as-errors for Release are enabled.
-- Repository package version is `2.2.0`.
+- Repository package version is the `2.2.1` servicing line in development.
 
 The SDK and dependency versions listed here are repository pins for the current
 candidate; they are not claims that no newer servicing or prerelease version exists.
@@ -19,7 +19,7 @@ transitive pinning and per-project version overrides disabled.
 
 Important current pins include:
 
-- Microsoft runtime/integration cohort: `10.0.11`;
+- Microsoft runtime/integration cohort: `10.0.12`;
 - CsvHelper `33.1.0`;
 - Dapper `2.1.89`;
 - Mapster `10.0.13`;

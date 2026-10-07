@@ -59,7 +59,7 @@ user-visible or the active release plan requires it.
 
 Requirements:
 
-- .NET SDK `10.0.303` as pinned by `global.json`;
+- the exact .NET SDK pinned by `global.json`;
 - Git;
 - PowerShell 7 for repository scripts that are explicitly `.ps1`;
 - provider/server tooling only when the affected integration requires it.
