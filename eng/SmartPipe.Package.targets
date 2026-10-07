@@ -18,6 +18,5 @@
     <Error Condition="!Exists('$(SmartPipePackageReadmeSource)')" Text="SmartPipe package README does not exist: $(SmartPipePackageReadmeSource)." />
     <Error Condition="!Exists('$(SmartPipeRepositoryRoot)assets/nuget/icon.png')" Text="SmartPipe package icon does not exist: $(SmartPipeRepositoryRoot)assets/nuget/icon.png." />
     <Error Condition="'$(PackageVersion)' != '' and '$(PackageVersion)' != '$(Version)'" Text="SmartPipe package $(PackageId) version $(PackageVersion) does not match repository version $(Version)." />
-    <Error Condition="('$(PackageId)' == 'SmartPipe.Core' or '$(PackageId)' == 'SmartPipe.Extensions' or '$(PackageId)' == 'SmartPipe.Extensions.Json') and '$(PackageValidationBaselineVersion)' != '2.1.2'" Text="Existing SmartPipe package $(PackageId) requires PackageValidationBaselineVersion=2.1.2." />
   </Target>
 </Project>

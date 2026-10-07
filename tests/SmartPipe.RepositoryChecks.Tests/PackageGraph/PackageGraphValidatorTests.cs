@@ -176,6 +176,7 @@ public sealed class PackageGraphValidatorTests
     [InlineData("unknown-external", "SPGRAPH046")]
     [InlineData("missing-required", "SPGRAPH044")]
     [InlineData("wrong-project-reference", "SPGRAPH043")]
+    [InlineData("baseline", "SPGRAPH056")]
     public void ProjectMutation_FailsWithExactDiagnostic(string mutation, string code)
     {
         var root = Path.Combine(Path.GetTempPath(), "sp220-graph-tests");
@@ -186,7 +187,8 @@ public sealed class PackageGraphValidatorTests
         var node = graph.Packages[1];
         var references = mutation switch { "facade" => new[] { corePath, facadePath }, "wrong-project-reference" => new[] { corePath, Path.Combine(root, "src", "Wrong.csproj") }, "missing-required" => Array.Empty<string>(), _ => new[] { corePath } };
         var packages = mutation == "unknown-external" ? new[] { new EvaluatedPackageReference("Unknown.External", null, null, null) } : Array.Empty<EvaluatedPackageReference>();
-        var project = new EvaluatedProject(jsonPath, node.Id, "2.2.0", "2.2.0", ["net10.0"], true, true, packages, references, "2.1.2", true, "README.md", "README.md", "icon.png");
+        var baseline = mutation == "baseline" ? "9.9.9" : "2.1.2";
+        var project = new EvaluatedProject(jsonPath, node.Id, "2.2.0", "2.2.0", ["net10.0"], true, true, packages, references, baseline, true, "README.md", "README.md", "icon.png");
         var violations = new PackageGraphValidator().ValidateProject(graph, node, project, PackageGraphMode.Current);
         Assert.Contains(violations, x => x.Code == code);
     }

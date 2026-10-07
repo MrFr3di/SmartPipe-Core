@@ -9,7 +9,6 @@
     <PackageTags>etl;pipeline;polly;efcore;dapper;mapster;csvhelper;json;compression</PackageTags>
     <PackageReleaseNotes>2.2.0 completes the runtime integration bundle with HealthChecks and OpenTelemetry, preserves 23 forwarded and 13 legacy facade identities, and removes five HTTP identities and PollyResilienceTransform under ADR-0004. Removed API callers must migrate to the HTTP/HTTP.Json or Polly leaves and recompile. PostgreSql and Testing remain separate packages.</PackageReleaseNotes>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
-    <PackageValidationBaselineVersion>2.1.2</PackageValidationBaselineVersion>
   </PropertyGroup>
 
   <ItemGroup>
