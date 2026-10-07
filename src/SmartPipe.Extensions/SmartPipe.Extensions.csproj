@@ -11,6 +11,10 @@
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
   </PropertyGroup>
 
+  <ItemGroup Condition="'$(PackageValidationBaselineVersion)' == '2.1.2'">
+    <ApiCompatSuppressionFile Include="$(MSBuildProjectDirectory)\CompatibilitySuppressions.2.1.2-to-2.2.0.xml" />
+  </ItemGroup>
+
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>SmartPipe.Extensions.Tests</_Parameter1>
