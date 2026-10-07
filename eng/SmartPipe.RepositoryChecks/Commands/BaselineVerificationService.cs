@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.Json;
+using System.Xml;
+using System.Xml.Linq;
 using SmartPipe.RepositoryChecks.Baselines;
 using SmartPipe.RepositoryChecks.Infrastructure;
 using SmartPipe.RepositoryChecks.NuGet;
@@ -323,13 +325,16 @@ internal sealed class BaselineVerificationService
             }
         }
 
-        var releaseBranch = $"release/{manifest.TargetRelease}";
-        foreach (var workflow in CurrentWorkflowPolicy)
+        if (!RepositoryHasAdvancedPastTargetRelease(options.RepositoryRoot, manifest.TargetRelease))
         {
-            var path = RepositoryPaths.ResolveWithinRoot(options.RepositoryRoot, workflow.Path, "workflow");
-            if (!WorkflowPolicyContainsBranch(path, workflow.Events, releaseBranch))
+            var releaseBranch = $"release/{manifest.TargetRelease}";
+            foreach (var workflow in CurrentWorkflowPolicy)
             {
-                diagnostics.Add(new("SPB016", $"Workflow release branch policy mismatch: {workflow.Name}", releaseBranch, workflow.Path));
+                var path = RepositoryPaths.ResolveWithinRoot(options.RepositoryRoot, workflow.Path, "workflow");
+                if (!WorkflowPolicyContainsBranch(path, workflow.Events, releaseBranch))
+                {
+                    diagnostics.Add(new("SPB016", $"Workflow release branch policy mismatch: {workflow.Name}", releaseBranch, workflow.Path));
+                }
             }
         }
 
@@ -405,6 +410,61 @@ internal sealed class BaselineVerificationService
         }
 
         return result.StandardOutput.Trim();
+    }
+
+    private static bool RepositoryHasAdvancedPastTargetRelease(string repositoryRoot, string targetRelease)
+    {
+        try
+        {
+            var path = RepositoryPaths.ResolveWithinRoot(repositoryRoot, "Directory.Build.props", "repository version");
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+
+            using var reader = XmlReader.Create(path, RepositoryXml.CreateSettings());
+            var document = XDocument.Load(reader, LoadOptions.None);
+            var current = document.Descendants()
+                .FirstOrDefault(static element => element.Name.LocalName == "Version")
+                ?.Value.Trim();
+
+            return TryParseStableCore(current, out var currentCore)
+                && TryParseStableCore(targetRelease, out var targetCore)
+                && currentCore.CompareTo(targetCore) > 0;
+        }
+        catch (Exception exception) when (exception is XmlException or IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryParseStableCore(string? value, out Version version)
+    {
+        version = new Version();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var parts = value.Split('.');
+        if (parts.Length != 3
+            || parts.Any(static part =>
+                part.Length == 0
+                || !part.All(char.IsAsciiDigit)
+                || part.Length > 1 && part[0] == '0'))
+        {
+            return false;
+        }
+
+        if (!int.TryParse(parts[0], out var major)
+            || !int.TryParse(parts[1], out var minor)
+            || !int.TryParse(parts[2], out var patch))
+        {
+            return false;
+        }
+
+        version = new Version(major, minor, patch);
+        return true;
     }
 
     private static bool WorkflowPolicyContainsBranch(

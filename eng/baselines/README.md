@@ -26,7 +26,7 @@ The manifest rejects unknown properties and schema versions. `repository.capture
 - `SPB007`-`SPB010`: package hash, signature, identity/assets, or dependencies mismatch;
 - `SPB014`: public API snapshot mismatch;
 - `SPB015`: repository dependency snapshot mismatch;
-- `SPB016`: required release branch missing from CI, CodeQL, or Dependency Review workflow policy.
+- `SPB016`: while the repository is still on the baseline manifest's target release, the required release branch is missing from CI, CodeQL, or Dependency Review workflow policy. Once the repository has advanced to a later canonical stable version, that historical branch policy is no longer required.
 
 Offline verification never fetches packages. It requires the capture commit to exist and be an ancestor of current HEAD, failing closed for unrelated or missing/shallow history. It hashes package bytes before signature or archive inspection and ignores unreferenced files in the baseline directory.
 
