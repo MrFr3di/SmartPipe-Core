@@ -1,1 +1,3 @@
 #nullable enable
+SmartPipe.Extensions.OpenTelemetry.SmartPipeOpenTelemetryBuilderExtensions
+static SmartPipe.Extensions.OpenTelemetry.SmartPipeOpenTelemetryBuilderExtensions.AddSmartPipeInstrumentation(this OpenTelemetry.IOpenTelemetryBuilder! builder) -> OpenTelemetry.IOpenTelemetryBuilder!

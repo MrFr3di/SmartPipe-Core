@@ -162,7 +162,7 @@ public class DapperSelector<T> : IPipelineSource<T>, IDisposable
                 yield return envelope;
         }
 
-        _logger?.LogInformation("Dapper source completed. SQL: {Sql}", _sql);
+        _logger?.LogInformation("Dapper source completed.");
     }
 
     private async IAsyncEnumerable<ProcessingEnvelope<T>> ReadDbConnectionAsync(

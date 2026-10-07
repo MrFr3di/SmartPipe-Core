@@ -40,10 +40,10 @@ SCENARIO_TEMPLATE_PATTERN = (
 HOSTED_WINDOWS = "windows-latest"
 HOSTED_WINDOWS_JSON = '["windows-latest"]'
 CODEQL_ACTION_REF = (
-    "github/codeql-action/init@1c5b675653bb5c22dbe9b12b556ec555138e09fd"
+    "github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2"
 )
 CODEQL_ANALYZE_ACTION_REF = (
-    "github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd"
+    "github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2"
 )
 DEPENDENCY_REVIEW_ACTION_REF = (
     "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294"
@@ -497,8 +497,8 @@ def assert_documentation_site_contract(document: dict) -> None:
     }
     for event in ("push", "pull_request"):
         trigger = triggers.get(event, {})
-        require(trigger.get("branches") == ["main", "upd", "release/2.2.0", "sp220/checkpoint-*"],
-                f"Documentation {event} branches must cover main/upd, the release branch, and all checkpoint branches.")
+        require(trigger.get("branches") == ["main"],
+                f"Documentation {event} branches must target main only after the 2.2 release train is closed.")
         require(required_paths.issubset(set(trigger.get("paths", []))),
                 f"Documentation {event} paths must cover docs, package READMEs, and public source/API changes.")
 
@@ -1197,20 +1197,12 @@ def validate(documents: dict[str, dict]) -> None:
         ("codeql.yml", static_analysis),
         ("dependency-review.yml", dependency_review),
     ):
-        branches = workflow.get("on", {}).get("pull_request", {}).get("branches", [])
-        for checkpoint in ("c", "d", "e", "f", "g"):
-            require(f"sp220/checkpoint-{checkpoint}" in branches,
-                    f"{workflow_name} pull_request must include sp220/checkpoint-{checkpoint}.")
+        require(workflow.get("on", {}).get("pull_request", {}).get("branches", []) == ["main"],
+                f"{workflow_name} pull_request must target main only after the 2.2 release train is closed.")
 
-    for event in ("push", "pull_request"):
-        branches = ci.get("on", {}).get(event, {}).get("branches", [])
-        require("release/2.2.0" in branches,
-                f"CI {event} must include release/2.2.0.")
     for workflow_name in ("ci.yml", "codeql.yml"):
-        branches = documents[workflow_name].get("on", {}).get("push", {}).get("branches", [])
-        for checkpoint in ("e", "f", "g"):
-            require(f"sp220/checkpoint-{checkpoint}" in branches,
-                    f"{workflow_name} push must include sp220/checkpoint-{checkpoint}.")
+        require(documents[workflow_name].get("on", {}).get("push", {}).get("branches", []) == ["main"],
+                f"{workflow_name} push must target main only after the 2.2 release train is closed.")
     assert_diagnostic_contract(ci)
     assert_documentation_site_contract(documentation)
 
@@ -1244,18 +1236,18 @@ def validate(documents: dict[str, dict]) -> None:
                     },
                 },
             },
-            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]},
+            "push": {"branches": ["main"]},
             "pull_request": {
-                "branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]
+                "branches": ["main"]
             },
         },
         "codeql.yml": {
-            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]},
-            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]},
+            "push": {"branches": ["main"]},
+            "pull_request": {"branches": ["main"]},
             "schedule": [{"cron": "27 3 * * 1"}],
         },
         "dependency-review.yml": {
-            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]},
+            "pull_request": {"branches": ["main"]},
         },
     }
     for workflow_name, expected in expected_triggers.items():
@@ -2363,27 +2355,6 @@ def main() -> int:
         documents, _relax_ci_scenario_id_validation, "safe dotted ID grammar"
     )
     for mutate, expected in (
-        (_remove_ci_checkpoint_e_push_branch, "ci.yml push must include sp220/checkpoint-e"),
-        (_remove_ci_checkpoint_e_branch, "ci.yml pull_request must include sp220/checkpoint-e"),
-        (_remove_codeql_checkpoint_e_push_branch, "codeql.yml push must include sp220/checkpoint-e"),
-        (_remove_codeql_checkpoint_e_branch, "codeql.yml pull_request must include sp220/checkpoint-e"),
-        (_remove_dependency_review_checkpoint_e_branch,
-         "dependency-review.yml pull_request must include sp220/checkpoint-e"),
-        (_remove_ci_checkpoint_f_push_branch, "ci.yml push must include sp220/checkpoint-f"),
-        (_remove_ci_checkpoint_f_branch, "ci.yml pull_request must include sp220/checkpoint-f"),
-        (_remove_codeql_checkpoint_f_push_branch, "codeql.yml push must include sp220/checkpoint-f"),
-        (_remove_codeql_checkpoint_f_branch, "codeql.yml pull_request must include sp220/checkpoint-f"),
-        (_remove_dependency_review_checkpoint_f_branch,
-         "dependency-review.yml pull_request must include sp220/checkpoint-f"),
-        (_remove_ci_checkpoint_g_push_branch, "ci.yml push must include sp220/checkpoint-g"),
-        (_remove_ci_checkpoint_g_branch, "ci.yml pull_request must include sp220/checkpoint-g"),
-        (_remove_codeql_checkpoint_g_push_branch, "codeql.yml push must include sp220/checkpoint-g"),
-        (_remove_codeql_checkpoint_g_branch, "codeql.yml pull_request must include sp220/checkpoint-g"),
-        (_remove_dependency_review_checkpoint_g_branch,
-         "dependency-review.yml pull_request must include sp220/checkpoint-g"),
-    ):
-        assert_mutation_rejected(documents, mutate, expected)
-    for mutate, expected in (
         (_remove_csv_integration_job, "define the CSV file integration matrix job"),
         (_change_csv_integration_name, "stable matrix check name"),
         (_change_csv_integration_matrix, "Windows/Linux hosted matrix"),
@@ -2532,37 +2503,19 @@ def main() -> int:
         _restore_floating_sdk_selection,
         "global.json",
     )
-    assert_mutation_rejected(documents, _remove_release_branch, "release/2.2.0")
-    assert_mutation_rejected(
-        documents,
-        _remove_ci_checkpoint_branch,
-        "ci.yml pull_request must include sp220/checkpoint-c",
-    )
-    assert_mutation_rejected(
-        documents,
-        _remove_ci_checkpoint_d_branch,
-        "ci.yml pull_request must include sp220/checkpoint-d",
-    )
-    assert_mutation_rejected(
-        documents,
-        _remove_codeql_checkpoint_branch,
-        "codeql.yml pull_request must include sp220/checkpoint-c",
-    )
-    assert_mutation_rejected(
-        documents,
-        _remove_codeql_checkpoint_d_branch,
-        "codeql.yml pull_request must include sp220/checkpoint-d",
-    )
-    assert_mutation_rejected(
-        documents,
-        _remove_dependency_review_checkpoint_branch,
-        "dependency-review.yml pull_request must include sp220/checkpoint-c",
-    )
-    assert_mutation_rejected(
-        documents,
-        _remove_dependency_review_checkpoint_d_branch,
-        "dependency-review.yml pull_request must include sp220/checkpoint-d",
-    )
+    for mutate, expected in (
+        (lambda d: d["ci.yml"]["on"]["push"]["branches"].remove("main"),
+         "ci.yml push must target main only"),
+        (lambda d: d["ci.yml"]["on"]["pull_request"]["branches"].remove("main"),
+         "ci.yml pull_request must target main only"),
+        (lambda d: d["codeql.yml"]["on"]["push"]["branches"].remove("main"),
+         "codeql.yml push must target main only"),
+        (lambda d: d["codeql.yml"]["on"]["pull_request"]["branches"].remove("main"),
+         "codeql.yml pull_request must target main only"),
+        (lambda d: d["dependency-review.yml"]["on"]["pull_request"]["branches"].remove("main"),
+         "dependency-review.yml pull_request must target main only"),
+    ):
+        assert_mutation_rejected(documents, mutate, expected)
     assert_mutation_rejected(documents, _remove_linux_offline_verification, "Verify 2.1.2 baseline offline")
     assert_mutation_rejected(documents, _make_windows_offline_network_capable, "must not be network-capable")
     assert_mutation_rejected(documents, _remove_repository_test_minimum, "--minimum-expected-tests 1")

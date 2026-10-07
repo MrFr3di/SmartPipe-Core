@@ -67,7 +67,7 @@ internal sealed class PackageGraphLoader
 
     private static void Validate(string root, PackageGraphDocument graph, bool enforceCanonicalCatalog)
     {
-        if (graph.SchemaVersion != 1 || graph.ReleaseVersion != "2.2.0" || graph.Packages.Count == 0)
+        if (graph.SchemaVersion != 1 || !IsCanonicalStableVersion(graph.ReleaseVersion) || graph.Packages.Count == 0)
             throw new PackageGraphException("SPGRAPH003", "Unsupported schema/release version or empty package catalog.");
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var paths = new HashSet<string>(StringComparer.Ordinal);
@@ -114,6 +114,15 @@ internal sealed class PackageGraphLoader
             x => x.Id,
             x => (IReadOnlyList<string>)x.ReleaseDependencies.RequiredSmartPipePackages.Concat(x.ReleaseDependencies.AllowedSmartPipePackages).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static bool IsCanonicalStableVersion(string value)
+    {
+        var parts = value.Split('.');
+        return parts.Length == 3 && parts.All(static part =>
+            part.Length > 0
+            && part.All(char.IsAsciiDigit)
+            && (part.Length == 1 || part[0] != '0'));
     }
 
     private static void ValidatePolicy(PackageNode node, DependencyPolicy policy, HashSet<string> knownIds)

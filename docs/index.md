@@ -50,6 +50,9 @@ each package.
 
 ## Upgrading
 
+- [SmartPipe 2.2.1 servicing notes](releases/2.2.1.md)
+- [2.2.0 → 2.2.1 servicing migration](migration/2.2.1-integration-packages.md)
+- [2.2.0 → 2.2.1 compatibility](reference/compatibility/2.2.0-to-2.2.1.md)
 - [SmartPipe 2.2.0 release notes](releases/2.2.0.md)
 - [2.1.2 → 2.2.0 integration migration](migration/2.2.0-integration-packages.md)
 - [2.1.2 → 2.2.0 compatibility matrix](reference/compatibility/2.1.2-to-2.2.0.md)

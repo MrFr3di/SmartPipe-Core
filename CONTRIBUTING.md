@@ -59,7 +59,7 @@ user-visible or the active release plan requires it.
 
 Requirements:
 
-- .NET SDK `10.0.303` as pinned by `global.json`;
+- the exact .NET SDK pinned by `global.json`;
 - Git;
 - PowerShell 7 for repository scripts that are explicitly `.ps1`;
 - provider/server tooling only when the affected integration requires it.
@@ -342,7 +342,7 @@ Package work is graph-driven. A typical current-mode validation sequence
 includes:
 
 ```bash
-dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj -c Release --no-build -- pack-packages --mode current --configuration Release --package-version 2.2.0 --output artifacts/packages --manifest artifacts/packages/manifest.json
+dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj -c Release --no-build -- pack-packages --mode current --configuration Release --package-version 2.2.1 --output artifacts/packages --manifest artifacts/packages/manifest.json
 
 dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-package-graph --mode current --packages artifacts/packages
 
@@ -350,7 +350,7 @@ dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.c
 
 dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj -c Release --no-build -- verify-package-ownership --baseline eng/baselines/2.1.2 --packages artifacts/packages --mode current
 
-dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj -c Release --no-build -- run-consumers --set current --package-directory artifacts/packages --package-version 2.2.0
+dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj -c Release --no-build -- run-consumers --set current --package-directory artifacts/packages --package-version 2.2.1
 ```
 
 Use a fresh package version when an ad-hoc consumer restore could otherwise hit

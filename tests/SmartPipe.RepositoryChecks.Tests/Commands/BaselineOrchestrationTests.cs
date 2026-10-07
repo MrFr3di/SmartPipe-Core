@@ -427,6 +427,33 @@ public sealed class BaselineOrchestrationTests
         Assert.Contains(result.Diagnostics, item => item.Code == "SPB015");
     }
 
+    [Fact]
+    public async Task CompletedTargetRelease_DoesNotRequireHistoricalReleaseBranchPolicy()
+    {
+        using var scenario = new BaselineScenario();
+        await scenario.CaptureAsync(TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            Path.Combine(scenario.Root, "Directory.Build.props"),
+            "<Project><PropertyGroup><Version>2.2.1</Version></PropertyGroup></Project>",
+            TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            Path.Combine(scenario.Root, ".github/workflows/ci.yml"),
+            "on:\n  push:\n    branches: [ main ]\n  pull_request:\n    branches: [ main ]\n",
+            TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            Path.Combine(scenario.Root, ".github/workflows/codeql.yml"),
+            "on:\n  push:\n    branches: [ main ]\n  pull_request:\n    branches: [ main ]\n",
+            TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            Path.Combine(scenario.Root, ".github/workflows/dependency-review.yml"),
+            "on:\n  pull_request:\n    branches: [ main ]\n",
+            TestContext.Current.CancellationToken);
+
+        var result = await scenario.VerifyAsync();
+
+        Assert.True(result.Success, result.Format());
+    }
+
     [Theory]
     [InlineData(".github/workflows/ci.yml")]
     [InlineData(".github/workflows/codeql.yml")]

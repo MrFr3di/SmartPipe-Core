@@ -16,6 +16,8 @@ internal sealed class PackageGraphValidator
         if (!project.PackageId.Equals(node.Id, StringComparison.Ordinal)) Add("SPGRAPH041", null, $"PackageId must equal {node.Id}");
         if (!project.Version.Equals(graph.ReleaseVersion, StringComparison.Ordinal) || !project.PackageVersion.Equals(graph.ReleaseVersion, StringComparison.Ordinal))
             Add("SPGRAPH042", null, $"Version and PackageVersion must equal {graph.ReleaseVersion}");
+        if (!string.Equals(project.BaselineVersion, node.BaselineVersion, StringComparison.Ordinal))
+            Add("SPGRAPH056", null, $"PackageValidationBaselineVersion must equal {node.BaselineVersion ?? "<none>"}");
 
         var projectByPath = graph.Packages.ToDictionary(x => Path.GetFullPath(x.ProjectPath, Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(project.ProjectPath)))!), x => x.Id, PathComparer());
         var actualInternal = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

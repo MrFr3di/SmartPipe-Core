@@ -3,7 +3,7 @@ name: Documentation
 on:
   workflow_dispatch:
   push:
-    branches: [ main, upd, release/2.2.0, 'sp220/checkpoint-*' ]
+    branches: [ main ]
     paths:
       - '.config/dotnet-tools.json'
       - '.github/workflows/docs.yml'
@@ -18,7 +18,7 @@ on:
       - 'src/**/*.csproj'
       - 'src/**/README.md'
   pull_request:
-    branches: [ main, upd, release/2.2.0, 'sp220/checkpoint-*' ]
+    branches: [ main ]
     paths:
       - '.config/dotnet-tools.json'
       - '.github/workflows/docs.yml'

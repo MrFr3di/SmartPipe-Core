@@ -65,6 +65,8 @@ items:
     href: reference/compatibility/README.md
 - name: Migration
   items:
+  - name: 2.2.0 to 2.2.1
+    href: migration/2.2.1-integration-packages.md
   - name: 2.1.2 to 2.2.0
     href: migration/2.2.0-integration-packages.md
   - name: Core definition model
@@ -79,6 +81,8 @@ items:
     href: migration/legacy-to-typed.md
 - name: Releases
   items:
+  - name: SmartPipe 2.2.1
+    href: releases/2.2.1.md
   - name: SmartPipe 2.2.0
     href: releases/2.2.0.md
 - name: Architecture decisions

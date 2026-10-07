@@ -17,6 +17,7 @@
     <EnablePackageValidation>true</EnablePackageValidation>
     <ApiCompatEnableRuleCannotChangeParameterName>true</ApiCompatEnableRuleCannotChangeParameterName>
     <EnableStrictModeForCompatibleTfms>true</EnableStrictModeForCompatibleTfms>
+    <PackageValidationBaselineVersion Condition="'$(PackageValidationBaselineVersion)' == '' and '$(Version)' == '2.2.1'">2.2.0</PackageValidationBaselineVersion>
     <PackageIcon>icon.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

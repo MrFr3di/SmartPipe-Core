@@ -1,5 +1,1 @@
 #nullable enable
-SmartPipe.Testing.SourceReader
-SmartPipe.Testing.TestActivation
-static SmartPipe.Testing.SourceReader.ReadEnvelopesAsync<T>(SmartPipe.Core.IPipelineSource<T>! source, int maxItems, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<SmartPipe.Core.ProcessingEnvelope<T>!>!>!
-static SmartPipe.Testing.TestActivation.Create(string! pipelineKey) -> SmartPipe.Core.PipelineActivationContext!

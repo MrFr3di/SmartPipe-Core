@@ -9,7 +9,6 @@
     <PackageReleaseNotes>2.2.0 preserves the 2.1.2 JSON identities and adds strict bounded NDJSON and dead-letter processing. Use source-generated JsonTypeInfo for trimming and NativeAOT paths.</PackageReleaseNotes>
     <PackageTags>smartpipe;pipeline;json;system-text-json;jsonl;serialization;nativeaot;trimming</PackageTags>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
-    <PackageValidationBaselineVersion>2.1.2</PackageValidationBaselineVersion>
     <IsAotCompatible>true</IsAotCompatible>
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <EnableAotAnalyzer>true</EnableAotAnalyzer>

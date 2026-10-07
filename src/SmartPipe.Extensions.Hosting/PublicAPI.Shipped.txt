@@ -1,0 +1,21 @@
+#nullable enable
+SmartPipe.Extensions.Hosting.SmartPipeHostedCompletionBehavior
+SmartPipe.Extensions.Hosting.SmartPipeHostedCompletionBehavior.KeepHostAlive = 0 -> SmartPipe.Extensions.Hosting.SmartPipeHostedCompletionBehavior
+SmartPipe.Extensions.Hosting.SmartPipeHostedCompletionBehavior.StopApplication = 1 -> SmartPipe.Extensions.Hosting.SmartPipeHostedCompletionBehavior
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineFailureBehavior
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineFailureBehavior.Ignore = 3 -> SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineFailureBehavior
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineFailureBehavior.MarkUnhealthyAndKeepHostAlive = 2 -> SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineFailureBehavior
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineFailureBehavior.Rethrow = 1 -> SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineFailureBehavior
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineFailureBehavior.StopApplication = 0 -> SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineFailureBehavior
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineOptions
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineOptions.CompletionBehavior.get -> SmartPipe.Extensions.Hosting.SmartPipeHostedCompletionBehavior
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineOptions.CompletionBehavior.set -> void
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineOptions.DrainTimeout.get -> System.TimeSpan
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineOptions.DrainTimeout.set -> void
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineOptions.FailureBehavior.get -> SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineFailureBehavior
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineOptions.FailureBehavior.set -> void
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineOptions.Order.get -> int
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineOptions.Order.set -> void
+SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineOptions.SmartPipeHostedPipelineOptions() -> void
+SmartPipe.Extensions.Hosting.SmartPipeHostingExtensions
+static SmartPipe.Extensions.Hosting.SmartPipeHostingExtensions.RunAsHostedService<TInput, TOutput>(this SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistrationBuilder<TInput, TOutput>! registration, System.Action<SmartPipe.Extensions.Hosting.SmartPipeHostedPipelineOptions!>? configure = null) -> SmartPipe.Extensions.DependencyInjection.ISmartPipeRegistrationBuilder<TInput, TOutput>!

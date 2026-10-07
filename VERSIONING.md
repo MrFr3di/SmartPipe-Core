@@ -93,8 +93,10 @@ Compatibility baselines are immutable evidence. A failing compatibility check is
 resolved by fixing the implementation or by accepting/documenting a real
 breaking change. Do not regenerate a baseline to make the candidate pass.
 
-The 2.1.2 baseline under `eng/baselines/2.1.2/` is comparison material for the
-2.2 release and does not by itself define support status.
+The 2.1.2 baseline under `eng/baselines/2.1.2/` remains immutable comparison
+material for the 2.2 migration and does not by itself define support status.
+For 2.2.1 servicing, the published 2.2.0 package set is the immediate Package
+Validation baseline for every package shipped in 2.2.0.
 
 ## Changelog and release notes
 

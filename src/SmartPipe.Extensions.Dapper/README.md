@@ -54,9 +54,9 @@ are excluded from default logs.
 The legacy `DapperSelector<T>` and `DbSink<T>` types remain valid in this leaf assembly under their
 original `SmartPipe.Extensions.Selectors` and `SmartPipe.Extensions.Sinks` namespaces, and are exposed
 from `SmartPipe.Extensions` through type forwarding, which retains its direct Dapper dependency while
-those forwarders exist. That legacy surface keeps its shipped behaviour, including its own logging and
-reflection-based SQL generation. New code should reference this package directly and use the
-explicit-SQL components.
+those forwarders exist. That legacy surface keeps its shipped behaviour and reflection-based SQL generation. As a
+2.2.x security-hardening exception, its completion log does not emit raw SQL text. New code
+should reference this package directly and use the explicit-SQL components.
 
 ## Trimming and NativeAOT
 

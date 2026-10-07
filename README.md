@@ -293,7 +293,7 @@ caller-owned.
 | Area | Support |
 | --- | --- |
 | Runtime target | `net10.0` |
-| Repository SDK | pinned .NET SDK `10.0.303` |
+| Repository SDK | exact SDK pinned by `global.json` |
 | Core NativeAOT / trimming | positive package contract |
 | Integration NativeAOT / trimming | package-specific; see package table and [AOT guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/aot-compatibility.md) |
 | Input model | typed async sources over bounded runtime channels |
@@ -340,7 +340,7 @@ Start with:
 
 ## Building from source
 
-The repository pins .NET SDK `10.0.303` in `global.json` and uses Microsoft
+The repository uses the exact .NET SDK pinned in `global.json` and Microsoft
 Testing Platform.
 
 ```bash

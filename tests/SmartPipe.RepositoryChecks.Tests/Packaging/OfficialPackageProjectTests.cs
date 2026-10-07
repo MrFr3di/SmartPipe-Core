@@ -30,15 +30,15 @@ public sealed class OfficialPackageProjectTests
     }
 
     [Fact]
-    public async Task Verify_MissingBaselineForExistingPackage_Fails()
+    public async Task Verify_PerProjectBaselineProperty_IsAllowed()
     {
         using var repository = FixtureRepository();
-        repository.Write("src/SmartPipe.Core/SmartPipe.Core.csproj", ProjectXml("SmartPipe.Core", baseline: null));
+        repository.Write("src/SmartPipe.Core/SmartPipe.Core.csproj", ProjectXml("SmartPipe.Core", baseline: "2.1.2"));
 
         var result = await new OfficialPackageProjectVerifier(FixturePackageIds).VerifyAsync(
             repository.Path, TestContext.Current.CancellationToken);
 
-        Assert.Contains(result.Errors, violation => violation.Code == "SPPKG004");
+        Assert.DoesNotContain(result.Errors, violation => violation.Code == "SPPKG007");
     }
 
     [Fact]
@@ -83,14 +83,14 @@ public sealed class OfficialPackageProjectTests
         var repository = new RepositoryTestDirectory();
         repository.Write("Directory.Build.props", "<Project />");
         repository.Write("eng/SmartPipe.Package.props", "<Project />");
-        repository.Write("src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj", ProjectXml("SmartPipe.Extensions.Json", readme: "README.md", baseline: "2.1.2"));
-        repository.Write("src/SmartPipe.Extensions/SmartPipe.Extensions.csproj", ProjectXml("SmartPipe.Extensions", readme: "README.md", baseline: "2.1.2"));
+        repository.Write("src/SmartPipe.Extensions.Json/SmartPipe.Extensions.Json.csproj", ProjectXml("SmartPipe.Extensions.Json", readme: "README.md", baseline: null));
+        repository.Write("src/SmartPipe.Extensions/SmartPipe.Extensions.csproj", ProjectXml("SmartPipe.Extensions", readme: "README.md", baseline: null));
         repository.Write("src/SmartPipe.Extensions.Json/README.md", "# Fixture");
         repository.Write("src/SmartPipe.Extensions/README.md", "# Fixture");
         return repository;
     }
 
-    private static string ProjectXml(string packageId, string? baseline = "2.1.2", string? readme = "README.md", string extra = "") => $"""
+    private static string ProjectXml(string packageId, string? baseline = null, string? readme = "README.md", string extra = "") => $"""
         <Project><PropertyGroup><SmartPipePackage>true</SmartPipePackage><PackageId>{packageId}</PackageId><Description>fixture</Description><PackageTags>fixture</PackageTags><SmartPipePackageReadmeSource>{readme}</SmartPipePackageReadmeSource>{(baseline is null ? "" : $"<PackageValidationBaselineVersion>{baseline}</PackageValidationBaselineVersion>")}{extra}</PropertyGroup><Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" /></Project>
         """;
 

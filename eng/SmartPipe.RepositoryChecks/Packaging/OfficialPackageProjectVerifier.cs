@@ -43,17 +43,15 @@ internal sealed class OfficialPackageProjectVerifier
         var errors = new List<PackageProjectViolation>();
         IReadOnlySet<string> activeIds;
         IReadOnlySet<string> allIds;
-        IReadOnlySet<string> baselineIds;
         if (_expectedPackageIds is not null)
         {
-            activeIds = allIds = baselineIds = _expectedPackageIds;
+            activeIds = allIds = _expectedPackageIds;
         }
         else
         {
             var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", cancellationToken).ConfigureAwait(false);
             activeIds = graph.Packages.Where(x => x.Lifecycle != PackageLifecycle.Planned).Select(x => x.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
             allIds = graph.Packages.Select(x => x.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            baselineIds = graph.Packages.Where(x => x.BaselineVersion is not null).Select(x => x.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
         var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var projectPath in EnumerateProjects(root).OrderBy(path => Relative(root, path), StringComparer.Ordinal))
@@ -101,11 +99,6 @@ internal sealed class OfficialPackageProjectVerifier
                     errors.Add(new("SPPKG008", $"Marked package {project.PackageId} is not registered in package graph.", Relative(root, projectPath)));
                 else if (!activeIds.Contains(project.PackageId))
                     errors.Add(new("SPPKG009", $"Planned package {project.PackageId} must not be marked active before graph activation.", Relative(root, projectPath)));
-                if (baselineIds.Contains(project.PackageId)
-                    && !string.Equals(project.BaselineVersion, "2.1.2", StringComparison.Ordinal))
-                {
-                    errors.Add(new("SPPKG004", $"Existing package {project.PackageId} requires PackageValidationBaselineVersion=2.1.2.", Relative(root, projectPath)));
-                }
             }
 
             var readme = ResolveReadmePath(root, projectPath, project.ReadmeSource);
