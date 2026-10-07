@@ -40,10 +40,10 @@ SCENARIO_TEMPLATE_PATTERN = (
 HOSTED_WINDOWS = "windows-latest"
 HOSTED_WINDOWS_JSON = '["windows-latest"]'
 CODEQL_ACTION_REF = (
-    "github/codeql-action/init@1c5b675653bb5c22dbe9b12b556ec555138e09fd"
+    "github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2"
 )
 CODEQL_ANALYZE_ACTION_REF = (
-    "github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd"
+    "github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2"
 )
 DEPENDENCY_REVIEW_ACTION_REF = (
     "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294"
@@ -497,8 +497,8 @@ def assert_documentation_site_contract(document: dict) -> None:
     }
     for event in ("push", "pull_request"):
         trigger = triggers.get(event, {})
-        require(trigger.get("branches") == ["main", "upd", "release/2.2.0", "sp220/checkpoint-*"],
-                f"Documentation {event} branches must cover main/upd, the release branch, and all checkpoint branches.")
+        require(trigger.get("branches") == ["main"],
+                f"Documentation {event} branches must target main only after the 2.2 release train is closed.")
         require(required_paths.issubset(set(trigger.get("paths", []))),
                 f"Documentation {event} paths must cover docs, package READMEs, and public source/API changes.")
 
@@ -1197,20 +1197,12 @@ def validate(documents: dict[str, dict]) -> None:
         ("codeql.yml", static_analysis),
         ("dependency-review.yml", dependency_review),
     ):
-        branches = workflow.get("on", {}).get("pull_request", {}).get("branches", [])
-        for checkpoint in ("c", "d", "e", "f", "g"):
-            require(f"sp220/checkpoint-{checkpoint}" in branches,
-                    f"{workflow_name} pull_request must include sp220/checkpoint-{checkpoint}.")
+        require(workflow.get("on", {}).get("pull_request", {}).get("branches", []) == ["main"],
+                f"{workflow_name} pull_request must target main only after the 2.2 release train is closed.")
 
-    for event in ("push", "pull_request"):
-        branches = ci.get("on", {}).get(event, {}).get("branches", [])
-        require("release/2.2.0" in branches,
-                f"CI {event} must include release/2.2.0.")
     for workflow_name in ("ci.yml", "codeql.yml"):
-        branches = documents[workflow_name].get("on", {}).get("push", {}).get("branches", [])
-        for checkpoint in ("e", "f", "g"):
-            require(f"sp220/checkpoint-{checkpoint}" in branches,
-                    f"{workflow_name} push must include sp220/checkpoint-{checkpoint}.")
+        require(documents[workflow_name].get("on", {}).get("push", {}).get("branches", []) == ["main"],
+                f"{workflow_name} push must target main only after the 2.2 release train is closed.")
     assert_diagnostic_contract(ci)
     assert_documentation_site_contract(documentation)
 
@@ -1244,18 +1236,18 @@ def validate(documents: dict[str, dict]) -> None:
                     },
                 },
             },
-            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]},
+            "push": {"branches": ["main"]},
             "pull_request": {
-                "branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]
+                "branches": ["main"]
             },
         },
         "codeql.yml": {
-            "push": {"branches": ["main", "upd", "release/2.2.0", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]},
-            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]},
+            "push": {"branches": ["main"]},
+            "pull_request": {"branches": ["main"]},
             "schedule": [{"cron": "27 3 * * 1"}],
         },
         "dependency-review.yml": {
-            "pull_request": {"branches": ["main", "release/2.2.0", "sp220/checkpoint-c", "sp220/checkpoint-d", "sp220/checkpoint-e", "sp220/checkpoint-f", "sp220/checkpoint-g"]},
+            "pull_request": {"branches": ["main"]},
         },
     }
     for workflow_name, expected in expected_triggers.items():
