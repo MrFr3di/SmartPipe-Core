@@ -97,6 +97,6 @@ public class BackpressureStrategy
         double delayMs = KpGain * error * DelayScaleFactor;
         delayMs = Math.Max(MinDelayMs, Math.Min(delayMs, MaxDelayMs));
         if (delayMs > 1)
-            await Task.Delay((int)delayMs, ct);
+            await Task.Delay((int)delayMs, ct).ConfigureAwait(false);
     }
 }
