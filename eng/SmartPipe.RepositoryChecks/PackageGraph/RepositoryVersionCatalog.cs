@@ -13,8 +13,22 @@ internal sealed record RepositoryVersionCatalog(string VersionPrefix, string Pre
         {
             using var reader = XmlReader.Create(path, RepositoryXml.CreateSettings());
             var document = XDocument.Load(reader, LoadOptions.None);
-            var groups = document.Root?.Elements().Where(element => element.Name.LocalName == "PropertyGroup") ?? [];
-            var properties = groups.SelectMany(group => group.Elements())
+            // Keep this repository catalog deliberately static. MSBuild evaluates Condition and Import,
+            // whereas an XML reader does not; accepting either could make release checks disagree with build.
+            if (document.Root?.Name != "Project" || document.Root.HasAttributes)
+                throw new InvalidDataException("Version catalog must contain an unconditional Project root.");
+
+            var groups = document.Root.Elements().ToArray();
+            if (groups.Length != 1 || groups[0].Name != "PropertyGroup" || groups[0].HasAttributes)
+                throw new InvalidDataException("Version catalog must contain exactly one unconditional PropertyGroup.");
+
+            var definitions = groups[0].Elements().ToArray();
+            if (definitions.Length != 2 || definitions.Any(element =>
+                    element.HasAttributes || element.HasElements
+                    || element.Name != "SmartPipeVersionPrefix" && element.Name != "SmartPipePreviousStableVersion"))
+                throw new InvalidDataException("Version catalog must contain only two unconditional version properties.");
+
+            var properties = definitions
                 .GroupBy(element => element.Name.LocalName, StringComparer.Ordinal)
                 .ToDictionary(group => group.Key, group => group.Select(element => element.Value.Trim()).ToArray(), StringComparer.Ordinal);
             var current = RequiredSingle(properties, "SmartPipeVersionPrefix");
