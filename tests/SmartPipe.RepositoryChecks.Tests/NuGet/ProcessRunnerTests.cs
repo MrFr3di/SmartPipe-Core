@@ -251,6 +251,49 @@ public sealed class ProcessRunnerTests
         }
     }
 
+    [Fact]
+    public async Task ProcessHost_PreReadyCommandDeadlineAllowsDelayedStartAfterReady()
+    {
+        var pipeName = $"smartpipe-test-{Guid.NewGuid():N}";
+        var nonce = Guid.NewGuid().ToString("N");
+        using var hostLifetime = new CancellationTokenSource();
+        using var control = CreateControlServer(pipeName);
+        var hostTask = RepositoryCheckProcessHost.RunAsync(
+            [pipeName, nonce, GetFixtureExecutablePath(), "", "--", "echo", "0"],
+            new ImmediateProcessTreeOwnershipFactory(),
+            hostLifetimeCancellation: hostLifetime.Token);
+        try
+        {
+            await control.WaitForConnectionAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(
+                ProcessHostControlMessageKind.Ready,
+                (await ProcessHostControlProtocol.ReadAsync(
+                    control, nonce, TestContext.Current.CancellationToken)).Kind);
+
+            // The previous 5-second read began before READY and timed out under
+            // heavy Windows scheduling pressure despite the consumer's longer deadline.
+            await Task.Delay(TimeSpan.FromSeconds(6), TestContext.Current.CancellationToken);
+            await ProcessHostControlProtocol.WriteAsync(
+                control, nonce,
+                new ProcessHostControlMessage(ProcessHostControlMessageKind.Start),
+                TestContext.Current.CancellationToken);
+            Assert.Equal(
+                ProcessHostControlMessageKind.Started,
+                (await ProcessHostControlProtocol.ReadAsync(
+                    control, nonce, TestContext.Current.CancellationToken)).Kind);
+            Assert.Equal(
+                ProcessHostControlMessageKind.Exit,
+                (await ProcessHostControlProtocol.ReadAsync(
+                    control, nonce, TestContext.Current.CancellationToken)).Kind);
+        }
+        finally
+        {
+            hostLifetime.Cancel();
+            Assert.Equal(RepositoryCheckProcessHost.InvalidArgumentsExitCode,
+                await hostTask.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken));
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
