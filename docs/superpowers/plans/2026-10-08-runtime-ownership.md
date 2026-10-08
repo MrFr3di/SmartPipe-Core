@@ -39,7 +39,7 @@
 
 - [x] Capture body failure separately from enumerator cleanup in producer and sequential path.
 - [x] Preserve existing graceful OCE classifier and requested-cancellation behavior.
-- [ ] Re-run exception matrix; both failures are present, primary first.
+- [x] Re-run exception matrix; both failures are present, primary first.
 
 ## Task 3: Join parallel workers (F1)
 
@@ -51,7 +51,7 @@
 - [x] Join all tasks on every producer exit; inspect full aggregate; omit only requested worker OCE after stop.
 - [x] Reset inputReader and dispose local CTS after join; rethrow original or combined exceptions through RuntimeCleanup.
 - [x] Add backpressure, throwing-callback and independent-worker-failure tests.
-- [ ] Run full CI including existing drain/cancel/abort/lifecycle suites, package/API/consumer gates and format.
+- [x] Run full CI including existing drain/cancel/abort/lifecycle suites, package/API/consumer gates and format.
 
 ## Task 4: Review and evidence
 
@@ -61,4 +61,4 @@
 - [x] Update current runtime contract: worker join and enumerator error ordering.
 - [x] Review full diff for normal/graceful stop, token lifetime and error ordering.
 - [x] Record exact CI runs and unaddressed F2–F6; update draft PR description to final scope.
-- [ ] Keep acceptance pending unless required exact-head checks succeed. No merge or release in this task.
+- [x] Required exact-head checks succeeded for `8951a4db1312bda2e21417cfe6c2745f22b736e5` in run `37815529580`. PR #148 ready for review; no merge or release.

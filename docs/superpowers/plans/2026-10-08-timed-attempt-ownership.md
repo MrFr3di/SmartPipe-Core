@@ -1,0 +1,22 @@
+# Timed attempt ownership plan (F2/F5/F6)
+
+Base: `8951a4db1312bda2e21417cfe6c2745f22b736e5`, verified by CI run `37815529580`.
+Branch: `fix/timed-attempt-ownership-2026-10-08`, depends on PR #148.
+
+## Design
+
+Cancelling a wait does not finish the underlying stage execution. Transfer its CTS and execution to the late-attempt registry before propagating caller cancellation or a cancellation-callback error. Registry observation owns the CTS until execution exits. Completion respects the finalization budget; disposal waits for deferred components without changing an already published Completion outcome.
+
+Existing detached timeout outcomes retain their suppression of late stage errors. Attempts abandoned because of caller cancellation or another wait failure retain unexpected task faults and structured stage failures. Record errors before removing an attempt and wait for observation bookkeeping, so cleanup cannot race error collection. Consume each late fault once through Completion or subsequent deferred disposal.
+
+Infinite cooperative grace means wait until completion or caller cancellation. Finite timeout durations accept zero through 4,294,967,294 milliseconds; also accept the exact InfiniteTimeSpan sentinel and null optional budgets. Reject other negative values, oversized budgets and undefined retry modes before activation. No public API, dependencies, version or baseline changes.
+
+## Implementation and validation
+
+- [x] Add 19 regression cases with fake time, barriers and bounded failure deadlines.
+- [ ] Record clean test-first RED in GitHub-hosted CI.
+- [ ] Transfer every abandoned timed execution to registry ownership.
+- [ ] Preserve cancellation-origin task and structured-result failures through finalization/deferred disposal.
+- [ ] Correct infinite grace and validate policy snapshots.
+- [ ] Extend registry race/callback coverage and run full hosted CI.
+- [ ] Review diff and attach exact candidate evidence. No merge or release.
