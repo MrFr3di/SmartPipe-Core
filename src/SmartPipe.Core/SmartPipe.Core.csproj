@@ -5,8 +5,8 @@
   <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
   <PropertyGroup>
     <PackageId>SmartPipe.Core</PackageId>
+    <PackageReleaseNotes>SmartPipe $(SmartPipeVersionPrefix) servicing release. Preserves the public API validated against $(SmartPipePreviousStableVersion) and hardens backpressure-delay continuation behavior without changing the contract.</PackageReleaseNotes>
     <Description>Streaming pipeline engine for .NET based on System.Threading.Channels with source, transform, sink, resilience, diagnostics, and compatibility APIs.</Description>
-    <PackageReleaseNotes>2.2.0 separates optional integrations into individual packages while preserving the 2.1.2 Core compatibility contract. Targets net10.0 with trimming and NativeAOT support.</PackageReleaseNotes>
     <PackageTags>etl;pipeline;channels;in-process;streaming;dataflow;resilience;circuit-breaker;retry;dead-letter;deduplication;performance</PackageTags>
     <SmartPipePackageReadmeSource>$(SmartPipeRepositoryRoot)README.md</SmartPipePackageReadmeSource>
     <IsAotCompatible>true</IsAotCompatible>

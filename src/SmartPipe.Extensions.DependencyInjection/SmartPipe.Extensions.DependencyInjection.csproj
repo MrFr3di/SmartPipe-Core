@@ -7,7 +7,6 @@
   <PropertyGroup>
     <PackageId>SmartPipe.Extensions.DependencyInjection</PackageId>
     <Description>SmartPipe framework integration package for SmartPipe.Extensions.DependencyInjection.</Description>
-    <PackageReleaseNotes>First standalone release in 2.2.0. Adds canonical key-based pipeline registration and runtime ownership. The legacy generic DI cluster remains frozen in SmartPipe.Extensions; migration is explicit. Trimming and NativeAOT supported.</PackageReleaseNotes>
     <PackageTags>SmartPipe;pipeline;framework-integration</PackageTags>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)/README.md</SmartPipePackageReadmeSource>
     <IsAotCompatible>true</IsAotCompatible>

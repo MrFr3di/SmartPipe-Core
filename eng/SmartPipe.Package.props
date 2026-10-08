@@ -21,5 +21,6 @@
     <PackageValidationBaselineVersion Condition="'$(PackageValidationBaselineVersion)' == '' and '$(SmartPipePackageBaselinePolicy)' == 'previous-stable'">$(SmartPipePreviousStableVersion)</PackageValidationBaselineVersion>
     <PackageIcon>icon.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes Condition="'$(PackageReleaseNotes)' == ''">SmartPipe $(SmartPipeVersionPrefix) servicing release. Compatibility is validated against $(SmartPipePreviousStableVersion); no package-specific public API changes are introduced by this servicing release.</PackageReleaseNotes>
   </PropertyGroup>
 </Project>

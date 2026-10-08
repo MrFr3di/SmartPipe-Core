@@ -5,8 +5,8 @@
   <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
   <PropertyGroup>
     <PackageId>SmartPipe.Extensions.Dapper</PackageId>
+    <PackageReleaseNotes>SmartPipe $(SmartPipeVersionPrefix) servicing release. Preserves the public API validated against $(SmartPipePreviousStableVersion) and prevents the legacy source completion log from emitting raw SQL text.</PackageReleaseNotes>
     <Description>Explicit-SQL Dapper sources and sinks for SmartPipe.Core.</Description>
-    <PackageReleaseNotes>First standalone release in 2.2.0. DapperSelector and DbSink move from the facade with forwarding; explicit-SQL paths keep connections and transactions under documented ownership. NativeAOT support is conditional on the selected mapping path.</PackageReleaseNotes>
     <PackageTags>smartpipe;pipeline;dapper;sql;streaming</PackageTags>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
