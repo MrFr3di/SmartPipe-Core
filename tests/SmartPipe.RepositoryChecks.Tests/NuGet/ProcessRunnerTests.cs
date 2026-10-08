@@ -285,6 +285,10 @@ public sealed class ProcessRunnerTests
                 ProcessHostControlMessageKind.Exit,
                 (await ProcessHostControlProtocol.ReadAsync(
                     control, nonce, TestContext.Current.CancellationToken)).Kind);
+            await ProcessHostControlProtocol.WriteAsync(
+                control, nonce,
+                new ProcessHostControlMessage(ProcessHostControlMessageKind.Teardown),
+                TestContext.Current.CancellationToken);
         }
         finally
         {
