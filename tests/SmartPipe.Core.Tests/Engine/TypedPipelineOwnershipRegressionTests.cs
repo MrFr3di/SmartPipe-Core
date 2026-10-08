@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using SmartPipe.Core;
 
 namespace SmartPipe.Core.Tests.Engine;
@@ -97,12 +98,86 @@ public sealed class TypedPipelineOwnershipRegressionTests
             }).Run();
         try
         {
+            Assert.True(await run.Outputs.WaitToReadAsync().AsTask().WaitAsync(Deadline));
+            Assert.Equal(1, run.Outputs.Count);
+            source.FirstOutputPublished.TrySetResult();
+            await source.SecondTransform.Task.WaitAsync(Deadline);
+            Assert.Equal(1, run.Outputs.Count);
+            Assert.False(run.Completion.IsCompleted);
+            source.ReleaseFault.TrySetResult();
             var error = await Record.ExceptionAsync(async () => await run.Completion.WaitAsync(Deadline));
             Assert.Same(source.Failure, error);
             Assert.Equal(PipelineRunState.Faulted, run.State);
         }
         finally
         {
+            await run.DisposeAsync().AsTask().WaitAsync(Deadline);
+        }
+    }
+
+    [Fact]
+    public async Task OutputEmitter_CancellationReleasesAnObservedPendingWrite()
+    {
+        var channel = Channel.CreateBounded<PipelineOutput<int>>(1);
+        var envelope = ProcessingEnvelope<int>.Create(1);
+        var output = new PipelineOutput<int>(envelope, PipelineResult<int>.Success(1, envelope.TraceId));
+        Assert.True(channel.Writer.TryWrite(output));
+        using var cancellation = new CancellationTokenSource();
+        var writer = new PendingWriteObserver(channel.Writer);
+        var emitter = new PipelineOutputEmitter<int>(writer, new PipelineRuntimeOptions(), hasSink: false);
+        var write = emitter.WriteAsync(output, cancellation.Token).AsTask();
+        try
+        {
+            await writer.PendingWrite.Task.WaitAsync(Deadline);
+            Assert.False(write.IsCompleted);
+            cancellation.Cancel();
+            var error = await Record.ExceptionAsync(async () => await write.WaitAsync(Deadline));
+            Assert.IsAssignableFrom<OperationCanceledException>(error);
+            Assert.Equal(1, channel.Reader.Count);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            channel.Writer.TryComplete();
+        }
+    }
+
+    [Fact]
+    public async Task ProducerFault_RetainsTwoIndependentWorkerFailures()
+    {
+        var sourceError = new IOException("source failed with two active workers");
+        var firstError = new InvalidOperationException("first worker failed");
+        var secondError = new InvalidOperationException("second worker failed");
+        var operations = new[]
+        {
+            new HeldOperation { WorkerFailure = firstError },
+            new HeldOperation { WorkerFailure = secondError },
+        };
+        var run = PipelineBuilder.From(new TwoActiveWorkersSource(operations, sourceError))
+            .Transform(new IndependentFailureTransformer(operations), new StageFailureOptions
+            {
+                OnPermanentFailure = FailureAction.FaultPipeline,
+            })
+            .WithRuntimeOptions(new PipelineRuntimeOptions { MaxConcurrency = 2 }).Run();
+        try
+        {
+            await Task.WhenAll(operations.Select(operation => operation.CancellationObserved.Task)).WaitAsync(Deadline);
+            Assert.False(run.Completion.IsCompleted);
+            foreach (var operation in operations)
+                operation.Release.TrySetResult();
+            var error = await Record.ExceptionAsync(async () => await run.Completion.WaitAsync(Deadline));
+            var combined = Assert.IsType<AggregateException>(error).Flatten().InnerExceptions;
+            Assert.Equal(3, combined.Count);
+            Assert.Same(sourceError, combined[0]);
+            var workers = combined.Skip(1).Cast<PipelineFailureActionException>().ToArray();
+            Assert.Contains(workers, failure => ReferenceEquals(failure.Error.InnerException, firstError));
+            Assert.Contains(workers, failure => ReferenceEquals(failure.Error.InnerException, secondError));
+            Assert.All(operations, operation => Assert.True(operation.Exited.Task.IsCompleted));
+        }
+        finally
+        {
+            foreach (var operation in operations)
+                operation.Release.TrySetResult();
             await run.DisposeAsync().AsTask().WaitAsync(Deadline);
         }
     }
@@ -303,16 +378,18 @@ public sealed class TypedPipelineOwnershipRegressionTests
     private sealed class BackpressureFaultSource : IPipelineSource<int>
     {
         public Exception Failure { get; } = new IOException("source failed with bounded output");
+        public TaskCompletionSource FirstOutputPublished { get; } = NewSignal();
         public TaskCompletionSource SecondTransform { get; } = NewSignal();
+        public TaskCompletionSource ReleaseFault { get; } = NewSignal();
         public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
         public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
             [EnumeratorCancellation] CancellationToken ct = default)
         {
             yield return ProcessingEnvelope<int>.Create(1);
+            // The consumer verifies capacity is full before releasing item 2.
+            await FirstOutputPublished.Task.WaitAsync(ct);
             yield return ProcessingEnvelope<int>.Create(2);
-            // Both workers have reached processing. One output fills capacity,
-            // the other may be waiting to publish; fault must release that wait.
-            await SecondTransform.Task.WaitAsync(ct);
+            await ReleaseFault.Task.WaitAsync(ct);
             throw Failure;
         }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -327,6 +404,53 @@ public sealed class TypedPipelineOwnershipRegressionTests
             if (Interlocked.Increment(ref _calls) == 2)
                 source.SecondTransform.TrySetResult();
             return ValueTask.FromResult(StageResult<int>.Success(envelope.Payload));
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class PendingWriteObserver(ChannelWriter<PipelineOutput<int>> inner) : ChannelWriter<PipelineOutput<int>>
+    {
+        public TaskCompletionSource PendingWrite { get; } = NewSignal();
+        public override bool TryComplete(Exception? error = null) => inner.TryComplete(error);
+        public override bool TryWrite(PipelineOutput<int> item) => inner.TryWrite(item);
+        public override ValueTask<bool> WaitToWriteAsync(CancellationToken ct = default) => inner.WaitToWriteAsync(ct);
+        public override ValueTask WriteAsync(PipelineOutput<int> item, CancellationToken ct = default)
+        {
+            var write = inner.WriteAsync(item, ct);
+            if (!write.IsCompleted)
+                PendingWrite.TrySetResult();
+            return write;
+        }
+    }
+
+    private sealed class TwoActiveWorkersSource(HeldOperation[] operations, Exception failure) : IPipelineSource<int>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return ProcessingEnvelope<int>.Create(0);
+            yield return ProcessingEnvelope<int>.Create(1);
+            await Task.WhenAll(operations.Select(operation => operation.Entered.Task)).WaitAsync(ct);
+            throw failure;
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class IndependentFailureTransformer(HeldOperation[] operations) : IPipelineTransformer<int, int>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public async ValueTask<StageResult<int>> TransformAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default)
+        {
+            try
+            {
+                await operations[envelope.Payload].ExecuteAsync(ct);
+                return StageResult<int>.Success(envelope.Payload);
+            }
+            catch (InvalidOperationException error)
+            {
+                return StageResult<int>.Failure(new SmartPipeError(error.Message, ErrorType.Permanent, InnerException: error));
+            }
         }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

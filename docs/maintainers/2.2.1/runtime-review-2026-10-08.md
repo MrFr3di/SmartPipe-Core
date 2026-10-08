@@ -96,3 +96,17 @@ Bucket mode только opt-in после oracle comparison на burst/idle/bou
 и exact-head GitHub CI являются следующей проверкой. До GREEN эта работа —
 кандидат исправления, а не принятый milestone. Исторические baseline snapshots
 не изменяются. Результаты и остаточные риски фиксируются здесь по факту.
+
+### Исполнение первого slice
+
+- Tests-first `fd8b680efcd13f5cf4d009ad171675aeb37bb9ae`, [CI 37813949746](https://github.com/MrFr3di/SmartPipe-Core/actions/runs/37813949746): format/build success; regressions 15 total, 10 failed, 5 passed. Первое падение компиляции в 56db813 было исправлением fixture, не RED evidence.
+- Runtime candidate `b63dabd2f2273d6229a6ad081e108ed9654a2dd0`, [CI 37814792263](https://github.com/MrFr3di/SmartPipe-Core/actions/runs/37814792263): ранний ownership regression step success. Полная приёмка определяется всеми checks последнего HEAD PR, не этим частичным результатом.
+- Read-only review не нашёл concrete runtime defect, но потребовал укрепить backpressure и multiple-worker coverage. Добавлены gate фактически заполненного output, отдельный emitter test с наблюдаемым pending WriteAsync и два independently failing workers. Итоговый класс — 17 cases; ранний шаг CI перед package validation не позволяет скрыть их отсутствие нулевым прогоном.
+- [PR #148](https://github.com/MrFr3di/SmartPipe-Core/pull/148), ветка `fix/runtime-ownership-review-2026-10-08`. Проверять актуальный head SHA/checks там; записи выше — evidence конкретных исторических commits, не rolling status.
+
+Backpressure проверяется двумя уровнями: runtime fault при полной output queue и
+отдельный cancellation test действительно pending emitter write. Публичный runtime
+не предоставляет hook «writer уже вошёл в WriteAsync»; новый production hook ради
+теста не добавлен. Утверждение, что runtime-test сам доказывает точный момент
+входа в pending write, не делается. Возможность indefinite shutdown при
+non-cooperative user code остаётся явно документированным ограничением.

@@ -114,7 +114,7 @@ jobs:
       run: dotnet build SmartPipe.Core.slnx --no-restore -c Release -warnaserror
 
     - name: Core ownership regression tests
-      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Engine.TypedPipelineOwnershipRegressionTests --minimum-expected-tests 15
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Engine.TypedPipelineOwnershipRegressionTests --minimum-expected-tests 17
 
     - name: Verify RepositoryChecks profile
       run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify --profile sp220-05 --format github --failures-only
