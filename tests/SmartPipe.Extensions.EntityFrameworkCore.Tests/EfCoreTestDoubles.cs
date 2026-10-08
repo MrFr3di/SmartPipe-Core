@@ -178,7 +178,9 @@ internal sealed class RecordingLoggerFactory : ILoggerFactory
 {
     internal List<string> Messages { get; } = [];
 
-    public ILogger CreateLogger(string categoryName) => new RecordingLogger(Messages);
+    internal List<Exception?> Exceptions { get; } = [];
+
+    public ILogger CreateLogger(string categoryName) => new RecordingLogger(Messages, Exceptions);
 
     public void AddProvider(ILoggerProvider provider)
     {
@@ -191,8 +193,13 @@ internal sealed class RecordingLoggerFactory : ILoggerFactory
     private sealed class RecordingLogger : ILogger
     {
         private readonly List<string> _messages;
+        private readonly List<Exception?> _exceptions;
 
-        internal RecordingLogger(List<string> messages) => _messages = messages;
+        internal RecordingLogger(List<string> messages, List<Exception?> exceptions)
+        {
+            _messages = messages;
+            _exceptions = exceptions;
+        }
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
@@ -204,7 +211,10 @@ internal sealed class RecordingLoggerFactory : ILoggerFactory
             EventId eventId,
             TState state,
             Exception? exception,
-            Func<TState, Exception?, string> formatter) =>
+            Func<TState, Exception?, string> formatter)
+        {
             _messages.Add(formatter(state, exception));
+            _exceptions.Add(exception);
+        }
     }
 }

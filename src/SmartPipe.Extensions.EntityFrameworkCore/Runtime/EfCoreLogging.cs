@@ -18,11 +18,12 @@ internal readonly record struct EfCoreOutcome(
     long ItemCount,
     TimeSpan Elapsed);
 
-/// <summary>Writes the payload-free Entity Framework Core outcome log line.</summary>
+/// <summary>Writes payload-free Entity Framework Core outcome log lines.</summary>
 /// <remarks>
-/// Query text, parameter values, connection strings, and payload contents are never logged.
+/// Query text, parameter values, connection strings, payload contents, and provider exception details are never logged
+/// by SmartPipe. The original exception is still propagated to the caller unchanged.
 /// </remarks>
-internal static class EfCoreLogging
+internal static partial class EfCoreLogging
 {
     /// <summary>Logs one completed or failed source run using identity and count metadata only.</summary>
     internal static void LogOutcome(
@@ -36,8 +37,8 @@ internal static class EfCoreLogging
 
         if (primaryFailure is null)
         {
-            logger.LogInformation(
-                "EF Core {Kind} {OperationName} completed for {ResultType} in pipeline {PipelineKey} run {RunId}: items={ItemCount} durationMs={DurationMs}.",
+            LogCompleted(
+                logger,
                 outcome.Kind,
                 outcome.OperationName,
                 outcome.ResultTypeName,
@@ -48,14 +49,42 @@ internal static class EfCoreLogging
             return;
         }
 
-        logger.LogError(
-            primaryFailure,
-            "EF Core {Kind} {OperationName} failed for {ResultType} in pipeline {PipelineKey} run {RunId} after {ItemCount} items.",
+        LogFailed(
+            logger,
             outcome.Kind,
             outcome.OperationName,
             outcome.ResultTypeName,
             activation.PipelineKey.Value,
             activation.RunId,
-            outcome.ItemCount);
+            outcome.ItemCount,
+            primaryFailure is OperationCanceledException ? "cancelled" : "failed");
     }
+
+    [LoggerMessage(
+        EventId = 2100,
+        Level = LogLevel.Information,
+        Message = "EF Core {Kind} {OperationName} completed for {ResultType} in pipeline {PipelineKey} run {RunId}: items={ItemCount} durationMs={DurationMs}.")]
+    private static partial void LogCompleted(
+        ILogger logger,
+        string kind,
+        string operationName,
+        string resultType,
+        string pipelineKey,
+        Guid runId,
+        long itemCount,
+        double durationMs);
+
+    [LoggerMessage(
+        EventId = 2101,
+        Level = LogLevel.Error,
+        Message = "EF Core {Kind} {OperationName} {Outcome} for {ResultType} in pipeline {PipelineKey} run {RunId} after {ItemCount} items.")]
+    private static partial void LogFailed(
+        ILogger logger,
+        string kind,
+        string operationName,
+        string resultType,
+        string pipelineKey,
+        Guid runId,
+        long itemCount,
+        string outcome);
 }
