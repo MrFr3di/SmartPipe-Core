@@ -176,7 +176,7 @@ internal sealed class OfficialPackageProjectVerifier
                     continue;
                 }
 
-                if (name is "SmartPipePackageBaselinePolicy" or "PackageValidationBaselineVersion"
+                if ((name is "SmartPipePackageBaselinePolicy" or "PackageValidationBaselineVersion")
                     && (property.HasAttributes || property.Parent?.HasAttributes == true))
                 {
                     errors.Add(new("SPPKG010", $"Baseline policy property {name} must be unconditional.", Relative(root, path)));
