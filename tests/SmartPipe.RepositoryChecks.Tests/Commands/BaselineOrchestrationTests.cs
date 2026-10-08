@@ -433,8 +433,8 @@ public sealed class BaselineOrchestrationTests
         using var scenario = new BaselineScenario();
         await scenario.CaptureAsync(TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(
-            Path.Combine(scenario.Root, "Directory.Build.props"),
-            "<Project><PropertyGroup><Version>2.2.1</Version></PropertyGroup></Project>",
+            Path.Combine(scenario.Root, "eng", "SmartPipe.Versions.props"),
+            "<Project><PropertyGroup><SmartPipeVersionPrefix>2.2.1</SmartPipeVersionPrefix><SmartPipePreviousStableVersion>2.2.0</SmartPipePreviousStableVersion></PropertyGroup></Project>",
             TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(
             Path.Combine(scenario.Root, ".github/workflows/ci.yml"),
@@ -794,6 +794,9 @@ public sealed class BaselineOrchestrationTests
             PackagesPath = Path.Combine(Root, "packages");
             Directory.CreateDirectory(PackagesPath);
             BaselinePath = Path.Combine(Root, "eng", "baselines", "2.1.2");
+            Write(
+                "eng/SmartPipe.Versions.props",
+                "<Project><PropertyGroup><SmartPipeVersionPrefix>2.2.0</SmartPipeVersionPrefix><SmartPipePreviousStableVersion>2.1.2</SmartPipePreviousStableVersion></PropertyGroup></Project>");
             ManifestPath = Path.Combine(BaselinePath, "manifest.json");
             ProjectPath = Write("src/Fixture/Fixture.csproj", "<Project><ItemGroup><PackageReference Include=\"Example\" Version=\"1.0.0\" /></ItemGroup></Project>");
             PublicApiPath = Write("src/Fixture/PublicAPI.Shipped.txt", "Fixture.Api\n");
