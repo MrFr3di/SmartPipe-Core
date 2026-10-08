@@ -65,8 +65,9 @@ public sealed class RepositoryDependencyAlignmentTests
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         var central = XDocument.Load(Path.Combine(root, "Directory.Packages.props"));
-        var expected = Assert.Single(central.Descendants("PackageVersion")
-            .Where(item => (string?)item.Attribute("Include") == "Microsoft.Testing.Extensions.CodeCoverage"))
+        var expected = Assert.Single(
+            central.Descendants("PackageVersion"),
+            item => (string?)item.Attribute("Include") == "Microsoft.Testing.Extensions.CodeCoverage")
             .Attribute("Version")!.Value;
 
         using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(
