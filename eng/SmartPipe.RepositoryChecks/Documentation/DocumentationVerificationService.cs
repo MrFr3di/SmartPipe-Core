@@ -94,6 +94,7 @@ internal sealed class DocumentationVerificationService
         await ValidatePackageReadmesAsync(root, graph, violations, cancellationToken).ConfigureAwait(false);
         await ValidateRootReadmeAsync(root, violations, cancellationToken).ConfigureAwait(false);
         await ValidateDocumentationIndexAsync(root, violations, cancellationToken).ConfigureAwait(false);
+        await ValidateCompatibilityIndexAsync(root, graph, violations, cancellationToken).ConfigureAwait(false);
         await ValidateGettingStartedAsync(root, graph, violations, cancellationToken).ConfigureAwait(false);
         await ValidateSecurityPolicyAsync(root, violations, cancellationToken).ConfigureAwait(false);
         await ValidatePackageReferenceAsync(root, graph, violations, cancellationToken).ConfigureAwait(false);
@@ -252,6 +253,38 @@ internal sealed class DocumentationVerificationService
                     "SPDOC009",
                     relativePath,
                     $"documentation index must link to {target}"));
+            }
+        }
+    }
+
+    private static async Task ValidateCompatibilityIndexAsync(
+        string root,
+        PackageGraphDocument graph,
+        ICollection<DocumentationViolation> violations,
+        CancellationToken cancellationToken)
+    {
+        const string relativePath = "docs/reference/compatibility/README.md";
+        var path = Resolve(root, relativePath);
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        var content = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+        foreach (var baseline in graph.Packages
+                     .Where(package => package.Lifecycle != PackageLifecycle.Planned)
+                     .Select(package => package.BaselineVersion)
+                     .Where(version => !string.IsNullOrWhiteSpace(version))
+                     .Distinct(StringComparer.Ordinal)
+                     .Order(StringComparer.Ordinal))
+        {
+            var target = $"{baseline}-to-{graph.ReleaseVersion}.md";
+            if (!content.Contains(target, StringComparison.Ordinal))
+            {
+                violations.Add(new(
+                    "SPDOC019",
+                    relativePath,
+                    $"compatibility index must link the current transition {baseline} → {graph.ReleaseVersion}: {target}"));
             }
         }
     }

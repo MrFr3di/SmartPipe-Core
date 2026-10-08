@@ -58,6 +58,25 @@ public sealed class DocumentationVerificationServiceTests
     }
 
     [Fact]
+    public async Task VerifyAsync_ReportsCompatibilityIndexDrift()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write("docs/reference/compatibility/README.md", "# Compatibility reference\n\n[2.1.2 → 2.2.0](2.1.2-to-2.2.0.md)\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC019"
+            && violation.Path == "docs/reference/compatibility/README.md");
+    }
+
+    [Fact]
     public async Task VerifyAsync_RejectsVersionPinnedAndRelativePackageReadmeTargets()
     {
         using var repository = new RepositoryTestDirectory();

@@ -315,7 +315,6 @@ docs/maintainers/            governance, release plans, evidence and readiness
 docs/reference/               package, API and compatibility reference
 eng/                         package graph, ownership, consumers, release validators
 eng/baselines/2.1.2/         immutable compatibility baseline
-agent_docs/                  repository orientation for coding agents
 CONTRIBUTING.md              contribution workflow
 SUPPORT.md                   release-line support policy
 VERSIONING.md                versioning and compatibility policy
