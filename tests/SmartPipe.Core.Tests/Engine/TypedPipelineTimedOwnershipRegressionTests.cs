@@ -202,7 +202,7 @@ public sealed class TypedPipelineTimedOwnershipRegressionTests
     private sealed class EnumerablePipelineSource<T>(IEnumerable<T> values) : IPipelineSource<T>
     {
         public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
-        public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadAsync([EnumeratorCancellation] CancellationToken ct = default)
+        public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadEnvelopesAsync([EnumeratorCancellation] CancellationToken ct = default)
         {
             foreach (var value in values)
             {
