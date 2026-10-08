@@ -76,6 +76,23 @@ public sealed class DocumentationVerificationServiceTests
             && violation.Path == "docs/reference/compatibility/README.md");
     }
 
+    [Theory]
+    [InlineData("2.1.2-to-2.2.0.md")]
+    [InlineData("<!-- [Not navigation](2.1.2-to-2.2.0.md) -->")]
+    [InlineData("```md\\n[Example](2.1.2-to-2.2.0.md)\\n```")]
+    public async Task VerifyAsync_CompatibilityMentionWithoutNavigationLinkFails(string indexBody)
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write("docs/reference/compatibility/README.md", "# Compatibility reference\\n\\n" + indexBody + "\\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path, graph, CancellationToken.None);
+
+        Assert.Contains(result.Violations, violation => violation.Code == "SPDOC019");
+    }
+
     [Fact]
     public async Task VerifyAsync_RejectsVersionPinnedAndRelativePackageReadmeTargets()
     {
