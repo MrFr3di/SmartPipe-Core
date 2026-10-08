@@ -22,23 +22,23 @@
       },
       "OpenTelemetry": {
         "type": "Direct",
-        "requested": "[1.17.0, )",
-        "resolved": "1.17.0",
-        "contentHash": "rMLOTftlMlTm7+MSrvXDHnJRjVkROFNKXHZrYjOsX+LankaFG7QSflx7qRRGjoqZoirohnxmJQ7GEb9occO4Gg==",
+        "requested": "[1.19.1, )",
+        "resolved": "1.19.1",
+        "contentHash": "6ywhc3upf+dq8EsOohj7I7zS3l4yX9vfbtFkvyEC8xIUY4Z9iDIOVuke356eCAzIZaWtmwmmyl2UXYCp5n7I3Q==",
         "dependencies": {
           "Microsoft.Extensions.Configuration.EnvironmentVariables": "10.0.0",
           "Microsoft.Extensions.Diagnostics.Abstractions": "10.0.0",
           "Microsoft.Extensions.Logging.Configuration": "10.0.0",
-          "OpenTelemetry.Api.ProviderBuilderExtensions": "1.17.0"
+          "OpenTelemetry.Api.ProviderBuilderExtensions": "1.19.1"
         }
       },
       "OpenTelemetry.Exporter.InMemory": {
         "type": "Direct",
-        "requested": "[1.17.0, )",
-        "resolved": "1.17.0",
-        "contentHash": "1zajwmOjywDHbcocKbfuS9wfn///JlzkXQlL3/W//Ayl1cv137GdqiDV5KE+nTSctkO88rP34BZYX7qvKzC+og==",
+        "requested": "[1.19.1, )",
+        "resolved": "1.19.1",
+        "contentHash": "j0epqw0gINjm7zjy32qAQu70q+f909p9v3h2FkoBic2iOH/tAAVUuiXTnoIHMpdQaRdoIBdMwthi8hhPvb7SyA==",
         "dependencies": {
-          "OpenTelemetry": "1.17.0"
+          "OpenTelemetry": "1.19.1"
         }
       },
       "BenchmarkDotNet.Annotations": {
@@ -201,8 +201,8 @@
       },
       "OpenTelemetry.Api": {
         "type": "Transitive",
-        "resolved": "1.17.0",
-        "contentHash": "mSBxzomZgHIJu9CyVNqyDu/n2JHEtqVgfcCD1Br0cV5iLYogjZOMqhlVLt99PEp+0KGBNUR3GXgeOdN2GR3F9g=="
+        "resolved": "1.19.1",
+        "contentHash": "9JKIH+xrV0HNTFjQC8zrx9gZpDOMEljN5Htg/U0VE2IvO3N+7bKALCCsGy5tp09marX5dd8UkrgQFoLaulIBRw=="
       },
       "Perfolizer": {
         "type": "Transitive",
@@ -244,7 +244,7 @@
       "smartpipe.extensions.channels": {
         "type": "Project",
         "dependencies": {
-          "SmartPipe.Core": "[2.2.0, )"
+          "SmartPipe.Core": "[2.2.1, )"
         }
       },
       "smartpipe.extensions.csv": {
@@ -252,27 +252,27 @@
         "dependencies": {
           "CsvHelper": "[33.1.0, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
-          "SmartPipe.Core": "[2.2.0, )"
+          "SmartPipe.Core": "[2.2.1, )"
         }
       },
       "smartpipe.extensions.json": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
-          "SmartPipe.Core": "[2.2.0, )"
+          "SmartPipe.Core": "[2.2.1, )"
         }
       },
       "smartpipe.extensions.logging": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
-          "SmartPipe.Core": "[2.2.0, )"
+          "SmartPipe.Core": "[2.2.1, )"
         }
       },
       "smartpipe.extensions.transforms": {
         "type": "Project",
         "dependencies": {
-          "SmartPipe.Core": "[2.2.0, )"
+          "SmartPipe.Core": "[2.2.1, )"
         }
       },
       "CsvHelper": {
@@ -317,12 +317,12 @@
       },
       "OpenTelemetry.Api.ProviderBuilderExtensions": {
         "type": "CentralTransitive",
-        "requested": "[1.17.0, )",
-        "resolved": "1.17.0",
-        "contentHash": "Xgc3Qf9B9TFMFpx6exTdGqMWuYIT2miNzkdMPutVvT9YuMFaEovXWke1Gb6z8NxYaQbbGF38vYLuSg1JCeui5Q==",
+        "requested": "[1.19.1, )",
+        "resolved": "1.19.1",
+        "contentHash": "HtGe72B/IhzKqdU0a3fNE5osax/Cegwxd+p4u6lOFy20nsgmeaFuP2NRyFs1WvrOv/bpkII3IvvBkKoZXG8BLg==",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.0",
-          "OpenTelemetry.Api": "1.17.0"
+          "OpenTelemetry.Api": "1.19.1"
         }
       }
     }

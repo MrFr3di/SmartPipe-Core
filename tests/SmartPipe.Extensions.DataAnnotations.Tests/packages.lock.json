@@ -158,14 +158,14 @@
       "smartpipe.extensions.dataannotations": {
         "type": "Project",
         "dependencies": {
-          "SmartPipe.Core": "[2.2.0, )",
-          "SmartPipe.Extensions.Transforms": "[2.2.0, )"
+          "SmartPipe.Core": "[2.2.1, )",
+          "SmartPipe.Extensions.Transforms": "[2.2.1, )"
         }
       },
       "smartpipe.extensions.transforms": {
         "type": "Project",
         "dependencies": {
-          "SmartPipe.Core": "[2.2.0, )"
+          "SmartPipe.Core": "[2.2.1, )"
         }
       },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {

@@ -1,4 +1,5 @@
 using System.Runtime.ExceptionServices;
+using SmartPipe.RepositoryChecks.Infrastructure;
 
 namespace SmartPipe.RepositoryChecks.Consumers;
 
@@ -40,6 +41,16 @@ internal static class ConsumerScenarioScheduler
                             workerToken.ThrowIfCancellationRequested();
                             results[index] = await runScenario(scenario, workerToken).ConfigureAwait(false);
                         }
+                    }
+                    catch (ProcessRunnerException exception) when (exception.FailureKind != ProcessFailureKind.Canceled)
+                    {
+                        // Preserve the originating scenario without exposing target arguments or NuGet credentials.
+                        var wrapped = new ConsumerScenarioException(
+                            "SPCONS030",
+                            $"Consumer scenario '{scenarios[index].Id}' process-host failure: {exception.Message}",
+                            exception);
+                        Interlocked.CompareExchange(ref failure, ExceptionDispatchInfo.Capture(wrapped), null);
+                        throw wrapped;
                     }
                     catch (Exception exception)
                     {

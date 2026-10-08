@@ -164,7 +164,7 @@
       "smartpipe.testing": {
         "type": "Project",
         "dependencies": {
-          "SmartPipe.Core": "[2.2.0, )"
+          "SmartPipe.Core": "[2.2.1, )"
         }
       },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {

@@ -68,6 +68,7 @@ internal sealed class ProcessRunner : IProcessRunner
     private const int DefaultMaximumSpillOutputCharacters = 16 * 1024 * 1024;
     private static readonly TimeSpan DefaultTerminationObservationTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan DefaultProcessHostHandshakeTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan DefaultProcessHostTargetStartTimeout = TimeSpan.FromSeconds(20);
 
     private readonly IProcessTerminator _terminator;
     private readonly TimeSpan _terminationObservationTimeout;
@@ -75,6 +76,7 @@ internal sealed class ProcessRunner : IProcessRunner
     private readonly int _maximumSpillOutputCharacters;
     private readonly IProcessHostLocator _processHostLocator;
     private readonly TimeSpan _processHostHandshakeTimeout;
+    private readonly TimeSpan _processHostTargetStartTimeout;
 
     public ProcessRunner(
         IProcessTerminator? terminator = null,
@@ -82,7 +84,8 @@ internal sealed class ProcessRunner : IProcessRunner
         int maximumRetainedOutputCharacters = DefaultMaximumRetainedOutputCharacters,
         int maximumSpillOutputCharacters = DefaultMaximumSpillOutputCharacters,
         IProcessHostLocator? processHostLocator = null,
-        TimeSpan? processHostHandshakeTimeout = null)
+        TimeSpan? processHostHandshakeTimeout = null,
+        TimeSpan? processHostTargetStartTimeout = null)
     {
         if (terminationObservationTimeout <= TimeSpan.Zero)
         {
@@ -95,6 +98,10 @@ internal sealed class ProcessRunner : IProcessRunner
         {
             throw new ArgumentOutOfRangeException(nameof(processHostHandshakeTimeout));
         }
+        if (processHostTargetStartTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(processHostTargetStartTimeout));
+        }
 
         _terminator = terminator ?? new SystemProcessTerminator();
         _terminationObservationTimeout = terminationObservationTimeout ?? DefaultTerminationObservationTimeout;
@@ -102,6 +109,7 @@ internal sealed class ProcessRunner : IProcessRunner
         _maximumSpillOutputCharacters = maximumSpillOutputCharacters;
         _processHostLocator = processHostLocator ?? new RepositoryCheckProcessHostLocator();
         _processHostHandshakeTimeout = processHostHandshakeTimeout ?? DefaultProcessHostHandshakeTimeout;
+        _processHostTargetStartTimeout = processHostTargetStartTimeout ?? DefaultProcessHostTargetStartTimeout;
     }
 
     public async Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken)
@@ -118,7 +126,7 @@ internal sealed class ProcessRunner : IProcessRunner
                 "External process was canceled before its process host was started.");
         }
 
-        using var hostSession = new ProcessHostSession(_processHostHandshakeTimeout);
+        using var hostSession = new ProcessHostSession(_processHostHandshakeTimeout, _processHostTargetStartTimeout);
         var hostLaunch = _processHostLocator.Locate();
         using var process = new Process
         {
@@ -162,9 +170,11 @@ internal sealed class ProcessRunner : IProcessRunner
             cancellationToken,
             timeout.Token);
 
+        var controlPhase = "wait-ready";
         try
         {
             await hostSession.WaitForReadyAsync(linkedCancellation.Token).ConfigureAwait(false);
+            controlPhase = "start-target";
             if (!await hostSession.SendStartAndWaitForResultAsync(linkedCancellation.Token).ConfigureAwait(false))
             {
                 var startFailureTermination = await TerminateHostAsync(process, hostSession).ConfigureAwait(false);
@@ -182,9 +192,11 @@ internal sealed class ProcessRunner : IProcessRunner
                     "External target process could not be started by the repository-check process host.");
             }
 
+            controlPhase = "wait-target-exit";
             var targetExitCode = await hostSession.ReadExitCodeAsync(linkedCancellation.Token)
                 .ConfigureAwait(false);
 
+            controlPhase = "teardown";
             Exception? teardownException = null;
             try
             {
@@ -268,9 +280,25 @@ internal sealed class ProcessRunner : IProcessRunner
             await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
             throw new ProcessRunnerException(
                 ProcessFailureKind.StartFailure,
-                "Repository-check process host did not complete its authenticated control protocol.",
+                $"Repository-check process host did not complete its authenticated control protocol (phase: {controlPhase}; failure: {exception.GetType().Name}; reason: {SafeProtocolFailureReason(exception)}).",
                 exception);
         }
+    }
+
+    private static string SafeProtocolFailureReason(Exception exception)
+    {
+        // Only fixed identifiers reach CI logs; do not echo a pipe name, target path,
+        // command line, nonce or OS-provided exception message.
+        if (exception is IOException)
+            return "control-io-error";
+
+        return exception.Message switch
+        {
+            "The process-host control handshake timed out." => "handshake-timeout",
+            "The process-host control channel closed before a complete frame was received." => "channel-closed",
+            "The process-host control channel failed before a complete frame was received." => "channel-io-error",
+            _ => "invalid-control-message",
+        };
     }
 
     internal static ProcessStartInfo CreateStartInfo(
@@ -452,6 +480,7 @@ internal static class RepositoryCheckProcessHost
     public const int InvalidArgumentsExitCode = 64;
     private static readonly TimeSpan ControlConnectTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ControlOperationTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan StartCommandWaitTimeout = TimeSpan.FromSeconds(30);
     private static IDisposable? s_lifetimeOwnership;
 
     public static async Task<int> RunAsync(IReadOnlyList<string> arguments)
@@ -509,7 +538,9 @@ internal static class RepositoryCheckProcessHost
             return InvalidArgumentsExitCode;
         }
 
-        var commandTask = ReadControlAsync(control, nonce, initializationCancellation.Token);
+        // This read starts before READY. A five-second absolute deadline could elapse
+        // before the controller schedules START on a loaded Windows runner.
+        var commandTask = ReadControlAsync(control, nonce, initializationCancellation.Token, StartCommandWaitTimeout);
         var firstCompleted = await Task.WhenAny(ownershipTask, commandTask).ConfigureAwait(false);
         if (firstCompleted == commandTask)
         {
@@ -722,9 +753,10 @@ internal static class RepositoryCheckProcessHost
     private static async Task<ProcessHostControlMessage> ReadControlAsync(
         Stream control,
         string nonce,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? operationTimeout = null)
     {
-        using var deadline = new CancellationTokenSource(ControlOperationTimeout);
+        using var deadline = new CancellationTokenSource(operationTimeout ?? ControlOperationTimeout);
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
             deadline.Token);

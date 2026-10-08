@@ -5,6 +5,18 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    groups:
+      # Keep OpenTelemetry components compatible and avoid separate PRs for each SDK artifact.
+      # Security updates remain independently reviewed and are not delayed by this group.
+      observability-and-coverage:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - "OpenTelemetry"
+          - "OpenTelemetry.*"
+          - "Microsoft.Testing.Extensions.CodeCoverage"
 
   - package-ecosystem: "github-actions"
     directory: "/"

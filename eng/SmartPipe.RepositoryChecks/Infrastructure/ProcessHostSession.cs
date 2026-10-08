@@ -6,10 +6,12 @@ internal sealed class ProcessHostSession : IDisposable
 {
     private readonly NamedPipeServerStream _control;
     private readonly TimeSpan _handshakeTimeout;
+    private readonly TimeSpan _targetStartTimeout;
 
-    public ProcessHostSession(TimeSpan handshakeTimeout)
+    public ProcessHostSession(TimeSpan handshakeTimeout, TimeSpan targetStartTimeout)
     {
         _handshakeTimeout = handshakeTimeout;
+        _targetStartTimeout = targetStartTimeout;
         PipeName = $"smartpipe-process-host-{Guid.NewGuid():N}";
         Nonce = Guid.NewGuid().ToString("N");
         _control = new NamedPipeServerStream(
@@ -54,7 +56,8 @@ internal sealed class ProcessHostSession : IDisposable
 
         var result = await RunHandshakeStepAsync(
                 token => ProcessHostControlProtocol.ReadAsync(_control, Nonce, token),
-                cancellationToken)
+                cancellationToken,
+                _targetStartTimeout)
             .ConfigureAwait(false);
         if (result.Kind == ProcessHostControlMessageKind.StartFailed && result.Detail is not null)
         {
@@ -151,9 +154,10 @@ internal sealed class ProcessHostSession : IDisposable
 
     private async Task<T> RunHandshakeStepAsync<T>(
         Func<CancellationToken, Task<T>> step,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? phaseTimeout = null)
     {
-        using var deadline = new CancellationTokenSource(_handshakeTimeout);
+        using var deadline = new CancellationTokenSource(phaseTimeout ?? _handshakeTimeout);
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
             deadline.Token);

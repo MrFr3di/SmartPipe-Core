@@ -413,7 +413,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "SmartPipe.Core": "[2.2.0, )"
+          "SmartPipe.Core": "[2.2.1, )"
         }
       },
       "smartpipe.extensions.healthchecks": {
@@ -422,8 +422,8 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Diagnostics.HealthChecks": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
-          "SmartPipe.Core": "[2.2.0, )",
-          "SmartPipe.Extensions.DependencyInjection": "[2.2.0, )"
+          "SmartPipe.Core": "[2.2.1, )",
+          "SmartPipe.Extensions.DependencyInjection": "[2.2.1, )"
         }
       },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {

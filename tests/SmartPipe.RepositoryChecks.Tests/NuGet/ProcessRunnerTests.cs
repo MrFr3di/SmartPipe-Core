@@ -102,6 +102,10 @@ public sealed class ProcessRunnerTests
                 TestContext.Current.CancellationToken));
 
         Assert.Equal(ProcessFailureKind.StartFailure, exception.FailureKind);
+        Assert.Contains("phase: wait-ready", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("failure: ProcessHostProtocolException", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("reason: invalid-control-message", exception.Message, StringComparison.Ordinal);
+        Assert.NotNull(exception.InnerException);
     }
 
     [Fact]
@@ -125,6 +129,7 @@ public sealed class ProcessRunnerTests
                     TestContext.Current.CancellationToken));
 
             Assert.Equal(ProcessFailureKind.StartFailure, exception.FailureKind);
+            Assert.Contains("phase: wait-target-exit", exception.Message, StringComparison.Ordinal);
             descendantProcessId = int.Parse(
                 await File.ReadAllTextAsync(processIdPath, TestContext.Current.CancellationToken),
                 System.Globalization.CultureInfo.InvariantCulture);
@@ -244,6 +249,86 @@ public sealed class ProcessRunnerTests
         {
             ownershipFactory.ReleaseInitialization.TrySetResult();
             File.Delete(startedPath);
+        }
+    }
+
+    [Fact]
+    public async Task ProcessHostSession_StartAcknowledgementHasItsOwnBoundedDeadline()
+    {
+        using var session = new ProcessHostSession(
+            TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromSeconds(3));
+        using var client = new NamedPipeClientStream(
+            ".", session.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        // Start server accept before the client connects; otherwise Windows can
+        // wait indefinitely for a server-side ConnectNamedPipe operation.
+        var serverReady = session.WaitForReadyAsync(TestContext.Current.CancellationToken);
+        await client.ConnectAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await ProcessHostControlProtocol.WriteAsync(
+            client, session.Nonce,
+            new ProcessHostControlMessage(ProcessHostControlMessageKind.Ready),
+            TestContext.Current.CancellationToken);
+        await serverReady.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        var started = session.SendStartAndWaitForResultAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(
+            ProcessHostControlMessageKind.Start,
+            (await ProcessHostControlProtocol.ReadAsync(
+                client, session.Nonce, TestContext.Current.CancellationToken)).Kind);
+        // The ready deadline has elapsed; STARTED still has a separate bound.
+        await Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        await ProcessHostControlProtocol.WriteAsync(
+            client, session.Nonce,
+            new ProcessHostControlMessage(ProcessHostControlMessageKind.Started),
+            TestContext.Current.CancellationToken);
+        Assert.True(await started);
+    }
+
+    [Fact]
+    public async Task ProcessHost_PreReadyCommandDeadlineAllowsDelayedStartAfterReady()
+    {
+        var pipeName = $"smartpipe-test-{Guid.NewGuid():N}";
+        var nonce = Guid.NewGuid().ToString("N");
+        using var hostLifetime = new CancellationTokenSource();
+        using var control = CreateControlServer(pipeName);
+        var hostTask = RepositoryCheckProcessHost.RunAsync(
+            [pipeName, nonce, GetFixtureExecutablePath(), "", "--", "echo", "0"],
+            new ImmediateProcessTreeOwnershipFactory(),
+            hostLifetimeCancellation: hostLifetime.Token);
+        try
+        {
+            await control.WaitForConnectionAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(
+                ProcessHostControlMessageKind.Ready,
+                (await ProcessHostControlProtocol.ReadAsync(
+                    control, nonce, TestContext.Current.CancellationToken)).Kind);
+
+            // The previous 5-second read began before READY and timed out under
+            // heavy Windows scheduling pressure despite the consumer's longer deadline.
+            await Task.Delay(TimeSpan.FromSeconds(6), TestContext.Current.CancellationToken);
+            await ProcessHostControlProtocol.WriteAsync(
+                control, nonce,
+                new ProcessHostControlMessage(ProcessHostControlMessageKind.Start),
+                TestContext.Current.CancellationToken);
+            Assert.Equal(
+                ProcessHostControlMessageKind.Started,
+                (await ProcessHostControlProtocol.ReadAsync(
+                    control, nonce, TestContext.Current.CancellationToken)).Kind);
+            Assert.Equal(
+                ProcessHostControlMessageKind.Exit,
+                (await ProcessHostControlProtocol.ReadAsync(
+                    control, nonce, TestContext.Current.CancellationToken)).Kind);
+            await ProcessHostControlProtocol.WriteAsync(
+                control, nonce,
+                new ProcessHostControlMessage(ProcessHostControlMessageKind.Teardown),
+                TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            hostLifetime.Cancel();
+            Assert.Equal(RepositoryCheckProcessHost.InvalidArgumentsExitCode,
+                await hostTask.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken));
         }
     }
 

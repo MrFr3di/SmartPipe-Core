@@ -175,7 +175,7 @@
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "Npgsql": "[10.0.3, )",
-          "SmartPipe.Core": "[2.2.0, )"
+          "SmartPipe.Core": "[2.2.1, )"
         }
       },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
