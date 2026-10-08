@@ -242,7 +242,7 @@ public sealed class EfCoreQuerySourceTests
         failure.Which.Message.Should().Be(sentinel);
         loggerFactory.Messages.Should().Contain(message => message.Contains("safe-failure-logging", StringComparison.Ordinal));
         loggerFactory.Messages.Should().NotContain(message => message.Contains(sentinel, StringComparison.Ordinal));
-        loggerFactory.Exceptions.Should().OnlyContain(exception => exception is null);
+        loggerFactory.Exceptions.Should().OnlyContain(exception => exception == null);
     }
 
     [Fact]
