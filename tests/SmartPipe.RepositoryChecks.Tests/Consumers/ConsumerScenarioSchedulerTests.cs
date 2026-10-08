@@ -1,4 +1,5 @@
 using SmartPipe.RepositoryChecks.Consumers;
+using SmartPipe.RepositoryChecks.Infrastructure;
 
 namespace SmartPipe.RepositoryChecks.Tests.Consumers;
 
@@ -98,6 +99,25 @@ public sealed class ConsumerScenarioSchedulerTests
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => run);
         Assert.Same(original, error);
+    }
+
+    [Fact]
+    public async Task ProcessHostFailure_ReportsScenarioPhaseAndRetainsCause()
+    {
+        var cause = new ProcessRunnerException(
+            ProcessFailureKind.StartFailure,
+            "Repository-check process host did not complete its authenticated control protocol (phase: wait-target-exit; failure: ProcessHostProtocolException).");
+        var error = await Assert.ThrowsAsync<ConsumerScenarioException>(
+            () => ConsumerScenarioScheduler.RunAsync(
+                [Scenario("otel-host-failure")],
+                1,
+                (_, _) => Task.FromException<ConsumerScenarioResult>(cause),
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal("SPCONS030", error.Code);
+        Assert.Contains("otel-host-failure", error.Message, StringComparison.Ordinal);
+        Assert.Contains("phase: wait-target-exit", error.Message, StringComparison.Ordinal);
+        Assert.Same(cause, error.InnerException);
     }
 
     [Fact]
