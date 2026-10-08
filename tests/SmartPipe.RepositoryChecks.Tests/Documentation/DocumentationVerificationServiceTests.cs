@@ -63,7 +63,7 @@ public sealed class DocumentationVerificationServiceTests
         using var repository = new RepositoryTestDirectory();
         var graph = Graph();
         WriteRequiredDocuments(repository, graph);
-        repository.Write("docs/reference/compatibility/README.md", "# Compatibility reference\n\n[2.1.2 → 2.2.0](2.1.2-to-2.2.0.md)\n");
+        repository.Write("docs/reference/compatibility/README.md", "# Compatibility reference\n\nThis index is intentionally missing the current transition.\n");
 
         var result = await DocumentationVerificationService.VerifyAsync(
             repository.Path,
@@ -666,7 +666,7 @@ public sealed class DocumentationVerificationServiceTests
             "[CHANGELOG](../../CHANGELOG.md)\n");
         repository.Write("docs/migration/2.2.0-integration-packages.md", "# Migration\n");
         repository.Write("docs/reference/api-overview.md", "# API overview\n");
-        repository.Write("docs/reference/compatibility/README.md", "# Compatibility reference\n");
+        repository.Write("docs/reference/compatibility/README.md", "# Compatibility reference\n\n[2.1.2 → 2.2.0](2.1.2-to-2.2.0.md)\n");
         repository.Write("docs/reference/compatibility/2.1.2-to-2.2.0.md", "# Compatibility matrix\n");
         repository.Write("docs/adr/README.md", "# ADR index\n");
         repository.Write("docs/maintainers/README.md", "# Maintainers\n");
