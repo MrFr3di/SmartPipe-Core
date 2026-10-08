@@ -50,6 +50,64 @@ public sealed class TypedPipelineOwnershipRegressionTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProducerFault_RetainsCallbackOrIndependentWorkerFailure(bool throwCallback)
+    {
+        var secondary = new InvalidOperationException("secondary worker stop failure");
+        var operation = new HeldOperation
+        {
+            CallbackFailure = throwCallback ? secondary : null,
+            WorkerFailure = throwCallback ? null : secondary,
+        };
+        var primary = new IOException("source failed");
+        var run = PipelineBuilder.From(new FaultAfterEntrySource(operation, primary))
+            .Transform(new HeldTransformer(operation, false))
+            .WithRuntimeOptions(new PipelineRuntimeOptions { MaxConcurrency = 2 })
+            .To(new HeldSink(operation, true));
+        try
+        {
+            await operation.CancellationObserved.Task.WaitAsync(Deadline);
+            Assert.False(operation.Disposed.Task.IsCompleted);
+            operation.Release.TrySetResult();
+            var error = await Record.ExceptionAsync(async () => await run.Completion.WaitAsync(Deadline));
+            var combined = Assert.IsType<AggregateException>(error);
+            Assert.Collection(combined.Flatten().InnerExceptions,
+                first => Assert.Same(primary, first),
+                second => Assert.Same(secondary, second));
+            Assert.False(operation.DisposedWhileActive);
+        }
+        finally
+        {
+            operation.Release.TrySetResult();
+            await run.DisposeAsync().AsTask().WaitAsync(Deadline);
+        }
+    }
+
+    [Fact]
+    public async Task ProducerFault_UnblocksBoundedOutputWithoutConsumer()
+    {
+        var source = new BackpressureFaultSource();
+        var run = PipelineBuilder.From(source)
+            .Transform(new OutputBarrierTransformer(source))
+            .WithRuntimeOptions(new PipelineRuntimeOptions
+            {
+                MaxConcurrency = 2,
+                OutputCapacity = 1,
+            }).Run();
+        try
+        {
+            var error = await Record.ExceptionAsync(async () => await run.Completion.WaitAsync(Deadline));
+            Assert.Same(source.Failure, error);
+            Assert.Equal(PipelineRunState.Faulted, run.State);
+        }
+        finally
+        {
+            await run.DisposeAsync().AsTask().WaitAsync(Deadline);
+        }
+    }
+
+    [Theory]
     [InlineData(1, true, false)]
     [InlineData(2, true, false)]
     [InlineData(1, false, true)]
@@ -61,7 +119,7 @@ public sealed class TypedPipelineOwnershipRegressionTests
         var readError = failRead ? new IOException("read failed") : null;
         var cleanupError = failCleanup ? new InvalidOperationException("cursor close failed") : null;
         var source = new FailingEnumeratorSource(readError, cleanupError);
-        var run = PipelineBuilder.From(source).WithRuntimeOptions(new PipelineRuntimeOptions
+        var run = PipelineBuilder.From(source).Transform(static value => value).WithRuntimeOptions(new PipelineRuntimeOptions
         {
             MaxConcurrency = concurrency,
         }).Run();
@@ -95,7 +153,7 @@ public sealed class TypedPipelineOwnershipRegressionTests
     {
         var cleanup = new InvalidOperationException("cursor cleanup failed after cancellation");
         var source = new FailingEnumeratorSource(null, cleanup, waitForCancellation: true);
-        var run = PipelineBuilder.From(source).WithRuntimeOptions(new PipelineRuntimeOptions
+        var run = PipelineBuilder.From(source).Transform(static value => value).WithRuntimeOptions(new PipelineRuntimeOptions
         {
             MaxConcurrency = concurrency,
         }).Run();
@@ -125,9 +183,14 @@ public sealed class TypedPipelineOwnershipRegressionTests
         public TaskCompletionSource Exited { get; } = NewSignal();
         public TaskCompletionSource Disposed { get; } = NewSignal();
         public bool DisposedWhileActive { get; private set; }
+        public Exception? CallbackFailure { get; init; }
+        public Exception? WorkerFailure { get; init; }
 
         public async ValueTask ExecuteAsync(CancellationToken ct)
         {
+            using var registration = CallbackFailure is { } callbackFailure
+                ? ct.Register(() => throw callbackFailure)
+                : default;
             Entered.TrySetResult();
             try
             {
@@ -138,6 +201,8 @@ public sealed class TypedPipelineOwnershipRegressionTests
                 CancellationObserved.TrySetResult();
                 await Release.Task;
                 Exited.TrySetResult();
+                if (WorkerFailure is not null)
+                    throw WorkerFailure;
                 throw;
             }
         }
@@ -233,6 +298,37 @@ public sealed class TypedPipelineOwnershipRegressionTests
                 return ValueTask.CompletedTask;
             }
         }
+    }
+
+    private sealed class BackpressureFaultSource : IPipelineSource<int>
+    {
+        public Exception Failure { get; } = new IOException("source failed with bounded output");
+        public TaskCompletionSource SecondTransform { get; } = NewSignal();
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return ProcessingEnvelope<int>.Create(1);
+            yield return ProcessingEnvelope<int>.Create(2);
+            // Both workers have reached processing. One output fills capacity,
+            // the other may be waiting to publish; fault must release that wait.
+            await SecondTransform.Task.WaitAsync(ct);
+            throw Failure;
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class OutputBarrierTransformer(BackpressureFaultSource source) : IPipelineTransformer<int, int>
+    {
+        private int _calls;
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask<StageResult<int>> TransformAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default)
+        {
+            if (Interlocked.Increment(ref _calls) == 2)
+                source.SecondTransform.TrySetResult();
+            return ValueTask.FromResult(StageResult<int>.Success(envelope.Payload));
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
