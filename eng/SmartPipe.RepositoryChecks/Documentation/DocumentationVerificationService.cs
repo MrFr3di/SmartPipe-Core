@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using SmartPipe.RepositoryChecks.PackageGraph;
 
 namespace SmartPipe.RepositoryChecks.Documentation;
@@ -271,6 +272,9 @@ internal sealed class DocumentationVerificationService
         }
 
         var content = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+        var linkedTargets = EnumerateMarkdownTargets(StripNonProseMarkdown(content))
+            .Select(NormalizeRelativeMarkdownTarget)
+            .ToHashSet(StringComparer.Ordinal);
         foreach (var baseline in graph.Packages
                      .Where(package => package.Lifecycle != PackageLifecycle.Planned)
                      .Select(package => package.BaselineVersion)
@@ -279,7 +283,7 @@ internal sealed class DocumentationVerificationService
                      .Order(StringComparer.Ordinal))
         {
             var target = $"{baseline}-to-{graph.ReleaseVersion}.md";
-            if (!content.Contains(target, StringComparison.Ordinal))
+            if (!linkedTargets.Contains(target))
             {
                 violations.Add(new(
                     "SPDOC019",
@@ -287,6 +291,50 @@ internal sealed class DocumentationVerificationService
                     $"compatibility index must link the current transition {baseline} → {graph.ReleaseVersion}: {target}"));
             }
         }
+    }
+
+    private static string StripNonProseMarkdown(string content)
+    {
+        // Link references inside HTML comments and fenced code are not navigation links.
+        var uncommented = new StringBuilder(content.Length);
+        var cursor = 0;
+        while (cursor < content.Length)
+        {
+            var start = content.IndexOf("<!--", cursor, StringComparison.Ordinal);
+            if (start < 0)
+            {
+                uncommented.Append(content, cursor, content.Length - cursor);
+                break;
+            }
+
+            uncommented.Append(content, cursor, start - cursor);
+            var end = content.IndexOf("-->", start + 4, StringComparison.Ordinal);
+            if (end < 0)
+                break;
+
+            cursor = end + 3;
+        }
+
+        var visible = new StringBuilder(uncommented.Length);
+        char? fenceCharacter = null;
+        foreach (var line in SplitLines(uncommented.ToString()))
+        {
+            var trimmed = line.TrimStart();
+            if (trimmed.StartsWith("```", StringComparison.Ordinal)
+                || trimmed.StartsWith("~~~", StringComparison.Ordinal))
+            {
+                if (fenceCharacter is null)
+                    fenceCharacter = trimmed[0];
+                else if (fenceCharacter == trimmed[0])
+                    fenceCharacter = null;
+                continue;
+            }
+
+            if (fenceCharacter is null)
+                visible.Append(line).Append('\n');
+        }
+
+        return visible.ToString();
     }
 
     private static async Task ValidateGettingStartedAsync(
