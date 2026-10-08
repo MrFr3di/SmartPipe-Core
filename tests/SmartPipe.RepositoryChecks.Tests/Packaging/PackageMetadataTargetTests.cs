@@ -81,9 +81,9 @@ public sealed class PackageMetadataTargetTests
                 <SmartPipePackageReadmeSource>README.md</SmartPipePackageReadmeSource>
                 <PackageVersion>2.2.0-rc.1</PackageVersion>
                 <SmartPipeVersionPrefix>2.2.0</SmartPipeVersionPrefix>
-                <SmartPipeRepositoryRoot>${RepositoryRoot().Replace("\\", "/")}/</SmartPipeRepositoryRoot>
+                <SmartPipeRepositoryRoot>{RepositoryRoot().Replace("\\", "/")}/</SmartPipeRepositoryRoot>
               </PropertyGroup>
-              <Import Project="${Path.Combine(RepositoryRoot(), "eng", "SmartPipe.Package.targets").Replace("\\", "/")}" />
+              <Import Project="{Path.Combine(RepositoryRoot(), "eng", "SmartPipe.Package.targets").Replace("\\", "/")}" />
             </Project>
             """);
 
