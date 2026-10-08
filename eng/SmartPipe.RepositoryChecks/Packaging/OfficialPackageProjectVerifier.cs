@@ -177,9 +177,12 @@ internal sealed class OfficialPackageProjectVerifier
                 }
 
                 var value = property.Value.Trim();
-                if (!properties.TryAdd(name, value) && SharedProperties.Contains(name, StringComparer.Ordinal))
+                if (!properties.TryAdd(name, value))
                 {
-                    sharedOverrides.Add(name);
+                    if (SharedProperties.Contains(name, StringComparer.Ordinal))
+                        sharedOverrides.Add(name);
+                    else if (name is "SmartPipePackageBaselinePolicy" or "PackageValidationBaselineVersion")
+                        errors.Add(new("SPPKG010", $"Duplicate baseline policy property {name}.", Relative(root, path)));
                 }
 
                 if (SharedProperties.Contains(name, StringComparer.Ordinal))
