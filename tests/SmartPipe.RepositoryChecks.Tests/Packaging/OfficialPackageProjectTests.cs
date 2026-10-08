@@ -41,6 +41,44 @@ public sealed class OfficialPackageProjectTests
         Assert.DoesNotContain(result.Errors, violation => violation.Code == "SPPKG007");
     }
 
+    [Theory]
+    [InlineData("none", null)]
+    [InlineData("unknown", null)]
+    [InlineData("previous-stable", "2.1.2")]
+    public async Task Verify_ExistingPackageCannotDisableOrChangeStableBaseline(string policy, string? baseline)
+    {
+        using var repository = FixtureRepository();
+        repository.Write("src/SmartPipe.Core/SmartPipe.Core.csproj",
+            ProjectXml("SmartPipe.Core", baseline: baseline,
+                extra: $"<SmartPipePackageBaselinePolicy>{policy}</SmartPipePackageBaselinePolicy>"));
+
+        var expected = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["SmartPipe.Core"] = "2.2.0",
+        };
+        var result = await new OfficialPackageProjectVerifier(FixturePackageIds, expected).VerifyAsync(
+            repository.Path, TestContext.Current.CancellationToken);
+
+        Assert.Contains(result.Errors, violation => violation.Code == "SPPKG010");
+    }
+
+    [Fact]
+    public async Task Verify_FirstReleasePackageMayOmitBaselineExplicitly()
+    {
+        using var repository = FixtureRepository();
+        repository.Write("src/SmartPipe.Core/SmartPipe.Core.csproj",
+            ProjectXml("SmartPipe.Core", extra: "<SmartPipePackageBaselinePolicy>none</SmartPipePackageBaselinePolicy>"));
+
+        var expected = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["SmartPipe.Core"] = null,
+        };
+        var result = await new OfficialPackageProjectVerifier(FixturePackageIds, expected).VerifyAsync(
+            repository.Path, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(result.Errors, violation => violation.Code == "SPPKG010");
+    }
+
     [Fact]
     public async Task Verify_SharedMetadataOverride_Fails()
     {
