@@ -15,10 +15,11 @@ internal sealed record RepositoryVersionCatalog(string VersionPrefix, string Pre
             var document = XDocument.Load(reader, LoadOptions.None);
             // Keep this repository catalog deliberately static. MSBuild evaluates Condition and Import,
             // whereas an XML reader does not; accepting either could make release checks disagree with build.
-            if (document.Root?.Name != "Project" || document.Root.HasAttributes)
+            var projectRoot = document.Root;
+            if (projectRoot is null || projectRoot.Name != "Project" || projectRoot.HasAttributes)
                 throw new InvalidDataException("Version catalog must contain an unconditional Project root.");
 
-            var groups = document.Root.Elements().ToArray();
+            var groups = projectRoot.Elements().ToArray();
             if (groups.Length != 1 || groups[0].Name != "PropertyGroup" || groups[0].HasAttributes)
                 throw new InvalidDataException("Version catalog must contain exactly one unconditional PropertyGroup.");
 
