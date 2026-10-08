@@ -128,7 +128,7 @@ public sealed class ProcessRunnerTests
                     TestContext.Current.CancellationToken));
 
             Assert.Equal(ProcessFailureKind.StartFailure, exception.FailureKind);
-            Assert.Contains("phase: start-target", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("phase: wait-target-exit", exception.Message, StringComparison.Ordinal);
             descendantProcessId = int.Parse(
                 await File.ReadAllTextAsync(processIdPath, TestContext.Current.CancellationToken),
                 System.Globalization.CultureInfo.InvariantCulture);
