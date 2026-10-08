@@ -11,9 +11,9 @@ namespace SmartPipe.RepositoryChecks.Tests.Scaffolding;
 public sealed class PackageTemplateRendererTests
 {
     [Theory]
-    [InlineData("SmartPipe.Extensions.Channels", "CoreLeaf", "1bc7c64f427265aa7849c734b3a8f9eceba03b6adb6d37d7e12cad08d0ad8a69")]
-    [InlineData("SmartPipe.Extensions.Polly", "FrameworkIntegration", "55432929c98c2a887cd3c029a7b5d0e14322ab7254415e778a2b238829590849")]
-    [InlineData("SmartPipe.Testing", "Testing", "7312db365c704bd43f5d0f2f8a364a5ca067a055a143be9ce1743f26283289e3")]
+    [InlineData("SmartPipe.Extensions.Channels", "CoreLeaf", "c859635605ac30a30e1941812f2b0176f6f62e1d90c1b85280c7675494efa945")]
+    [InlineData("SmartPipe.Extensions.Polly", "FrameworkIntegration", "f0e33fa5d69c7ee994ba8722a6cf57658d332e6151991c08f7163e6bc88c1ad7")]
+    [InlineData("SmartPipe.Testing", "Testing", "0eb49150fbeefb036650dff14852916d603482482b21ba6b34041f02577d2424")]
     public async Task Render_AllKindsAreDeterministicLfOnlySnapshots(string id, string kind, string expectedSnapshot)
     {
         var root = RepositoryRoot();
@@ -46,6 +46,7 @@ public sealed class PackageTemplateRendererTests
         Assert.Contains(first.Files, x => x.RelativePath == node.ProjectPath && x.Content.Contains("<SmartPipePackage>true</SmartPipePackage>", StringComparison.Ordinal));
         var project = first.Files.Single(x => x.RelativePath == node.ProjectPath).Content;
         Assert.Contains("<Import Project=\"$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props\" />", project);
+        Assert.Contains("<SmartPipePackageBaselinePolicy>none</SmartPipePackageBaselinePolicy>", project);
         Assert.Contains("<SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)/README.md</SmartPipePackageReadmeSource>", project);
         Assert.DoesNotContain("<None Include=\"README.md\"", project);
         var testProject = first.Files.Single(x => x.RelativePath.EndsWith(".Tests.csproj", StringComparison.Ordinal)).Content;
