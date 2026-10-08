@@ -101,7 +101,9 @@ public sealed class PackageInfrastructureGapTests
     {
         using var fixture = new RepositoryTestDirectory();
         fixture.Write("src/SmartPipe.Core/SmartPipe.Core.csproj", "<Project />");
-        fixture.Write("eng/package-graph.json", PackageGraphContractTests.MinimalCatalogForTests());
+        fixture.Write("eng/SmartPipe.Versions.props", "<Project><PropertyGroup><SmartPipeVersionPrefix>2.2.1</SmartPipeVersionPrefix><SmartPipePreviousStableVersion>2.2.0</SmartPipePreviousStableVersion></PropertyGroup></Project>");
+        fixture.Write("eng/package-graph.json", PackageGraphContractTests.MinimalCatalogForTests()
+            .Replace("\"releaseVersion\": \"2.2.0\"", "\"releaseVersion\": \"repository\"", StringComparison.Ordinal));
         var error = await Assert.ThrowsAsync<PackageGraphException>(() => new PackageGraphLoader().LoadAsync(fixture.Path, "eng/package-graph.json", TestContext.Current.CancellationToken));
         Assert.Equal("SPGRAPH016", error.Code);
     }
