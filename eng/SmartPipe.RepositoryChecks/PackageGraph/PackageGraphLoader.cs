@@ -19,11 +19,11 @@ internal sealed class PackageGraphLoader
     private readonly bool _enforceCanonicalCatalog;
     internal PackageGraphLoader(bool enforceCanonicalCatalog = true) => _enforceCanonicalCatalog = enforceCanonicalCatalog;
     public async Task<PackageGraphDocument> LoadAsync(string repositoryRoot, string graphPath, CancellationToken ct)
-        => await ReadAsync(repositoryRoot, graphPath, requireCanonical: true, ct).ConfigureAwait(false);
+        => await ReadAsync(repositoryRoot, graphPath, requireCanonical: true, resolveRepositoryVersions: true, ct).ConfigureAwait(false);
 
     public async Task CanonicalizeAsync(string repositoryRoot, string graphPath, bool check, CancellationToken ct)
     {
-        var graph = await ReadAsync(repositoryRoot, graphPath, requireCanonical: false, ct).ConfigureAwait(false);
+        var graph = await ReadAsync(repositoryRoot, graphPath, requireCanonical: false, resolveRepositoryVersions: false, ct).ConfigureAwait(false);
         var path = Path.GetFullPath(graphPath, repositoryRoot);
         var canonical = CanonicalJson.Serialize(graph, RepositoryChecksJsonContext.Default.PackageGraphDocument);
         var current = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
@@ -32,7 +32,7 @@ internal sealed class PackageGraphLoader
         await File.WriteAllTextAsync(path, canonical, new UTF8Encoding(false), ct).ConfigureAwait(false);
     }
 
-    private async Task<PackageGraphDocument> ReadAsync(string repositoryRoot, string graphPath, bool requireCanonical, CancellationToken ct)
+    private async Task<PackageGraphDocument> ReadAsync(string repositoryRoot, string graphPath, bool requireCanonical, bool resolveRepositoryVersions, CancellationToken ct)
     {
         var root = Path.GetFullPath(repositoryRoot);
         var path = Path.GetFullPath(graphPath, root);
@@ -62,13 +62,38 @@ internal sealed class PackageGraphLoader
             throw new PackageGraphException("SPGRAPH002", "Package graph is not in canonical JSON form or package order.");
         }
 
-        return graph;
+        if (!resolveRepositoryVersions)
+            return graph;
+
+        var versions = RepositoryVersionCatalog.Load(root);
+        return graph with
+        {
+            ReleaseVersion = graph.ReleaseVersion.Equals("repository", StringComparison.Ordinal)
+                ? versions.VersionPrefix
+                : graph.ReleaseVersion,
+            Packages = graph.Packages.Select(package => package with
+            {
+                BaselineVersion = package.BaselineVersion?.Equals("previous-stable", StringComparison.Ordinal) == true
+                    ? versions.PreviousStableVersion
+                    : package.BaselineVersion,
+            }).ToArray(),
+        };
     }
 
     private static void Validate(string root, PackageGraphDocument graph, bool enforceCanonicalCatalog)
     {
-        if (graph.SchemaVersion != 1 || !IsCanonicalStableVersion(graph.ReleaseVersion) || graph.Packages.Count == 0)
-            throw new PackageGraphException("SPGRAPH003", "Unsupported schema/release version or empty package catalog.");
+        if (graph.SchemaVersion != 1 || graph.Packages.Count == 0)
+            throw new PackageGraphException("SPGRAPH003", "Unsupported schema or empty package catalog.");
+        if (enforceCanonicalCatalog)
+        {
+            if (!graph.ReleaseVersion.Equals("repository", StringComparison.Ordinal))
+                throw new PackageGraphException("SPGRAPH003", "Canonical package graph releaseVersion must be 'repository'.");
+        }
+        else if (!graph.ReleaseVersion.Equals("repository", StringComparison.Ordinal)
+                 && !RepositoryVersionCatalog.IsCanonicalStableVersion(graph.ReleaseVersion))
+        {
+            throw new PackageGraphException("SPGRAPH003", "Non-canonical test graphs must use 'repository' or a canonical stable version.");
+        }
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var paths = new HashSet<string>(StringComparer.Ordinal);
         var orders = new HashSet<int>();
@@ -91,6 +116,10 @@ internal sealed class PackageGraphLoader
                 throw new PackageGraphException("SPGRAPH017", $"Only planned packages must declare scaffoldKind: {node.Id}.");
             if (node.Lifecycle == PackageLifecycle.Planned && node.BaselineVersion is not null)
                 throw new PackageGraphException("SPGRAPH010", $"Planned package {node.Id} cannot declare a baseline version.");
+            if (node.BaselineVersion is not null
+                && !node.BaselineVersion.Equals("previous-stable", StringComparison.Ordinal)
+                && !RepositoryVersionCatalog.IsCanonicalStableVersion(node.BaselineVersion))
+                throw new PackageGraphException("SPGRAPH018", $"Package {node.Id} baseline must be null, 'previous-stable', or a canonical stable version.");
             ValidatePolicy(node, node.CurrentDependencies, knownIds);
             ValidatePolicy(node, node.ReleaseDependencies, knownIds);
             foreach (var allowance in node.TemporaryAllowances)
@@ -116,14 +145,6 @@ internal sealed class PackageGraphLoader
             StringComparer.OrdinalIgnoreCase));
     }
 
-    private static bool IsCanonicalStableVersion(string value)
-    {
-        var parts = value.Split('.');
-        return parts.Length == 3 && parts.All(static part =>
-            part.Length > 0
-            && part.All(char.IsAsciiDigit)
-            && (part.Length == 1 || part[0] != '0'));
-    }
 
     private static void ValidatePolicy(PackageNode node, DependencyPolicy policy, HashSet<string> knownIds)
     {

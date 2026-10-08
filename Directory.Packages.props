@@ -1,4 +1,6 @@
 <Project>
+  <Import Project="$(MSBuildThisFileDirectory)eng/SmartPipe.Versions.props" />
+
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
@@ -38,26 +40,26 @@
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
     <PackageVersion Include="Polly.Core" Version="8.8.0" />
-    <PackageVersion Include="SmartPipe.Core" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Testing" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.DependencyInjection" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.Channels" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.DataAnnotations" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.Logging" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.Transforms" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.HealthChecks" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.Hosting" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.Csv" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.Dapper" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.EntityFrameworkCore" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.Mapster" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.Polly" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.PostgreSql" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.Http" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.Http.Json" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.Json" Version="2.2.0" />
-    <PackageVersion Include="SmartPipe.Extensions.OpenTelemetry" Version="2.2.0" />
+    <PackageVersion Include="SmartPipe.Core" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Testing" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.DependencyInjection" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.Channels" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.DataAnnotations" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.Logging" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.Transforms" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.HealthChecks" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.Hosting" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.Csv" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.Dapper" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.EntityFrameworkCore" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.Mapster" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.Polly" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.PostgreSql" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.Http" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.Http.Json" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.Json" Version="$(SmartPipePreviousStableVersion)" />
+    <PackageVersion Include="SmartPipe.Extensions.OpenTelemetry" Version="$(SmartPipePreviousStableVersion)" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
     <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.1" />

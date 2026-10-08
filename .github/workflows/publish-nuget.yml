@@ -73,27 +73,22 @@ jobs:
 
           repository_version="$(python3 - <<'PY'
           import xml.etree.ElementTree as ET
-          root = ET.parse("Directory.Build.props").getroot()
+          root = ET.parse("eng/SmartPipe.Versions.props").getroot()
           values = [
               (node.text or "").strip()
               for group in root.findall("PropertyGroup")
-              for node in group.findall("Version")
+              for node in group.findall("SmartPipeVersionPrefix")
               if (node.text or "").strip()
           ]
           if len(values) != 1:
-              raise SystemExit(f"Expected exactly one repository Version, found {len(values)}.")
+              raise SystemExit(f"Expected exactly one SmartPipeVersionPrefix, found {len(values)}.")
           print(values[0])
           PY
           )"
-          graph_version="$(jq -r '.releaseVersion' eng/package-graph.json)"
           stable_core="${VERSION%%-*}"
 
           if [[ -z "$repository_version" || "$stable_core" != "$repository_version" ]]; then
-            echo "Requested version core $stable_core does not match repository Version $repository_version." >&2
-            exit 1
-          fi
-          if [[ -z "$graph_version" || "$graph_version" == "null" || "$stable_core" != "$graph_version" ]]; then
-            echo "Requested version core $stable_core does not match package-graph releaseVersion $graph_version." >&2
+            echo "Requested version core $stable_core does not match SmartPipeVersionPrefix $repository_version." >&2
             exit 1
           fi
 

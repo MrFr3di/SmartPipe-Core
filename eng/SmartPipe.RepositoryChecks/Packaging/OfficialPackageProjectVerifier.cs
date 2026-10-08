@@ -27,7 +27,7 @@ internal sealed class OfficialPackageProjectVerifier
     private static readonly HashSet<string> AllowedProjectProperties = new(
         [
             "SmartPipePackage", "PackageId", "Description", "PackageTags", "SmartPipePackageReadmeSource",
-            "PackageValidationBaselineVersion", "IsPackable",
+            "PackageValidationBaselineVersion", "SmartPipePackageBaselinePolicy", "IsPackable",
         ],
         StringComparer.Ordinal);
 

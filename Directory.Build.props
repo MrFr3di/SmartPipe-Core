@@ -1,11 +1,13 @@
 <Project>
+  <Import Project="$(MSBuildThisFileDirectory)eng/SmartPipe.Versions.props" />
+
   <PropertyGroup>
     <SmartPipeRepositoryRoot>$(MSBuildThisFileDirectory)</SmartPipeRepositoryRoot>
     <TargetFramework Condition="'$(TargetFramework)' == ''">net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Version>2.2.1</Version>
+    <VersionPrefix>$(SmartPipeVersionPrefix)</VersionPrefix>
     <IsPackable>false</IsPackable>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>

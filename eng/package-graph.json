@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "releaseVersion": "2.2.1",
+  "releaseVersion": "repository",
   "packages": [
     {
       "id": "SmartPipe.Core",
@@ -9,7 +9,7 @@
       "activationEpic": "existing",
       "scaffoldKind": null,
       "publishOrder": 1,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "full",
       "currentDependencies": {
         "requiredSmartPipePackages": [],
@@ -104,7 +104,7 @@
       "activationEpic": "SP220-07",
       "scaffoldKind": null,
       "publishOrder": 2,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "full",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -138,7 +138,7 @@
       "activationEpic": "SP220-07",
       "scaffoldKind": null,
       "publishOrder": 3,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "full",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -172,7 +172,7 @@
       "activationEpic": "SP220-07",
       "scaffoldKind": null,
       "publishOrder": 4,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "full",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -210,7 +210,7 @@
       "activationEpic": "existing/SP220-08",
       "scaffoldKind": null,
       "publishOrder": 5,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "full-json-type-info",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -254,7 +254,7 @@
       "activationEpic": "SP220-09",
       "scaffoldKind": null,
       "publishOrder": 6,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "verified-no-blanket",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -296,7 +296,7 @@
       "activationEpic": "SP220-10",
       "scaffoldKind": null,
       "publishOrder": 7,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "explicit-sql",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -339,7 +339,7 @@
       "activationEpic": "SP220-11",
       "scaffoldKind": null,
       "publishOrder": 8,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "no-blanket",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -382,7 +382,7 @@
       "activationEpic": "SP220-12",
       "scaffoldKind": null,
       "publishOrder": 9,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "unsupported-blanket",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -421,7 +421,7 @@
       "activationEpic": "SP220-14",
       "scaffoldKind": null,
       "publishOrder": 10,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "verified",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -461,7 +461,7 @@
       "activationEpic": "SP220-13",
       "scaffoldKind": null,
       "publishOrder": 11,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "transport-full",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -508,7 +508,7 @@
       "activationEpic": "SP220-16",
       "scaffoldKind": null,
       "publishOrder": 12,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "not-runtime",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -542,7 +542,7 @@
       "activationEpic": "SP220-13",
       "scaffoldKind": null,
       "publishOrder": 13,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "full-json-type-info",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -582,7 +582,7 @@
       "activationEpic": "SP220-03",
       "scaffoldKind": null,
       "publishOrder": 14,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "full",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -639,7 +639,7 @@
       "activationEpic": "SP220-06",
       "scaffoldKind": null,
       "publishOrder": 15,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "verified",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -681,7 +681,7 @@
       "activationEpic": "SP220-04",
       "scaffoldKind": null,
       "publishOrder": 16,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "full",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -729,7 +729,7 @@
       "activationEpic": "SP220-05",
       "scaffoldKind": null,
       "publishOrder": 17,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "full",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -778,7 +778,7 @@
       "activationEpic": "SP220-07",
       "scaffoldKind": null,
       "publishOrder": 18,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "annotated-reflection",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -815,7 +815,7 @@
       "activationEpic": "existing/SP220-17",
       "scaffoldKind": null,
       "publishOrder": 19,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "no-blanket",
       "currentDependencies": {
         "requiredSmartPipePackages": [
@@ -934,7 +934,7 @@
       "activationEpic": "SP220-15",
       "scaffoldKind": null,
       "publishOrder": 20,
-      "baselineVersion": "2.2.0",
+      "baselineVersion": "previous-stable",
       "aotContract": "verified",
       "currentDependencies": {
         "requiredSmartPipePackages": [

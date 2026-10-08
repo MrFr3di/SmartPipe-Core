@@ -97,7 +97,8 @@ def assert_publication_contract(documents: dict) -> None:
     request_run = request.get('run', '')
     require('prepare-release-notes' in request_run
             and 'CHANGELOG.md' in request_run
-            and 'releaseVersion' in request_run
+            and 'SmartPipeVersionPrefix' in request_run
+            and 'eng/SmartPipe.Versions.props' in request_run
             and 'stable_core="${VERSION%%-*}"' in request_run
             and 'refs/tags/v$VERSION' in request_run
             and 'RUN_ATTEMPT' in request_run

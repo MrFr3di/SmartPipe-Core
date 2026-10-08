@@ -1,16 +1,20 @@
 # Versioning and compatibility
 
-SmartPipe uses synchronized package versions. The repository-level `Version`
-property is the package-version source of truth, while
-`eng/package-graph.json` is the source of truth for package lifecycle,
-dependency policy, publish order, package-scoped AOT contracts, and the stable
-release core.
+SmartPipe uses synchronized package versions. `eng/SmartPipe.Versions.props`
+is the single source of truth for the current stable version prefix and the
+previous published stable baseline. `Directory.Build.props`, central package
+management, package validation and release tooling consume those properties.
 
-For a stable release, repository `Version` and
-`eng/package-graph.json.releaseVersion` must be identical. For a prerelease
-such as `2.3.0-rc.1`, the stable SemVer core `2.3.0` must equal both
-repository values while the full prerelease value is the package version used
-for that release.
+`eng/package-graph.json` is the source of truth for package lifecycle,
+dependency policy, publish order and package-scoped AOT contracts. Its
+`releaseVersion` value is the symbolic policy `repository`; package baseline
+entries use `previous-stable` or `null` instead of duplicating version
+numbers.
+
+For a stable release, the requested package version must equal
+`SmartPipeVersionPrefix`. For a prerelease such as `2.3.0-rc.1`, its stable
+SemVer core `2.3.0` must equal `SmartPipeVersionPrefix`, while the full
+prerelease value is the package version used for that release.
 
 ## Compatibility is multi-dimensional
 
@@ -69,8 +73,7 @@ Do not introduce:
 - floating SmartPipe package versions;
 - per-project version overrides that bypass repository versioning;
 - package dependency versions that disagree with the release artifact manifest;
-- a release whose requested stable SemVer core disagrees with repository
-  `Version` or `package-graph.json.releaseVersion`;
+- a release whose requested stable SemVer core disagrees with `SmartPipeVersionPrefix`;
 - a release tag whose source commit is not the exact accepted release commit;
 - reuse or movement of an already-published package version or release tag.
 
@@ -95,8 +98,9 @@ breaking change. Do not regenerate a baseline to make the candidate pass.
 
 The 2.1.2 baseline under `eng/baselines/2.1.2/` remains immutable comparison
 material for the 2.2 migration and does not by itself define support status.
-For 2.2.1 servicing, the published 2.2.0 package set is the immediate Package
-Validation baseline for every package shipped in 2.2.0.
+For 2.2.1 servicing, `SmartPipePreviousStableVersion` resolves to the published
+2.2.0 package set and is the immediate Package Validation baseline for every
+package shipped in 2.2.0.
 
 ## Changelog and release notes
 

@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <SmartPipeVersionPrefix>2.2.1</SmartPipeVersionPrefix>
+    <SmartPipePreviousStableVersion>2.2.0</SmartPipePreviousStableVersion>
+  </PropertyGroup>
+</Project>

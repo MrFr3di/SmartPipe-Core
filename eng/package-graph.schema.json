@@ -7,7 +7,7 @@
   "required": ["schemaVersion", "releaseVersion", "packages"],
   "properties": {
     "schemaVersion": { "const": 1 },
-    "releaseVersion": { "const": "2.2.0" },
+    "releaseVersion": { "const": "repository" },
     "packages": {
       "type": "array",
       "minItems": 20,
@@ -50,7 +50,7 @@
         "activationEpic": { "type": ["string", "null"] },
         "scaffoldKind": { "enum": [null, "core-leaf", "framework-integration", "composed-integration", "host-integration", "testing"] },
         "publishOrder": { "type": "integer", "minimum": 1 },
-        "baselineVersion": { "type": ["string", "null"] },
+        "baselineVersion": { "enum": [null, "previous-stable"] },
         "aotContract": { "enum": ["full", "full-json-type-info", "transport-full", "explicit-sql", "verified", "verified-no-blanket", "annotated-reflection", "unsupported-blanket", "not-runtime", "no-blanket"] },
         "currentDependencies": { "$ref": "#/$defs/policy" },
         "releaseDependencies": { "$ref": "#/$defs/policy" },
