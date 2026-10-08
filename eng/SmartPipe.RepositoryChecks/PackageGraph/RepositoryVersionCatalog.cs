@@ -16,7 +16,7 @@ internal sealed record RepositoryVersionCatalog(string VersionPrefix, string Pre
             var groups = document.Root?.Elements().Where(element => element.Name.LocalName == "PropertyGroup") ?? [];
             var properties = groups.SelectMany(group => group.Elements())
                 .GroupBy(element => element.Name.LocalName, StringComparer.Ordinal)
-                .ToDictionary(group => group.Key, group => group.Select(element => element.Value.Trim()).Where(value => value.Length > 0).ToArray(), StringComparer.Ordinal);
+                .ToDictionary(group => group.Key, group => group.Select(element => element.Value.Trim()).ToArray(), StringComparer.Ordinal);
             var current = RequiredSingle(properties, "SmartPipeVersionPrefix");
             var previous = RequiredSingle(properties, "SmartPipePreviousStableVersion");
             if (!IsCanonicalStableVersion(current) || !IsCanonicalStableVersion(previous))
@@ -42,21 +42,26 @@ internal sealed record RepositoryVersionCatalog(string VersionPrefix, string Pre
 
     private static string RequiredSingle(IReadOnlyDictionary<string, string[]> properties, string name)
     {
-        if (!properties.TryGetValue(name, out var values) || values.Length != 1)
-            throw new InvalidDataException($"Version catalog must define exactly one {name}.");
+        if (!properties.TryGetValue(name, out var values) || values.Length != 1 || values[0].Length == 0)
+            throw new InvalidDataException($"Version catalog must define exactly one non-empty {name}.");
         return values[0];
     }
 
     private static int CompareStable(string left, string right)
     {
-        var leftParts = left.Split('.').Select(int.Parse).ToArray();
-        var rightParts = right.Split('.').Select(int.Parse).ToArray();
+        var leftParts = left.Split('.');
+        var rightParts = right.Split('.');
         for (var index = 0; index < 3; index++)
         {
-            var comparison = leftParts[index].CompareTo(rightParts[index]);
-            if (comparison != 0)
-                return comparison;
+            var lengthComparison = leftParts[index].Length.CompareTo(rightParts[index].Length);
+            if (lengthComparison != 0)
+                return lengthComparison;
+
+            var ordinalComparison = string.CompareOrdinal(leftParts[index], rightParts[index]);
+            if (ordinalComparison != 0)
+                return ordinalComparison;
         }
+
         return 0;
     }
 }

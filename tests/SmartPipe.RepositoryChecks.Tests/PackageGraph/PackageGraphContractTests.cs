@@ -36,6 +36,22 @@ public sealed class PackageGraphContractTests
     }
 
     [Fact]
+    public async Task RepositoryGraph_ResolvesCentralVersionCatalog()
+    {
+        var root = RepositoryRoot();
+        var versions = RepositoryVersionCatalog.Load(root);
+        var graph = await new PackageGraphLoader().LoadAsync(
+            root,
+            "eng/package-graph.json",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(versions.VersionPrefix, graph.ReleaseVersion);
+        Assert.All(
+            graph.Packages.Where(package => package.Lifecycle != PackageLifecycle.Planned),
+            package => Assert.Equal(versions.PreviousStableVersion, package.BaselineVersion));
+    }
+
+    [Fact]
     public async Task RepositoryGraph_HealthChecksPackageActivationIsComplete()
     {
         var root = RepositoryRoot();

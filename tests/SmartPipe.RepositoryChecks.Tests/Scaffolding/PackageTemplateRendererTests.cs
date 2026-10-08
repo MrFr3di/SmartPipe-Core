@@ -79,6 +79,7 @@ public sealed class PackageTemplateRendererTests
         using var fixture = new RepositoryTestDirectory();
         fixture.Write("Directory.Build.props", File.ReadAllText(Path.Combine(root, "Directory.Build.props")));
         fixture.Write("Directory.Build.targets", File.ReadAllText(Path.Combine(root, "Directory.Build.targets")));
+        fixture.Write("eng/SmartPipe.Versions.props", File.ReadAllText(Path.Combine(root, "eng/SmartPipe.Versions.props")));
         fixture.Write("eng/SmartPipe.Package.props", File.ReadAllText(Path.Combine(root, "eng/SmartPipe.Package.props")));
         fixture.Write("eng/SmartPipe.Package.targets", File.ReadAllText(Path.Combine(root, "eng/SmartPipe.Package.targets")));
         fixture.Write("assets/nuget/icon.png", "fixture");
