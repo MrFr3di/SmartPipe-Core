@@ -87,7 +87,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "SmartPipe.Core": "[2.2.0, )"
+          "SmartPipe.Core": "[2.2.1, )"
         }
       },
       "Microsoft.Extensions.Hosting.Abstractions": {

@@ -176,7 +176,7 @@
         "type": "Project",
         "dependencies": {
           "Mapster": "[10.0.13, )",
-          "SmartPipe.Core": "[2.2.0, )"
+          "SmartPipe.Core": "[2.2.1, )"
         }
       },
       "Mapster": {
