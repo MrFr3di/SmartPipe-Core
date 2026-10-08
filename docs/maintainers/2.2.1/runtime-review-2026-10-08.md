@@ -110,3 +110,28 @@ Backpressure проверяется двумя уровнями: runtime fault �
 теста не добавлен. Утверждение, что runtime-test сам доказывает точный момент
 входа в pending write, не делается. Возможность indefinite shutdown при
 non-cooperative user code остаётся явно документированным ограничением.
+
+
+## F1/F7 acceptance and F2/F5/F6 continuation
+
+PR #148 final head `8951a4db1312bda2e21417cfe6c2745f22b736e5` passed all required checks,
+including full [CI 37815529580](https://github.com/MrFr3di/SmartPipe-Core/actions/runs/37815529580).
+Ready for review; not merged.
+
+The next branch `fix/timed-attempt-ownership-2026-10-08`, PR #149, depends on #148.
+Clean tests-first RED: `1475fd8d217a1d3c4a3d47aa3048ae14d76447c9`,
+[CI 37819739713](https://github.com/MrFr3di/SmartPipe-Core/actions/runs/37819739713),
+format/build succeeded, 19 tests with 14 failures and 5 passes.
+The logs also expose lost cancellation delivery when premature CTS disposal
+removes its linked registration before cancellation reaches the transformer.
+Candidate retains abandoned executions/CTS, preserves unexpected late faults
+and structured results, handles infinite grace, and rejects invalid timeout
+snapshots before activation. Acceptance pending candidate CI and review.
+
+Finite StageTimeout is intentionally subject to the same supported wait maximum:
+the runtime can use its remaining budget as a single attempt timer. Supporting
+larger deadlines would require provider-backed chunked waits and separate tests;
+this servicing change fails fast instead of silently timing out early.
+
+See [timed ownership plan](../../superpowers/plans/2026-10-08-timed-attempt-ownership.md).
+F3/F4 and I1/I2/O1/O2 remain outside this slice.

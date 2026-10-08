@@ -14,9 +14,11 @@ Infinite cooperative grace means wait until completion or caller cancellation. F
 ## Implementation and validation
 
 - [x] Add 19 regression cases with fake time, barriers and bounded failure deadlines.
-- [ ] Record clean test-first RED in GitHub-hosted CI.
-- [ ] Transfer every abandoned timed execution to registry ownership.
-- [ ] Preserve cancellation-origin task and structured-result failures through finalization/deferred disposal.
-- [ ] Correct infinite grace and validate policy snapshots.
+- [x] Clean RED: commit `1475fd8d217a1d3c4a3d47aa3048ae14d76447c9`, CI `37819739713`, format/build success; 19 cases, 14 failed, 5 passed. Earlier fixture compiler failures are not RED evidence.
+- [x] Transfer every abandoned timed execution to registry ownership.
+- [x] Preserve cancellation-origin task and structured-result failures through finalization/deferred disposal.
+- [x] Correct infinite grace and validate policy snapshots.
 - [ ] Extend registry race/callback coverage and run full hosted CI.
 - [ ] Review diff and attach exact candidate evidence. No merge or release.
+
+Expanded candidate coverage: 41 integration/policy cases (Cancel/Abort/Dispose, concurrency 1/2, cancellation before timeout/in grace, callback errors and deferred cleanup) plus 5 registry fault-observation cases. Full CI acceptance pending.

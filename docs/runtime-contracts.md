@@ -213,12 +213,20 @@ accepted work without cancelling its processing token. An ordinary operation
 that ignores cancellation can delay shutdown; cancellation does not forcibly
 terminate user code.
 
-Late timed-out stage attempts are part of runtime cleanup. The runtime tracks
+Late timed-out stage attempts and timed attempts abandoned by caller cancellation
+are part of runtime cleanup. Cancelling an asynchronous wait does not end its
+underlying execution. The runtime retains the attempt and its linked CTS until
+execution and observation finish. The runtime tracks
 detached attempts and waits up to `TimeoutPolicy.LateAttemptFinalizationTimeout`
 before disposing the owning stage. If a non-cooperative transformer continues
 past that timeout, the runtime reports a cleanup failure instead of forcibly
 stopping user code in-process. A stage with a still-running late attempt is not
-disposed during that failed finalization pass.
+disposed during that failed finalization pass. A later `DisposeAsync` waits for
+those deferred stages. Unexpected cancellation-origin task faults and structured
+stage failures are reported once through finalization, or through deferred
+disposal if they arrive after Completion is published. Expected requested
+cancellation is not an additional cleanup failure. Timeout-origin late faults
+remain represented by the previously returned timeout outcome.
 
 `DisposeAsync` is idempotent. Concurrent callers await one shared disposal
 task. For a started run, external disposal requests cancellation, waits for the
@@ -296,6 +304,13 @@ remain permanent unless a classifier says otherwise. Pipeline cancellation
 next retry attempt starts. It is not invoked when the retry delay is cancelled.
 If the callback throws, the run faults with that exception.
 
+Timeout policy snapshots validate before component activation. Undefined retry
+modes and negative durations other than the exact `Timeout.InfiniteTimeSpan`
+sentinel are rejected. Finite durations, including `StageTimeout`, must be at
+most 4,294,967,294 milliseconds, the supported timer wait budget. Zero is valid;
+nullable attempt/stage budgets may also be absent. Invalid values fail before
+any user component factory runs.
+
 `TimeoutPolicy.AttemptTimeout` limits one attempt. `StageTimeout` is measured
 with the runtime monotonic clock and includes attempt execution, cancellation
 grace, retry delay, and the next attempt budget. When `Clock` is a
@@ -305,7 +320,9 @@ compatibility fallback. `RetryMode` controls overlap after an attempt timeout:
 
 - `CooperativeOnly` is the default. The runtime cancels the attempt, waits
   `CancellationGracePeriod`, and retries only if the timed-out attempt has
-  completed.
+  completed. `CancellationGracePeriod = Timeout.InfiniteTimeSpan` waits until
+  the attempt completes or caller cancellation interrupts the wait; zero
+  detaches immediately if the attempt is still running.
 - `DetachWithoutRetry` returns the timeout result, observes the late task, and
   does not retry.
 - `DetachAndRetryIdempotent` detaches the late task and permits retry overlap;

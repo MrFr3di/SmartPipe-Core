@@ -200,6 +200,59 @@ public sealed class LateStageAttemptRegistryTests
         execution.SetResult();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReportedFault_RemainsAvailableAfterObserverRemovesAttempt(bool completeBeforeWait)
+    {
+        var registry = new LateStageAttemptRegistry(new PipelineTime(SystemPipelineClock.Instance));
+        using var cancellation = new CancellationTokenSource();
+        var execution = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var failure = new IOException("late execution failed");
+        registry.Register("stage", "Stage", 42, 1, execution.Task, cancellation,
+            Timeout.InfiniteTimeSpan, reportUnexpectedFaults: true);
+        var wait = completeBeforeWait ? null : registry.WaitForAllAsync().AsTask();
+        execution.SetException(failure);
+        await registry.WaitForStageAttemptsToCompleteAsync("stage").WaitAsync(TimeSpan.FromSeconds(5));
+        var errors = await (wait ?? registry.WaitForAllAsync().AsTask());
+        errors.Should().ContainSingle().Which.Should().BeSameAs(failure);
+        registry.DrainCompletionErrors().Should().BeEmpty();
+        (await registry.WaitForAllAsync()).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RequestedLateCancellation_IsExpectedButUnrequestedCancellationIsReported(bool requested)
+    {
+        var registry = new LateStageAttemptRegistry(new PipelineTime(SystemPipelineClock.Instance));
+        using var cancellation = new CancellationTokenSource();
+        if (requested)
+            cancellation.Cancel();
+        var execution = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var failure = new OperationCanceledException(cancellation.Token);
+        registry.Register("stage", "Stage", 42, 1, execution.Task, cancellation,
+            Timeout.InfiniteTimeSpan, reportUnexpectedFaults: true);
+        execution.SetException(failure);
+        var errors = await registry.WaitForAllAsync();
+        if (requested)
+            errors.Should().BeEmpty();
+        else
+            errors.Should().ContainSingle().Which.Should().BeSameAs(failure);
+    }
+
+    [Fact]
+    public async Task TimeoutOriginFault_RemainsSuppressed()
+    {
+        var registry = new LateStageAttemptRegistry(new PipelineTime(SystemPipelineClock.Instance));
+        using var cancellation = new CancellationTokenSource();
+        var execution = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        registry.Register("stage", "Stage", 42, 1, execution.Task, cancellation,
+            Timeout.InfiniteTimeSpan);
+        execution.SetException(new IOException("already represented by timeout"));
+        (await registry.WaitForAllAsync()).Should().BeEmpty();
+    }
+
     private static async Task EventuallyAsync(Action assertion)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));

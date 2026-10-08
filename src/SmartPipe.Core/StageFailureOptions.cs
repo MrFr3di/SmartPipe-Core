@@ -47,6 +47,8 @@ public enum TimeoutRetryMode
 /// <summary>Configures timeout behavior for a pipeline stage.</summary>
 public sealed class TimeoutPolicy
 {
+    private static readonly TimeSpan MaxTimerTimeout = TimeSpan.FromMilliseconds(uint.MaxValue - 1L);
+
     /// <summary>Gets the timeout for one attempt.</summary>
     public TimeSpan? AttemptTimeout { get; init; }
 
@@ -61,6 +63,26 @@ public sealed class TimeoutPolicy
 
     /// <summary>Gets how long runtime finalization waits for detached late attempts.</summary>
     public TimeSpan LateAttemptFinalizationTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    internal void Validate()
+    {
+        ValidateDuration(AttemptTimeout, nameof(AttemptTimeout));
+        ValidateDuration(StageTimeout, nameof(StageTimeout));
+        ValidateDuration(CancellationGracePeriod, nameof(CancellationGracePeriod));
+        ValidateDuration(LateAttemptFinalizationTimeout, nameof(LateAttemptFinalizationTimeout));
+        if (!Enum.IsDefined(RetryMode))
+            throw new ArgumentOutOfRangeException(nameof(RetryMode), RetryMode, "Timeout retry mode is invalid.");
+    }
+
+    private static void ValidateDuration(TimeSpan? duration, string parameterName)
+    {
+        if (duration is null || duration == System.Threading.Timeout.InfiniteTimeSpan)
+            return;
+
+        if (duration < TimeSpan.Zero || duration > MaxTimerTimeout)
+            throw new ArgumentOutOfRangeException(parameterName, duration,
+                "Timeout must be infinite or between zero and 4,294,967,294 milliseconds.");
+    }
 }
 
 /// <summary>Configures circuit-breaker behavior for a pipeline stage.</summary>

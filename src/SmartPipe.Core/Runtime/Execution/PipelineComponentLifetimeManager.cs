@@ -60,7 +60,7 @@ internal sealed class PipelineComponentLifetimeManager<TInput, TOutput>
         var cleanupErrors = await _lifetime.DisposeAsync(DisposeLeaseAsync).ConfigureAwait(false);
         var disposeErrors = cleanupErrors.ToArray();
         return new(
-            lateAttemptErrors.Concat(disposeErrors).ToArray(),
+            lateAttemptErrors.Concat(_lateAttemptRegistry.DrainCompletionErrors()).Concat(disposeErrors).ToArray(),
             disposeErrors);
     }
 
@@ -80,9 +80,6 @@ internal sealed class PipelineComponentLifetimeManager<TInput, TOutput>
 
     public async ValueTask<Exception[]> DisposeDeferredStagesAsync()
     {
-        if (_deferredStageDisposals.IsEmpty)
-            return [];
-
         List<Exception>? errors = null;
         foreach (var (stageId, dispose) in _deferredStageDisposals.ToArray())
         {
@@ -101,7 +98,8 @@ internal sealed class PipelineComponentLifetimeManager<TInput, TOutput>
             }
         }
 
-        return errors?.ToArray() ?? [];
+        var completionErrors = _lateAttemptRegistry.DrainCompletionErrors();
+        return errors is null ? completionErrors : errors.Concat(completionErrors).ToArray();
     }
 }
 

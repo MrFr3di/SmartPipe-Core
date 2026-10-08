@@ -13,15 +13,35 @@ public sealed class TypedPipelineTimedOwnershipRegressionTests
     private static readonly TimeSpan FinalizationTimeout = TimeSpan.FromMinutes(2);
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public async Task CallerCancellation_RetainsAttemptUntilCleanupCompletes(bool duringGrace, bool failCleanup)
+    [InlineData("Cancel", 1, false, false)]
+    [InlineData("Cancel", 1, false, true)]
+    [InlineData("Cancel", 1, true, false)]
+    [InlineData("Cancel", 1, true, true)]
+    [InlineData("Cancel", 2, false, false)]
+    [InlineData("Cancel", 2, false, true)]
+    [InlineData("Cancel", 2, true, false)]
+    [InlineData("Cancel", 2, true, true)]
+    [InlineData("Abort", 1, false, false)]
+    [InlineData("Abort", 1, false, true)]
+    [InlineData("Abort", 1, true, false)]
+    [InlineData("Abort", 1, true, true)]
+    [InlineData("Abort", 2, false, false)]
+    [InlineData("Abort", 2, false, true)]
+    [InlineData("Abort", 2, true, false)]
+    [InlineData("Abort", 2, true, true)]
+    [InlineData("Dispose", 1, false, false)]
+    [InlineData("Dispose", 1, false, true)]
+    [InlineData("Dispose", 1, true, false)]
+    [InlineData("Dispose", 1, true, true)]
+    [InlineData("Dispose", 2, false, false)]
+    [InlineData("Dispose", 2, false, true)]
+    [InlineData("Dispose", 2, true, false)]
+    [InlineData("Dispose", 2, true, true)]
+    public async Task CallerCancellation_RetainsAttemptUntilCleanupCompletes(string action, int concurrency, bool duringGrace, bool failCleanup)
     {
         var time = new ObservedTimeProvider();
         var stage = new HeldTransformer(failCleanup);
-        var run = CreateRun(stage, time, Timeout.InfiniteTimeSpan);
+        var run = CreateRun(stage, time, Timeout.InfiniteTimeSpan, concurrency);
         try
         {
             await stage.Entered.Task.WaitAsync(Deadline);
@@ -31,7 +51,14 @@ public sealed class TypedPipelineTimedOwnershipRegressionTests
                 time.Advance(AttemptTimeout);
                 await stage.CancellationObserved.Task.WaitAsync(Deadline);
             }
-            await run.CancelAsync().AsTask().WaitAsync(Deadline);
+            var request = action switch
+            {
+                "Abort" => run.AbortAsync().AsTask(),
+                "Dispose" => run.DisposeAsync().AsTask(),
+                _ => run.CancelAsync().AsTask(),
+            };
+            if (action != "Dispose")
+                await request.WaitAsync(Deadline);
             await stage.CancellationObserved.Task.WaitAsync(Deadline);
             var signal = await Task.WhenAny(time.FinalizationTimer.Task, stage.Disposed.Task).WaitAsync(Deadline);
             Assert.Same(time.FinalizationTimer.Task, signal);
@@ -47,8 +74,9 @@ public sealed class TypedPipelineTimedOwnershipRegressionTests
             else
             {
                 Assert.IsAssignableFrom<OperationCanceledException>(error);
-                Assert.Equal(PipelineRunState.Cancelled, run.State);
+                Assert.Equal(action == "Abort" ? PipelineRunState.Aborted : PipelineRunState.Cancelled, run.State);
             }
+            await request.WaitAsync(Deadline);
             Assert.True(stage.Exited.Task.IsCompleted);
             Assert.False(stage.DisposedWhileActive);
             Assert.Equal(1, stage.DisposeCount);
@@ -120,6 +148,39 @@ public sealed class TypedPipelineTimedOwnershipRegressionTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ThrowingTimeoutCallback_RetainsExecutionAndBothFailures(bool failCleanup)
+    {
+        var time = new ObservedTimeProvider();
+        var callbackFailure = new InvalidOperationException("timeout cancellation callback failed");
+        var stage = new HeldTransformer(failCleanup) { CallbackFailure = callbackFailure };
+        var run = CreateRun(stage, time, TimeSpan.Zero);
+        try
+        {
+            await stage.Entered.Task.WaitAsync(Deadline);
+            await time.AttemptTimer.Task.WaitAsync(Deadline);
+            time.Advance(AttemptTimeout);
+            var signal = await Task.WhenAny(time.FinalizationTimer.Task, stage.Disposed.Task).WaitAsync(Deadline);
+            Assert.Same(time.FinalizationTimer.Task, signal);
+            Assert.False(stage.Disposed.Task.IsCompleted);
+            stage.Release.TrySetResult();
+            var error = await Record.ExceptionAsync(async () => await run.Completion.WaitAsync(Deadline));
+            Assert.Contains(Flatten(error), failure => ReferenceEquals(failure, callbackFailure));
+            if (failCleanup)
+                Assert.Contains(Flatten(error), failure => ReferenceEquals(failure, stage.Failure));
+            Assert.Equal(PipelineRunState.Faulted, run.State);
+            Assert.False(stage.DisposedWhileActive);
+            Assert.Equal(1, stage.DisposeCount);
+        }
+        finally
+        {
+            stage.Release.TrySetResult();
+            await run.DisposeAsync().AsTask().WaitAsync(Deadline);
+        }
+    }
+
+    [Theory]
     [InlineData("AttemptTimeout", -2L)]
     [InlineData("StageTimeout", -2L)]
     [InlineData("CancellationGracePeriod", -2L)]
@@ -180,7 +241,7 @@ public sealed class TypedPipelineTimedOwnershipRegressionTests
         Assert.Equal(duration, snapshot.Timeout!.AttemptTimeout);
     }
 
-    private static PipelineRun<int> CreateRun(HeldTransformer stage, ObservedTimeProvider time, TimeSpan grace) =>
+    private static PipelineRun<int> CreateRun(HeldTransformer stage, ObservedTimeProvider time, TimeSpan grace, int concurrency = 1) =>
         PipelineBuilder.From(new EnumerablePipelineSource<int>([1])).Transform(stage, new StageFailureOptions
         {
             Timeout = new TimeoutPolicy
@@ -189,7 +250,7 @@ public sealed class TypedPipelineTimedOwnershipRegressionTests
                 CancellationGracePeriod = grace,
                 LateAttemptFinalizationTimeout = FinalizationTimeout,
             },
-        }).WithRuntimeOptions(new PipelineRuntimeOptions { Clock = new TimeProviderPipelineClock(time) }).Run();
+        }).WithRuntimeOptions(new PipelineRuntimeOptions { Clock = new TimeProviderPipelineClock(time), MaxConcurrency = concurrency }).Run();
 
     private static IEnumerable<Exception> Flatten(Exception? error) => error switch
     {
@@ -221,13 +282,19 @@ public sealed class TypedPipelineTimedOwnershipRegressionTests
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Exited { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Disposed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Exception? CallbackFailure { get; init; }
         public Exception Failure { get; } = new IOException("late cancellation cleanup failed");
         public int DisposeCount { get; private set; }
         public bool DisposedWhileActive { get; private set; }
         public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
         public async ValueTask<StageResult<int>> TransformAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default)
         {
-            using var registration = ct.Register(() => CancellationObserved.TrySetResult());
+            using var registration = ct.Register(() =>
+            {
+                CancellationObserved.TrySetResult();
+                if (CallbackFailure is not null)
+                    throw CallbackFailure;
+            });
             Entered.TrySetResult();
             try
             {

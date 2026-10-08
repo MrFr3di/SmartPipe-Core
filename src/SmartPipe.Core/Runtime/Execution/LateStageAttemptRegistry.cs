@@ -8,6 +8,7 @@ internal sealed class LateStageAttemptRegistry
 {
     private readonly PipelineTime _time;
     private readonly ConcurrentDictionary<long, LateStageAttempt> _attempts = [];
+    private readonly ConcurrentQueue<Exception> _completionErrors = new();
     private readonly object _registrationGate = new();
     private long _nextAttemptId;
     private bool _sealed;
@@ -24,7 +25,9 @@ internal sealed class LateStageAttemptRegistry
         int attempt,
         Task execution,
         CancellationTokenSource timeoutCancellation,
-        TimeSpan finalizationTimeout)
+        TimeSpan finalizationTimeout,
+        bool reportUnexpectedFaults = false,
+        Func<Exception?>? getResultError = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stageId);
         ArgumentException.ThrowIfNullOrWhiteSpace(stageName);
@@ -50,7 +53,9 @@ internal sealed class LateStageAttemptRegistry
                 attempt,
                 execution,
                 timeoutCancellation,
-                finalizationTimeout);
+                finalizationTimeout,
+                reportUnexpectedFaults,
+                getResultError);
 
             if (!_attempts.TryAdd(id, lateAttempt))
             {
@@ -73,7 +78,7 @@ internal sealed class LateStageAttemptRegistry
     {
         foreach (var attempt in _attempts.Values)
         {
-            if (attempt.StageId == stageId && !attempt.Execution.IsCompleted)
+            if (attempt.StageId == stageId && !attempt.ObservationCompleted.Task.IsCompleted)
                 return true;
         }
 
@@ -85,9 +90,6 @@ internal sealed class LateStageAttemptRegistry
         Seal();
 
         var attempts = _attempts.Values.ToArray();
-        if (attempts.Length == 0)
-            return [];
-
         var waits = attempts.Select(WaitForLateStageAttemptAsync).ToArray();
         try
         {
@@ -108,7 +110,8 @@ internal sealed class LateStageAttemptRegistry
             errors.AddRange(wait.Exception.InnerExceptions);
         }
 
-        return errors?.ToArray() ?? [];
+        var completionErrors = DrainCompletionErrors();
+        return errors is null ? completionErrors : errors.Concat(completionErrors).ToArray();
     }
 
     public async Task WaitForStageAttemptsToCompleteAsync(string stageId)
@@ -116,8 +119,8 @@ internal sealed class LateStageAttemptRegistry
         while (true)
         {
             var attempts = _attempts.Values
-                .Where(attempt => attempt.StageId == stageId && !attempt.Execution.IsCompleted)
-                .Select(attempt => attempt.Execution)
+                .Where(attempt => attempt.StageId == stageId && !attempt.ObservationCompleted.Task.IsCompleted)
+                .Select(attempt => attempt.ObservationCompleted.Task)
                 .ToArray();
 
             if (attempts.Length == 0)
@@ -138,13 +141,35 @@ internal sealed class LateStageAttemptRegistry
     {
         try
         {
-            await ObserveCompletedLateStageExecutionAsync(attempt.Execution).ConfigureAwait(false);
+            await attempt.Execution.ConfigureAwait(false);
+            if (attempt.ReportUnexpectedFaults && attempt.GetResultError?.Invoke() is { } error)
+                _completionErrors.Enqueue(error);
+        }
+        catch (Exception ex)
+        {
+            if (attempt.ReportUnexpectedFaults
+                && (ex is not OperationCanceledException || !attempt.TimeoutCancellation.IsCancellationRequested))
+                _completionErrors.Enqueue(ex);
         }
         finally
         {
-            _attempts.TryRemove(attempt.Id, out _);
             attempt.TimeoutCancellation.Dispose();
+            // Publish errors and release CTS ownership before a waiter can
+            // finish or registration disappears from the finalization snapshot.
+            attempt.ObservationCompleted.TrySetResult();
+            _attempts.TryRemove(attempt.Id, out _);
         }
+    }
+
+    public Exception[] DrainCompletionErrors()
+    {
+        List<Exception>? errors = null;
+        while (_completionErrors.TryDequeue(out var error))
+        {
+            errors ??= [];
+            errors.Add(error);
+        }
+        return errors?.ToArray() ?? [];
     }
 
     private static async Task ObserveRejectedAttemptAsync(
@@ -163,21 +188,9 @@ internal sealed class LateStageAttemptRegistry
 
     private async Task WaitForLateStageAttemptAsync(LateStageAttempt attempt)
     {
-        if (attempt.Execution.IsCompleted)
-        {
-            await ObserveCompletedLateStageExecutionAsync(attempt.Execution).ConfigureAwait(false);
-            return;
-        }
-
-        if (attempt.FinalizationTimeout == Timeout.InfiniteTimeSpan)
-        {
-            await ObserveCompletedLateStageExecutionAsync(attempt.Execution).ConfigureAwait(false);
-            return;
-        }
-
         try
         {
-            await _time.WaitAsync(attempt.Execution, attempt.FinalizationTimeout, CancellationToken.None)
+            await _time.WaitAsync(attempt.ObservationCompleted.Task, attempt.FinalizationTimeout, CancellationToken.None)
                 .ConfigureAwait(false);
         }
         catch (TimeoutException ex)
@@ -185,10 +198,6 @@ internal sealed class LateStageAttemptRegistry
             throw new TimeoutException(
                 $"Late stage attempt {attempt.StageId}#{attempt.Attempt} for trace {attempt.TraceId} did not complete within {attempt.FinalizationTimeout}.",
                 ex);
-        }
-        catch
-        {
-            // The timeout result remains the observable stage outcome.
         }
     }
 
@@ -212,5 +221,11 @@ internal sealed class LateStageAttemptRegistry
         int Attempt,
         Task Execution,
         CancellationTokenSource TimeoutCancellation,
-        TimeSpan FinalizationTimeout);
+        TimeSpan FinalizationTimeout,
+        bool ReportUnexpectedFaults,
+        Func<Exception?>? GetResultError)
+    {
+        public TaskCompletionSource ObservationCompleted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
 }

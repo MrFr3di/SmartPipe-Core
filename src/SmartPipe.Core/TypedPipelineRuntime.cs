@@ -1761,14 +1761,18 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
         CancellationTokenSource? timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var execution = stage.ExecuteAsync(current, _spec.LineageMode, _clock, timeoutCts.Token).AsTask();
+        var executionObserved = false;
 
         try
         {
-            return await _time.WaitAsync(execution, attemptTimeout.Value, ct).ConfigureAwait(false);
+            var result = await _time.WaitAsync(execution, attemptTimeout.Value, ct).ConfigureAwait(false);
+            executionObserved = true;
+            return result;
         }
         catch (OperationCanceledException ex)
             when (!ct.IsCancellationRequested && timeoutCts.IsCancellationRequested)
         {
+            executionObserved = execution.IsCompleted;
             var retryMode = stage.FailureOptions.Timeout?.RetryMode ?? TimeoutRetryMode.CooperativeOnly;
             return stage.CreateTimedOutResult(
                 current,
@@ -1783,7 +1787,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         catch (TimeoutException ex)
         {
             if (execution.IsCompleted)
+            {
+                executionObserved = true;
                 return await execution.ConfigureAwait(false);
+            }
 
             timeoutCts.Cancel();
             var transferredTimeoutCts = timeoutCts;
@@ -1799,9 +1806,35 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     ct)
                 .ConfigureAwait(false);
         }
+        catch (Exception ex)
+        {
+            // Wait cancellation can win before linked cancellation reaches the
+            // attempt. Keep the link alive and explicitly request its stop.
+            executionObserved = execution.IsCanceled
+                || (execution.IsFaulted && execution.Exception!.InnerExceptions.Contains(ex));
+            if (!executionObserved && timeoutCts is { IsCancellationRequested: false })
+            {
+                try
+                {
+                    timeoutCts.Cancel();
+                }
+                catch (Exception cancellationError)
+                {
+                    throw new AggregateException(ex, cancellationError);
+                }
+            }
+
+            throw;
+        }
         finally
         {
-            timeoutCts?.Dispose();
+            if (timeoutCts is not null)
+            {
+                if (executionObserved)
+                    timeoutCts.Dispose();
+                else
+                    RegisterLateStageAttempt(stage, current, execution, timeoutCts, reportUnexpectedFaults: true);
+            }
         }
     }
 
@@ -1837,11 +1870,15 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                         canRetryTimeout = true;
                         break;
                     case TimedAttemptCompletionKind.Faulted:
-                    case TimedAttemptCompletionKind.CallerCancelled:
                         if (execution.IsCompleted)
                             timeoutCts.Dispose();
                         else
-                            RegisterLateStageAttempt(stage, current, execution, timeoutCts);
+                            RegisterLateStageAttempt(stage, current, execution, timeoutCts, reportUnexpectedFaults: true);
+
+                        ExceptionDispatchInfo.Capture(completion.Exception!).Throw();
+                        return default;
+                    case TimedAttemptCompletionKind.CallerCancelled:
+                        RegisterLateStageAttempt(stage, current, execution, timeoutCts, reportUnexpectedFaults: true);
 
                         ExceptionDispatchInfo.Capture(completion.Exception!).Throw();
                         return default;
@@ -1895,7 +1932,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         if (execution.IsCompleted)
             return await ObserveTimedAttemptCompletionAsync(execution, ct).ConfigureAwait(false);
 
-        if (gracePeriod <= TimeSpan.Zero)
+        if (gracePeriod != Timeout.InfiniteTimeSpan && gracePeriod <= TimeSpan.Zero)
             return TimedAttemptCompletion.StillRunning();
 
         try
@@ -1949,7 +1986,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         ITypedPipelineStage stage,
         object current,
         Task<TypedStageExecutionResult> execution,
-        CancellationTokenSource timeoutCts)
+        CancellationTokenSource timeoutCts,
+        bool reportUnexpectedFaults = false)
     {
         var correlation = stage.GetCorrelation(current);
         _lateAttemptRegistry.Register(
@@ -1959,7 +1997,17 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             correlation.Attempt,
             execution,
             timeoutCts,
-            GetLateAttemptFinalizationTimeout(stage));
+            GetLateAttemptFinalizationTimeout(stage),
+            reportUnexpectedFaults,
+            reportUnexpectedFaults ? GetLateResultError : null);
+
+        Exception? GetLateResultError()
+        {
+            var result = execution.GetAwaiter().GetResult();
+            return result.IsFailure && result.Error is { } error
+                ? new PipelineFailureActionException(stage.StageId, stage.StageName, error)
+                : null;
+        }
     }
 
     private TimeSpan GetCancellationGracePeriod(ITypedPipelineStage stage)
