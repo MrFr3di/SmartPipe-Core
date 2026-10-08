@@ -260,12 +260,16 @@ public sealed class ProcessRunnerTests
             TimeSpan.FromSeconds(3));
         using var client = new NamedPipeClientStream(
             ".", session.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-        await client.ConnectAsync(TestContext.Current.CancellationToken);
+        // Start server accept before the client connects; otherwise Windows can
+        // wait indefinitely for a server-side ConnectNamedPipe operation.
+        var serverReady = session.WaitForReadyAsync(TestContext.Current.CancellationToken);
+        await client.ConnectAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await ProcessHostControlProtocol.WriteAsync(
             client, session.Nonce,
             new ProcessHostControlMessage(ProcessHostControlMessageKind.Ready),
             TestContext.Current.CancellationToken);
-        await session.WaitForReadyAsync(TestContext.Current.CancellationToken);
+        await serverReady.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         var started = session.SendStartAndWaitForResultAsync(TestContext.Current.CancellationToken);
         Assert.Equal(
