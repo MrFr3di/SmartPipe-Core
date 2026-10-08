@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Time.Testing;
 using SmartPipe.Core;
 
@@ -197,6 +198,21 @@ public sealed class TypedPipelineTimedOwnershipRegressionTests
         null => [],
         _ => new[] { error }.Concat(Flatten(error.InnerException)),
     };
+
+    private sealed class EnumerablePipelineSource<T>(IEnumerable<T> values) : IPipelineSource<T>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public async IAsyncEnumerable<ProcessingEnvelope<T>> ReadAsync([EnumeratorCancellation] CancellationToken ct = default)
+        {
+            foreach (var value in values)
+            {
+                ct.ThrowIfCancellationRequested();
+                yield return ProcessingEnvelope<T>.Create(value);
+            }
+            await Task.CompletedTask;
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
 
     private sealed class HeldTransformer(bool failCleanup) : IPipelineTransformer<int, int>
     {
