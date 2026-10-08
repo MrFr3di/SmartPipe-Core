@@ -35,11 +35,17 @@ Unexpected failure: Repository-check process host did not complete its authentic
 
 The exact-head job rerun passed, as did all 721 repository-check tests, consumer tests, 10 concurrency regression passes, package gates and PostgreSQL consumers. **The root cause has not been established.** Do not claim the OpenTelemetry or CodeCoverage updates fix it, and do not hide failures with an automatic retry.
 
-This PR improves fail-closed diagnostics only:
+The later PR #147 Windows CI run [37802989978](https://github.com/MrFr3di/SmartPipe-Core/actions/runs/37802989978) reproduced a process-host failure in the `json-trim` consumer, specifically in phase `start-target` (`SPCONS030`). The process-host code showed a plausible deadline race: the host's five-second START-read deadline began **before** it sent READY; the controller also allowed only five seconds for STARTED, even when the consumer request still had time remaining. The precise exception reason in that run was unavailable because the first diagnostic patch logged only its type. Do not claim an established root cause.
 
-- Identify the safe process-host control phase (ready/start/exit/teardown) without logging user command arguments, nonces, pipe names, environment or credentials.
-- Include the failing consumer scenario ID and preserve the original exception chain for a future reproducible incident.
-- Maintain the existing bounded handshake, process-tree teardown and cancellation behavior.
+This PR improves fail-closed behavior and diagnostics:
+
+- Identify the safe process-host phase and a closed vocabulary of failure reasons, without logging user command arguments, nonces, pipe names, environment or credentials.
+- Include the failing consumer scenario ID and preserve the original exception chain.
+- Split the controller's five-second READY deadline from the 20-second STARTED acknowledgement deadline; allow up to 30 seconds for the host to receive START from a read begun before READY. Both remain bounded by the consumer request timeout and cancellation.
+- Preserve mandatory process-tree teardown, cancellation and all other five-second control-operation timeouts; do not mask errors with an automatic retry.
+- Prove the race boundary with a deterministic six-second READY→START regression test and an independent acknowledgement-deadline test; retain negative malformed-protocol tests.
+
+Acceptance requires exact-head GitHub Actions CI, not just the absence of code-review objections.
 
 ## Merge/release gates
 
