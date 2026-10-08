@@ -81,11 +81,28 @@ internal sealed class PackageContentValidator
         {
             var releaseCore = version.Split('-')[0];
             if (string.IsNullOrWhiteSpace(metadata.ReleaseNotes)
-                || !metadata.ReleaseNotes.Contains(releaseCore, StringComparison.Ordinal))
+                || !ContainsExactReleaseCore(metadata.ReleaseNotes, releaseCore))
             {
                 add("SPMETA006", $"release notes must be non-empty and name the current release core {releaseCore}", null);
             }
         }
+    }
+
+    private static bool ContainsExactReleaseCore(string notes, string versionCore)
+    {
+        var next = 0;
+        while ((next = notes.IndexOf(versionCore, next, StringComparison.Ordinal)) >= 0)
+        {
+            var after = next + versionCore.Length;
+            var boundedLeft = next == 0 || (!char.IsAsciiLetterOrDigit(notes[next - 1]) && notes[next - 1] != '.');
+            var boundedRight = after == notes.Length || (!char.IsAsciiLetterOrDigit(notes[after]) && notes[after] != '.');
+            if (boundedLeft && boundedRight)
+                return true;
+
+            next = after;
+        }
+
+        return false;
     }
 
     private static void ValidateRequiredContent(
