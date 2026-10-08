@@ -28,6 +28,7 @@ public sealed class PackageMetadataReaderTests
     {
         using var repository = new RepositoryTestDirectory();
         repository.Write("src/SmartPipe.Core/SmartPipe.Core.csproj", "<Project />");
+        repository.Write("eng/SmartPipe.Versions.props", "<Project><PropertyGroup><SmartPipeVersionPrefix>2.2.1</SmartPipeVersionPrefix><SmartPipePreviousStableVersion>2.2.0</SmartPipePreviousStableVersion></PropertyGroup></Project>");
         Directory.CreateDirectory(Path.Combine(repository.Path, "packages"));
         using var package = SyntheticNuGetPackage.Create(version: "2.2.0", entries:
         [
