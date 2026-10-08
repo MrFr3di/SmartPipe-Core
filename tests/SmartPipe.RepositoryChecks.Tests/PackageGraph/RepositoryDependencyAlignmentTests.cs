@@ -75,5 +75,13 @@ public sealed class RepositoryDependencyAlignmentTests
             .GetProperty("Microsoft.Testing.Extensions.CodeCoverage");
         Assert.Equal(expected, coverage.GetProperty("resolved").GetString());
         Assert.Equal($"[{expected}, )", coverage.GetProperty("requested").GetString());
+
+        // CodeCoverage 18.12.0 uses the public Mono.Cecil assembly instead of the
+        // Microsoft.DotNet.Cecil fork: loading both in one process is unsupported.
+        var graph = document.RootElement.GetProperty("dependencies").GetProperty("net10.0");
+        Assert.Equal("0.11.6", coverage.GetProperty("dependencies").GetProperty("Mono.Cecil").GetString());
+        Assert.True(graph.TryGetProperty("Mono.Cecil", out _));
+        Assert.False(graph.TryGetProperty("Microsoft.DotNet.Cecil", out _));
+        Assert.Equal("2.5.0", graph.GetProperty("Microsoft.Testing.Platform").GetProperty("resolved").GetString());
     }
 }
