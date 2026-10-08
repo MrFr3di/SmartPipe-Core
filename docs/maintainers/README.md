@@ -15,6 +15,8 @@ For product usage, start at [../index.md](../index.md).
 - [Contribution policy](../../CONTRIBUTING.md)
 - [Versioning and compatibility](../../VERSIONING.md)
 
+- [2.2.1 runtime review and repair sequence](2.2.1/runtime-review-2026-10-08.md)
+
 ## Evidence policy
 
 Maintainer evidence records a specific candidate, release train, experiment, or
