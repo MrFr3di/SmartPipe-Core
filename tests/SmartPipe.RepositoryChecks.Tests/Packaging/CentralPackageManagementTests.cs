@@ -16,6 +16,32 @@ public sealed class CentralPackageManagementTests
     }
 
     [Fact]
+    public async Task Verify_RepositoryVersionPropertiesResolveToExactVersions()
+    {
+        using var repository = new RepositoryTestDirectory();
+        repository.Write(
+            "eng/SmartPipe.Versions.props",
+            """
+            <Project><PropertyGroup>
+              <SmartPipeVersionPrefix>2.2.1</SmartPipeVersionPrefix>
+              <SmartPipePreviousStableVersion>2.2.0</SmartPipePreviousStableVersion>
+            </PropertyGroup></Project>
+            """);
+        repository.Write(
+            "Directory.Packages.props",
+            CentralProps("<PackageVersion Include=\"SmartPipe.Core\" Version=\"$(SmartPipePreviousStableVersion)\" />"));
+        repository.Write(
+            "src/Project.csproj",
+            "<Project><ItemGroup><PackageReference Include=\"SmartPipe.Core\" /></ItemGroup></Project>");
+
+        var result = await new CentralPackageVersionReader().VerifyAsync(
+            repository.Path, CentralPackageValidationMode.Current, TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.Errors);
+        Assert.Equal("2.2.0", result.Versions["SmartPipe.Core"]);
+    }
+
+    [Fact]
     public async Task Verify_ProjectPackageReferenceContainsVersion_Fails()
     {
         using var repository = new RepositoryTestDirectory();
