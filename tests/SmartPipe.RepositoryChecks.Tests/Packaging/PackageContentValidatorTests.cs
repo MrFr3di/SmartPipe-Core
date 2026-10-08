@@ -18,6 +18,8 @@ public sealed class PackageContentValidatorTests
     [InlineData("readme", "SPMETA005")]
     [InlineData("release-notes", "SPMETA006")]
     [InlineData("stale-release-notes", "SPMETA006")]
+    [InlineData("prefix-only-release-notes", "SPMETA006")]
+    [InlineData("subversion-release-notes", "SPMETA006")]
     [InlineData("required-content", "SPMETA007")]
     [InlineData("source-content", "SPMETA008")]
     [InlineData("unexpected-tfm", "SPMETA009")]
@@ -36,13 +38,27 @@ public sealed class PackageContentValidatorTests
             "readme" => metadata with { Readme = "other.md" },
             "release-notes" => metadata with { ReleaseNotes = null },
             "stale-release-notes" => metadata with { ReleaseNotes = "SmartPipe 2.1.2 historical notes." },
+            "prefix-only-release-notes" => metadata with { ReleaseNotes = "SmartPipe 2.2.00 servicing notes." },
+            "subversion-release-notes" => metadata with { ReleaseNotes = "SmartPipe 2.2.0.1 servicing notes." },
             "source-content" => WithFiles(metadata, "src/Foo.cs"),
             "unexpected-tfm" => WithFiles(metadata, "lib/net9.0/SmartPipe.Core.dll"),
             _ => metadata,
         };
-        if (mutation is "release-notes" or "stale-release-notes") mode = PackageGraphMode.Release;
+        if (mutation is "release-notes" or "stale-release-notes" or "prefix-only-release-notes" or "subversion-release-notes") mode = PackageGraphMode.Release;
         var errors = await new PackageContentValidator().ValidateAsync(Node(), "2.2.0", metadata, symbolPath, mode, TestContext.Current.CancellationToken);
         Assert.Contains(errors, x => x.Code == code);
+    }
+
+    [Fact]
+    public async Task ReleaseNotes_AcceptPrereleaseSuffixWithMatchingStableCore()
+    {
+        var metadata = Metadata() with { ReleaseNotes = "SmartPipe 2.2.0-rc.1 servicing notes." };
+        var symbolsPath = Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.snupkg");
+
+        var violations = await new PackageContentValidator().ValidateAsync(
+            Node(), "2.2.0", metadata, symbolsPath, PackageGraphMode.Release, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(violations, violation => violation.Code == "SPMETA006");
     }
 
     [Fact]
