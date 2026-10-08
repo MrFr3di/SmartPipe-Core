@@ -6,7 +6,6 @@
   <PropertyGroup>
     <PackageId>SmartPipe.Extensions.Http.Json</PackageId>
     <Description>Source-generated JSON codecs for streaming SmartPipe.Core HTTP pipelines.</Description>
-    <PackageReleaseNotes>First standalone release in 2.2.0. Adds source-generated JSON codecs for streaming HTTP pipelines. Use explicit JsonTypeInfo metadata for trimming and NativeAOT; optional HTTP JSON integration is separate from Core and Json.</PackageReleaseNotes>
     <PackageTags>smartpipe;pipeline;http;json;system-text-json;ndjson;nativeaot;trimming</PackageTags>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
     <IsAotCompatible>true</IsAotCompatible>

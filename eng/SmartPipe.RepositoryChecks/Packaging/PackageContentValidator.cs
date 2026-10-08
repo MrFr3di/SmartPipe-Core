@@ -77,8 +77,15 @@ internal sealed class PackageContentValidator
             add("SPMETA004", "repository URL/type/40-hex commit is required", null);
         if (metadata.Readme != "README.md" || metadata.Icon != "icon.png" || metadata.Tags.Length == 0)
             add("SPMETA005", "readme/icon/tags metadata is invalid", null);
-        if (mode == PackageGraphMode.Release && metadata.ReleaseNotes is null)
-            add("SPMETA006", "release notes are required in release mode", null);
+        if (mode == PackageGraphMode.Release)
+        {
+            var releaseCore = version.Split('-')[0];
+            if (string.IsNullOrWhiteSpace(metadata.ReleaseNotes)
+                || !metadata.ReleaseNotes.Contains(releaseCore, StringComparison.Ordinal))
+            {
+                add("SPMETA006", $"release notes must be non-empty and name the current release core {releaseCore}", null);
+            }
+        }
     }
 
     private static void ValidateRequiredContent(

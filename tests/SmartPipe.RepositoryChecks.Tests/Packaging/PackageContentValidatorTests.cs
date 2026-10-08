@@ -17,6 +17,7 @@ public sealed class PackageContentValidatorTests
     [InlineData("repository", "SPMETA004")]
     [InlineData("readme", "SPMETA005")]
     [InlineData("release-notes", "SPMETA006")]
+    [InlineData("stale-release-notes", "SPMETA006")]
     [InlineData("required-content", "SPMETA007")]
     [InlineData("source-content", "SPMETA008")]
     [InlineData("unexpected-tfm", "SPMETA009")]
@@ -34,11 +35,12 @@ public sealed class PackageContentValidatorTests
             "repository" => metadata with { RepositoryCommit = "bad" },
             "readme" => metadata with { Readme = "other.md" },
             "release-notes" => metadata with { ReleaseNotes = null },
+            "stale-release-notes" => metadata with { ReleaseNotes = "SmartPipe 2.1.2 historical notes." },
             "source-content" => WithFiles(metadata, "src/Foo.cs"),
             "unexpected-tfm" => WithFiles(metadata, "lib/net9.0/SmartPipe.Core.dll"),
             _ => metadata,
         };
-        if (mutation == "release-notes") mode = PackageGraphMode.Release;
+        if (mutation is "release-notes" or "stale-release-notes") mode = PackageGraphMode.Release;
         var errors = await new PackageContentValidator().ValidateAsync(Node(), "2.2.0", metadata, symbolPath, mode, TestContext.Current.CancellationToken);
         Assert.Contains(errors, x => x.Code == code);
     }
@@ -90,7 +92,7 @@ public sealed class PackageContentValidatorTests
         },
         "A package-specific description for SmartPipe Core.", "SmartPipe", "Copyright SmartPipe 2026", "MIT",
         "https://github.com/MrFr3di/SmartPipe-Core", "git", "0000000000000000000000000000000000000000",
-        "README.md", "icon.png", "smartpipe core", "notes");
+        "README.md", "icon.png", "smartpipe core", "SmartPipe 2.2.0 servicing notes.");
 
     private static PackageMetadata WithFiles(PackageMetadata metadata, params string[] files) => metadata with
     {

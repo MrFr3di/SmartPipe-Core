@@ -4,7 +4,6 @@
   <PropertyGroup>
     <PackageId>SmartPipe.Testing</PackageId>
     <Description>Framework-neutral helpers for testing SmartPipe.Core sources and activations.</Description>
-    <PackageReleaseNotes>First release in 2.2.0. Framework-neutral helpers for finite source consumption and activation testing with a Core-only dependency graph. Test-only package; not in the facade convenience bundle.</PackageReleaseNotes>
     <PackageTags>smartpipe;pipeline;testing</PackageTags>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)/README.md</SmartPipePackageReadmeSource>
   </PropertyGroup>
