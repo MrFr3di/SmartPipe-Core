@@ -737,23 +737,8 @@ def assert_setup_dotnet_uses_global_json(documents: dict[str, dict]) -> None:
 
 
 def assert_link_check_exclusion_scoped() -> None:
-    require(LYCHEE.is_file(), "lychee.toml must exist to scope the docs link check exclusion.")
-    try:
-        import tomllib
-    except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
-        import tomli as tomllib  # type: ignore
-    with LYCHEE.open("rb") as stream:
-        config = tomllib.load(stream)
-    require(isinstance(config, dict), "lychee.toml must contain a TOML mapping.")
-    exclude = config.get("exclude")
-    require(isinstance(exclude, list) and len(exclude) == 1,
-            "lychee.toml must exclude exactly one URL.")
-    target = r"^https://www\.nuget\.org/packages/SmartPipe\.Extensions\.Json/?$"
-    require(exclude[0] == target,
-            "lychee.toml exclusion must be scoped to the single pre-release "
-            "SmartPipe.Extensions.Json URL.")
-    require(not any("nuget.org" in pattern and pattern != target for pattern in exclude),
-            "lychee.toml must not contain a broad nuget.org exclusion.")
+    require(not LYCHEE.exists(),
+            "obsolete lychee.toml pre-publication waiver must stay removed.")
 
 
 def assert_scenario_id_grammar() -> None:

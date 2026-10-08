@@ -12,16 +12,7 @@
 
   <Target Name="SmartPipePackageValidate" BeforeTargets="Pack">
     <PropertyGroup>
-      <_SmartPipePackageVersionCore>$([System.Text.RegularExpressions.Regex]::Replace('$(PackageVersion)', '-.*    <Error Condition="'$(PackageId)' == ''" Text="SmartPipe package requires PackageId." />
-    <Error Condition="'$(Description)' == ''" Text="SmartPipe package $(PackageId) requires Description." />
-    <Error Condition="'$(PackageTags)' == ''" Text="SmartPipe package $(PackageId) requires PackageTags." />
-    <Error Condition="'$(SmartPipePackageReadmeSource)' == ''" Text="SmartPipe package $(PackageId) requires SmartPipePackageReadmeSource." />
-    <Error Condition="!Exists('$(SmartPipePackageReadmeSource)')" Text="SmartPipe package README does not exist: $(SmartPipePackageReadmeSource)." />
-    <Error Condition="!Exists('$(SmartPipeRepositoryRoot)assets/nuget/icon.png')" Text="SmartPipe package icon does not exist: $(SmartPipeRepositoryRoot)assets/nuget/icon.png." />
-    <Error Condition="'$(PackageVersion)' != '' and '$(_SmartPipePackageVersionCore)' != '$(SmartPipeVersionPrefix)'" Text="SmartPipe package $(PackageId) version $(PackageVersion) does not match repository version prefix $(SmartPipeVersionPrefix)." />
-  </Target>
-</Project>
-, ''))</_SmartPipePackageVersionCore>
+      <_SmartPipePackageVersionCore>$([System.Text.RegularExpressions.Regex]::Replace('$(PackageVersion)', '-.*$', ''))</_SmartPipePackageVersionCore>
     </PropertyGroup>
     <Error Condition="'$(PackageId)' == ''" Text="SmartPipe package requires PackageId." />
     <Error Condition="'$(Description)' == ''" Text="SmartPipe package $(PackageId) requires Description." />
@@ -29,6 +20,6 @@
     <Error Condition="'$(SmartPipePackageReadmeSource)' == ''" Text="SmartPipe package $(PackageId) requires SmartPipePackageReadmeSource." />
     <Error Condition="!Exists('$(SmartPipePackageReadmeSource)')" Text="SmartPipe package README does not exist: $(SmartPipePackageReadmeSource)." />
     <Error Condition="!Exists('$(SmartPipeRepositoryRoot)assets/nuget/icon.png')" Text="SmartPipe package icon does not exist: $(SmartPipeRepositoryRoot)assets/nuget/icon.png." />
-    <Error Condition="'$(PackageVersion)' != '' and '$(PackageVersion)' != '$(Version)'" Text="SmartPipe package $(PackageId) version $(PackageVersion) does not match repository version $(Version)." />
+    <Error Condition="'$(PackageVersion)' != '' and '$(_SmartPipePackageVersionCore)' != '$(SmartPipeVersionPrefix)'" Text="SmartPipe package $(PackageId) version $(PackageVersion) does not match repository version prefix $(SmartPipeVersionPrefix)." />
   </Target>
 </Project>

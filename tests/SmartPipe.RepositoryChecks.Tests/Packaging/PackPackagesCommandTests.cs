@@ -37,6 +37,7 @@ public sealed class PackPackagesCommandTests
         var fixture = new RepositoryTestDirectory();
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         fixture.Write("eng/package-graph.json", File.ReadAllText(Path.Combine(root, "eng/package-graph.json")));
+        fixture.Write("eng/SmartPipe.Versions.props", File.ReadAllText(Path.Combine(root, "eng/SmartPipe.Versions.props")));
         fixture.Write("src/SmartPipe.Core/SmartPipe.Core.csproj", "<Project />");
         fixture.Write("src/SmartPipe.Extensions.Channels/SmartPipe.Extensions.Channels.csproj", "<Project />");
         fixture.Write("src/SmartPipe.Extensions.Dapper/SmartPipe.Extensions.Dapper.csproj", "<Project />");
