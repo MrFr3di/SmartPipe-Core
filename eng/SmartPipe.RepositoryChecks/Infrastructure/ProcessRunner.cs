@@ -162,9 +162,11 @@ internal sealed class ProcessRunner : IProcessRunner
             cancellationToken,
             timeout.Token);
 
+        var controlPhase = "wait-ready";
         try
         {
             await hostSession.WaitForReadyAsync(linkedCancellation.Token).ConfigureAwait(false);
+            controlPhase = "start-target";
             if (!await hostSession.SendStartAndWaitForResultAsync(linkedCancellation.Token).ConfigureAwait(false))
             {
                 var startFailureTermination = await TerminateHostAsync(process, hostSession).ConfigureAwait(false);
@@ -182,9 +184,11 @@ internal sealed class ProcessRunner : IProcessRunner
                     "External target process could not be started by the repository-check process host.");
             }
 
+            controlPhase = "wait-target-exit";
             var targetExitCode = await hostSession.ReadExitCodeAsync(linkedCancellation.Token)
                 .ConfigureAwait(false);
 
+            controlPhase = "teardown";
             Exception? teardownException = null;
             try
             {
@@ -268,7 +272,7 @@ internal sealed class ProcessRunner : IProcessRunner
             await ObserveOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
             throw new ProcessRunnerException(
                 ProcessFailureKind.StartFailure,
-                "Repository-check process host did not complete its authenticated control protocol.",
+                $"Repository-check process host did not complete its authenticated control protocol (phase: {controlPhase}; failure: {exception.GetType().Name}).",
                 exception);
         }
     }
