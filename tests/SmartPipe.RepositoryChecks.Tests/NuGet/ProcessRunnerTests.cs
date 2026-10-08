@@ -102,6 +102,9 @@ public sealed class ProcessRunnerTests
                 TestContext.Current.CancellationToken));
 
         Assert.Equal(ProcessFailureKind.StartFailure, exception.FailureKind);
+        Assert.Contains("phase: wait-ready", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("failure: ProcessHostProtocolException", exception.Message, StringComparison.Ordinal);
+        Assert.NotNull(exception.InnerException);
     }
 
     [Fact]
@@ -125,6 +128,7 @@ public sealed class ProcessRunnerTests
                     TestContext.Current.CancellationToken));
 
             Assert.Equal(ProcessFailureKind.StartFailure, exception.FailureKind);
+            Assert.Contains("phase: start-target", exception.Message, StringComparison.Ordinal);
             descendantProcessId = int.Parse(
                 await File.ReadAllTextAsync(processIdPath, TestContext.Current.CancellationToken),
                 System.Globalization.CultureInfo.InvariantCulture);
