@@ -5,6 +5,7 @@ using System.Xml.Linq;
 using SmartPipe.RepositoryChecks.Baselines;
 using SmartPipe.RepositoryChecks.Infrastructure;
 using SmartPipe.RepositoryChecks.NuGet;
+using SmartPipe.RepositoryChecks.PackageGraph;
 using SmartPipe.RepositoryChecks.Repository;
 
 namespace SmartPipe.RepositoryChecks.Commands;
@@ -416,23 +417,12 @@ internal sealed class BaselineVerificationService
     {
         try
         {
-            var path = RepositoryPaths.ResolveWithinRoot(repositoryRoot, "Directory.Build.props", "repository version");
-            if (!File.Exists(path))
-            {
-                return false;
-            }
-
-            using var reader = XmlReader.Create(path, RepositoryXml.CreateSettings());
-            var document = XDocument.Load(reader, LoadOptions.None);
-            var current = document.Descendants()
-                .FirstOrDefault(static element => element.Name.LocalName == "Version")
-                ?.Value.Trim();
-
+            var current = RepositoryVersionCatalog.Load(repositoryRoot).VersionPrefix;
             return TryParseStableCore(current, out var currentCore)
                 && TryParseStableCore(targetRelease, out var targetCore)
                 && currentCore.CompareTo(targetCore) > 0;
         }
-        catch (Exception exception) when (exception is XmlException or IOException or UnauthorizedAccessException)
+        catch (PackageGraphException)
         {
             return false;
         }

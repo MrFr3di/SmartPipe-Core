@@ -77,8 +77,32 @@ internal sealed class PackageContentValidator
             add("SPMETA004", "repository URL/type/40-hex commit is required", null);
         if (metadata.Readme != "README.md" || metadata.Icon != "icon.png" || metadata.Tags.Length == 0)
             add("SPMETA005", "readme/icon/tags metadata is invalid", null);
-        if (mode == PackageGraphMode.Release && metadata.ReleaseNotes is null)
-            add("SPMETA006", "release notes are required in release mode", null);
+        if (mode == PackageGraphMode.Release)
+        {
+            var releaseCore = version.Split('-')[0];
+            if (string.IsNullOrWhiteSpace(metadata.ReleaseNotes)
+                || !ContainsExactReleaseCore(metadata.ReleaseNotes, releaseCore))
+            {
+                add("SPMETA006", $"release notes must be non-empty and name the current release core {releaseCore}", null);
+            }
+        }
+    }
+
+    private static bool ContainsExactReleaseCore(string notes, string versionCore)
+    {
+        var next = 0;
+        while ((next = notes.IndexOf(versionCore, next, StringComparison.Ordinal)) >= 0)
+        {
+            var after = next + versionCore.Length;
+            var boundedLeft = next == 0 || (!char.IsAsciiLetterOrDigit(notes[next - 1]) && notes[next - 1] != '.');
+            var boundedRight = after == notes.Length || (!char.IsAsciiLetterOrDigit(notes[after]) && notes[after] != '.');
+            if (boundedLeft && boundedRight)
+                return true;
+
+            next = after;
+        }
+
+        return false;
     }
 
     private static void ValidateRequiredContent(

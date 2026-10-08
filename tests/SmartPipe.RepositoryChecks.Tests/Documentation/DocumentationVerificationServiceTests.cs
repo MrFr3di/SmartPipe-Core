@@ -58,6 +58,42 @@ public sealed class DocumentationVerificationServiceTests
     }
 
     [Fact]
+    public async Task VerifyAsync_ReportsCompatibilityIndexDrift()
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write("docs/reference/compatibility/README.md", "# Compatibility reference\n\nThis index is intentionally missing the current transition.\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path,
+            graph,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Violations, violation =>
+            violation.Code == "SPDOC019"
+            && violation.Path == "docs/reference/compatibility/README.md");
+    }
+
+    [Theory]
+    [InlineData("2.1.2-to-2.2.0.md")]
+    [InlineData("<!-- [Not navigation](2.1.2-to-2.2.0.md) -->")]
+    [InlineData("```md\n[Example](2.1.2-to-2.2.0.md)\n```")]
+    public async Task VerifyAsync_CompatibilityMentionWithoutNavigationLinkFails(string indexBody)
+    {
+        using var repository = new RepositoryTestDirectory();
+        var graph = Graph();
+        WriteRequiredDocuments(repository, graph);
+        repository.Write("docs/reference/compatibility/README.md", "# Compatibility reference\n\n" + indexBody + "\n");
+
+        var result = await DocumentationVerificationService.VerifyAsync(
+            repository.Path, graph, CancellationToken.None);
+
+        Assert.Contains(result.Violations, violation => violation.Code == "SPDOC019");
+    }
+
+    [Fact]
     public async Task VerifyAsync_RejectsVersionPinnedAndRelativePackageReadmeTargets()
     {
         using var repository = new RepositoryTestDirectory();
@@ -647,7 +683,7 @@ public sealed class DocumentationVerificationServiceTests
             "[CHANGELOG](../../CHANGELOG.md)\n");
         repository.Write("docs/migration/2.2.0-integration-packages.md", "# Migration\n");
         repository.Write("docs/reference/api-overview.md", "# API overview\n");
-        repository.Write("docs/reference/compatibility/README.md", "# Compatibility reference\n");
+        repository.Write("docs/reference/compatibility/README.md", "# Compatibility reference\n\n[2.1.2 → 2.2.0](2.1.2-to-2.2.0.md)\n");
         repository.Write("docs/reference/compatibility/2.1.2-to-2.2.0.md", "# Compatibility matrix\n");
         repository.Write("docs/adr/README.md", "# ADR index\n");
         repository.Write("docs/maintainers/README.md", "# Maintainers\n");

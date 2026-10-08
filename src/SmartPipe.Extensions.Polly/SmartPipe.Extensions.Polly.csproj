@@ -6,7 +6,6 @@
   <PropertyGroup>
     <PackageId>SmartPipe.Extensions.Polly</PackageId>
     <Description>Polly resilience decorator for SmartPipe.Core transforms with explicit inner-transform ownership.</Description>
-    <PackageReleaseNotes>First standalone release in 2.2.0. Adds the canonical Polly resilience decorator with explicit inner-transform ownership. Removed PollyResilienceTransform callers must migrate and recompile. Trimming and NativeAOT supported.</PackageReleaseNotes>
     <PackageTags>smartpipe;pipeline;polly;resilience;retry;transform</PackageTags>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
     <IsAotCompatible>true</IsAotCompatible>

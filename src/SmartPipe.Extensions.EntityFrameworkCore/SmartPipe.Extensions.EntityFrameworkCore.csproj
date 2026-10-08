@@ -5,8 +5,8 @@
   <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
   <PropertyGroup>
     <PackageId>SmartPipe.Extensions.EntityFrameworkCore</PackageId>
+    <PackageReleaseNotes>SmartPipe $(SmartPipeVersionPrefix) servicing release. Preserves the public API validated against $(SmartPipePreviousStableVersion) and hardens default failure logging so provider exception details are not emitted by SmartPipe.</PackageReleaseNotes>
     <Description>Provider-neutral Entity Framework Core query sources for SmartPipe.Core.</Description>
-    <PackageReleaseNotes>First standalone release in 2.2.0. EfCoreSelector moves from the facade with forwarding; provider-neutral query sources use documented DbContext ownership. EF Core reflection paths do not carry a blanket trimming or NativeAOT guarantee.</PackageReleaseNotes>
     <PackageTags>smartpipe;pipeline;efcore;entity-framework;streaming</PackageTags>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>

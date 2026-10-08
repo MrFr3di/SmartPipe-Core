@@ -219,6 +219,32 @@ public sealed class EfCoreQuerySourceTests
         loggerFactory.Messages.Should().NotContain(message => message.Contains("SecretTable", StringComparison.Ordinal));
     }
 
+
+    [Fact]
+    public async Task FailureLogging_DoesNotEmitProviderExceptionDetails()
+    {
+        const string sentinel = "TOP_SECRET_QUERY_OR_CONNECTION";
+        var factory = new RecordingContextFactory();
+        var loggerFactory = new RecordingLoggerFactory();
+        var queryable = new RecordingQueryable<TestRow>([], "failure-logging")
+        {
+            MoveNextFailure = new InvalidOperationException(sentinel),
+        };
+        await using var source = CreateSource(
+            factory,
+            (context, activation) => queryable,
+            new EfCoreQueryOptions { OperationName = "safe-failure-logging" },
+            loggerFactory);
+
+        var act = async () => await SourceReader.ReadEnvelopesAsync(source, 1024);
+
+        var failure = await act.Should().ThrowAsync<InvalidOperationException>();
+        failure.Which.Message.Should().Be(sentinel);
+        loggerFactory.Messages.Should().Contain(message => message.Contains("safe-failure-logging", StringComparison.Ordinal));
+        loggerFactory.Messages.Should().NotContain(message => message.Contains(sentinel, StringComparison.Ordinal));
+        loggerFactory.Exceptions.Should().OnlyContain(exception => exception == null);
+    }
+
     [Fact]
     public async Task DisposeAsync_IsIdempotentAndNeverEnumerates()
     {

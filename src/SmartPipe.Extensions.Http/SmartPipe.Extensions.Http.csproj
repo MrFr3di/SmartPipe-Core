@@ -6,7 +6,6 @@
   <PropertyGroup>
     <PackageId>SmartPipe.Extensions.Http</PackageId>
     <Description>Streaming HTTP sources and sinks for SmartPipe.Core.</Description>
-    <PackageReleaseNotes>First standalone release in 2.2.0. Adds canonical streaming HTTP sources and sinks with explicit transport ownership and body bounds. Replaces removed legacy HTTP facade APIs; those callers must migrate and recompile. Trimming and NativeAOT supported.</PackageReleaseNotes>
     <PackageTags>smartpipe;pipeline;http;streaming</PackageTags>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)\README.md</SmartPipePackageReadmeSource>
     <IsAotCompatible>true</IsAotCompatible>

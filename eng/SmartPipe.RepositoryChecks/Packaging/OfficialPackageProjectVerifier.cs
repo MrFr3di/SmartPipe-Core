@@ -15,7 +15,15 @@ internal sealed record PackageProjectVerificationResult(IReadOnlyList<PackagePro
 internal sealed class OfficialPackageProjectVerifier
 {
     private readonly IReadOnlySet<string>? _expectedPackageIds;
-    internal OfficialPackageProjectVerifier(IReadOnlySet<string>? expectedPackageIds = null) => _expectedPackageIds = expectedPackageIds;
+    private readonly IReadOnlyDictionary<string, string?>? _expectedBaselines;
+
+    internal OfficialPackageProjectVerifier(
+        IReadOnlySet<string>? expectedPackageIds = null,
+        IReadOnlyDictionary<string, string?>? expectedBaselines = null)
+    {
+        _expectedPackageIds = expectedPackageIds;
+        _expectedBaselines = expectedBaselines;
+    }
 
     private static readonly string[] SharedProperties =
     [
@@ -27,7 +35,7 @@ internal sealed class OfficialPackageProjectVerifier
     private static readonly HashSet<string> AllowedProjectProperties = new(
         [
             "SmartPipePackage", "PackageId", "Description", "PackageTags", "SmartPipePackageReadmeSource",
-            "PackageValidationBaselineVersion", "IsPackable",
+            "PackageValidationBaselineVersion", "SmartPipePackageBaselinePolicy", "IsPackable",
         ],
         StringComparer.Ordinal);
 
@@ -43,6 +51,7 @@ internal sealed class OfficialPackageProjectVerifier
         var errors = new List<PackageProjectViolation>();
         IReadOnlySet<string> activeIds;
         IReadOnlySet<string> allIds;
+        IReadOnlyDictionary<string, string?>? baselines = _expectedBaselines;
         if (_expectedPackageIds is not null)
         {
             activeIds = allIds = _expectedPackageIds;
@@ -52,6 +61,8 @@ internal sealed class OfficialPackageProjectVerifier
             var graph = await new PackageGraphLoader().LoadAsync(root, "eng/package-graph.json", cancellationToken).ConfigureAwait(false);
             activeIds = graph.Packages.Where(x => x.Lifecycle != PackageLifecycle.Planned).Select(x => x.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
             allIds = graph.Packages.Select(x => x.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            baselines = graph.Packages.Where(x => x.Lifecycle != PackageLifecycle.Planned)
+                .ToDictionary(x => x.Id, x => x.BaselineVersion, StringComparer.OrdinalIgnoreCase);
         }
         var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var projectPath in EnumerateProjects(root).OrderBy(path => Relative(root, path), StringComparer.Ordinal))
@@ -99,6 +110,22 @@ internal sealed class OfficialPackageProjectVerifier
                     errors.Add(new("SPPKG008", $"Marked package {project.PackageId} is not registered in package graph.", Relative(root, projectPath)));
                 else if (!activeIds.Contains(project.PackageId))
                     errors.Add(new("SPPKG009", $"Planned package {project.PackageId} must not be marked active before graph activation.", Relative(root, projectPath)));
+                if (baselines is not null && baselines.TryGetValue(project.PackageId, out var graphBaseline))
+                {
+                    // Only first-time packages may omit their NuGet compatibility baseline.
+                    var requiredPolicy = graphBaseline is null ? "none" : "previous-stable";
+                    var declaredPolicy = project.BaselinePolicy ?? "previous-stable";
+                    if (!string.Equals(declaredPolicy, requiredPolicy, StringComparison.Ordinal)
+                        || (project.BaselineVersion is not null
+                            && !string.Equals(project.BaselineVersion, graphBaseline, StringComparison.Ordinal)))
+                    {
+                        errors.Add(new(
+                            "SPPKG010",
+                            $"Package {project.PackageId} baseline policy must be '{requiredPolicy}'"
+                                + (graphBaseline is null ? " with no explicit baseline." : $" targeting {graphBaseline}."),
+                            Relative(root, projectPath)));
+                    }
+                }
             }
 
             var readme = ResolveReadmePath(root, projectPath, project.ReadmeSource);
@@ -149,10 +176,19 @@ internal sealed class OfficialPackageProjectVerifier
                     continue;
                 }
 
-                var value = property.Value.Trim();
-                if (!properties.TryAdd(name, value) && SharedProperties.Contains(name, StringComparer.Ordinal))
+                if ((name is "SmartPipePackageBaselinePolicy" or "PackageValidationBaselineVersion")
+                    && (property.HasAttributes || property.Parent?.HasAttributes == true))
                 {
-                    sharedOverrides.Add(name);
+                    errors.Add(new("SPPKG010", $"Baseline policy property {name} must be unconditional.", Relative(root, path)));
+                }
+
+                var value = property.Value.Trim();
+                if (!properties.TryAdd(name, value))
+                {
+                    if (SharedProperties.Contains(name, StringComparer.Ordinal))
+                        sharedOverrides.Add(name);
+                    else if (name is "SmartPipePackageBaselinePolicy" or "PackageValidationBaselineVersion")
+                        errors.Add(new("SPPKG010", $"Duplicate baseline policy property {name}.", Relative(root, path)));
                 }
 
                 if (SharedProperties.Contains(name, StringComparer.Ordinal))
@@ -173,6 +209,7 @@ internal sealed class OfficialPackageProjectVerifier
             properties.GetValueOrDefault("PackageTags"),
             properties.GetValueOrDefault("SmartPipePackageReadmeSource"),
             properties.GetValueOrDefault("PackageValidationBaselineVersion"),
+            properties.GetValueOrDefault("SmartPipePackageBaselinePolicy"),
             string.Equals(properties.GetValueOrDefault("IsPackable"), "false", StringComparison.OrdinalIgnoreCase),
             hasImport,
             sharedOverrides.Distinct(StringComparer.Ordinal).ToArray());
@@ -237,6 +274,7 @@ internal sealed class OfficialPackageProjectVerifier
         string? Tags,
         string? ReadmeSource,
         string? BaselineVersion,
+        string? BaselinePolicy,
         bool IsPackableFalse,
         bool HasPackagePropsImport,
         IReadOnlyList<string> SharedOverrides);

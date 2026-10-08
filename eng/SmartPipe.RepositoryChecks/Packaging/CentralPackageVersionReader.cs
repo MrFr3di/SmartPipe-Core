@@ -1,5 +1,6 @@
 using System.Xml;
 using SmartPipe.RepositoryChecks.Repository;
+using SmartPipe.RepositoryChecks.PackageGraph;
 
 namespace SmartPipe.RepositoryChecks.Packaging;
 
@@ -160,6 +161,12 @@ internal sealed class CentralPackageVersionReader
                     continue;
                 }
 
+                version = ResolveRepositoryVersion(root, version, id, errors);
+                if (version is null)
+                {
+                    continue;
+                }
+
                 if (!versions.TryAdd(id, version))
                 {
                     errors.Add(new("SPCPM003", "Duplicate central PackageVersion ID.", RelativePath(root, path), id));
@@ -175,6 +182,48 @@ internal sealed class CentralPackageVersionReader
         catch (XmlException exception)
         {
             errors.Add(new("SPCPM001", $"Directory.Packages.props is invalid XML: {exception.Message}", RelativePath(root, path)));
+        }
+    }
+
+    private static string? ResolveRepositoryVersion(
+        string root,
+        string version,
+        string packageId,
+        ICollection<CentralPackageViolation> errors)
+    {
+        if (!version.Contains("$(", StringComparison.Ordinal))
+        {
+            return version;
+        }
+
+        try
+        {
+            var catalog = RepositoryVersionCatalog.Load(root);
+            return version switch
+            {
+                "$(SmartPipeVersionPrefix)" => catalog.VersionPrefix,
+                "$(SmartPipePreviousStableVersion)" => catalog.PreviousStableVersion,
+                _ => Reject(),
+            };
+        }
+        catch (PackageGraphException exception)
+        {
+            errors.Add(new(
+                "SPCPM009",
+                $"Central PackageVersion could not resolve the repository version catalog: {exception.Message}",
+                "Directory.Packages.props",
+                packageId));
+            return null;
+        }
+
+        string? Reject()
+        {
+            errors.Add(new(
+                "SPCPM009",
+                $"Central PackageVersion uses unsupported MSBuild expression '{version}'.",
+                "Directory.Packages.props",
+                packageId));
+            return null;
         }
     }
 

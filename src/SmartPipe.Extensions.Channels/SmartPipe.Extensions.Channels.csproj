@@ -7,7 +7,6 @@
   <PropertyGroup>
     <PackageId>SmartPipe.Extensions.Channels</PackageId>
     <Description>Channel merge primitives for SmartPipe.Core.</Description>
-    <PackageReleaseNotes>First standalone release in 2.2.0. Channel merge primitives move from the facade to this Core-based leaf; existing full type names are preserved by facade forwarders. Trimming and NativeAOT supported.</PackageReleaseNotes>
     <PackageTags>SmartPipe;pipeline;channels</PackageTags>
     <SmartPipePackageReadmeSource>$(MSBuildProjectDirectory)/README.md</SmartPipePackageReadmeSource>
     <IsAotCompatible>true</IsAotCompatible>

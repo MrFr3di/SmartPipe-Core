@@ -13,8 +13,9 @@ public sealed class PackPackagesCommandTests
     {
         using var fixture = CreateRepository();
         var runner = new FakePackRunner();
+        var packageVersion = RepositoryVersionCatalog.Load(fixture.Path).VersionPrefix;
         var manifest = await new PackPackagesCommand(runner).ExecuteAsync(new(
-            fixture.Path, PackageGraphMode.Current, "Release", "2.2.0",
+            fixture.Path, PackageGraphMode.Current, "Release", packageVersion,
             Path.Combine(fixture.Path, "artifacts/packages"), Path.Combine(fixture.Path, "artifacts/packages/manifest.json")), TestContext.Current.CancellationToken);
         Assert.Equal(["SmartPipe.Core", "SmartPipe.Extensions.Channels", "SmartPipe.Extensions.Csv", "SmartPipe.Extensions.Dapper", "SmartPipe.Extensions.Transforms", "SmartPipe.Extensions.DataAnnotations", "SmartPipe.Extensions.DependencyInjection", "SmartPipe.Extensions.EntityFrameworkCore", "SmartPipe.Extensions.HealthChecks", "SmartPipe.Extensions.Hosting", "SmartPipe.Extensions.Http", "SmartPipe.Extensions.Json", "SmartPipe.Extensions.Http.Json", "SmartPipe.Extensions.Logging", "SmartPipe.Extensions.Mapster", "SmartPipe.Extensions.OpenTelemetry", "SmartPipe.Extensions.Polly", "SmartPipe.Extensions", "SmartPipe.Extensions.PostgreSql", "SmartPipe.Testing"], manifest.Packages.Select(x => x.Id));
         Assert.Equal([1, 2, 6, 7, 3, 18, 14, 8, 17, 16, 11, 5, 13, 4, 9, 15, 10, 19, 20, 12], manifest.Packages.Select(x => x.PublishOrder));
@@ -29,7 +30,7 @@ public sealed class PackPackagesCommandTests
         var bytes = await File.ReadAllBytesAsync(Path.Combine(fixture.Path, "artifacts/packages/manifest.json"), TestContext.Current.CancellationToken);
         Assert.DoesNotContain((byte)'\r', bytes);
         await Assert.ThrowsAsync<PackagePackException>(() => new PackPackagesCommand(runner).ExecuteAsync(new(
-            fixture.Path, PackageGraphMode.Current, "Release", "2.2.0", Path.Combine(fixture.Path, "artifacts/packages"), Path.Combine(fixture.Path, "artifacts/packages/manifest.json")), TestContext.Current.CancellationToken));
+            fixture.Path, PackageGraphMode.Current, "Release", packageVersion, Path.Combine(fixture.Path, "artifacts/packages"), Path.Combine(fixture.Path, "artifacts/packages/manifest.json")), TestContext.Current.CancellationToken));
     }
 
     private static RepositoryTestDirectory CreateRepository()
@@ -37,6 +38,7 @@ public sealed class PackPackagesCommandTests
         var fixture = new RepositoryTestDirectory();
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         fixture.Write("eng/package-graph.json", File.ReadAllText(Path.Combine(root, "eng/package-graph.json")));
+        fixture.Write("eng/SmartPipe.Versions.props", File.ReadAllText(Path.Combine(root, "eng/SmartPipe.Versions.props")));
         fixture.Write("src/SmartPipe.Core/SmartPipe.Core.csproj", "<Project />");
         fixture.Write("src/SmartPipe.Extensions.Channels/SmartPipe.Extensions.Channels.csproj", "<Project />");
         fixture.Write("src/SmartPipe.Extensions.Dapper/SmartPipe.Extensions.Dapper.csproj", "<Project />");
