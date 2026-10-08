@@ -104,6 +104,7 @@ public sealed class ProcessRunnerTests
         Assert.Equal(ProcessFailureKind.StartFailure, exception.FailureKind);
         Assert.Contains("phase: wait-ready", exception.Message, StringComparison.Ordinal);
         Assert.Contains("failure: ProcessHostProtocolException", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("reason: invalid-control-message", exception.Message, StringComparison.Ordinal);
         Assert.NotNull(exception.InnerException);
     }
 
@@ -249,6 +250,35 @@ public sealed class ProcessRunnerTests
             ownershipFactory.ReleaseInitialization.TrySetResult();
             File.Delete(startedPath);
         }
+    }
+
+    [Fact]
+    public async Task ProcessHostSession_StartAcknowledgementHasItsOwnBoundedDeadline()
+    {
+        using var session = new ProcessHostSession(
+            TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromSeconds(3));
+        using var client = new NamedPipeClientStream(
+            ".", session.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+        await ProcessHostControlProtocol.WriteAsync(
+            client, session.Nonce,
+            new ProcessHostControlMessage(ProcessHostControlMessageKind.Ready),
+            TestContext.Current.CancellationToken);
+        await session.WaitForReadyAsync(TestContext.Current.CancellationToken);
+
+        var started = session.SendStartAndWaitForResultAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(
+            ProcessHostControlMessageKind.Start,
+            (await ProcessHostControlProtocol.ReadAsync(
+                client, session.Nonce, TestContext.Current.CancellationToken)).Kind);
+        // The ready deadline has elapsed; STARTED still has a separate bound.
+        await Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        await ProcessHostControlProtocol.WriteAsync(
+            client, session.Nonce,
+            new ProcessHostControlMessage(ProcessHostControlMessageKind.Started),
+            TestContext.Current.CancellationToken);
+        Assert.True(await started);
     }
 
     [Fact]
