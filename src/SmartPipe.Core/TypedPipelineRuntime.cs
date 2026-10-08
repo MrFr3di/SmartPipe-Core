@@ -1395,32 +1395,41 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         var enumerator = _spec.Source
             .ReadEnvelopesAsync(sourceToken)
             .GetAsyncEnumerator(sourceToken);
+        ExceptionDispatchInfo? primary = null;
         try
         {
-            while (!ShouldStopAccepting() && await enumerator.MoveNextAsync().ConfigureAwait(false))
+            try
             {
-                var envelope = enumerator.Current;
-                _metrics.RecordActivity();
-                var action = await ProcessEnvelopeAsync(envelope, processingToken).ConfigureAwait(false);
-                if (action == FailureAction.StopPipeline)
+                while (!ShouldStopAccepting() && await enumerator.MoveNextAsync().ConfigureAwait(false))
                 {
-                    RequestStopAccepting();
-                    break;
+                    var envelope = enumerator.Current;
+                    _metrics.RecordActivity();
+                    var action = await ProcessEnvelopeAsync(envelope, processingToken).ConfigureAwait(false);
+                    if (action == FailureAction.StopPipeline)
+                    {
+                        RequestStopAccepting();
+                        break;
+                    }
                 }
             }
-        }
-        catch (OperationCanceledException)
-        {
-            var classification = CaptureSourceStopClassificationSnapshot();
-            if (!classification.IsGraceful)
-                throw;
+            catch (OperationCanceledException)
+            {
+                var classification = CaptureSourceStopClassificationSnapshot();
+                if (!classification.IsGraceful)
+                    throw;
 
-            _cts.Token.ThrowIfCancellationRequested();
+                _cts.Token.ThrowIfCancellationRequested();
+            }
         }
-        finally
+        catch (Exception ex)
         {
-            await enumerator.DisposeAsync().ConfigureAwait(false);
+            primary = ExceptionDispatchInfo.Capture(ex);
         }
+
+        var cleanupErrors = await RuntimeCleanup.CollectAsync([
+            () => enumerator.DisposeAsync(),
+        ]).ConfigureAwait(false);
+        RuntimeCleanup.ThrowCombined(primary, cleanupErrors);
     }
 
     private async ValueTask RunParallelProcessingAsync(
@@ -1432,18 +1441,34 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _options.InputFullMode,
             OnInputDropped);
         Volatile.Write(ref _inputReader, input.Reader);
-
+        using var workerStop = CancellationTokenSource.CreateLinkedTokenSource(processingToken);
+        var stopErrors = new ConcurrentQueue<Exception>();
         Exception? workerFailure = null;
         object workerFailureGate = new();
+
+        void RequestCancellation(CancellationTokenSource cancellation)
+        {
+            try
+            {
+                cancellation.Cancel();
+            }
+            catch (Exception ex)
+            {
+                // User cancellation callbacks must not bypass the worker join.
+                stopErrors.Enqueue(ex);
+            }
+        }
 
         void RecordWorkerFailure(Exception ex)
         {
             lock (workerFailureGate)
                 workerFailure ??= ex;
 
-            // Unblock a producer waiting on the source; the worker failure is the run outcome.
+            // Stop siblings, including workers waiting for bounded output capacity.
+            // This is an internal fault stop, not a public cancellation request.
             RecordSourceStopReason(SourceStopReason.WorkerFailure);
-            _sourceCts.Cancel();
+            RequestCancellation(_sourceCts);
+            RequestCancellation(workerStop);
         }
 
         bool HasWorkerFailure()
@@ -1455,39 +1480,77 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         var workers = Enumerable
             .Range(0, _options.EffectiveMaxConcurrency)
             .Select(_ => Task.Run(
-                () => _worker.RunAsync(input.Reader, input.Writer, RecordWorkerFailure, processingToken),
+                () => _worker.RunAsync(input.Reader, input.Writer, RecordWorkerFailure, workerStop.Token),
                 CancellationToken.None
             ))
             .ToArray();
 
+        ExceptionDispatchInfo? primary = null;
         try
         {
             try
             {
-                await _producer.ProduceAsync(input.Writer, sourceToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-                when (CaptureSourceStopClassificationSnapshot().Reason == SourceStopReason.WorkerFailure)
-            {
-                // The worker failure cancelled the source; Task.WhenAll below surfaces it.
-            }
-            catch (OperationCanceledException)
-            {
-                var classification = CaptureSourceStopClassificationSnapshot();
-                if (!classification.IsGraceful)
-                    throw;
+                try
+                {
+                    await _producer.ProduceAsync(input.Writer, sourceToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                    when (CaptureSourceStopClassificationSnapshot().Reason == SourceStopReason.WorkerFailure)
+                {
+                    // Source cancellation caused by a worker fault is secondary.
+                }
+                catch (OperationCanceledException)
+                {
+                    var classification = CaptureSourceStopClassificationSnapshot();
+                    if (!classification.IsGraceful)
+                        throw;
 
-                _cts.Token.ThrowIfCancellationRequested();
+                    _cts.Token.ThrowIfCancellationRequested();
+                }
+                catch (ChannelClosedException) when (HasWorkerFailure())
+                {
+                }
             }
-            catch (ChannelClosedException) when (HasWorkerFailure())
+            catch (Exception ex)
             {
+                primary = ExceptionDispatchInfo.Capture(ex);
+                RequestCancellation(workerStop);
             }
             finally
             {
                 input.Writer.TryComplete();
             }
 
-            await Task.WhenAll(workers).ConfigureAwait(false);
+            // Cancellation stops waiting operations; only joining proves that
+            // ordinary workers no longer use runtime-owned components.
+            var allWorkers = Task.WhenAll(workers);
+            try
+            {
+                await allWorkers.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Await surfaces one exception. Collect the full aggregate below.
+                primary ??= ExceptionDispatchInfo.Capture(workerFailure ?? ex);
+            }
+
+            var errors = stopErrors.ToList();
+            if (allWorkers.Exception is { } workerErrors)
+            {
+                foreach (var error in workerErrors.InnerExceptions)
+                {
+                    if (ReferenceEquals(error, primary?.SourceException))
+                        continue;
+                    if (error is OperationCanceledException cancellation
+                        && workerStop.IsCancellationRequested
+                        && cancellation.CancellationToken == workerStop.Token)
+                        continue;
+
+                    errors.Add(error);
+                }
+            }
+
+            RuntimeCleanup.ThrowCombined(primary, errors);
         }
         finally
         {

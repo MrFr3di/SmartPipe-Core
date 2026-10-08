@@ -201,6 +201,18 @@ skip later owned resources. If processing and cleanup both fail, the processing
 exception remains primary and cleanup errors are reported after it. If cleanup
 is the only failure, the run faults during finalization.
 
+Source-enumerator cleanup follows the same error ordering: a read/processing
+exception remains first, followed by an enumerator disposal failure. Cleanup
+failure after requested cancellation faults the run and retains both causes.
+
+Parallel source faults stop input and request cancellation of ordinary workers,
+including pending bounded-output writes. All ordinary workers are joined before
+component disposal and public completion. Independent worker and stop-callback
+errors remain observable after the source error. Graceful drain still waits for
+accepted work without cancelling its processing token. An ordinary operation
+that ignores cancellation can delay shutdown; cancellation does not forcibly
+terminate user code.
+
 Late timed-out stage attempts are part of runtime cleanup. The runtime tracks
 detached attempts and waits up to `TimeoutPolicy.LateAttemptFinalizationTimeout`
 before disposing the owning stage. If a non-cooperative transformer continues

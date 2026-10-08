@@ -41,6 +41,13 @@ I1 supervisor: сначала закрепить ownership-инварианты 
 нельзя объявить timeout registry общим supervisor без проверки sink, source и
 scope ownership. Future outcome struct полезен независимо от нового registry.
 
+Дополнение к F2: LateStageAttemptRegistry сейчас намеренно поглощает поздние
+faults, поскольку timeout уже представлен результатом. Для caller cancellation
+это не автоматически правильный контракт. Следующий slice должен различать
+причину detach и определить наблюдение/агрегацию cancellation-origin faults;
+простой Register на новый путь без анализа ошибок недостаточен. F1 join обычных
+workers не закрывает этот timed-attempt дефект.
+
 I2 retry budget/jitter/late cap: отдельное opt-in изменение. Concurrency envelopes
 не ограничивает detached operations. Лимит нельзя реализовать забыв задачу или
 освободив её ресурсы. Нужны явный admission failure, отменяемое ожидание, injectable

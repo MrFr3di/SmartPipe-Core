@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Runtime.ExceptionServices;
 using System.Threading.Channels;
 
 namespace SmartPipe.Core;
@@ -30,6 +31,7 @@ internal sealed class PipelineProducer<TInput>
         var enumerator = _source
             .ReadEnvelopesAsync(ct)
             .GetAsyncEnumerator(ct);
+        ExceptionDispatchInfo? primary = null;
         try
         {
             while (!_shouldStopAccepting() && await enumerator.MoveNextAsync().ConfigureAwait(false))
@@ -38,9 +40,14 @@ internal sealed class PipelineProducer<TInput>
                 _recordAccepted();
             }
         }
-        finally
+        catch (Exception ex)
         {
-            await enumerator.DisposeAsync().ConfigureAwait(false);
+            primary = ExceptionDispatchInfo.Capture(ex);
         }
+
+        var cleanupErrors = await RuntimeCleanup.CollectAsync([
+            () => enumerator.DisposeAsync(),
+        ]).ConfigureAwait(false);
+        RuntimeCleanup.ThrowCombined(primary, cleanupErrors);
     }
 }
