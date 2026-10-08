@@ -82,6 +82,24 @@ public sealed class OfficialPackageProjectTests
     }
 
     [Fact]
+    public async Task Verify_ConditionalBaselineOverrideFails()
+    {
+        using var repository = FixtureRepository();
+        repository.Write("src/SmartPipe.Core/SmartPipe.Core.csproj",
+            ProjectXml("SmartPipe.Core", extra:
+                "<SmartPipePackageBaselinePolicy Condition=\"'$(Configuration)' == 'Never'\">previous-stable</SmartPipePackageBaselinePolicy>"));
+
+        var expected = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["SmartPipe.Core"] = "2.2.0",
+        };
+        var result = await new OfficialPackageProjectVerifier(FixturePackageIds, expected).VerifyAsync(
+            repository.Path, TestContext.Current.CancellationToken);
+
+        Assert.Contains(result.Errors, violation => violation.Code == "SPPKG010");
+    }
+
+    [Fact]
     public async Task Verify_FirstReleasePackageMayOmitBaselineExplicitly()
     {
         using var repository = FixtureRepository();
