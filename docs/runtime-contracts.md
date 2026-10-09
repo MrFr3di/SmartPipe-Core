@@ -193,20 +193,55 @@ outcome.
 
 For buffered observer dispatch, `FlushOnCompletion = false` affects completion
 only. Disposal still stops and awaits the buffered worker before returning.
-Observer callbacks should observe cancellation tokens so buffered shutdown is
-bounded.
+Buffered callbacks have a cancellation lifetime separate from the queue worker.
+Cancel, Abort, run disposal, and activation-token cancellation signal callbacks
+immediately, including when reliable writes are blocked by observer backpressure.
+A terminal processing fault signals callbacks before bounded failure notifications
+and the final flush. Recoverable stage failures do not cancel callbacks. Callback cancellation
+does not stop the queue worker or turn expected cancellation into ObserverFailedEvent;
+remaining observers and flush barriers are still processed. With flush enabled,
+terminal events are offered in queue order with the cancelled callback token.
+Observers that reject that token may skip delivery; observers that accept terminal
+events still receive them. Cancellation cannot guarantee observer execution.
+
+Normal completion and graceful Drain do not cancel callbacks before delivery.
+Dispatcher disposal signals worker/callback cancellation before joining any
+in-progress CompleteAsync, then joins the worker even if cancellation callbacks
+throw. Concurrent disposal callers await the same teardown. Callbacks must cooperate
+with cancellation; Core cannot bound an observer that ignores its token.
 
 Cleanup attempts are best-effort but complete: one cleanup failure does not
 skip later owned resources. If processing and cleanup both fail, the processing
 exception remains primary and cleanup errors are reported after it. If cleanup
 is the only failure, the run faults during finalization.
 
-Late timed-out stage attempts are part of runtime cleanup. The runtime tracks
+Source-enumerator cleanup follows the same error ordering: a read/processing
+exception remains first, followed by an enumerator disposal failure. Cleanup
+failure after requested cancellation faults the run and retains both causes.
+
+Parallel source faults stop input and request cancellation of ordinary workers,
+including pending bounded-output writes. All ordinary workers are joined before
+component disposal and public completion. Independent worker and stop-callback
+errors remain observable after the source error. Graceful drain still waits for
+accepted work without cancelling its processing token. An ordinary operation
+that ignores cancellation can delay shutdown; cancellation does not forcibly
+terminate user code.
+
+Late timed-out stage attempts and timed attempts abandoned by caller cancellation
+are part of runtime cleanup. Cancelling an asynchronous wait does not end its
+underlying execution. The runtime retains the attempt and its linked CTS until
+execution and observation finish. The runtime tracks
 detached attempts and waits up to `TimeoutPolicy.LateAttemptFinalizationTimeout`
 before disposing the owning stage. If a non-cooperative transformer continues
 past that timeout, the runtime reports a cleanup failure instead of forcibly
 stopping user code in-process. A stage with a still-running late attempt is not
-disposed during that failed finalization pass.
+disposed during that failed finalization pass. A later `DisposeAsync` waits for
+all registered attempt observation, including Borrowed/ScopeOwned stages, before
+returning. It disposes only runtime-owned deferred stages. Unexpected cancellation-origin task faults and structured
+stage failures are reported once through finalization, or through deferred
+disposal if they arrive after Completion is published. Expected requested
+cancellation is not an additional cleanup failure. Timeout-origin late faults
+remain represented by the previously returned timeout outcome.
 
 `DisposeAsync` is idempotent. Concurrent callers await one shared disposal
 task. For a started run, external disposal requests cancellation, waits for the
@@ -284,6 +319,13 @@ remain permanent unless a classifier says otherwise. Pipeline cancellation
 next retry attempt starts. It is not invoked when the retry delay is cancelled.
 If the callback throws, the run faults with that exception.
 
+Timeout policy snapshots validate before component activation. Undefined retry
+modes and negative durations other than the exact `Timeout.InfiniteTimeSpan`
+sentinel are rejected. Finite durations, including `StageTimeout`, must be at
+most 4,294,967,294 milliseconds, the supported timer wait budget. Zero is valid;
+nullable attempt/stage budgets may also be absent. Invalid values fail before
+any user component factory runs.
+
 `TimeoutPolicy.AttemptTimeout` limits one attempt. `StageTimeout` is measured
 with the runtime monotonic clock and includes attempt execution, cancellation
 grace, retry delay, and the next attempt budget. When `Clock` is a
@@ -293,7 +335,9 @@ compatibility fallback. `RetryMode` controls overlap after an attempt timeout:
 
 - `CooperativeOnly` is the default. The runtime cancels the attempt, waits
   `CancellationGracePeriod`, and retries only if the timed-out attempt has
-  completed.
+  completed. `CancellationGracePeriod = Timeout.InfiniteTimeSpan` waits until
+  the attempt completes or caller cancellation interrupts the wait; zero
+  detaches immediately if the attempt is still running.
 - `DetachWithoutRetry` returns the timeout result, observes the late task, and
   does not retry.
 - `DetachAndRetryIdempotent` detaches the late task and permits retry overlap;
@@ -348,3 +392,16 @@ output writes, drain during source reads, and disposal during in-flight work.
 
 Core contains the runtime and typed abstractions. Integration components belong
 in `SmartPipe.Extensions`.
+
+## Adaptive failure samples
+
+Adaptive admission records one sample for each admitted envelope that finishes
+processing, including sink/output handling. Its failure flag is independent of
+the control-flow FailureAction: terminal stage failures count for EmitFailureResult,
+DeadLetter, Skip, StopPipeline and FaultPipeline, including exhausted retries and
+breaker rejection. Filtered and stage-skipped terminal results are not failures.
+Retries that ultimately succeed contribute one successful envelope sample; retry
+attempts are not separate adaptive samples. Unexpected processing/sink/output
+exceptions count as failures. An OperationCanceledException with the processing
+token cancelled is shutdown and contributes no sample; the admission lease is
+still released. Adaptive-disabled and sequential behavior remains unchanged.

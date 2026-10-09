@@ -4,6 +4,7 @@ namespace SmartPipe.Core;
 
 internal sealed class SinkExecutor<TOutput> : IDisposable
 {
+    private readonly Func<ValueTask> _stopCallbacksOnFaultAsync;
     private readonly IPipelineSink<TOutput>? _sink;
     private readonly string _pipelineId;
     private readonly string _runId;
@@ -18,8 +19,10 @@ internal sealed class SinkExecutor<TOutput> : IDisposable
         string runId,
         IPipelineClock clock,
         Func<PipelineEvent, CancellationToken, ValueTask> emitAsync,
-        Action<double>? recordSinkDuration = null)
+        Action<double>? recordSinkDuration = null,
+        Func<ValueTask>? stopCallbacksOnFaultAsync = null)
     {
+        _stopCallbacksOnFaultAsync = stopCallbacksOnFaultAsync ?? (() => ValueTask.CompletedTask);
         _sink = sink;
         _pipelineId = pipelineId ?? throw new ArgumentNullException(nameof(pipelineId));
         _runId = runId ?? throw new ArgumentNullException(nameof(runId));
@@ -61,6 +64,7 @@ internal sealed class SinkExecutor<TOutput> : IDisposable
             }
             catch (Exception ex)
             {
+                await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
                 await _emitAsync(
                         new SinkWriteFailedEvent(
                             _pipelineId,

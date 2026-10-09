@@ -173,6 +173,7 @@ internal sealed record StageFailureOptionsSnapshot(
     public static StageFailureOptionsSnapshot Create(StageFailureOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        options.Timeout?.Validate();
         options.CircuitBreaker?.Validate();
 
         return new(
@@ -213,6 +214,7 @@ internal sealed record StageFailureOptionsSnapshot(
                 "Retry exhausted action is invalid.");
         }
 
+        Timeout?.Validate();
         CircuitBreaker?.Validate();
     }
 

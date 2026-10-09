@@ -113,6 +113,24 @@ jobs:
     - name: Build
       run: dotnet build SmartPipe.Core.slnx --no-restore -c Release -warnaserror
 
+    - name: Core integration review regressions
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-class SmartPipe.Core.Tests.Engine.IntegrationReviewRegressionTests --minimum-expected-tests 12
+
+    - name: Scoped timed-attempt ownership regression
+      run: dotnet test --project tests/SmartPipe.Extensions.DependencyInjection.Tests/SmartPipe.Extensions.DependencyInjection.Tests.csproj --no-build -c Release --filter-method "*RealScope_AfterTimedFinalizationFailure_WaitsForActiveStageBeforeDisposal*" --minimum-expected-tests 1
+
+    - name: Core ownership regression tests
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Engine.TypedPipelineOwnershipRegressionTests --minimum-expected-tests 17
+
+    - name: Core timed ownership regression tests
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Engine.TypedPipelineTimedOwnershipRegressionTests --minimum-expected-tests 47
+
+    - name: Core buffered observer shutdown regressions
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-class SmartPipe.Core.Tests.Engine.BufferedObserverShutdownRegressionTests --minimum-expected-tests 37
+
+    - name: Core adaptive failure accounting regressions
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-class SmartPipe.Core.Tests.Engine.AdaptiveFailureAccountingRegressionTests --minimum-expected-tests 27
+
     - name: Verify RepositoryChecks profile
       run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify --profile sp220-05 --format github --failures-only
 

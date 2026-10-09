@@ -9,6 +9,8 @@ internal interface IPipelineObserverDispatcher : IAsyncDisposable
 {
     ValueTask EmitAsync(PipelineEvent pipelineEvent, CancellationToken ct);
 
+    ValueTask StopCallbacksAsync();
+
     ValueTask FlushAsync(CancellationToken ct);
 
     ValueTask CompleteAsync(CancellationToken ct);
@@ -44,23 +46,25 @@ internal static class PipelineObserverDispatcher
         IReadOnlyList<PipelineObserverRegistration> observers,
         ObserverDispatchOptions options,
         IPipelineClock clock,
-        Action<PipelineEvent>? onObserverEventDropped = null
+        Action<PipelineEvent>? onObserverEventDropped = null,
+        CancellationToken callbackStopToken = default
     )
-        => Create(observers, options, clock, new PipelineTime(clock), onObserverEventDropped);
+        => Create(observers, options, clock, new PipelineTime(clock), onObserverEventDropped, callbackStopToken);
 
     public static IPipelineObserverDispatcher Create(
         IReadOnlyList<PipelineObserverRegistration> observers,
         ObserverDispatchOptions options,
         IPipelineClock clock,
         PipelineTime time,
-        Action<PipelineEvent>? onObserverEventDropped = null
+        Action<PipelineEvent>? onObserverEventDropped = null,
+        CancellationToken callbackStopToken = default
     )
     {
         options.Validate();
         ArgumentNullException.ThrowIfNull(clock);
         return options.Mode == ObserverDispatchMode.Inline
             ? new InlinePipelineObserverDispatcher(observers, options, clock)
-            : new BufferedPipelineObserverDispatcher(observers, options, clock, time, onObserverEventDropped);
+            : new BufferedPipelineObserverDispatcher(observers, options, clock, time, onObserverEventDropped, callbackStopToken);
     }
 }
 
@@ -109,6 +113,8 @@ internal sealed class InlinePipelineObserverDispatcher : IPipelineObserverDispat
             }
         }
     }
+
+    public ValueTask StopCallbacksAsync() => ValueTask.CompletedTask;
 
     public ValueTask CompleteAsync(CancellationToken ct) => ValueTask.CompletedTask;
 
@@ -171,6 +177,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
     private readonly Action<PipelineEvent>? _onObserverEventDropped;
     private readonly Channel<ObserverDispatchMessage> _events;
     private readonly CancellationTokenSource _cts = new();
+    private readonly CancellationTokenSource _callbackCts;
     private readonly Task _worker;
     private readonly object _lifecycleGate = new();
     private Exception? _pipelineFault;
@@ -184,7 +191,8 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         ObserverDispatchOptions options,
         IPipelineClock clock,
         PipelineTime time,
-        Action<PipelineEvent>? onObserverEventDropped
+        Action<PipelineEvent>? onObserverEventDropped,
+        CancellationToken callbackStopToken
     )
     {
         _observers = ObserverRegistrationState.CreateActiveObservers(observers);
@@ -196,6 +204,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
             options.Capacity,
             options.FullMode,
             RecordDroppedMessage);
+        _callbackCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, callbackStopToken);
         _worker = Task.Run(ProcessAsync, CancellationToken.None);
     }
 
@@ -266,6 +275,8 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
             throw;
         }
     }
+
+    public ValueTask StopCallbacksAsync() => new(_callbackCts.CancelAsync());
 
     public async ValueTask CompleteAsync(CancellationToken ct)
     {
@@ -415,36 +426,38 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         Interlocked.Exchange(ref _completed, 1);
         _events.Writer.TryComplete();
 
-        if (completeTask is not null)
+        try
         {
-            try
-            {
-                await completeTask.ConfigureAwait(false);
-            }
-            catch (Exception) when (GetPipelineFault() is not null)
-            {
-                // Recorded observer failure is surfaced through EmitAsync/CompleteAsync.
-            }
+            var errors = await RuntimeCleanup.CollectAsync([
+                () => _worker.IsCompleted ? ValueTask.CompletedTask : new ValueTask(_cts.CancelAsync()),
+                () => AwaitTeardownAsync(completeTask),
+                () => AwaitTeardownAsync(_worker),
+            ]).ConfigureAwait(false);
+            RuntimeCleanup.ThrowCombined(null, errors);
         }
+        finally
+        {
+            _callbackCts.Dispose();
+            _cts.Dispose();
+        }
+    }
+
+    private async ValueTask AwaitTeardownAsync(Task? task)
+    {
+        if (task is null)
+            return;
 
         try
         {
-            if (!_worker.IsCompleted)
-                _cts.Cancel();
-
-            await _worker.ConfigureAwait(false);
+            await task.ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
-            // Expected during disposal; cancellation is the disposal signal.
+            // Expected during dispatcher disposal.
         }
         catch (Exception) when (GetPipelineFault() is not null)
         {
             // Recorded observer failure is surfaced through EmitAsync/CompleteAsync.
-        }
-        finally
-        {
-            _cts.Dispose();
         }
     }
 
@@ -513,12 +526,12 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
     {
         try
         {
-            await registration.Registration.Observer.OnEventAsync(pipelineEvent, _cts.Token)
+            await registration.Registration.Observer.OnEventAsync(pipelineEvent, _callbackCts.Token)
                 .ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        catch (OperationCanceledException) when (_callbackCts.IsCancellationRequested)
         {
-            return true;
+            return _cts.IsCancellationRequested;
         }
         catch (Exception ex)
         {
@@ -573,12 +586,13 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
 
             try
             {
-                await registration.Registration.Observer.OnEventAsync(failureEvent, _cts.Token)
+                await registration.Registration.Observer.OnEventAsync(failureEvent, _callbackCts.Token)
                     .ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+            catch (OperationCanceledException) when (_callbackCts.IsCancellationRequested)
             {
-                return;
+                if (_cts.IsCancellationRequested)
+                    return;
             }
             catch (Exception ex)
             {

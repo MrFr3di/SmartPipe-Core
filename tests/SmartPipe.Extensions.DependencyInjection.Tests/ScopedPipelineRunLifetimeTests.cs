@@ -8,6 +8,102 @@ namespace SmartPipe.Extensions.DependencyInjection.Tests;
 public sealed class ScopedPipelineRunLifetimeTests
 {
     [Fact]
+    public async Task RealScope_AfterTimedFinalizationFailure_WaitsForActiveStageBeforeDisposal()
+    {
+        var deadline = TimeSpan.FromSeconds(10);
+        var testCancellation = TestContext.Current.CancellationToken;
+        var stage = new HeldScopedStage();
+        var services = new ServiceCollection();
+        services.AddScoped(_ => stage);
+        await using var root = services.BuildServiceProvider();
+        var scope = root.CreateAsyncScope();
+        var definition = PipelineDefinitionBuilder.From(new PipelineKey("held-scope"),
+            PipelineComponent.RuntimeOwned<IPipelineSource<int>>((_, _) => ValueTask.FromResult<IPipelineSource<int>>(new OneItemSource())))
+            .Transform(new PipelineStageKey("held"),
+                PipelineComponent.ScopeOwned<IPipelineTransformer<int, int>>((context, _) =>
+                    ValueTask.FromResult<IPipelineTransformer<int, int>>(context.Services!.GetRequiredService<HeldScopedStage>())),
+                new StageFailureOptions
+                {
+                    Timeout = new TimeoutPolicy
+                    {
+                        AttemptTimeout = TimeSpan.FromMinutes(1),
+                        LateAttemptFinalizationTimeout = TimeSpan.Zero,
+                    },
+                }).Build();
+        var inner = await definition.StartAsync(new PipelineActivationContext(definition.Key, Guid.NewGuid(), scope.ServiceProvider), testCancellation);
+        ScopedPipelineRunLifetime<int, int>? lifetime = null;
+        try
+        {
+            await stage.Entered.Task.WaitAsync(deadline, testCancellation);
+            await inner.CancelAsync(testCancellation).AsTask().WaitAsync(deadline, testCancellation);
+            await stage.Cancelled.Task.WaitAsync(deadline, testCancellation);
+            var error = await Record.ExceptionAsync(async () => await inner.Completion.WaitAsync(deadline, testCancellation));
+            Assert.IsType<AggregateException>(error);
+            // Construct the wrapper after Core publishes the budget failure: cleanup
+            // enters synchronously, so a missing Core join deterministically closes the scope.
+            lifetime = new ScopedPipelineRunLifetime<int, int>(inner, new CountingLease(), scope,
+                DateTimeOffset.UtcNow, TimeProvider.System, new TestObservationStore());
+            var disposal = lifetime.DisposeAsync().AsTask();
+            Assert.False(disposal.IsCompleted);
+            Assert.False(lifetime.Completion.IsCompleted);
+            Assert.Equal(0, stage.DisposeCalls);
+            stage.Release.TrySetResult();
+            _ = await Record.ExceptionAsync(async () => await lifetime.Completion.WaitAsync(deadline, testCancellation));
+            await disposal.WaitAsync(deadline, testCancellation);
+            Assert.Equal(1, stage.DisposeCalls);
+            Assert.False(stage.DisposedWhileActive);
+        }
+        finally
+        {
+            stage.Release.TrySetResult();
+            if (lifetime is not null)
+                _ = await Record.ExceptionAsync(async () => await lifetime.DisposeAsync().AsTask().WaitAsync(deadline, testCancellation));
+            else
+            {
+                _ = await Record.ExceptionAsync(async () => await inner.DisposeAsync().AsTask().WaitAsync(deadline, testCancellation));
+                await scope.DisposeAsync();
+            }
+        }
+    }
+
+    private sealed class HeldScopedStage : IPipelineTransformer<int, int>
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Exited { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int DisposeCalls { get; private set; }
+        public bool DisposedWhileActive { get; private set; }
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public async ValueTask<StageResult<int>> TransformAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default)
+        {
+            using var registration = ct.Register(() => Cancelled.TrySetResult());
+            Entered.TrySetResult();
+            await Release.Task.ConfigureAwait(false);
+            Exited.TrySetResult();
+            return StageResult<int>.Success(envelope.Payload);
+        }
+        public ValueTask DisposeAsync()
+        {
+            DisposeCalls++;
+            DisposedWhileActive |= !Exited.Task.IsCompleted;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class OneItemSource : IPipelineSource<int>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            yield return ProcessingEnvelope<int>.Create(1);
+            await Task.CompletedTask;
+        }
+    }
+
+    [Fact]
     public async Task NaturalCompletionDuringConcurrentDispose_SharesOneCleanupOutcome()
     {
         var innerCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

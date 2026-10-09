@@ -1522,8 +1522,8 @@ def validate(documents: dict[str, dict]) -> None:
     require(bool(filtered),
             "At least one filtered test command must be present for the contract to be meaningful.")
     for command in filtered:
-        require("--minimum-expected-tests 1" in command,
-                f"Every filtered test command must set --minimum-expected-tests 1: {command}")
+        require(re.search(r"--minimum-expected-tests\s+[1-9][0-9]*(?=\s|$)", command) is not None,
+                f"Every filtered test command must set --minimum-expected-tests 1 or greater: {command}")
 
     assert_persist_credentials_disabled(documents)
     assert_setup_dotnet_uses_global_json(documents)
@@ -2483,6 +2483,15 @@ def main() -> int:
         _strip_minimum_expected_from_windows,
         "--minimum-expected-tests 1",
     )
+    for minimum in ("0", "-1", "1garbage"):
+        assert_mutation_rejected(
+            documents,
+            lambda docs, value=minimum: docs["reusable-release-validation.yml"]["jobs"]["build-test-pack"]["steps"].append({
+                "name": "Invalid filtered minimum",
+                "run": f"dotnet test --filter-class Example --minimum-expected-tests {value}",
+            }),
+            "Every filtered test command",
+        )
     assert_mutation_rejected(
         documents,
         _restore_floating_sdk_selection,
