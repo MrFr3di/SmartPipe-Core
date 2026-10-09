@@ -559,7 +559,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         Disposed = 3,
     }
 
-    private enum TimedAttemptCompletionKind
+    internal enum TimedAttemptCompletionKind
     {
         StageResultReturned = 0,
         ExpectedTimeoutCancellation = 1,
@@ -575,7 +575,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         public Exception? Exception => CompletionError?.SourceException;
     }
 
-    private readonly record struct TimedAttemptCompletion(
+    internal readonly record struct TimedAttemptCompletion(
         TimedAttemptCompletionKind Kind,
         TypedStageExecutionResult Result,
         Exception? Exception)
@@ -1012,9 +1012,11 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
         try
         {
-            _cts.Cancel();
-            _sourceCts.Cancel();
-            _processingCts.Cancel();
+            var cancellationErrors = await RuntimeCleanup.CollectAsync([
+                () => RequestStop(_cts),
+                () => RequestStop(_sourceCts),
+                () => RequestStop(_processingCts),
+            ]).ConfigureAwait(false);
             _adaptiveParallelism?.Complete();
 
             var runTask = _runTask;
@@ -1031,12 +1033,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
                 var deferredCleanupErrors = await _componentLifetime.DisposeDeferredStagesAsync()
                     .ConfigureAwait(false);
-                var disposeException = CreateCombinedException(null, deferredCleanupErrors);
+                var disposeErrors = cancellationErrors.Concat(deferredCleanupErrors);
+                if (_disposeException is not null)
+                    disposeErrors = disposeErrors.Append(_disposeException);
+                var disposeException = CreateCombinedException(null, disposeErrors.ToArray());
                 if (disposeException is not null)
                     ExceptionDispatchInfo.Capture(disposeException).Throw();
-
-                if (_disposeException is not null)
-                    ExceptionDispatchInfo.Capture(_disposeException).Throw();
             }
             else
             {
@@ -1045,7 +1047,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     () => _observerDispatcher.DisposeAsync(),
                 ]).ConfigureAwait(false);
                 _sinkExecutor.Dispose();
-                RuntimeCleanup.ThrowCombined(null, cleanup.DisposeErrors.Concat(observerErrors).ToArray());
+                RuntimeCleanup.ThrowCombined(null,
+                    cancellationErrors.Concat(cleanup.DisposeErrors).Concat(observerErrors).ToArray());
             }
         }
         finally
@@ -1054,6 +1057,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _sourceCts.Dispose();
             _processingCts.Dispose();
             _cts.Dispose();
+        }
+
+        static ValueTask RequestStop(CancellationTokenSource cancellation)
+        {
+            cancellation.Cancel();
+            return ValueTask.CompletedTask;
         }
     }
 
@@ -1923,7 +1932,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         );
     }
 
-    private static async ValueTask<TimedAttemptCompletion> TryWaitForCooperativeTimeoutCompletionAsync(
+    internal static async ValueTask<TimedAttemptCompletion> TryWaitForCooperativeTimeoutCompletionAsync(
         PipelineTime time,
         Task<TypedStageExecutionResult> execution,
         TimeSpan gracePeriod,
@@ -1947,7 +1956,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
             return TimedAttemptCompletion.StillRunning();
         }
-        catch (OperationCanceledException ex) when (ct.IsCancellationRequested && !execution.IsCompleted)
+        catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
         {
             return TimedAttemptCompletion.CallerCancelled(ex);
         }

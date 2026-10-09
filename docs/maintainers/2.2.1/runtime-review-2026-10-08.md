@@ -135,3 +135,16 @@ this servicing change fails fast instead of silently timing out early.
 
 See [timed ownership plan](../../superpowers/plans/2026-10-08-timed-attempt-ownership.md).
 F3/F4 and I1/I2/O1/O2 remain outside this slice.
+
+
+Review follow-up: caller cancellation during grace is classified by caller token,
+including completion racing the cancelled wait. A custom timer completes execution
+while the cancellation promise cleans up, covering both task and structured faults.
+Disposal collects cancellation-callback errors and continues through run join and
+deferred cleanup; source-origin and stage-origin throwing callbacks are covered.
+Candidate now contains 47 timed integration/policy/race cases and 5 registry cases.
+
+Candidate CI `37820874428` stopped before build because the generic workflow
+contract accepted the literal substring `--minimum-expected-tests 1`, inadvertently
+accepting 19 but rejecting 41. It now checks a positive integer, with zero,
+negative and malformed-value rejection mutations. Exact-head GREEN still pending.

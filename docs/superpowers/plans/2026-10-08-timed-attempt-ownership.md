@@ -22,3 +22,16 @@ Infinite cooperative grace means wait until completion or caller cancellation. F
 - [ ] Review diff and attach exact candidate evidence. No merge or release.
 
 Expanded candidate coverage: 41 integration/policy cases (Cancel/Abort/Dispose, concurrency 1/2, cancellation before timeout/in grace, callback errors and deferred cleanup) plus 5 registry fault-observation cases. Full CI acceptance pending.
+
+
+Review follow-up: caller cancellation during grace is classified by caller token,
+including completion racing the cancelled wait. A custom timer completes execution
+while the cancellation promise cleans up, covering both task and structured faults.
+Disposal collects cancellation-callback errors and continues through run join and
+deferred cleanup; source-origin and stage-origin throwing callbacks are covered.
+Candidate now contains 47 timed integration/policy/race cases and 5 registry cases.
+
+Candidate CI `37820874428` stopped before build because the generic workflow
+contract accepted the literal substring `--minimum-expected-tests 1`, inadvertently
+accepting 19 but rejecting 41. It now checks a positive integer, with zero,
+negative and malformed-value rejection mutations. Exact-head GREEN still pending.

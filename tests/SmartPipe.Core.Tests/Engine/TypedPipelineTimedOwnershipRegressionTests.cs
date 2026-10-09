@@ -181,6 +181,85 @@ public sealed class TypedPipelineTimedOwnershipRegressionTests
     }
 
     [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task DisposeCallbackFailure_StillJoinsAndDisposesDeferredStage(bool sourceCallback, bool failCleanup)
+    {
+        var time = new ObservedTimeProvider();
+        var callbackFailure = new InvalidOperationException("dispose cancellation callback failed");
+        var stage = new HeldTransformer(failCleanup) { CallbackFailure = sourceCallback ? null : callbackFailure };
+        var source = sourceCallback
+            ? (IPipelineSource<int>)new ThrowingCancellationSource(callbackFailure)
+            : new EnumerablePipelineSource<int>([1]);
+        var run = PipelineBuilder.From(source).Transform(stage, new StageFailureOptions
+        {
+            Timeout = new TimeoutPolicy
+            {
+                AttemptTimeout = AttemptTimeout,
+                LateAttemptFinalizationTimeout = FinalizationTimeout,
+            },
+        }).WithRuntimeOptions(new PipelineRuntimeOptions { Clock = new TimeProviderPipelineClock(time) }).Run();
+        try
+        {
+            await stage.Entered.Task.WaitAsync(Deadline);
+            await time.AttemptTimer.Task.WaitAsync(Deadline);
+            var disposal = run.DisposeAsync().AsTask();
+            var signal = await Task.WhenAny(time.FinalizationTimer.Task, disposal).WaitAsync(Deadline);
+            Assert.Same(time.FinalizationTimer.Task, signal);
+            Assert.False(disposal.IsCompleted);
+            time.Advance(FinalizationTimeout);
+            var completionError = await Record.ExceptionAsync(async () => await run.Completion.WaitAsync(Deadline));
+            Assert.Contains(Flatten(completionError), error => error is TimeoutException);
+            Assert.False(disposal.IsCompleted);
+            Assert.False(stage.Disposed.Task.IsCompleted);
+            stage.Release.TrySetResult();
+            var disposeError = await Record.ExceptionAsync(async () => await disposal.WaitAsync(Deadline));
+            Assert.Contains(Flatten(completionError).Concat(Flatten(disposeError)), error => ReferenceEquals(error, callbackFailure));
+            if (sourceCallback)
+                Assert.Contains(Flatten(disposeError), error => ReferenceEquals(error, callbackFailure));
+            if (failCleanup)
+                Assert.Contains(Flatten(disposeError), error => ReferenceEquals(error, stage.Failure));
+            Assert.Same(completionError, await Record.ExceptionAsync(async () => await run.Completion));
+            Assert.False(stage.DisposedWhileActive);
+            Assert.Equal(1, stage.DisposeCount);
+        }
+        finally
+        {
+            stage.Release.TrySetResult();
+            _ = await Record.ExceptionAsync(async () => await run.DisposeAsync().AsTask().WaitAsync(Deadline));
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GraceWaitCancellationWinningBeforeExecutionCompletion_RetainsLateFailure(bool structuredFailure)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var failure = new IOException("execution completed during cancellation promise cleanup");
+        var execution = new TaskCompletionSource<TypedStageExecutionResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var time = new CancellationRaceTimeProvider(cancellation, () =>
+        {
+            if (structuredFailure)
+                execution.TrySetResult(new TypedStageExecutionResult(false, null,
+                    new SmartPipeError(failure.Message, ErrorType.Permanent, "Late", failure),
+                    StageResultKind.Failure, 42, 1, null, false));
+            else
+                execution.TrySetException(failure);
+        });
+        var result = await TypedPipelineExecutor<int, int>.TryWaitForCooperativeTimeoutCompletionAsync(
+            new PipelineTime(new TimeProviderPipelineClock(time)), execution.Task, TimeSpan.FromMinutes(3), cancellation.Token);
+        Assert.Equal(TypedPipelineExecutor<int, int>.TimedAttemptCompletionKind.CallerCancelled, result.Kind);
+        Assert.True(execution.Task.IsCompleted);
+        var registry = new LateStageAttemptRegistry(new PipelineTime(SystemPipelineClock.Instance));
+        registry.Register("stage", "Stage", 42, 1, execution.Task, cancellation, Timeout.InfiniteTimeSpan,
+            reportUnexpectedFaults: true, getResultError: () => execution.Task.Result.Error?.InnerException);
+        Assert.Same(failure, Assert.Single(await registry.WaitForAllAsync()));
+    }
+
+    [Theory]
     [InlineData("AttemptTimeout", -2L)]
     [InlineData("StageTimeout", -2L)]
     [InlineData("CancellationGracePeriod", -2L)]
@@ -259,6 +338,48 @@ public sealed class TypedPipelineTimedOwnershipRegressionTests
         null => [],
         _ => new[] { error }.Concat(Flatten(error.InnerException)),
     };
+
+    private sealed class ThrowingCancellationSource(Exception failure) : IPipelineSource<int>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync([EnumeratorCancellation] CancellationToken ct = default)
+        {
+            using var registration = ct.Register(() => throw failure);
+            yield return ProcessingEnvelope<int>.Create(1);
+            await Task.CompletedTask;
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CancellationRaceTimeProvider(CancellationTokenSource cancellation, Action completeExecution) : FakeTimeProvider
+    {
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+            // Cancellation wins the promise; disposing its timer completes the
+            // underlying execution before WaitAsync returns to the catch filter.
+            cancellation.Cancel();
+            return new CompletionOnDisposeTimer(timer, completeExecution);
+        }
+    }
+
+    private sealed class CompletionOnDisposeTimer(ITimer timer, Action completeExecution) : ITimer
+    {
+        private int _disposed;
+        public bool Change(TimeSpan dueTime, TimeSpan period) => timer.Change(dueTime, period);
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
+            timer.Dispose();
+            completeExecution();
+        }
+        public ValueTask DisposeAsync()
+        {
+            Dispose();
+            return ValueTask.CompletedTask;
+        }
+    }
 
     private sealed class EnumerablePipelineSource<T>(IEnumerable<T> values) : IPipelineSource<T>
     {
