@@ -35,11 +35,11 @@ creating the same circular dependency independently of runtime.
 - [x] Runtime fault-before-flush stop; root token integration.
 - [x] Concurrent Complete/Dispose ordering and cancellation-error-safe join.
 - [x] Runtime delivery contract documentation.
-- [x] 22 deterministic, bounded regression cases with explicit barriers and no sleeps:
-  15 immediate stop/fault cases (3 configurations × 5 stop origins),
+- [x] 37 deterministic, bounded regression cases with explicit barriers and no sleeps:
+  30 immediate stop/fault cases (3 configurations × 5 stop origins × sequential/parallel),
   3 drain cases, 2 concurrent dispatcher Complete/Dispose cases,
   2 throwing cancellation callback cases.
-- [ ] Format/build and focused 22-case GitHub-hosted CI gate.
+- [ ] Format/build and focused 37-case GitHub-hosted CI gate.
 - [ ] Existing 17/47 ownership gates, full correctness/concurrency/repeated
   concurrency/coverage/stress, package consumers and security/docs checks.
 

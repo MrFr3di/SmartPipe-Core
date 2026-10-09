@@ -12,23 +12,38 @@ public sealed class BufferedObserverShutdownRegressionTests
     private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(10);
 
     [Theory]
-    [InlineData("Cancel", ObserverDispatchMode.BufferedReliable, true)]
-    [InlineData("Abort", ObserverDispatchMode.BufferedReliable, true)]
-    [InlineData("Dispose", ObserverDispatchMode.BufferedReliable, true)]
-    [InlineData("Caller", ObserverDispatchMode.BufferedReliable, true)]
-    [InlineData("Fault", ObserverDispatchMode.BufferedReliable, true)]
-    [InlineData("Cancel", ObserverDispatchMode.BufferedBestEffort, true)]
-    [InlineData("Abort", ObserverDispatchMode.BufferedBestEffort, true)]
-    [InlineData("Dispose", ObserverDispatchMode.BufferedBestEffort, true)]
-    [InlineData("Caller", ObserverDispatchMode.BufferedBestEffort, true)]
-    [InlineData("Fault", ObserverDispatchMode.BufferedBestEffort, true)]
-    [InlineData("Cancel", ObserverDispatchMode.BufferedBestEffort, false)]
-    [InlineData("Abort", ObserverDispatchMode.BufferedBestEffort, false)]
-    [InlineData("Dispose", ObserverDispatchMode.BufferedBestEffort, false)]
-    [InlineData("Caller", ObserverDispatchMode.BufferedBestEffort, false)]
-    [InlineData("Fault", ObserverDispatchMode.BufferedBestEffort, false)]
+    [InlineData("Cancel", ObserverDispatchMode.BufferedReliable, true, 1)]
+    [InlineData("Cancel", ObserverDispatchMode.BufferedReliable, true, 2)]
+    [InlineData("Abort", ObserverDispatchMode.BufferedReliable, true, 1)]
+    [InlineData("Abort", ObserverDispatchMode.BufferedReliable, true, 2)]
+    [InlineData("Dispose", ObserverDispatchMode.BufferedReliable, true, 1)]
+    [InlineData("Dispose", ObserverDispatchMode.BufferedReliable, true, 2)]
+    [InlineData("Caller", ObserverDispatchMode.BufferedReliable, true, 1)]
+    [InlineData("Caller", ObserverDispatchMode.BufferedReliable, true, 2)]
+    [InlineData("Fault", ObserverDispatchMode.BufferedReliable, true, 1)]
+    [InlineData("Fault", ObserverDispatchMode.BufferedReliable, true, 2)]
+    [InlineData("Cancel", ObserverDispatchMode.BufferedBestEffort, true, 1)]
+    [InlineData("Cancel", ObserverDispatchMode.BufferedBestEffort, true, 2)]
+    [InlineData("Abort", ObserverDispatchMode.BufferedBestEffort, true, 1)]
+    [InlineData("Abort", ObserverDispatchMode.BufferedBestEffort, true, 2)]
+    [InlineData("Dispose", ObserverDispatchMode.BufferedBestEffort, true, 1)]
+    [InlineData("Dispose", ObserverDispatchMode.BufferedBestEffort, true, 2)]
+    [InlineData("Caller", ObserverDispatchMode.BufferedBestEffort, true, 1)]
+    [InlineData("Caller", ObserverDispatchMode.BufferedBestEffort, true, 2)]
+    [InlineData("Fault", ObserverDispatchMode.BufferedBestEffort, true, 1)]
+    [InlineData("Fault", ObserverDispatchMode.BufferedBestEffort, true, 2)]
+    [InlineData("Cancel", ObserverDispatchMode.BufferedBestEffort, false, 1)]
+    [InlineData("Cancel", ObserverDispatchMode.BufferedBestEffort, false, 2)]
+    [InlineData("Abort", ObserverDispatchMode.BufferedBestEffort, false, 1)]
+    [InlineData("Abort", ObserverDispatchMode.BufferedBestEffort, false, 2)]
+    [InlineData("Dispose", ObserverDispatchMode.BufferedBestEffort, false, 1)]
+    [InlineData("Dispose", ObserverDispatchMode.BufferedBestEffort, false, 2)]
+    [InlineData("Caller", ObserverDispatchMode.BufferedBestEffort, false, 1)]
+    [InlineData("Caller", ObserverDispatchMode.BufferedBestEffort, false, 2)]
+    [InlineData("Fault", ObserverDispatchMode.BufferedBestEffort, false, 1)]
+    [InlineData("Fault", ObserverDispatchMode.BufferedBestEffort, false, 2)]
     public async Task ImmediateStop_CancelsCallbackAndJoinsWorker(
-        string action, ObserverDispatchMode mode, bool flush)
+        string action, ObserverDispatchMode mode, bool flush, int concurrency)
     {
         using var caller = new CancellationTokenSource();
         var observer = new HeldObserver();
@@ -36,14 +51,15 @@ public sealed class BufferedObserverShutdownRegressionTests
         var source = new HeldSource();
         var stage = new FaultGateTransformer(action == "Fault");
         var run = PipelineBuilder.From(source).Transform(stage, new StageFailureOptions
-            {
-                OnPermanentFailure = FailureAction.FaultPipeline,
-            })
+        {
+            OnPermanentFailure = FailureAction.FaultPipeline,
+        })
             .WithObserver(observer, ObserverReliability.Critical, ObserverFailurePolicy.FaultPipeline)
             .WithObserver(recording)
             .WithRuntimeOptions(new PipelineRuntimeOptions
             {
                 ObserverDispatch = Options(mode, flush, action == "Fault" ? 16 : 1),
+                MaxConcurrency = concurrency,
             }).Run(caller.Token);
         Task? request = null;
         try
@@ -77,7 +93,7 @@ public sealed class BufferedObserverShutdownRegressionTests
             Assert.DoesNotContain(recording.Events, item => item is ObserverFailedEvent);
             if (flush)
             {
-                Assert.Single(recording.Events.Where(item => item is PipelineCancelledEvent or PipelineFaultedEvent));
+                Assert.Single(recording.Events, item => item is PipelineCancelledEvent or PipelineFaultedEvent);
                 Assert.Contains(recording.Events, item => item is PipelineStartedEvent);
             }
         }
