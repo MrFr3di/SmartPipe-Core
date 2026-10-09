@@ -35,3 +35,12 @@ Candidate CI `37820874428` stopped before build because the generic workflow
 contract accepted the literal substring `--minimum-expected-tests 1`, inadvertently
 accepting 19 but rejecting 41. It now checks a positive integer, with zero,
 negative and malformed-value rejection mutations. Exact-head GREEN still pending.
+
+
+Hosted CI `37876568260`, candidate `c8b8079`: workflow contracts, format and
+build succeeded; timed regressions 47 total, 45 passed, 2 source-callback cases
+failed. Root cause: `PipelineStartOperation.DisposeAsync` requested cancellation
+before entering executor cleanup and only handled ObjectDisposedException.
+It now retains cancellation errors, waits Completion, runs executor disposal and
+activation-CTS cleanup even when callbacks throw, then aggregates failures.
+The same existing source-callback regressions verify this outer ownership boundary.

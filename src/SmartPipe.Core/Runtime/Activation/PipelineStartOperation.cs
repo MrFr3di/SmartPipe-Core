@@ -291,12 +291,17 @@ internal sealed class DeferredPipelineRunController<TInput, TOutput>
 
     private async ValueTask DisposeAsync()
     {
+        List<Exception>? errors = null;
         try
         {
             await CancelAsync(CancellationToken.None).ConfigureAwait(false);
         }
         catch (ObjectDisposedException) when (_completion.IsCompleted)
         {
+        }
+        catch (Exception error)
+        {
+            errors = [error];
         }
 
         try
@@ -309,10 +314,16 @@ internal sealed class DeferredPipelineRunController<TInput, TOutput>
         }
 
         var executor = Volatile.Read(ref _executor);
-        if (executor is not null)
-            await executor.DisposeAsync().ConfigureAwait(false);
-
-        _activationCancellation.Dispose();
+        var cleanupErrors = await RuntimeCleanup.CollectAsync([
+            () => executor?.DisposeAsync() ?? ValueTask.CompletedTask,
+            () =>
+            {
+                _activationCancellation.Dispose();
+                return ValueTask.CompletedTask;
+            },
+        ]).ConfigureAwait(false);
+        RuntimeCleanup.ThrowCombined(null,
+            errors is null ? cleanupErrors : errors.Concat(cleanupErrors).ToArray());
     }
 
     private void OnOutputDropped(PipelineOutput<TOutput> output) =>
