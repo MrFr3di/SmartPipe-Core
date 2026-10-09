@@ -1418,7 +1418,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     var envelope = enumerator.Current;
                     _metrics.RecordActivity();
                     var action = await ProcessEnvelopeAsync(envelope, processingToken).ConfigureAwait(false);
-                    if (action == FailureAction.StopPipeline)
+                    if (action.FailureAction == FailureAction.StopPipeline)
                     {
                         RequestStopAccepting();
                         break;
@@ -1615,16 +1615,11 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _metrics.RecordObserverEventDropped();
     }
 
-    private async ValueTask<FailureAction?> ProcessEnvelopeAsync(
-        ProcessingEnvelope<TInput> sourceEnvelope,
-        CancellationToken ct) =>
-        (await ProcessEnvelopeOutcomeAsync(sourceEnvelope, ct).ConfigureAwait(false)).FailureAction;
-
     private readonly record struct EnvelopeProcessingOutcome(FailureAction? FailureAction, bool Failed);
 
     internal int? CurrentAdaptiveConcurrency => _adaptiveParallelism?.CurrentLimit;
 
-    private async ValueTask<EnvelopeProcessingOutcome> ProcessEnvelopeOutcomeAsync(
+    private async ValueTask<EnvelopeProcessingOutcome> ProcessEnvelopeAsync(
         ProcessingEnvelope<TInput> sourceEnvelope,
         CancellationToken ct
     )
@@ -1666,7 +1661,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     {
         var adaptiveParallelism = _adaptiveParallelism;
         if (adaptiveParallelism is null)
-            return await ProcessEnvelopeAsync(sourceEnvelope, ct).ConfigureAwait(false);
+            return (await ProcessEnvelopeAsync(sourceEnvelope, ct).ConfigureAwait(false)).FailureAction;
 
         AdaptiveConcurrencyLimiter.Lease lease;
         try
@@ -1683,7 +1678,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         var recordSample = true;
         try
         {
-            var outcome = await ProcessEnvelopeOutcomeAsync(sourceEnvelope, ct).ConfigureAwait(false);
+            var outcome = await ProcessEnvelopeAsync(sourceEnvelope, ct).ConfigureAwait(false);
             failed = outcome.Failed;
             return outcome.FailureAction;
         }

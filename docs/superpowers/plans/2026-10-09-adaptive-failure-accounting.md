@@ -16,8 +16,9 @@ was counted through the exception path. This is an outcome/control-flow conflati
 Use a separate internal boolean terminal failure signal in StageExecutionResult,
 carry it in a value-type envelope outcome, and preserve the worker's existing
 FailureAction control flow. No shared mutable per-item flag, new hot-path delegate,
-public API or allocation is introduced. The non-adaptive wrapper still returns
-only the action; sequential execution retains its previous behavior.
+public API or allocation is introduced. The worker admission method still returns
+only the action; sequential execution reads the same action directly from the outcome,
+without adding an async wrapper.
 
 One admitted envelope yields one sample, not one sample per stage/retry. Terminal
 failure counts regardless of policy or stage position. Success after retry and
