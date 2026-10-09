@@ -632,6 +632,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly AdaptiveParallelismRuntimeState? _adaptiveParallelism;
     private readonly StageExecutor _stageExecutor;
     private readonly SinkExecutor<TOutput> _sinkExecutor;
+    private readonly ConcurrentQueue<Exception> _earlyObserverStopErrors = new();
     private readonly LateStageAttemptRegistry _lateAttemptRegistry;
     private readonly PipelineComponentLifetimeManager<TInput, TOutput> _componentLifetime;
     private readonly SmartPipeMetricsRecorder _metrics;
@@ -741,14 +742,16 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             WriteDeadLetterAsync,
             WriteTerminalAsync,
             EmitAsync,
-            ExecuteStageAttemptAsync);
+            ExecuteStageAttemptAsync,
+            StopObserverCallbacksForFaultAsync);
         _sinkExecutor = new SinkExecutor<TOutput>(
             _sink,
             _spec.PipelineId,
             _runtime.RunId,
             _clock,
             EmitAsync,
-            _metrics.RecordSinkDuration);
+            _metrics.RecordSinkDuration,
+            StopObserverCallbacksForFaultAsync);
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _observerDispatcher = PipelineObserverDispatcher.Create(
             _spec.Observers,
@@ -1135,6 +1138,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 : ValueTask.CompletedTask,
             () => _observerDispatcher.FlushAsync(CancellationToken.None),
         ]).ConfigureAwait(false);
+        observerFlushErrors = _earlyObserverStopErrors.Concat(observerFlushErrors).ToArray();
         var componentCleanup = await _componentLifetime.DisposeAsync().ConfigureAwait(false);
         var finalizationErrors = observerFlushErrors.Concat(componentCleanup.CompletionErrors).ToArray();
         _disposeException = CreateCombinedException(
@@ -2221,6 +2225,15 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 ct
             )
             .ConfigureAwait(false);
+    }
+
+    private async ValueTask StopObserverCallbacksForFaultAsync()
+    {
+        var errors = await RuntimeCleanup.CollectAsync([
+            () => _observerDispatcher.StopCallbacksAsync(),
+        ]).ConfigureAwait(false);
+        foreach (var error in errors)
+            _earlyObserverStopErrors.Enqueue(error);
     }
 
     private async ValueTask EmitAsync(PipelineEvent pipelineEvent, CancellationToken ct)

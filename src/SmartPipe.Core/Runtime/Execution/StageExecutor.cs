@@ -4,6 +4,7 @@ namespace SmartPipe.Core;
 
 internal sealed class StageExecutor
 {
+    private readonly Func<ValueTask> _stopCallbacksOnFaultAsync;
     private readonly string _pipelineId;
     private readonly string _runId;
     private readonly LineageMode _lineageMode;
@@ -75,8 +76,10 @@ internal sealed class StageExecutor
             object,
             long,
             CancellationToken,
-            ValueTask<TypedStageExecutionResult>> executeStageAttemptAsync)
+            ValueTask<TypedStageExecutionResult>> executeStageAttemptAsync,
+        Func<ValueTask>? stopCallbacksOnFaultAsync = null)
     {
+        _stopCallbacksOnFaultAsync = stopCallbacksOnFaultAsync ?? (() => ValueTask.CompletedTask);
         _pipelineId = pipelineId ?? throw new ArgumentNullException(nameof(pipelineId));
         _runId = runId ?? throw new ArgumentNullException(nameof(runId));
         _lineageMode = lineageMode;
@@ -129,6 +132,12 @@ internal sealed class StageExecutor
                         _clock,
                         stageStartedAtUtc
                     );
+                    var action = stage.FailureOptions.Retry is not null
+                        ? stage.FailureOptions.OnRetryExhausted
+                        : stage.FailureOptions.OnPermanentFailure;
+                    if (action == FailureAction.FaultPipeline)
+                        await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
+
                     await _emitAsync(
                             new CircuitBreakerRejectedEvent(
                                 _pipelineId,
@@ -147,9 +156,6 @@ internal sealed class StageExecutor
                         await _emitRetryExhaustedAsync(stage, rejectedOutcome, cbError, ct)
                             .ConfigureAwait(false);
 
-                    var action = stage.FailureOptions.Retry is not null
-                        ? stage.FailureOptions.OnRetryExhausted
-                        : stage.FailureOptions.OnPermanentFailure;
                     return await CompleteTerminalFailureAsync(
                             stage,
                             current,
@@ -186,6 +192,7 @@ internal sealed class StageExecutor
                 }
                 catch (Exception ex)
                 {
+                    await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
                     await _emitAsync(
                             new StageFailedEvent(
                                 _pipelineId,
@@ -298,6 +305,25 @@ internal sealed class StageExecutor
         var wasOpen = breaker?.State == CircuitState.Open;
         breakerPermit.RecordFailure();
         var justOpened = breaker is not null && breaker.State == CircuitState.Open && !wasOpen;
+        var error =
+            outcome.Error
+            ?? new SmartPipeError(
+                outcome.Kind.ToString(),
+                ErrorType.Permanent,
+                outcome.Kind.ToString()
+            );
+        var decision = justOpened
+            ? new RetryDecision(stage.FailureOptions.Retry is not null
+                ? RetryDecisionKind.Exhausted : RetryDecisionKind.NotRetryable, 0, TimeSpan.Zero)
+            : outcome.Kind == StageResultKind.TimedOut && !outcome.CanRetryTimeout
+                ? new RetryDecision(RetryDecisionKind.NotRetryable, 0, TimeSpan.Zero)
+                : _getRetryDecision(stage, error, outcome.Attempt, stageStartedTimestamp);
+        var action = decision.Kind == RetryDecisionKind.Exhausted
+            ? stage.FailureOptions.OnRetryExhausted
+            : stage.FailureOptions.OnPermanentFailure;
+        if (decision.Kind != RetryDecisionKind.Retry && action == FailureAction.FaultPipeline)
+            await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
+
         if (justOpened)
         {
             await _emitAsync(
@@ -312,13 +338,6 @@ internal sealed class StageExecutor
                 .ConfigureAwait(false);
         }
 
-        var error =
-            outcome.Error
-            ?? new SmartPipeError(
-                outcome.Kind.ToString(),
-                ErrorType.Permanent,
-                outcome.Kind.ToString()
-            );
         await _emitAsync(
                 new StageFailedEvent(
                     _pipelineId,
@@ -356,8 +375,7 @@ internal sealed class StageExecutor
                 current,
                 outcome,
                 error,
-                outcome.Attempt,
-                stageStartedTimestamp,
+                decision,
                 ct
             )
             .ConfigureAwait(false);
@@ -367,9 +385,6 @@ internal sealed class StageExecutor
         if (retry.Exhausted)
             await _emitRetryExhaustedAsync(stage, outcome, error, ct).ConfigureAwait(false);
 
-        var action = retry.Exhausted
-            ? stage.FailureOptions.OnRetryExhausted
-            : stage.FailureOptions.OnPermanentFailure;
         var result = await CompleteTerminalFailureAsync(
                 stage,
                 current,
@@ -441,14 +456,9 @@ internal sealed class StageExecutor
         object current,
         TypedStageExecutionResult outcome,
         SmartPipeError error,
-        int attempt,
-        long stageStartedTimestamp,
+        RetryDecision decision,
         CancellationToken ct)
     {
-        if (outcome.Kind == StageResultKind.TimedOut && !outcome.CanRetryTimeout)
-            return new RetryStageResult(false, false, null);
-
-        var decision = _getRetryDecision(stage, error, attempt, stageStartedTimestamp);
         if (decision.Kind == RetryDecisionKind.Retry)
         {
             await _emitRetryScheduledAsync(

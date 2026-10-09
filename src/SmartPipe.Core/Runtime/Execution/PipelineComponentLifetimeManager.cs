@@ -80,6 +80,7 @@ internal sealed class PipelineComponentLifetimeManager<TInput, TOutput>
 
     public async ValueTask<Exception[]> DisposeDeferredStagesAsync()
     {
+        await _lateAttemptRegistry.WaitForAllObservationsToCompleteAsync().ConfigureAwait(false);
         List<Exception>? errors = null;
         foreach (var (stageId, dispose) in _deferredStageDisposals.ToArray())
         {

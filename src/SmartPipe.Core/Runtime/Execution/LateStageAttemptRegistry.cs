@@ -114,6 +114,14 @@ internal sealed class LateStageAttemptRegistry
         return errors is null ? completionErrors : errors.Concat(completionErrors).ToArray();
     }
 
+    public async Task WaitForAllObservationsToCompleteAsync()
+    {
+        Seal();
+        // Observation ownership is independent of component disposal ownership.
+        var observations = _attempts.Values.Select(attempt => attempt.ObservationCompleted.Task).ToArray();
+        await Task.WhenAll(observations).ConfigureAwait(false);
+    }
+
     public async Task WaitForStageAttemptsToCompleteAsync(string stageId)
     {
         while (true)

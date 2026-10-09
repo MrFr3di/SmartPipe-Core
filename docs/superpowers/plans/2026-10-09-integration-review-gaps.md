@@ -17,3 +17,9 @@ Ruling: clean managed checkout on a new feature branch, no extra worktree or loc
 Task 1: eight regression cases prepared; RED pending.
 
 RED attempt 37893215702 stopped before test execution: fixture referenced a private source helper from another test class. Added a local one-item source; no runtime change. Added four nonfatal/recovered-retry observer controls; twelve cases total.
+
+Task 1: hosted RED 37893515952 on 3c8bee59f2d86a7d54375d6e986734b298489f58. Format/build passed; 12 cases: 8 failed (4 fault callback waits timed out; 4 external-stage disposal tasks already completed), 4 controls passed.
+Task 2: terminal retry decision evaluated once before failure notifications; callback stop errors retained for finalization. Stage and sink fault paths stop callbacks early.
+Ruling: evaluate retry decision before bounded failure notifications, retaining event order and one predicate/delay evaluation. Stage timeout is still checked at the next attempt; tests cover recovered retry and existing budget gates.
+Task 3: disposal joins all registered observation independently of stage cleanup delegates. Core ownership rights unchanged. Added real DI-scope lifecycle regression.
+Tasks 2/3: implementation candidate, hosted GREEN and final review pending.

@@ -196,7 +196,8 @@ only. Disposal still stops and awaits the buffered worker before returning.
 Buffered callbacks have a cancellation lifetime separate from the queue worker.
 Cancel, Abort, run disposal, and activation-token cancellation signal callbacks
 immediately, including when reliable writes are blocked by observer backpressure.
-A processing fault signals callbacks before the final flush. Callback cancellation
+A terminal processing fault signals callbacks before bounded failure notifications
+and the final flush. Recoverable stage failures do not cancel callbacks. Callback cancellation
 does not stop the queue worker or turn expected cancellation into ObserverFailedEvent;
 remaining observers and flush barriers are still processed. With flush enabled,
 terminal events are offered in queue order with the cancelled callback token.
@@ -235,7 +236,8 @@ before disposing the owning stage. If a non-cooperative transformer continues
 past that timeout, the runtime reports a cleanup failure instead of forcibly
 stopping user code in-process. A stage with a still-running late attempt is not
 disposed during that failed finalization pass. A later `DisposeAsync` waits for
-those deferred stages. Unexpected cancellation-origin task faults and structured
+all registered attempt observation, including Borrowed/ScopeOwned stages, before
+returning. It disposes only runtime-owned deferred stages. Unexpected cancellation-origin task faults and structured
 stage failures are reported once through finalization, or through deferred
 disposal if they arrive after Completion is published. Expected requested
 cancellation is not an additional cleanup failure. Timeout-origin late faults
