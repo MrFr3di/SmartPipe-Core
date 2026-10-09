@@ -749,14 +749,15 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _clock,
             EmitAsync,
             _metrics.RecordSinkDuration);
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _observerDispatcher = PipelineObserverDispatcher.Create(
             _spec.Observers,
             _options.ObserverDispatch,
             _clock,
             _time,
-            OnObserverEventDropped
+            OnObserverEventDropped,
+            _cts.Token
         );
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _sourceCts = new CancellationTokenSource();
         _processingCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
         _sourceCancellationRegistration = _cts.Token.Register(
@@ -1129,6 +1130,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
         _adaptiveParallelism?.Complete();
         var observerFlushErrors = await RuntimeCleanup.CollectAsync([
+            () => primary is not null || _cts.IsCancellationRequested
+                ? _observerDispatcher.StopCallbacksAsync()
+                : ValueTask.CompletedTask,
             () => _observerDispatcher.FlushAsync(CancellationToken.None),
         ]).ConfigureAwait(false);
         var componentCleanup = await _componentLifetime.DisposeAsync().ConfigureAwait(false);

@@ -157,3 +157,15 @@ before entering executor cleanup and only handled ObjectDisposedException.
 It now retains cancellation errors, waits Completion, runs executor disposal and
 activation-CTS cleanup even when callbacks throw, then aggregates failures.
 The same existing source-callback regressions verify this outer ownership boundary.
+
+## F3 candidate — 2026-10-09
+
+Separate branch `fix/buffered-observer-shutdown-2026-10-09` builds on verified
+PR #149 head `78615165560f278337158a59dd51ba75fddc9462` (full CI
+`37876995823` success). Callback cancellation is separated from queue-worker
+shutdown; immediate stop is linked before backpressure can block finalization.
+Processing faults signal callback stop before flush. Drain remains graceful.
+Dispatcher Dispose cancels before awaiting concurrent Complete and joins even
+if cancellation callbacks throw. The 22-case acceptance matrix and delivery
+contract are in `docs/superpowers/plans/2026-10-09-buffered-observer-shutdown.md`.
+Candidate full hosted CI is pending; F4 remains outside this slice.
