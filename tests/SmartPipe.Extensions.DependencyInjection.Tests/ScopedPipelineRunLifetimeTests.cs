@@ -11,6 +11,7 @@ public sealed class ScopedPipelineRunLifetimeTests
     public async Task RealScope_AfterTimedFinalizationFailure_WaitsForActiveStageBeforeDisposal()
     {
         var deadline = TimeSpan.FromSeconds(10);
+        var testCancellation = TestContext.Current.CancellationToken;
         var stage = new HeldScopedStage();
         var services = new ServiceCollection();
         services.AddScoped(_ => stage);
@@ -29,14 +30,14 @@ public sealed class ScopedPipelineRunLifetimeTests
                         LateAttemptFinalizationTimeout = TimeSpan.Zero,
                     },
                 }).Build();
-        var inner = await definition.StartAsync(new PipelineActivationContext(definition.Key, Guid.NewGuid(), scope.ServiceProvider));
+        var inner = await definition.StartAsync(new PipelineActivationContext(definition.Key, Guid.NewGuid(), scope.ServiceProvider), testCancellation);
         ScopedPipelineRunLifetime<int, int>? lifetime = null;
         try
         {
-            await stage.Entered.Task.WaitAsync(deadline);
-            await inner.CancelAsync().AsTask().WaitAsync(deadline);
-            await stage.Cancelled.Task.WaitAsync(deadline);
-            var error = await Record.ExceptionAsync(async () => await inner.Completion.WaitAsync(deadline));
+            await stage.Entered.Task.WaitAsync(deadline, testCancellation);
+            await inner.CancelAsync(testCancellation).AsTask().WaitAsync(deadline, testCancellation);
+            await stage.Cancelled.Task.WaitAsync(deadline, testCancellation);
+            var error = await Record.ExceptionAsync(async () => await inner.Completion.WaitAsync(deadline, testCancellation));
             Assert.IsType<AggregateException>(error);
             // Construct the wrapper after Core publishes the budget failure: cleanup
             // enters synchronously, so a missing Core join deterministically closes the scope.
@@ -47,8 +48,8 @@ public sealed class ScopedPipelineRunLifetimeTests
             Assert.False(lifetime.Completion.IsCompleted);
             Assert.Equal(0, stage.DisposeCalls);
             stage.Release.TrySetResult();
-            _ = await Record.ExceptionAsync(async () => await lifetime.Completion.WaitAsync(deadline));
-            await disposal.WaitAsync(deadline);
+            _ = await Record.ExceptionAsync(async () => await lifetime.Completion.WaitAsync(deadline, testCancellation));
+            await disposal.WaitAsync(deadline, testCancellation);
             Assert.Equal(1, stage.DisposeCalls);
             Assert.False(stage.DisposedWhileActive);
         }
@@ -56,10 +57,10 @@ public sealed class ScopedPipelineRunLifetimeTests
         {
             stage.Release.TrySetResult();
             if (lifetime is not null)
-                _ = await Record.ExceptionAsync(async () => await lifetime.DisposeAsync().AsTask().WaitAsync(deadline));
+                _ = await Record.ExceptionAsync(async () => await lifetime.DisposeAsync().AsTask().WaitAsync(deadline, testCancellation));
             else
             {
-                _ = await Record.ExceptionAsync(async () => await inner.DisposeAsync().AsTask().WaitAsync(deadline));
+                _ = await Record.ExceptionAsync(async () => await inner.DisposeAsync().AsTask().WaitAsync(deadline, testCancellation));
                 await scope.DisposeAsync();
             }
         }

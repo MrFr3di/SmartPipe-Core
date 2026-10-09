@@ -23,3 +23,5 @@ Task 2: terminal retry decision evaluated once before failure notifications; cal
 Ruling: evaluate retry decision before bounded failure notifications, retaining event order and one predicate/delay evaluation. Stage timeout is still checked at the next attempt; tests cover recovered retry and existing budget gates.
 Task 3: disposal joins all registered observation independently of stage cleanup delegates. Core ownership rights unchanged. Added real DI-scope lifecycle regression.
 Tasks 2/3: implementation candidate, hosted GREEN and final review pending.
+
+Candidate 354b38b: Documentation build caught xUnit1051 in the new DI fixture. Threaded TestContext cancellation through startup/request/deadline waits; runtime unchanged.
