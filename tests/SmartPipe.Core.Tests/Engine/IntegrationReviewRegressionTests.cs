@@ -165,7 +165,7 @@ public sealed class IntegrationReviewRegressionTests
         var stage = new GatedFailureResultTransformer();
         var run = PipelineBuilder.From(new SingleSource()).Transform(stage, new StageFailureOptions
         {
-            Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero, retryOn: _ => throw fault),
+            Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.FromTicks(1), retryOn: _ => throw fault),
             OnPermanentFailure = FailureAction.FaultPipeline,
         }).WithObserver(held).WithObserver(recorder).WithRuntimeOptions(new PipelineRuntimeOptions
         {
