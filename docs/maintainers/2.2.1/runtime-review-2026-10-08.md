@@ -169,3 +169,15 @@ Dispatcher Dispose cancels before awaiting concurrent Complete and joins even
 if cancellation callbacks throw. The 37-case acceptance matrix and delivery
 contract are in `docs/superpowers/plans/2026-10-09-buffered-observer-shutdown.md`.
 Candidate full hosted CI is pending; F4 remains outside this slice.
+
+## F4 candidate — 2026-10-09
+
+Branch `fix/adaptive-failure-accounting-2026-10-09` builds on PR #150 head
+`e63a11dc8b99f1bda64c2ec11d315cbbd445f7cd` (CI `37881816753` success).
+Stage/envelope terminal failure is represented independently of FailureAction,
+so EmitFailureResult and DeadLetter create failure pressure. Recovered retries
+remain one successful sample; shutdown cancellation creates no sample and releases
+the admission lease. The 27-case acceptance matrix is documented in
+`docs/superpowers/plans/2026-10-09-adaptive-failure-accounting.md`. Hosted acceptance
+is pending. F1–F7 implementations are covered by the stacked slices; I1/I2/O1/O2
+remain separate follow-up work.

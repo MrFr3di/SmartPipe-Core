@@ -122,6 +122,9 @@ jobs:
     - name: Core buffered observer shutdown regressions
       run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-class SmartPipe.Core.Tests.Engine.BufferedObserverShutdownRegressionTests --minimum-expected-tests 37
 
+    - name: Core adaptive failure accounting regressions
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-class SmartPipe.Core.Tests.Engine.AdaptiveFailureAccountingRegressionTests --minimum-expected-tests 27
+
     - name: Verify RepositoryChecks profile
       run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify --profile sp220-05 --format github --failures-only
 

@@ -390,3 +390,16 @@ output writes, drain during source reads, and disposal during in-flight work.
 
 Core contains the runtime and typed abstractions. Integration components belong
 in `SmartPipe.Extensions`.
+
+## Adaptive failure samples
+
+Adaptive admission records one sample for each admitted envelope that finishes
+processing, including sink/output handling. Its failure flag is independent of
+the control-flow FailureAction: terminal stage failures count for EmitFailureResult,
+DeadLetter, Skip, StopPipeline and FaultPipeline, including exhausted retries and
+breaker rejection. Filtered and stage-skipped terminal results are not failures.
+Retries that ultimately succeed contribute one successful envelope sample; retry
+attempts are not separate adaptive samples. Unexpected processing/sink/output
+exceptions count as failures. An OperationCanceledException with the processing
+token cancelled is shutdown and contributes no sample; the admission lease is
+still released. Adaptive-disabled and sequential behavior remains unchanged.

@@ -394,7 +394,7 @@ internal sealed class StageExecutor
             await _writeDeadLetterAsync(stage, current, error, ct).ConfigureAwait(false);
 
         if (action == FailureAction.Skip)
-            return new StageExecutionResult(current, action, StopProcessing: true);
+            return new StageExecutionResult(current, action, StopProcessing: true, Failed: true);
 
         if (action == FailureAction.FaultPipeline)
             throw new PipelineFailureActionException(
@@ -407,7 +407,8 @@ internal sealed class StageExecutor
         return new StageExecutionResult(
             current,
             action == FailureAction.StopPipeline ? action : null,
-            StopProcessing: true);
+            StopProcessing: true,
+            Failed: true);
     }
 
     private async ValueTask CompleteTerminalNonFailureAsync(
@@ -520,7 +521,8 @@ internal sealed class StageExecutor
 internal readonly record struct StageExecutionResult(
     object Envelope,
     FailureAction? FailureAction,
-    bool StopProcessing);
+    bool StopProcessing,
+    bool Failed = false);
 
 internal enum RetryDecisionKind
 {

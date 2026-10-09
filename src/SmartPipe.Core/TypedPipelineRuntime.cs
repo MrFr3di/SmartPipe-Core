@@ -1617,6 +1617,15 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     private async ValueTask<FailureAction?> ProcessEnvelopeAsync(
         ProcessingEnvelope<TInput> sourceEnvelope,
+        CancellationToken ct) =>
+        (await ProcessEnvelopeOutcomeAsync(sourceEnvelope, ct).ConfigureAwait(false)).FailureAction;
+
+    private readonly record struct EnvelopeProcessingOutcome(FailureAction? FailureAction, bool Failed);
+
+    internal int? CurrentAdaptiveConcurrency => _adaptiveParallelism?.CurrentLimit;
+
+    private async ValueTask<EnvelopeProcessingOutcome> ProcessEnvelopeOutcomeAsync(
+        ProcessingEnvelope<TInput> sourceEnvelope,
         CancellationToken ct
     )
     {
@@ -1627,7 +1636,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             var stageResult = await _stageExecutor.ExecuteAsync(stage, current, ct)
                 .ConfigureAwait(false);
             if (stageResult.StopProcessing)
-                return stageResult.FailureAction;
+                return new EnvelopeProcessingOutcome(stageResult.FailureAction, stageResult.Failed);
 
             current = stageResult.Envelope;
         }
@@ -1647,7 +1656,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         var elapsed = _clock.GetElapsedTime(started, _clock.GetTimestamp());
         _metrics.RecordProcessed(Math.Max(0, elapsed.TotalMilliseconds));
 
-        return null;
+        return new EnvelopeProcessingOutcome(null, Failed: false);
     }
 
     private async ValueTask<FailureAction?> ProcessEnvelopeWithAdaptiveAdmissionAsync(
@@ -1671,11 +1680,17 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
         var started = _clock.GetTimestamp();
         var failed = false;
+        var recordSample = true;
         try
         {
-            var action = await ProcessEnvelopeAsync(sourceEnvelope, ct).ConfigureAwait(false);
-            failed = action is not null;
-            return action;
+            var outcome = await ProcessEnvelopeOutcomeAsync(sourceEnvelope, ct).ConfigureAwait(false);
+            failed = outcome.Failed;
+            return outcome.FailureAction;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            recordSample = false;
+            throw;
         }
         catch
         {
@@ -1687,7 +1702,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             try
             {
                 var elapsed = _clock.GetElapsedTime(started, _clock.GetTimestamp());
-                adaptiveParallelism.RecordCompletion(elapsed, failed);
+                if (recordSample)
+                    adaptiveParallelism.RecordCompletion(elapsed, failed);
             }
             finally
             {
