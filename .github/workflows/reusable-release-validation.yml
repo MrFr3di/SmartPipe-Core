@@ -113,6 +113,9 @@ jobs:
     - name: Build
       run: dotnet build SmartPipe.Core.slnx --no-restore -c Release -warnaserror
 
+    - name: Core integration review regressions
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-class SmartPipe.Core.Tests.Engine.IntegrationReviewRegressionTests --minimum-expected-tests 8
+
     - name: Core ownership regression tests
       run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Engine.TypedPipelineOwnershipRegressionTests --minimum-expected-tests 17
 
