@@ -25,3 +25,10 @@ Task 3: disposal joins all registered observation independently of stage cleanup
 Tasks 2/3: implementation candidate, hosted GREEN and final review pending.
 
 Candidate 354b38b: Documentation build caught xUnit1051 in the new DI fixture. Threaded TestContext cancellation through startup/request/deadline waits; runtime unchanged.
+
+
+## Post-review hardening (PR #152)
+
+- Protect the original retry-predicate/delay exception: a user callback may throw before the terminal decision is available. The runtime now stops potentially blocked buffered observer callbacks, attempts `StageFailedEvent` delivery, and preserves the original exception alongside any diagnostic/cancellation callback failures. Expected caller cancellation bypasses this exceptional notification path.
+- Add deterministic Core regressions: throwing `RetryOn` in Inline and full-capacity BufferedReliable delivery; terminal stage fault combined with a throwing observer cancellation callback; and direct sink failure with its buffered callback held and one queued message (forcing backpressure on `SinkWriteFailedEvent`).
+- Review/CI gate: the exact final HEAD must pass Core tests including all three new scenarios, repeat concurrency, API baseline, packed consumers and full GitHub-hosted CI. No runtime public API change or NuGet publication.
