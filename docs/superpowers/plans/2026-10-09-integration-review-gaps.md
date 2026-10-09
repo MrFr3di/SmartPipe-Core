@@ -15,3 +15,5 @@ Detailed review and integration stop gates: PR #151.
 Pre-flight: R1 callback stop and R2 observation joins share shutdown but use separate ownership boundaries. Neither may cancel graceful processing or dispose external components.
 Ruling: clean managed checkout on a new feature branch, no extra worktree or local dotnet. Hosted baseline CI 37885828410 is green on exact base.
 Task 1: eight regression cases prepared; RED pending.
+
+RED attempt 37893215702 stopped before test execution: fixture referenced a private source helper from another test class. Added a local one-item source; no runtime change. Added four nonfatal/recovered-retry observer controls; twelve cases total.

@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Time.Testing;
 using SmartPipe.Core;
 
@@ -20,7 +21,7 @@ public sealed class IntegrationReviewRegressionTests
     {
         var observer = new GatedObserver();
         var stage = new GatedTransformer();
-        var run = PipelineBuilder.From(new EnumerablePipelineSource<int>([1])).Transform(stage, new StageFailureOptions
+        var run = PipelineBuilder.From(new SingleSource()).Transform(stage, new StageFailureOptions
         {
             OnPermanentFailure = FailureAction.FaultPipeline,
             ExceptionClassifier = taskFault ? _ => throw stage.Failure : null,
@@ -70,7 +71,7 @@ public sealed class IntegrationReviewRegressionTests
             ? PipelineComponent.ScopeOwned<IPipelineTransformer<int, int>>((_, _) => ValueTask.FromResult<IPipelineTransformer<int, int>>(stage))
             : PipelineComponent.Borrowed<IPipelineTransformer<int, int>>(stage);
         var definition = PipelineDefinitionBuilder.From(new PipelineKey("external-stage"),
-            PipelineComponent.RuntimeOwned<IPipelineSource<int>>((_, _) => ValueTask.FromResult<IPipelineSource<int>>(new EnumerablePipelineSource<int>([1]))))
+            PipelineComponent.RuntimeOwned<IPipelineSource<int>>((_, _) => ValueTask.FromResult<IPipelineSource<int>>(new SingleSource())))
             .Transform(new PipelineStageKey("held"), descriptor, new StageFailureOptions
             {
                 ExceptionClassifier = taskFault ? _ => throw stage.Failure : null,
@@ -109,6 +110,72 @@ public sealed class IntegrationReviewRegressionTests
         }
     }
 
+    [Theory]
+    [InlineData(FailureAction.EmitFailureResult, false)]
+    [InlineData(FailureAction.Skip, false)]
+    [InlineData(FailureAction.StopPipeline, false)]
+    [InlineData(FailureAction.FaultPipeline, true)]
+    public async Task NonFatalOutcome_PreservesObserverToken(FailureAction action, bool recoveredRetry)
+    {
+        var observer = new TokenObserver();
+        var stage = new RecoveringTransformer(recoveredRetry);
+        var retryPredicates = 0;
+        var run = PipelineBuilder.From(new SingleSource()).Transform(stage, new StageFailureOptions
+        {
+            OnPermanentFailure = action,
+            OnRetryExhausted = action,
+            Retry = recoveredRetry ? new RetryPolicy(maxRetries: 1, delay: TimeSpan.FromMilliseconds(1), retryOn: _ =>
+            {
+                retryPredicates++;
+                return true;
+            }) : null,
+        }).WithObserver(observer).WithRuntimeOptions(new PipelineRuntimeOptions
+        {
+            ObserverDispatch = new ObserverDispatchOptions
+            {
+                Mode = ObserverDispatchMode.BufferedReliable,
+                Capacity = 1,
+                FlushOnCompletion = true,
+            },
+        }).Run();
+        try
+        {
+            await run.Completion.WaitAsync(Deadline);
+            Assert.Equal(PipelineRunState.Completed, run.State);
+            Assert.False(observer.Token.IsCancellationRequested);
+            Assert.Equal(recoveredRetry ? 1 : 0, retryPredicates);
+            Assert.Equal(recoveredRetry ? 2 : 1, stage.Attempts);
+        }
+        finally
+        {
+            await run.DisposeAsync().AsTask().WaitAsync(Deadline);
+        }
+    }
+
+    private sealed class TokenObserver : IPipelineObserver
+    {
+        public CancellationToken Token { get; private set; }
+        public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            Token = ct;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RecoveringTransformer(bool recover) : IPipelineTransformer<int, int>
+    {
+        public int Attempts { get; private set; }
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask<StageResult<int>> TransformAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default)
+        {
+            Attempts++;
+            return ValueTask.FromResult(recover && Attempts > 1
+                ? StageResult<int>.Success(envelope.Payload)
+                : StageResult<int>.Failure(new SmartPipeError("retryable stage failure", ErrorType.Transient)));
+        }
+    }
+
     private static IEnumerable<Exception> Flatten(Exception? error) => error switch
     {
         AggregateException aggregate => aggregate.InnerExceptions.SelectMany(Flatten),
@@ -116,6 +183,18 @@ public sealed class IntegrationReviewRegressionTests
         null => [],
         _ => new[] { error }.Concat(Flatten(error.InnerException)),
     };
+
+    private sealed class SingleSource : IPipelineSource<int>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync([EnumeratorCancellation] CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            yield return ProcessingEnvelope<int>.Create(1);
+            await Task.CompletedTask;
+        }
+    }
 
     private sealed class EmptyServices : IServiceProvider
     {
