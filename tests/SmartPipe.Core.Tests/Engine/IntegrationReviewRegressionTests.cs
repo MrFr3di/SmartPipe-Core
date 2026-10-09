@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using Microsoft.Extensions.Time.Testing;
 using SmartPipe.Core;
 
@@ -152,6 +154,202 @@ public sealed class IntegrationReviewRegressionTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RetryPredicateFault_PreservesStageFailedEventAndOriginalFailure(bool buffered)
+    {
+        var fault = new InvalidOperationException("retry predicate failed");
+        var held = new GatedObserver { HoldOnStarted = buffered };
+        var recorder = new RecordingObserver();
+        var stage = new GatedFailureResultTransformer();
+        var run = PipelineBuilder.From(new SingleSource()).Transform(stage, new StageFailureOptions
+        {
+            Retry = new RetryPolicy(maxRetries: 1, delay: TimeSpan.Zero, retryOn: _ => throw fault),
+            OnPermanentFailure = FailureAction.FaultPipeline,
+        }).WithObserver(held).WithObserver(recorder).WithRuntimeOptions(new PipelineRuntimeOptions
+        {
+            ObserverDispatch = new ObserverDispatchOptions
+            {
+                Mode = buffered ? ObserverDispatchMode.BufferedReliable : ObserverDispatchMode.Inline,
+                Capacity = 1,
+                FullMode = BoundedChannelFullMode.Wait,
+                FlushOnCompletion = true,
+            },
+        }).Run();
+        try
+        {
+            if (buffered)
+                await held.Entered.Task.WaitAsync(Deadline, TestContext.Current.CancellationToken);
+            await stage.Entered.Task.WaitAsync(Deadline, TestContext.Current.CancellationToken);
+            stage.Release.TrySetResult();
+            if (buffered)
+            {
+                await held.Cancelled.Task.WaitAsync(Deadline, TestContext.Current.CancellationToken);
+                held.Release.TrySetResult();
+            }
+            var error = await Record.ExceptionAsync(async () =>
+                await run.Completion.WaitAsync(Deadline, TestContext.Current.CancellationToken));
+            Assert.Contains(Flatten(error), item => ReferenceEquals(item, fault));
+            Assert.Equal(PipelineRunState.Faulted, run.State);
+            Assert.Single(recorder.Events, item => item is StageFailedEvent);
+        }
+        finally
+        {
+            stage.Release.TrySetResult();
+            held.Release.TrySetResult();
+            _ = await Record.ExceptionAsync(async () =>
+                await run.DisposeAsync().AsTask().WaitAsync(Deadline, TestContext.Current.CancellationToken));
+        }
+    }
+
+    [Fact]
+    public async Task TerminalStageFault_WithThrowingObserverCancellation_PreservesPrimaryAndCallbackFailure()
+    {
+        var held = new GatedObserver { ThrowOnCancellation = true };
+        var stage = new GatedFailureResultTransformer();
+        var run = PipelineBuilder.From(new SingleSource()).Transform(stage, new StageFailureOptions
+        {
+            OnPermanentFailure = FailureAction.FaultPipeline,
+        }).WithObserver(held).WithRuntimeOptions(new PipelineRuntimeOptions
+        {
+            ObserverDispatch = new ObserverDispatchOptions
+            {
+                Mode = ObserverDispatchMode.BufferedReliable,
+                Capacity = 1,
+                FullMode = BoundedChannelFullMode.Wait,
+                FlushOnCompletion = true,
+            },
+        }).Run();
+        try
+        {
+            await held.Entered.Task.WaitAsync(Deadline, TestContext.Current.CancellationToken);
+            await stage.Entered.Task.WaitAsync(Deadline, TestContext.Current.CancellationToken);
+            stage.Release.TrySetResult();
+            await held.Cancelled.Task.WaitAsync(Deadline, TestContext.Current.CancellationToken);
+            held.Release.TrySetResult();
+            var error = await Record.ExceptionAsync(async () =>
+                await run.Completion.WaitAsync(Deadline, TestContext.Current.CancellationToken));
+            Assert.Contains(Flatten(error), item => item is PipelineFailureActionException);
+            Assert.Contains(Flatten(error), item => ReferenceEquals(item, held.CallbackFailure));
+            Assert.Equal(PipelineRunState.Faulted, run.State);
+        }
+        finally
+        {
+            held.Release.TrySetResult();
+            stage.Release.TrySetResult();
+            _ = await Record.ExceptionAsync(async () =>
+                await run.DisposeAsync().AsTask().WaitAsync(Deadline, TestContext.Current.CancellationToken));
+        }
+    }
+
+    [Fact]
+    public async Task SinkFailure_WithFullReliableQueue_StopsCallbackBeforeFailureNotification()
+    {
+        var held = new GatedSinkStartObserver();
+        var recorder = new RecordingObserver();
+        var sink = new GatedThrowingSink();
+        var dispatcher = PipelineObserverDispatcher.Create(
+            [new PipelineObserverRegistration(held), new PipelineObserverRegistration(recorder)],
+            new ObserverDispatchOptions
+            {
+                Mode = ObserverDispatchMode.BufferedReliable,
+                Capacity = 1,
+                FullMode = BoundedChannelFullMode.Wait,
+                FlushOnCompletion = true,
+            },
+            SystemPipelineClock.Instance);
+        using var sinkExecutor = new SinkExecutor<int>(
+            sink, "pipeline", "run", SystemPipelineClock.Instance,
+            dispatcher.EmitAsync, stopCallbacksOnFaultAsync: dispatcher.StopCallbacksAsync);
+        try
+        {
+            var write = sinkExecutor.WriteAsync(ProcessingEnvelope<int>.Create(1), CancellationToken.None).AsTask();
+            await held.Entered.Task.WaitAsync(Deadline, TestContext.Current.CancellationToken);
+            await sink.Entered.Task.WaitAsync(Deadline, TestContext.Current.CancellationToken);
+            // While SinkWriteStarted is held in the observer callback, fill the
+            // sole queue slot so SinkWriteFailed must wait for cancellation.
+            await dispatcher.EmitAsync(
+                new PipelineStartedEvent("pipeline", "run", DateTimeOffset.UtcNow),
+                TestContext.Current.CancellationToken);
+            sink.Release.TrySetResult();
+            await held.Cancelled.Task.WaitAsync(Deadline, TestContext.Current.CancellationToken);
+            held.Release.TrySetResult();
+            var error = await Record.ExceptionAsync(async () =>
+                await write.WaitAsync(Deadline, TestContext.Current.CancellationToken));
+            Assert.Same(sink.Failure, error);
+            await dispatcher.FlushAsync(TestContext.Current.CancellationToken)
+                .AsTask().WaitAsync(Deadline, TestContext.Current.CancellationToken);
+            Assert.Single(recorder.Events, item => item is SinkWriteFailedEvent);
+        }
+        finally
+        {
+            held.Release.TrySetResult();
+            sink.Release.TrySetResult();
+            _ = await Record.ExceptionAsync(async () =>
+                await dispatcher.DisposeAsync().AsTask().WaitAsync(Deadline, TestContext.Current.CancellationToken));
+        }
+    }
+
+    private sealed class RecordingObserver : IPipelineObserver
+    {
+        public ConcurrentQueue<PipelineEvent> Events { get; } = new();
+        public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            Events.Enqueue(pipelineEvent);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class GatedFailureResultTransformer : IPipelineTransformer<int, int>
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public async ValueTask<StageResult<int>> TransformAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default)
+        {
+            Entered.TrySetResult();
+            await Release.Task.ConfigureAwait(false);
+            return StageResult<int>.Failure(new SmartPipeError("stage rejected", ErrorType.Transient));
+        }
+    }
+
+    private sealed class GatedThrowingSink : IPipelineSink<int>
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Exception Failure { get; } = new IOException("sink failed");
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public async ValueTask WriteAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default)
+        {
+            Entered.TrySetResult();
+            await Release.Task.ConfigureAwait(false);
+            throw Failure;
+        }
+    }
+
+    private sealed class GatedSinkStartObserver : IPipelineObserver
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
+        {
+            if (pipelineEvent is not SinkWriteStartedEvent)
+                return ValueTask.CompletedTask;
+            return HoldAsync(ct);
+        }
+        private async ValueTask HoldAsync(CancellationToken ct)
+        {
+            using var registration = ct.Register(() => Cancelled.TrySetResult());
+            Entered.TrySetResult();
+            await Release.Task.ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+        }
+    }
+
     private sealed class TokenObserver : IPipelineObserver
     {
         public CancellationToken Token { get; private set; }
@@ -235,15 +433,23 @@ public sealed class IntegrationReviewRegressionTests
 
     private sealed class GatedObserver : IPipelineObserver
     {
+        public bool HoldOnStarted { get; init; } = true;
+        public bool ThrowOnCancellation { get; init; }
+        public Exception CallbackFailure { get; } = new InvalidOperationException("observer cancellation callback fault");
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Exited { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public async ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
         {
-            if (pipelineEvent is not PipelineStartedEvent)
+            if (!HoldOnStarted || pipelineEvent is not PipelineStartedEvent)
                 return;
-            using var registration = ct.Register(() => Cancelled.TrySetResult());
+            using var registration = ct.Register(() =>
+            {
+                Cancelled.TrySetResult();
+                if (ThrowOnCancellation)
+                    throw CallbackFailure;
+            });
             Entered.TrySetResult();
             await Release.Task.ConfigureAwait(false);
             Exited.TrySetResult();
