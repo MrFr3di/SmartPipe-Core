@@ -1,5 +1,7 @@
 #nullable enable
 
+using System.Runtime.ExceptionServices;
+
 namespace SmartPipe.Core;
 
 internal sealed class StageExecutor
@@ -312,12 +314,39 @@ internal sealed class StageExecutor
                 ErrorType.Permanent,
                 outcome.Kind.ToString()
             );
-        var decision = justOpened
-            ? new RetryDecision(stage.FailureOptions.Retry is not null
-                ? RetryDecisionKind.Exhausted : RetryDecisionKind.NotRetryable, 0, TimeSpan.Zero)
-            : outcome.Kind == StageResultKind.TimedOut && !outcome.CanRetryTimeout
-                ? new RetryDecision(RetryDecisionKind.NotRetryable, 0, TimeSpan.Zero)
-                : _getRetryDecision(stage, error, outcome.Attempt, stageStartedTimestamp);
+        RetryDecision decision;
+        try
+        {
+            decision = justOpened
+                ? new RetryDecision(stage.FailureOptions.Retry is not null
+                    ? RetryDecisionKind.Exhausted : RetryDecisionKind.NotRetryable, 0, TimeSpan.Zero)
+                : outcome.Kind == StageResultKind.TimedOut && !outcome.CanRetryTimeout
+                    ? new RetryDecision(RetryDecisionKind.NotRetryable, 0, TimeSpan.Zero)
+                    : _getRetryDecision(stage, error, outcome.Attempt, stageStartedTimestamp);
+        }
+        catch (Exception decisionError) when (decisionError is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            // A user-supplied retry predicate/delay may throw. Preserve the stage
+            // failure event while stopping potentially blocked reliable observers
+            // before publishing into a full queue. Never replace the original error
+            // with a callback or notification failure.
+            var notificationErrors = await RuntimeCleanup.CollectAsync([
+                _stopCallbacksOnFaultAsync,
+                () => _emitAsync(
+                    new StageFailedEvent(
+                        _pipelineId,
+                        _runId,
+                        outcome.TraceId,
+                        stage.StageId,
+                        outcome.Attempt,
+                        _clock.GetUtcNow(),
+                        error),
+                    ct),
+            ]).ConfigureAwait(false);
+            RuntimeCleanup.ThrowCombined(ExceptionDispatchInfo.Capture(decisionError), notificationErrors);
+            throw;
+        }
+
         var action = decision.Kind == RetryDecisionKind.Exhausted
             ? stage.FailureOptions.OnRetryExhausted
             : stage.FailureOptions.OnPermanentFailure;
