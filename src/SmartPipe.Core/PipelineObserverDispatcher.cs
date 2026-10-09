@@ -429,7 +429,7 @@ internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDisp
         try
         {
             var errors = await RuntimeCleanup.CollectAsync([
-                () => new ValueTask(_cts.CancelAsync()),
+                () => _worker.IsCompleted ? ValueTask.CompletedTask : new ValueTask(_cts.CancelAsync()),
                 () => AwaitTeardownAsync(completeTask),
                 () => AwaitTeardownAsync(_worker),
             ]).ConfigureAwait(false);

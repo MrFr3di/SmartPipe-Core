@@ -80,7 +80,7 @@ public sealed class BufferedObserverShutdownRegressionTests
             var error = await Record.ExceptionAsync(async () => await run.Completion.WaitAsync(Deadline));
             if (action == "Fault")
             {
-                Assert.Same(stage.Failure, Assert.IsType<PipelineFailureActionException>(error).InnerException);
+                Assert.Same(stage.Failure, Assert.IsType<PipelineFailureActionException>(error).Error.InnerException);
                 Assert.Equal(PipelineRunState.Faulted, run.State);
             }
             else
@@ -135,6 +135,7 @@ public sealed class BufferedObserverShutdownRegressionTests
                 Assert.False(run.Completion.IsCompleted);
                 observer.Release.TrySetResult();
                 await drain.WaitAsync(Deadline);
+                Assert.False(observer.CancellationAtExit);
                 Assert.False(observer.Token.IsCancellationRequested);
             }
             else
@@ -224,6 +225,7 @@ public sealed class BufferedObserverShutdownRegressionTests
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Exited { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public CancellationToken Token { get; private set; }
+        public bool CancellationAtExit { get; private set; }
         public bool ThrowOnCancellation { get; init; }
         public Exception CallbackFailure { get; } = new InvalidOperationException("observer cancellation callback failure");
 
@@ -241,6 +243,7 @@ public sealed class BufferedObserverShutdownRegressionTests
             });
             Entered.TrySetResult();
             await Release.Task.ConfigureAwait(false);
+            CancellationAtExit = ct.IsCancellationRequested;
             Exited.TrySetResult();
             ct.ThrowIfCancellationRequested();
         }

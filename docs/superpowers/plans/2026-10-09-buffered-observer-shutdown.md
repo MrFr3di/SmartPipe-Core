@@ -45,3 +45,14 @@ creating the same circular dependency independently of runtime.
 
 No public API/baseline, dependency, package-version or observer failure-policy changes.
 F4 adaptive failure accounting remains the next separate slice.
+
+## Hosted candidate findings
+
+Run `37881196111` stopped at format verification; corrected initializer indentation
+and xUnit assertion warning. Run `37881426830` passed format/build and existing
+17/47 ownership gates; new cases were 29/37. Six fault assertions incorrectly
+looked for the source error on Exception.InnerException rather than the existing
+PipelineFailureActionException.Error.InnerException. Two Drain cases identified
+unnecessary callback cancellation after the queue worker had already completed.
+Disposal now preserves the previous completed-worker guard; tests also snapshot
+cancellation at callback exit. These results are candidate findings, not acceptance.
