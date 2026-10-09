@@ -59,7 +59,7 @@
     <PackageVersion Include="SmartPipe.Extensions.Json" Version="$(SmartPipePreviousStableVersion)" />
     <PackageVersion Include="SmartPipe.Extensions.OpenTelemetry" Version="$(SmartPipePreviousStableVersion)" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
     <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.1" />
   </ItemGroup>
 </Project>
