@@ -563,7 +563,14 @@ internal sealed class StageExecutor
         throw new InvalidOperationException("Admission did not fail.");
     }
 
-    private async ValueTask<StageExecutionResult> CompleteSuccessfulAttemptAsync(ITypedPipelineStage stage,
+    private ValueTask<StageExecutionResult> CompleteSuccessfulAttemptAsync(ITypedPipelineStage stage,
+        object current, TypedStageExecutionResult outcome, CircuitBreaker? breaker,
+        CircuitBreakerPermit permit, TypedStageCorrelation correlation, CancellationToken ct) =>
+        breaker is null && outcome.IsSuccess
+            ? CompleteStageSuccessAsync(stage, outcome, correlation, ct)
+            : CompleteSuccessfulAttemptSlowAsync(stage, current, outcome, breaker, permit, correlation, ct);
+
+    private async ValueTask<StageExecutionResult> CompleteSuccessfulAttemptSlowAsync(ITypedPipelineStage stage,
         object current, TypedStageExecutionResult outcome, CircuitBreaker? breaker,
         CircuitBreakerPermit permit, TypedStageCorrelation correlation, CancellationToken ct)
     {
@@ -573,10 +580,26 @@ internal sealed class StageExecutor
             await CompleteTerminalNonFailureAsync(stage, outcome, ct).ConfigureAwait(false);
             return new StageExecutionResult(current, null, StopProcessing: true);
         }
-        if (_hasObservers)
-            await _emitAsync(new StageSucceededEvent(_pipelineId, _runId, correlation.TraceId,
-                stage.StageId, stage.StageName, correlation.Attempt, _clock.GetUtcNow()), ct).ConfigureAwait(false);
-        return new StageExecutionResult(outcome.Envelope!, null, StopProcessing: false);
+        return await CompleteStageSuccessAsync(stage, outcome, correlation, ct).ConfigureAwait(false);
+    }
+
+    private ValueTask<StageExecutionResult> CompleteStageSuccessAsync(ITypedPipelineStage stage,
+        TypedStageExecutionResult outcome, TypedStageCorrelation correlation, CancellationToken ct)
+    {
+        var result = new StageExecutionResult(outcome.Envelope!, null, StopProcessing: false);
+        if (!_hasObservers) return ValueTask.FromResult(result);
+        var notification = _emitAsync(new StageSucceededEvent(_pipelineId, _runId, correlation.TraceId,
+            stage.StageId, stage.StageName, correlation.Attempt, _clock.GetUtcNow()), ct);
+        if (!notification.IsCompletedSuccessfully) return AwaitStageSuccessNotificationAsync(notification, result);
+        notification.GetAwaiter().GetResult();
+        return ValueTask.FromResult(result);
+    }
+
+    private static async ValueTask<StageExecutionResult> AwaitStageSuccessNotificationAsync(
+        ValueTask notification, StageExecutionResult result)
+    {
+        await notification.ConfigureAwait(false);
+        return result;
     }
 
     private async ValueTask RecordBreakerSuccessAsync(
