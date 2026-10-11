@@ -119,14 +119,64 @@ internal sealed class StageExecutor
     public ValueTask<StageExecutionResult> ExecuteAsync(ITypedPipelineStage stage, object current, CancellationToken ct) =>
         UsesAdmission ? ExecuteAdmittedAsync(stage, current, ct) : ExecuteDefaultAsync(stage, current, ct);
 
-    private async ValueTask<StageExecutionResult> ExecuteDefaultAsync(
-        ITypedPipelineStage stage,
-        object current,
-        CancellationToken ct)
+    private ValueTask<StageExecutionResult> ExecuteDefaultAsync(
+        ITypedPipelineStage stage, object current, CancellationToken ct)
     {
-        var breaker = _getBreaker(stage);
-        var stageStartedAtUtc = _clock.GetUtcNow();
-        var stageStartedTimestamp = _clock.GetTimestamp();
+        try
+        {
+            var breaker = _getBreaker(stage);
+            var startedAtUtc = _clock.GetUtcNow();
+            var startedTimestamp = _clock.GetTimestamp();
+            if (breaker is not null)
+                return ExecuteDefaultLoopAsync(stage, current, ct, breaker, startedAtUtc, startedTimestamp);
+
+            var correlation = stage.GetCorrelation(current);
+            var execution = ExecuteAttemptWithNotificationsAsync(stage, current, startedTimestamp, correlation, ct, null);
+            if (!execution.IsCompletedSuccessfully)
+                return AwaitDefaultInitialAttemptAsync(stage, current, execution,
+                    (startedAtUtc, startedTimestamp, correlation), ct);
+            var outcome = execution.GetAwaiter().GetResult();
+            if (outcome.IsSuccess)
+                return CompleteStageSuccessAsync(stage, outcome, correlation, ct);
+            return CompleteDefaultInitialAttemptAsync(stage, current, outcome,
+                (startedAtUtc, startedTimestamp, correlation), ct);
+        }
+        catch (Exception error)
+        {
+            return PropagateDefaultErrorAsync(error);
+        }
+    }
+
+    private static async ValueTask<StageExecutionResult> PropagateDefaultErrorAsync(Exception error) =>
+        await ValueTask.FromException<StageExecutionResult>(error).ConfigureAwait(false);
+
+    private async ValueTask<StageExecutionResult> AwaitDefaultInitialAttemptAsync(ITypedPipelineStage stage,
+        object current, ValueTask<TypedStageExecutionResult> execution,
+        (DateTimeOffset StartedAtUtc, long StartedTimestamp, TypedStageCorrelation Correlation) context, CancellationToken ct)
+    {
+        var outcome = await execution.ConfigureAwait(false);
+        if (outcome.IsSuccess)
+            return await CompleteStageSuccessAsync(stage, outcome, context.Correlation, ct).ConfigureAwait(false);
+        return await CompleteDefaultInitialAttemptAsync(stage, current, outcome, context, ct).ConfigureAwait(false);
+    }
+
+    private async ValueTask<StageExecutionResult> CompleteDefaultInitialAttemptAsync(ITypedPipelineStage stage,
+        object current, TypedStageExecutionResult outcome,
+        (DateTimeOffset StartedAtUtc, long StartedTimestamp, TypedStageCorrelation Correlation) context, CancellationToken ct)
+    {
+        if (outcome.IsTerminalNonFailure)
+            return await CompleteSuccessfulAttemptAsync(stage, current, outcome, null, default, context.Correlation, ct).ConfigureAwait(false);
+        var failure = await HandleFailureAsync(stage, current, outcome, null, default, context.StartedTimestamp, ct).ConfigureAwait(false);
+        if (!failure.ShouldRetry)
+            return failure.Result;
+        return await ExecuteDefaultLoopAsync(stage, failure.Envelope!, ct, null,
+            context.StartedAtUtc, context.StartedTimestamp).ConfigureAwait(false);
+    }
+
+    private async ValueTask<StageExecutionResult> ExecuteDefaultLoopAsync(
+        ITypedPipelineStage stage, object current, CancellationToken ct,
+        CircuitBreaker? breaker, DateTimeOffset stageStartedAtUtc, long stageStartedTimestamp)
+    {
         while (true)
         {
             var correlation = stage.GetCorrelation(current);
