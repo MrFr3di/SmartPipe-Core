@@ -173,9 +173,13 @@ internal static class CircuitBreakerSamplingDiagnostics
             new JsonSerializerOptions { WriteIndented = true })).ConfigureAwait(false);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "S1215",
+        Justification = "This standalone retained-heap diagnostic requires a full collection with the breaker kept alive. It never runs in a BenchmarkDotNet timed operation or production runtime.")]
+    private static long ReadRetainedHeap() => GC.GetTotalMemory(forceFullCollection: true);
+
     private static object MeasureMemory(int samples, bool bucketed)
     {
-        var baselineBytes = GC.GetTotalMemory(forceFullCollection: true);
+        var baselineBytes = ReadRetainedHeap();
         var time = new CircuitBreakerSamplingBenchmarks.SamplingTimeProvider();
         var breaker = CircuitBreakerSamplingBenchmarks.CreateBreaker(time, samples, bucketed ? "Bucketed" : "Exact");
         for (var index = 0; index < samples; index++)
@@ -183,12 +187,12 @@ internal static class CircuitBreakerSamplingDiagnostics
             time.Advance(1);
             breaker.RecordSuccess();
         }
-        var retainedAfterFillBytes = GC.GetTotalMemory(forceFullCollection: true) - baselineBytes;
+        var retainedAfterFillBytes = ReadRetainedHeap() - baselineBytes;
         time.Advance(samples + (samples + 63L) / 64 + 1L);
         var started = Stopwatch.GetTimestamp();
         var ratio = breaker.GetCurrentFailureRatio();
         var expiryMicroseconds = Stopwatch.GetElapsedTime(started).TotalMicroseconds;
-        var retainedAfterExpiryBytes = GC.GetTotalMemory(forceFullCollection: true) - baselineBytes;
+        var retainedAfterExpiryBytes = ReadRetainedHeap() - baselineBytes;
         if (ratio != 0) throw new InvalidOperationException("Diagnostic idle expiry failed.");
         GC.KeepAlive(breaker);
         return new
