@@ -63,18 +63,24 @@ public class RuntimeIoAllocationBenchmarks
             outputCount++;
             outputChecksum += value;
             if (latencies is not null && starts is not null)
-                latencies[value - Stages] = Stopwatch.GetElapsedTime(starts[value - Stages]).TotalMicroseconds;
+                latencies[value - Stages] = (Stopwatch.GetTimestamp() - starts[value - Stages]) * (1_000_000d / Stopwatch.Frequency);
         }
         await run.Completion.ConfigureAwait(false);
+        ValidateRun(run.State, outputCount, outputChecksum, sink, observer);
+        return latencies;
+    }
+
+    private void ValidateRun(PipelineRunState state, int outputCount, long outputChecksum,
+        VerifyingSink sink, VerifyingObserver observer)
+    {
         var expectedChecksum = ((long)ItemCount * (ItemCount - 1) / 2) + ((long)ItemCount * Stages);
-        if (run.State != PipelineRunState.Completed
+        if (state != PipelineRunState.Completed
             || outputCount != (HasSink ? 0 : ItemCount)
             || (!HasSink && outputChecksum != expectedChecksum)
             || sink.Count != (HasSink ? ItemCount : 0)
             || (HasSink && sink.Checksum != expectedChecksum)
             || (Observers != 0 && observer.Successes != (long)ItemCount * Stages))
             throw new InvalidOperationException("Benchmark item count, checksum, sink, observer or terminal state mismatch.");
-        return latencies;
     }
 
     private PipelineComponent<IPipelineTransformer<int, int>> TransformComponent() =>
@@ -136,7 +142,7 @@ public class RuntimeIoAllocationBenchmarks
             Interlocked.Increment(ref Count);
             Interlocked.Add(ref Checksum, envelope.Payload);
             if (latencies is not null && starts is not null)
-                latencies[envelope.Payload - stages] = Stopwatch.GetElapsedTime(starts[envelope.Payload - stages]).TotalMicroseconds;
+                latencies[envelope.Payload - stages] = (Stopwatch.GetTimestamp() - starts[envelope.Payload - stages]) * (1_000_000d / Stopwatch.Frequency);
             return ValueTask.CompletedTask;
         }
 
@@ -158,16 +164,14 @@ public class RuntimeIoAllocationBenchmarks
 
 internal static class RuntimeIoLatencyReport
 {
-    public static async Task WriteAsync(string path)
+    private static IEnumerable<RuntimeIoAllocationBenchmarks> CreateMatrix()
     {
-        var rows = new List<object>();
         foreach (var stages in new[] { 1, 4, 16 })
             foreach (var observers in new[] { 0, 1 })
                 foreach (var hasSink in new[] { false, true })
                     foreach (var concurrency in new[] { 1, 8, 32 })
                         foreach (var asyncTransform in new[] { false, true })
-                        {
-                            var benchmark = new RuntimeIoAllocationBenchmarks
+                            yield return new RuntimeIoAllocationBenchmarks
                             {
                                 Stages = stages,
                                 Observers = observers,
@@ -175,24 +179,31 @@ internal static class RuntimeIoLatencyReport
                                 Concurrency = concurrency,
                                 AsyncTransform = asyncTransform,
                             };
-                            await benchmark.RunOnceAsync(instrument: false).ConfigureAwait(false);
-                            for (var repetition = 0; repetition < 3; repetition++)
-                            {
-                                var elapsed = await benchmark.RunOnceAsync(instrument: true).ConfigureAwait(false);
-                                Array.Sort(elapsed!);
-                                rows.Add(new
-                                {
-                                    stages,
-                                    observers,
-                                    hasSink,
-                                    concurrency,
-                                    asyncTransform,
-                                    repetition,
-                                    count = elapsed!.Length,
-                                    itemP99Microseconds = elapsed[(int)Math.Ceiling(elapsed.Length * 0.99) - 1],
-                                });
-                            }
-                        }
+    }
+
+    public static async Task WriteAsync(string path)
+    {
+        var rows = new List<object>();
+        foreach (var benchmark in CreateMatrix())
+        {
+            await benchmark.RunOnceAsync(instrument: false).ConfigureAwait(false);
+            for (var repetition = 0; repetition < 3; repetition++)
+            {
+                var elapsed = await benchmark.RunOnceAsync(instrument: true).ConfigureAwait(false);
+                Array.Sort(elapsed!);
+                rows.Add(new
+                {
+                    stages = benchmark.Stages,
+                    observers = benchmark.Observers,
+                    hasSink = benchmark.HasSink,
+                    concurrency = benchmark.Concurrency,
+                    asyncTransform = benchmark.AsyncTransform,
+                    repetition,
+                    count = elapsed!.Length,
+                    itemP99Microseconds = elapsed[(int)Math.Ceiling(elapsed.Length * 0.99) - 1],
+                });
+            }
+        }
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new
         {
