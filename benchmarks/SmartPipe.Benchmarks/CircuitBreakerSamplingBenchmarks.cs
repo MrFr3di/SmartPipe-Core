@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using BenchmarkDotNet.Attributes;
 using SmartPipe.Core;
@@ -149,45 +147,50 @@ internal static class CircuitBreakerSamplingDiagnostics
 {
     public static async Task WriteAsync(string path)
     {
+        // Warm constructor/JIT paths before using public managed-heap measurements.
+        var warmTime = new CircuitBreakerSamplingBenchmarks.SamplingTimeProvider();
+        var warm = CircuitBreakerSamplingBenchmarks.CreateBreaker(warmTime, 1000);
+        warm.RecordSuccess();
+        _ = warm.GetCurrentFailureRatio();
         var rows = new List<object>();
         foreach (var samples in new[] { 1_000, 100_000, 1_000_000 })
-        {
-            var time = new CircuitBreakerSamplingBenchmarks.SamplingTimeProvider();
-            var breaker = CircuitBreakerSamplingBenchmarks.CreateBreaker(time, samples);
-            for (var index = 0; index < samples; index++)
-            {
-                time.Advance(1);
-                breaker.RecordSuccess();
-            }
-            var before = WindowCapacity(breaker);
-            time.Advance(samples + 1L);
-            var started = Stopwatch.GetTimestamp();
-            var ratio = breaker.GetCurrentFailureRatio();
-            var expiryMicroseconds = Stopwatch.GetElapsedTime(started).TotalMicroseconds;
-            var after = WindowCapacity(breaker);
-            if (ratio != 0)
-                throw new InvalidOperationException("Diagnostic idle expiry failed.");
-            rows.Add(new
-            {
-                samples,
-                before,
-                after,
-                expiryMicroseconds,
-                retainedSampleStorageBytes = (long)after * Unsafe.SizeOf<(long, bool)>(),
-                notes = "Sample backing storage only, excluding object/array headers; capacity measured after full expiry",
-            });
-            GC.KeepAlive(breaker);
-        }
+            rows.Add(MeasureMemory(samples));
+        GC.KeepAlive(warm);
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(rows,
             new JsonSerializerOptions { WriteIndented = true })).ConfigureAwait(false);
     }
 
-    private static int WindowCapacity(CircuitBreaker breaker)
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "S1215",
+        Justification = "This standalone retained-heap diagnostic requires a full collection with the breaker kept alive. It never runs in a BenchmarkDotNet timed operation or production runtime.")]
+    private static long ReadRetainedHeap() => GC.GetTotalMemory(forceFullCollection: true);
+
+    private static object MeasureMemory(int samples)
     {
-        var field = typeof(CircuitBreaker).GetField("_window", BindingFlags.Instance | BindingFlags.NonPublic);
-        if (field?.GetValue(breaker) is Queue<(long, bool)> queue)
-            return queue.EnsureCapacity(0);
-        throw new InvalidOperationException("Update the identical baseline/candidate diagnostic harness for the sampling storage layout.");
+        var baselineBytes = ReadRetainedHeap();
+        var time = new CircuitBreakerSamplingBenchmarks.SamplingTimeProvider();
+        var breaker = CircuitBreakerSamplingBenchmarks.CreateBreaker(time, samples);
+        for (var index = 0; index < samples; index++)
+        {
+            time.Advance(1);
+            breaker.RecordSuccess();
+        }
+        var retainedAfterFillBytes = ReadRetainedHeap() - baselineBytes;
+        time.Advance(samples + (samples + 63L) / 64 + 1L);
+        var started = Stopwatch.GetTimestamp();
+        var ratio = breaker.GetCurrentFailureRatio();
+        var expiryMicroseconds = Stopwatch.GetElapsedTime(started).TotalMicroseconds;
+        var retainedAfterExpiryBytes = ReadRetainedHeap() - baselineBytes;
+        if (ratio != 0) throw new InvalidOperationException("Diagnostic idle expiry failed.");
+        GC.KeepAlive(breaker);
+        return new
+        {
+            samples,
+            bucketed = false,
+            retainedAfterFillBytes,
+            retainedAfterExpiryBytes,
+            expiryMicroseconds,
+            notes = "Managed-heap delta including clock, breaker, window, array/object headers; forced collection with breaker kept alive. Separate prototype/resource tests prove the backing-array slot bound.",
+        };
     }
 }
