@@ -5,14 +5,20 @@ namespace SmartPipe.Core;
 internal readonly struct PipelineTime
 {
     private readonly TimeProvider? _timeProvider;
+    private readonly IPipelineClock _clock;
 
     public PipelineTime(IPipelineClock clock)
     {
         ArgumentNullException.ThrowIfNull(clock);
+        _clock = clock;
         _timeProvider = clock is TimeProviderPipelineClock providerClock
             ? providerClock.TimeProvider
             : null;
     }
+
+    public long GetTimestamp() => _clock.GetTimestamp();
+
+    public TimeSpan GetElapsedTime(long start, long end) => _clock.GetElapsedTime(start, end);
 
     public Task DelayAsync(TimeSpan delay, CancellationToken ct)
     {
