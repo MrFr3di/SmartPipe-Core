@@ -461,9 +461,9 @@ internal sealed class StageExecutor
         try
         {
             var execution = ExecuteAttemptCore(stage, current, stageStartedTimestamp, admission, ct);
-            return execution.IsCompletedSuccessfully
-                ? ValueTask.FromResult(execution.GetAwaiter().GetResult())
-                : AwaitStageAttemptAsync(execution, stage, correlation, ct);
+            if (execution.IsCompletedSuccessfully)
+                return ValueTask.FromResult(execution.GetAwaiter().GetResult());
+            return AwaitStageAttemptAsync(execution, stage, correlation, ct);
         }
         catch (Exception error)
         {
