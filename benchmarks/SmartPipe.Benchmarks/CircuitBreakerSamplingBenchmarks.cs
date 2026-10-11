@@ -159,20 +159,20 @@ public class CircuitBreakerSamplingBenchmarks
 
 internal static class CircuitBreakerSamplingDiagnostics
 {
-    public static async Task WriteAsync(string path)
+    public static async Task WriteAsync(string path, bool bucketed = false)
     {
         var rows = new List<object>();
         foreach (var samples in new[] { 1_000, 100_000, 1_000_000 })
         {
             var time = new CircuitBreakerSamplingBenchmarks.SamplingTimeProvider();
-            var breaker = CircuitBreakerSamplingBenchmarks.CreateBreaker(time, samples);
+            var breaker = CircuitBreakerSamplingBenchmarks.CreateBreaker(time, samples, bucketed ? "Bucketed" : "Exact");
             for (var index = 0; index < samples; index++)
             {
                 time.Advance(1);
                 breaker.RecordSuccess();
             }
             var before = WindowCapacity(breaker);
-            time.Advance(samples + 1L);
+            time.Advance(samples + (samples + 63L) / 64 + 1L);
             var started = Stopwatch.GetTimestamp();
             var ratio = breaker.GetCurrentFailureRatio();
             var expiryMicroseconds = Stopwatch.GetElapsedTime(started).TotalMicroseconds;
@@ -182,10 +182,11 @@ internal static class CircuitBreakerSamplingDiagnostics
             rows.Add(new
             {
                 samples,
+                bucketed,
                 before,
                 after,
                 expiryMicroseconds,
-                retainedSampleStorageBytes = (long)after * Unsafe.SizeOf<(long, bool)>(),
+                retainedSampleStorageBytes = WindowStorageBytes(breaker, after),
                 notes = "Sample backing storage only, excluding object/array headers; capacity measured after full expiry",
             });
             GC.KeepAlive(breaker);
@@ -193,6 +194,14 @@ internal static class CircuitBreakerSamplingDiagnostics
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(rows,
             new JsonSerializerOptions { WriteIndented = true })).ConfigureAwait(false);
+    }
+
+    private static long WindowStorageBytes(CircuitBreaker breaker, int capacity)
+    {
+        var storage = typeof(CircuitBreaker).GetField("_samplingWindow", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(breaker);
+        if (storage?.GetType().GetProperty("RetainedStorageBytes", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(storage) is long bytes)
+            return bytes;
+        return (long)capacity * Unsafe.SizeOf<(long, bool)>();
     }
 
     private static int WindowCapacity(CircuitBreaker breaker)
@@ -203,6 +212,8 @@ internal static class CircuitBreakerSamplingDiagnostics
         var storage = typeof(CircuitBreaker).GetField("_samplingWindow", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(breaker);
         if (storage?.GetType().GetField("_samples", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(storage) is Queue<(long, bool)> samples)
             return samples.EnsureCapacity(0);
+        if (storage?.GetType().GetProperty("StorageSlotCount", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(storage) is int slots)
+            return slots;
         throw new InvalidOperationException("Update the identical baseline/candidate diagnostic harness for the sampling storage layout.");
     }
 }
