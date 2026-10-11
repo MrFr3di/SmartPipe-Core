@@ -48,6 +48,9 @@ internal sealed class StageExecutor
         CancellationToken,
         ValueTask<TypedStageExecutionResult>> _executeStageAttemptAsync;
 
+    private readonly RunRetryBudget? _retryBudget;
+    private readonly Func<ITypedPipelineStage, object, long, CancellationToken, StageAttemptAdmission?, ValueTask<TypedStageExecutionResult>>? _executeAdmittedAttemptAsync;
+
     public StageExecutor(
         string pipelineId,
         string runId,
@@ -79,9 +82,13 @@ internal sealed class StageExecutor
             long,
             CancellationToken,
             ValueTask<TypedStageExecutionResult>> executeStageAttemptAsync,
-        Func<ValueTask>? stopCallbacksOnFaultAsync = null)
+        Func<ValueTask>? stopCallbacksOnFaultAsync = null,
+        RunRetryBudget? retryBudget = null,
+        Func<ITypedPipelineStage, object, long, CancellationToken, StageAttemptAdmission?, ValueTask<TypedStageExecutionResult>>? executeAdmittedAttemptAsync = null)
     {
         _stopCallbacksOnFaultAsync = stopCallbacksOnFaultAsync ?? (() => ValueTask.CompletedTask);
+        _retryBudget = retryBudget;
+        _executeAdmittedAttemptAsync = executeAdmittedAttemptAsync;
         _pipelineId = pipelineId ?? throw new ArgumentNullException(nameof(pipelineId));
         _runId = runId ?? throw new ArgumentNullException(nameof(runId));
         _lineageMode = lineageMode;
@@ -110,8 +117,13 @@ internal sealed class StageExecutor
         var breaker = _getBreaker(stage);
         var stageStartedAtUtc = _clock.GetUtcNow();
         var stageStartedTimestamp = _clock.GetTimestamp();
+        RetryBudgetLease? pendingRetry = null;
+        try
+        {
         while (true)
         {
+            using var admission = pendingRetry is null ? null : new StageAttemptAdmission(pendingRetry);
+            pendingRetry = null;
             var correlation = stage.GetCorrelation(current);
             var breakerPermit = default(CircuitBreakerPermit);
 
@@ -189,8 +201,9 @@ internal sealed class StageExecutor
 
                 try
                 {
-                    outcome = await _executeStageAttemptAsync(stage, current, stageStartedTimestamp, ct)
-                        .ConfigureAwait(false);
+                    outcome = admission is null
+                        ? await _executeStageAttemptAsync(stage, current, stageStartedTimestamp, ct).ConfigureAwait(false)
+                        : await _executeAdmittedAttemptAsync!(stage, current, stageStartedTimestamp, ct, admission).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -242,6 +255,7 @@ internal sealed class StageExecutor
                     .ConfigureAwait(false);
                 if (failure.ShouldRetry)
                 {
+                    pendingRetry = failure.RetryLease;
                     current = failure.Envelope!;
                     continue;
                 }
@@ -267,6 +281,8 @@ internal sealed class StageExecutor
 
             return new StageExecutionResult(outcome.Envelope!, null, StopProcessing: false);
         }
+        }
+        finally { pendingRetry?.Dispose(); }
     }
 
     private async ValueTask RecordBreakerSuccessAsync(
@@ -347,6 +363,12 @@ internal sealed class StageExecutor
             throw;
         }
 
+        RetryBudgetLease? reservation = null;
+        if (decision.Kind == RetryDecisionKind.Retry && _retryBudget is not null
+            && !_retryBudget.TryReserve(out reservation))
+            decision = new RetryDecision(RetryDecisionKind.Exhausted, 0, TimeSpan.Zero);
+        try
+        {
         var action = decision.Kind == RetryDecisionKind.Exhausted
             ? stage.FailureOptions.OnRetryExhausted
             : stage.FailureOptions.OnPermanentFailure;
@@ -409,7 +431,11 @@ internal sealed class StageExecutor
             )
             .ConfigureAwait(false);
         if (retry.ShouldRetry)
-            return StageFailureHandlingResult.Retry(retry.Envelope!);
+        {
+            var transferred = reservation;
+            reservation = null;
+            return StageFailureHandlingResult.Retry(retry.Envelope!, transferred);
+        }
 
         if (retry.Exhausted)
             await _emitRetryExhaustedAsync(stage, outcome, error, ct).ConfigureAwait(false);
@@ -424,6 +450,8 @@ internal sealed class StageExecutor
             .ConfigureAwait(false);
 
         return StageFailureHandlingResult.Complete(result);
+        }
+        finally { reservation?.Dispose(); }
     }
 
     private async ValueTask<StageExecutionResult> CompleteTerminalFailureAsync(
@@ -543,11 +571,12 @@ internal sealed class StageExecutor
     private readonly record struct StageFailureHandlingResult(
         bool ShouldRetry,
         object? Envelope,
-        StageExecutionResult Result)
+        StageExecutionResult Result,
+        RetryBudgetLease? RetryLease = null)
     {
-        public static StageFailureHandlingResult Retry(object envelope)
+        public static StageFailureHandlingResult Retry(object envelope, RetryBudgetLease? lease)
         {
-            return new StageFailureHandlingResult(true, envelope, default);
+            return new StageFailureHandlingResult(true, envelope, default, lease);
         }
 
         public static StageFailureHandlingResult Complete(StageExecutionResult result)
