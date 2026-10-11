@@ -9,6 +9,67 @@ public sealed class TimedAttemptAdmissionRegressionTests
 {
     private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(10);
 
+    [Theory]
+    [InlineData(TimedAttemptAdmissionMode.Wait)]
+    [InlineData(TimedAttemptAdmissionMode.Reject)]
+    public async Task CompletedTimedAttempt_ReleasesCapacityBeforeRetryBackoff(TimedAttemptAdmissionMode mode)
+    {
+        var clock = new AdmissionTestTimeProvider();
+        var releaseSecond = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new BackoffSource(releaseSecond.Task);
+        var transformer = new BackoffTransformer();
+        var run = PipelineBuilder.From(source).Transform(transformer, new StageFailureOptions
+        {
+            Timeout = new TimeoutPolicy { AttemptTimeout = TimeSpan.FromMinutes(1) },
+            Retry = new RetryPolicy(1, TimeSpan.FromSeconds(5)),
+        }).WithRuntimeOptions(new PipelineRuntimeOptions
+        {
+            MaxConcurrency = 2,
+            Clock = new TimeProviderPipelineClock(clock),
+            OutputPolicy = PipelineOutputPolicy.EmitAll,
+            TimedAttemptAdmission = new TimedAttemptAdmissionOptions(1, mode),
+        }).Run();
+        try
+        {
+            await clock.WaitForTimerAsync(TimeSpan.FromSeconds(5));
+            releaseSecond.SetResult();
+            var second = await run.Outputs.ReadAsync().AsTask().WaitAsync(Deadline);
+            Assert.True(second.Result.IsSuccess);
+            Assert.Equal(1, second.Result.Value);
+            Assert.Equal(2, transformer.Calls);
+            clock.Advance(TimeSpan.FromSeconds(5));
+            await run.Completion.WaitAsync(Deadline);
+            Assert.Equal(3, transformer.Calls);
+        }
+        finally { releaseSecond.TrySetResult(); clock.Advance(TimeSpan.FromHours(1)); await run.DisposeAsync(); }
+    }
+
+    private sealed class BackoffSource(Task releaseSecond) : IPipelineSource<int>
+    {
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public async IAsyncEnumerable<ProcessingEnvelope<int>> ReadEnvelopesAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return ProcessingEnvelope<int>.Create(0);
+            await releaseSecond.WaitAsync(ct);
+            yield return ProcessingEnvelope<int>.Create(1);
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class BackoffTransformer : IPipelineTransformer<int, int>
+    {
+        public int Calls;
+        public ValueTask InitializeAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask<StageResult<int>> TransformAsync(ProcessingEnvelope<int> envelope, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref Calls);
+            return ValueTask.FromResult(envelope.Payload == 0 && envelope.Attempt == 0
+                ? StageResult<int>.Failure(new SmartPipeError("retry", ErrorType.Transient))
+                : StageResult<int>.Success(envelope.Payload));
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     [Fact]
     public async Task Wait_StageDeadlineExpiresWithoutStartingWaitingAttempt()
     {
