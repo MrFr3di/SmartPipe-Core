@@ -5,6 +5,60 @@ namespace SmartPipe.Core.Tests.Engine;
 [Trait("Category", "CorrectnessRegression")]
 public sealed class RetryReservationOwnershipTests
 {
+    [Fact]
+    public async Task BreakerOpeningBeforeRetryAdmission_RefundsWithoutCallbackOrSample()
+    {
+        var clock = new AdmissionTestTimeProvider();
+        var budget = new RunRetryBudget(new RetryBudgetOptions(1, 0), new PipelineTime(new TimeProviderPipelineClock(clock)));
+        var breaker = new CircuitBreaker(new CircuitBreakerOptions { FailureRatio = 1, MinimumThroughput = 100 }, clock);
+        var transformer = new RetryAdmissionRegressionTests.FailingTransformer();
+        var callbacks = 0;
+        var events = new List<PipelineEvent>();
+        var stage = new TypedPipelineStage<int, int>(transformer, 0, new StageFailureOptions
+        {
+            Retry = new RetryPolicy(1, TimeSpan.FromTicks(1), onRetry: (_, _, _) => callbacks++),
+        });
+        var executor = Create(budget, clock, (evt, _) => { events.Add(evt); return ValueTask.CompletedTask; },
+            (_, _, _, _, _, _) => { breaker.Isolate(); return ValueTask.CompletedTask; }, breaker: breaker);
+        var result = await executor.ExecuteAsync(stage, ProcessingEnvelope<int>.Create(1), default);
+        Assert.True(result.Failed);
+        Assert.Equal(1, transformer.Calls);
+        Assert.Equal(0, callbacks);
+        Assert.Empty(events.OfType<RetryAttemptedEvent>());
+        Assert.Single(events.OfType<CircuitBreakerRejectedEvent>());
+        Assert.True(budget.TryReserve(out var refunded));
+        refunded!.Dispose();
+    }
+
+    [Fact]
+    public async Task DeadlineExpiredDuringDelay_ExhaustsOriginalFailureAndRefundsWithoutCallback()
+    {
+        var clock = new AdmissionTestTimeProvider();
+        var budget = new RunRetryBudget(new RetryBudgetOptions(1, 0), new PipelineTime(new TimeProviderPipelineClock(clock)));
+        var transformer = new RetryAdmissionRegressionTests.FailingTransformer();
+        var callbacks = 0;
+        var exhausted = 0;
+        TypedStageExecutionResult terminal = default;
+        var began = clock.GetUtcNow();
+        var stage = new TypedPipelineStage<int, int>(transformer, 0, new StageFailureOptions
+        {
+            Retry = new RetryPolicy(1, onRetry: (_, _, _) => callbacks++),
+        });
+        var executor = Create(budget, clock, (_, _) => ValueTask.CompletedTask,
+            (_, _, _, _, _, _) => ValueTask.CompletedTask, TimeSpan.FromSeconds(1),
+            prepare: (_, _, _) => ValueTask.FromResult(new AttemptAdmissionResult(DeadlineExpired: clock.GetUtcNow() - began >= TimeSpan.FromSeconds(1))),
+            exhausted: () => exhausted++, terminal: result => terminal = result);
+        var execution = executor.ExecuteAsync(stage, ProcessingEnvelope<int>.Create(1), default).AsTask();
+        await clock.WaitForTimerAsync(TimeSpan.FromSeconds(1));
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.True((await execution.WaitAsync(TimeSpan.FromSeconds(10))).Failed);
+        Assert.Equal(1, transformer.Calls);
+        Assert.Equal(0, callbacks);
+        Assert.Equal(1, exhausted);
+        Assert.Equal(transformer.Error, terminal.Error);
+        Assert.True(budget.TryReserve(out var refunded));
+        refunded!.Dispose();
+    }
     [Theory]
     [InlineData("StageFailed")]
     [InlineData("RetryScheduled")]
@@ -68,19 +122,23 @@ public sealed class RetryReservationOwnershipTests
     private static StageExecutor Create(RunRetryBudget budget, AdmissionTestTimeProvider clock,
         Func<PipelineEvent, CancellationToken, ValueTask> emit,
         Func<ITypedPipelineStage, TypedStageExecutionResult, int, TimeSpan, SmartPipeError, CancellationToken, ValueTask> scheduled,
-        TimeSpan? delay = null)
+        TimeSpan? delay = null,
+        CircuitBreaker? breaker = null,
+        Func<ITypedPipelineStage, long, CancellationToken, ValueTask<AttemptAdmissionResult>>? prepare = null,
+        Action? exhausted = null,
+        Action<TypedStageExecutionResult>? terminal = null)
     {
         var pipelineClock = new TimeProviderPipelineClock(clock);
-        return new StageExecutor("budget", "run", LineageMode.Off, pipelineClock, new PipelineTime(pipelineClock), _ => null,
+        return new StageExecutor("budget", "run", LineageMode.Off, pipelineClock, new PipelineTime(pipelineClock), _ => breaker,
             (_, _, attempt, _) => new RetryDecision(attempt == 0 ? RetryDecisionKind.Retry : RetryDecisionKind.Exhausted, 1, delay ?? TimeSpan.Zero),
-            scheduled, (_, _, _, _) => ValueTask.CompletedTask, (_, _, _, _) => ValueTask.CompletedTask,
-            (_, _) => ValueTask.CompletedTask, emit,
+            scheduled, (_, _, _, _) => { exhausted?.Invoke(); return ValueTask.CompletedTask; }, (_, _, _, _) => ValueTask.CompletedTask,
+            (result, _) => { terminal?.Invoke(result); return ValueTask.CompletedTask; }, emit,
             (stage, current, _, ct) => stage.ExecuteAsync(current, LineageMode.Off, pipelineClock, ct),
             retryBudget: budget,
             executeAdmittedAttemptAsync: (stage, current, _, ct, admission) =>
             {
                 admission!.MarkExecutionStarted();
                 return stage.ExecuteAsync(current, LineageMode.Off, pipelineClock, ct);
-            });
+            }, prepareAttemptAsync: prepare);
     }
 }
