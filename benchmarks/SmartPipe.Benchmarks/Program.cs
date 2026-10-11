@@ -1,6 +1,12 @@
 using BenchmarkDotNet.Running;
 using SmartPipe.Benchmarks;
 
+if (args is ["--runtime-io-focused-latency", var focusedLatencyPath])
+{
+    await RuntimeIoFocusedLatencyReport.WriteAsync(focusedLatencyPath);
+    return;
+}
+
 if (args is ["--circuit-sampling-latency", var samplingLatencyPath])
 {
     await CircuitBreakerSamplingLatencyReport.WriteAsync(samplingLatencyPath);
