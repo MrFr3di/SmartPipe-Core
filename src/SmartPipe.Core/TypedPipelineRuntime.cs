@@ -625,6 +625,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly PipelineRuntimeOptions _options;
     private readonly IPipelineClock _clock;
     private readonly PipelineTime _time;
+    private readonly RunRetryBudget? _retryBudget;
+    private readonly RetryDelayPlanner _retryDelayPlanner = new(new SharedRetryRandomSource());
     private readonly Channel<PipelineOutput<TOutput>> _outputs;
     private readonly PipelineOutputEmitter<TOutput> _outputEmitter;
     private readonly PipelineProducer<TInput> _producer;
@@ -710,6 +712,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _options = _runtime.Options;
         _clock = _options.Clock;
         _time = new PipelineTime(_clock);
+        _retryBudget = _options.RetryBudget is { } budget ? new RunRetryBudget(budget, _time) : null;
         _breakers = CreateBreakers();
         // Generated legacy ids are unique per run and must not become metric dimensions.
         _metrics = new SmartPipeMetricsRecorder(_clock, _spec.ForcePipelineId ? _spec.PipelineId : null);
@@ -743,7 +746,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             WriteTerminalAsync,
             EmitAsync,
             ExecuteStageAttemptAsync,
-            StopObserverCallbacksForFaultAsync);
+            StopObserverCallbacksForFaultAsync,
+            _retryBudget,
+            ExecuteAdmittedStageAttemptAsync);
         _sinkExecutor = new SinkExecutor<TOutput>(
             _sink,
             _spec.PipelineId,
@@ -1706,16 +1711,24 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             .ConfigureAwait(false);
     }
 
-    private async ValueTask<TypedStageExecutionResult> ExecuteStageAttemptAsync(
+    private ValueTask<TypedStageExecutionResult> ExecuteStageAttemptAsync(
+        ITypedPipelineStage stage, object current, long stageStartedTimestamp, CancellationToken ct) =>
+        ExecuteAdmittedStageAttemptAsync(stage, current, stageStartedTimestamp, ct, null);
+
+    private async ValueTask<TypedStageExecutionResult> ExecuteAdmittedStageAttemptAsync(
         ITypedPipelineStage stage,
         object current,
         long stageStartedTimestamp,
-        CancellationToken ct
+        CancellationToken ct,
+        StageAttemptAdmission? admission
     )
     {
         var attemptTimeout = GetEffectiveAttemptTimeout(stage, stageStartedTimestamp);
         if (attemptTimeout is null || attemptTimeout == Timeout.InfiniteTimeSpan)
+        {
+            admission?.MarkExecutionStarted();
             return await stage.ExecuteAsync(current, _spec.LineageMode, _clock, ct).ConfigureAwait(false);
+        }
 
         var startedAtUtc = _clock.GetUtcNow();
         if (attemptTimeout <= TimeSpan.Zero)
@@ -1730,6 +1743,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             );
 
         CancellationTokenSource? timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        admission?.MarkExecutionStarted();
         var execution = stage.ExecuteAsync(current, _spec.LineageMode, _clock, timeoutCts.Token).AsTask();
         var executionObserved = false;
 
@@ -2070,7 +2084,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             return new RetryDecision(RetryDecisionKind.Exhausted, 0, TimeSpan.Zero);
 
         int nextAttempt = attempt + 1;
-        var delay = retry.GetDelay(nextAttempt);
+        var delay = _retryDelayPlanner.GetDelay(retry, nextAttempt);
         var remaining = GetStageTimeoutRemaining(stage, stageStartedTimestamp);
         if (remaining is null)
             return new RetryDecision(RetryDecisionKind.Retry, nextAttempt, delay);
