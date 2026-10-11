@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using BenchmarkDotNet.Attributes;
 using SmartPipe.Core;
@@ -161,59 +159,46 @@ internal static class CircuitBreakerSamplingDiagnostics
 {
     public static async Task WriteAsync(string path, bool bucketed = false)
     {
+        // Warm constructor/JIT paths before using public managed-heap measurements.
+        var warmTime = new CircuitBreakerSamplingBenchmarks.SamplingTimeProvider();
+        var warm = CircuitBreakerSamplingBenchmarks.CreateBreaker(warmTime, 1000, bucketed ? "Bucketed" : "Exact");
+        warm.RecordSuccess();
+        _ = warm.GetCurrentFailureRatio();
         var rows = new List<object>();
         foreach (var samples in new[] { 1_000, 100_000, 1_000_000 })
-        {
-            var time = new CircuitBreakerSamplingBenchmarks.SamplingTimeProvider();
-            var breaker = CircuitBreakerSamplingBenchmarks.CreateBreaker(time, samples, bucketed ? "Bucketed" : "Exact");
-            for (var index = 0; index < samples; index++)
-            {
-                time.Advance(1);
-                breaker.RecordSuccess();
-            }
-            var before = WindowCapacity(breaker);
-            time.Advance(samples + (samples + 63L) / 64 + 1L);
-            var started = Stopwatch.GetTimestamp();
-            var ratio = breaker.GetCurrentFailureRatio();
-            var expiryMicroseconds = Stopwatch.GetElapsedTime(started).TotalMicroseconds;
-            var after = WindowCapacity(breaker);
-            if (ratio != 0)
-                throw new InvalidOperationException("Diagnostic idle expiry failed.");
-            rows.Add(new
-            {
-                samples,
-                bucketed,
-                before,
-                after,
-                expiryMicroseconds,
-                retainedSampleStorageBytes = WindowStorageBytes(breaker, after),
-                notes = "Sample backing storage only, excluding object/array headers; capacity measured after full expiry",
-            });
-            GC.KeepAlive(breaker);
-        }
+            rows.Add(MeasureMemory(samples, bucketed));
+        GC.KeepAlive(warm);
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(rows,
             new JsonSerializerOptions { WriteIndented = true })).ConfigureAwait(false);
     }
 
-    private static long WindowStorageBytes(CircuitBreaker breaker, int capacity)
+    private static object MeasureMemory(int samples, bool bucketed)
     {
-        var storage = typeof(CircuitBreaker).GetField("_samplingWindow", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(breaker);
-        if (storage?.GetType().GetProperty("RetainedStorageBytes", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(storage) is long bytes)
-            return bytes;
-        return (long)capacity * Unsafe.SizeOf<(long, bool)>();
-    }
-
-    private static int WindowCapacity(CircuitBreaker breaker)
-    {
-        var field = typeof(CircuitBreaker).GetField("_window", BindingFlags.Instance | BindingFlags.NonPublic);
-        if (field?.GetValue(breaker) is Queue<(long, bool)> queue)
-            return queue.EnsureCapacity(0);
-        var storage = typeof(CircuitBreaker).GetField("_samplingWindow", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(breaker);
-        if (storage?.GetType().GetField("_samples", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(storage) is Queue<(long, bool)> samples)
-            return samples.EnsureCapacity(0);
-        if (storage?.GetType().GetProperty("StorageSlotCount", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(storage) is int slots)
-            return slots;
-        throw new InvalidOperationException("Update the identical baseline/candidate diagnostic harness for the sampling storage layout.");
+        var baselineBytes = GC.GetTotalMemory(forceFullCollection: true);
+        var time = new CircuitBreakerSamplingBenchmarks.SamplingTimeProvider();
+        var breaker = CircuitBreakerSamplingBenchmarks.CreateBreaker(time, samples, bucketed ? "Bucketed" : "Exact");
+        for (var index = 0; index < samples; index++)
+        {
+            time.Advance(1);
+            breaker.RecordSuccess();
+        }
+        var retainedAfterFillBytes = GC.GetTotalMemory(forceFullCollection: true) - baselineBytes;
+        time.Advance(samples + (samples + 63L) / 64 + 1L);
+        var started = Stopwatch.GetTimestamp();
+        var ratio = breaker.GetCurrentFailureRatio();
+        var expiryMicroseconds = Stopwatch.GetElapsedTime(started).TotalMicroseconds;
+        var retainedAfterExpiryBytes = GC.GetTotalMemory(forceFullCollection: true) - baselineBytes;
+        if (ratio != 0) throw new InvalidOperationException("Diagnostic idle expiry failed.");
+        GC.KeepAlive(breaker);
+        return new
+        {
+            samples,
+            bucketed,
+            retainedAfterFillBytes,
+            retainedAfterExpiryBytes,
+            expiryMicroseconds,
+            notes = "Managed-heap delta including clock, breaker, window, array/object headers; forced collection with breaker kept alive. Separate prototype/resource tests prove the backing-array slot bound.",
+        };
     }
 }
