@@ -10,6 +10,43 @@ public sealed class RetryAdmissionRegressionTests
     private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(10);
 
     [Fact]
+    public async Task StageDeadlineDuringRetryDelay_RefundsForNextEnvelopeAndPreservesOriginalFailure()
+    {
+        var clock = new AdmissionTestTimeProvider();
+        var starts = 0;
+        var callbacks = 0;
+        var observer = new Events();
+        var run = PipelineBuilder.From(new Source(2)).Transform(new RecoveringTransformer(() => starts++), new StageFailureOptions
+        {
+            Retry = new RetryPolicy(2, TimeSpan.FromSeconds(1), onRetry: (_, _, _) => callbacks++),
+            Timeout = new TimeoutPolicy { StageTimeout = TimeSpan.FromSeconds(3) },
+        }).WithRuntimeOptions(new PipelineRuntimeOptions
+        {
+            Clock = new TimeProviderPipelineClock(clock),
+            RetryBudget = new RetryBudgetOptions(1, 0),
+        }).WithObserver(observer).Run();
+        try
+        {
+            await clock.WaitForTimerAsync(TimeSpan.FromSeconds(1));
+            clock.Advance(TimeSpan.FromSeconds(5));
+            var first = await run.Outputs.ReadAsync().AsTask().WaitAsync(Deadline);
+            Assert.True(first.Result.IsFailure);
+            Assert.Equal("initial", first.Result.Error!.Value.Message);
+            await clock.WaitForTimerAsync(TimeSpan.FromSeconds(1));
+            clock.Advance(TimeSpan.FromSeconds(1));
+            await run.Completion.WaitAsync(Deadline);
+            Assert.True(run.Outputs.TryRead(out var second));
+            Assert.True(second.Result.IsSuccess);
+            Assert.Equal(3, starts);
+            Assert.Equal(1, callbacks);
+            Assert.Single(observer.Recorded.OfType<RetryExhaustedEvent>());
+            Assert.Single(observer.Recorded.OfType<RetryAttemptedEvent>());
+            Assert.Equal(3, observer.Recorded.OfType<StageStartedEvent>().Count());
+        }
+        finally { await run.DisposeAsync(); }
+    }
+
+    [Fact]
     public async Task TwoStagesShareBudget_ReusableDefinitionStartsHaveIndependentState()
     {
         var starts = 0;
