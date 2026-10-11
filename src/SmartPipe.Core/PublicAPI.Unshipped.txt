@@ -1,1 +1,21 @@
 #nullable enable
+SmartPipe.Core.PipelineRuntimeOptions.RetryBudget.get -> SmartPipe.Core.RetryBudgetOptions?
+SmartPipe.Core.PipelineRuntimeOptions.RetryBudget.init -> void
+SmartPipe.Core.PipelineRuntimeOptions.TimedAttemptAdmission.get -> SmartPipe.Core.TimedAttemptAdmissionOptions?
+SmartPipe.Core.PipelineRuntimeOptions.TimedAttemptAdmission.init -> void
+SmartPipe.Core.RetryBudgetOptions
+SmartPipe.Core.RetryBudgetOptions.Capacity.get -> int
+SmartPipe.Core.RetryBudgetOptions.RefillTokensPerSecond.get -> double
+SmartPipe.Core.RetryBudgetOptions.RetryBudgetOptions(int capacity, double refillTokensPerSecond) -> void
+SmartPipe.Core.RetryJitterMode
+SmartPipe.Core.RetryJitterMode.Full = 1 -> SmartPipe.Core.RetryJitterMode
+SmartPipe.Core.RetryJitterMode.None = 0 -> SmartPipe.Core.RetryJitterMode
+SmartPipe.Core.RetryPolicy.Jitter.get -> SmartPipe.Core.RetryJitterMode
+SmartPipe.Core.RetryPolicy.Jitter.init -> void
+SmartPipe.Core.TimedAttemptAdmissionMode
+SmartPipe.Core.TimedAttemptAdmissionMode.Reject = 1 -> SmartPipe.Core.TimedAttemptAdmissionMode
+SmartPipe.Core.TimedAttemptAdmissionMode.Wait = 0 -> SmartPipe.Core.TimedAttemptAdmissionMode
+SmartPipe.Core.TimedAttemptAdmissionOptions
+SmartPipe.Core.TimedAttemptAdmissionOptions.MaxOutstandingAttempts.get -> int
+SmartPipe.Core.TimedAttemptAdmissionOptions.Mode.get -> SmartPipe.Core.TimedAttemptAdmissionMode
+SmartPipe.Core.TimedAttemptAdmissionOptions.TimedAttemptAdmissionOptions(int maxOutstandingAttempts, SmartPipe.Core.TimedAttemptAdmissionMode mode) -> void
