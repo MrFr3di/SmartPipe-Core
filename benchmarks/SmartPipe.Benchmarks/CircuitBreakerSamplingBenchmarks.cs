@@ -92,7 +92,7 @@ public class CircuitBreakerSamplingBenchmarks
         public void Advance(long ticks) => Interlocked.Add(ref _timestamp, ticks);
     }
 
-    private sealed class ContentionWorkers : IDisposable
+    internal sealed class ContentionWorkers : IDisposable
     {
         private readonly AutoResetEvent[] _starts;
         private readonly Thread[] _threads;

@@ -1,6 +1,24 @@
 using BenchmarkDotNet.Running;
 using SmartPipe.Benchmarks;
 
+if (args is ["--circuit-sampling-latency", var samplingLatencyPath])
+{
+    await CircuitBreakerSamplingLatencyReport.WriteAsync(samplingLatencyPath);
+    return;
+}
+
+if (args is ["--circuit-sampling-bucket-latency", var bucketLatencyPath])
+{
+    await CircuitBreakerSamplingLatencyReport.WriteAsync(bucketLatencyPath, bucketed: true);
+    return;
+}
+
+if (args is ["--circuit-window-prototype-memory", var prototypePath])
+{
+    await CircuitBreakerWindowPrototypeBenchmarks.WriteMemoryDiagnosticsAsync(prototypePath);
+    return;
+}
+
 if (args is ["--runtime-policy-controls"])
 {
     foreach (var scenario in Enum.GetValues<RuntimeIoPolicyControl>())
