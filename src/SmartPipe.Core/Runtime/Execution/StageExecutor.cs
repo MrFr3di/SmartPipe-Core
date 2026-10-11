@@ -661,6 +661,10 @@ internal sealed class StageExecutor
                 }
                 finally
                 {
+                    // Completed attempts no longer occupy execution capacity during
+                    // failure callbacks or backoff. Detached attempts transferred their
+                    // lease to the observation registry and leave this reference empty.
+                    admission?.TransferTimedLease()?.Dispose();
                     breakerPermit.Dispose();
                 }
 
