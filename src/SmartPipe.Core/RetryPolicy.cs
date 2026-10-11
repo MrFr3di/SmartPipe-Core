@@ -36,10 +36,12 @@ public class RetryPolicy
     /// <summary>Gets runtime delay randomization. GetDelay remains deterministic.</summary>
     public RetryJitterMode Jitter { get; init; } = RetryJitterMode.None;
 
-    internal void Validate()
+    internal void Validate() => ValidateJitter(Jitter);
+
+    private static void ValidateJitter(RetryJitterMode jitter)
     {
-        if (!Enum.IsDefined(Jitter))
-            throw new ArgumentOutOfRangeException(nameof(Jitter), Jitter, "Retry jitter mode is invalid.");
+        if (!Enum.IsDefined(jitter))
+            throw new ArgumentOutOfRangeException(nameof(jitter), jitter, "Runtime retry randomization mode is invalid.");
     }
 
     /// <summary>Maximum number of retry attempts.</summary>
