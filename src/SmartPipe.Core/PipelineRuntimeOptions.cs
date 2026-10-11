@@ -243,6 +243,10 @@ public sealed class PipelineRuntimeOptions
         OrderingMode = snapshot.OrderingMode;
         ObserverDispatch = snapshot.ObserverDispatch.Materialize();
         AdaptiveParallelism = snapshot.AdaptiveParallelism.Materialize();
+        RetryBudget = snapshot.RetryBudget is { } budget
+            ? new RetryBudgetOptions(budget.Capacity, budget.RefillTokensPerSecond) : null;
+        TimedAttemptAdmission = snapshot.TimedAttemptAdmission is { } admission
+            ? new TimedAttemptAdmissionOptions(admission.MaxOutstandingAttempts, admission.Mode) : null;
         _clock = snapshot.Clock;
         IsClockConfigured = snapshot.IsClockConfigured;
     }
@@ -315,6 +319,12 @@ public sealed class PipelineRuntimeOptions
 
     /// <summary>Gets opt-in adaptive parallelism options. Disabled by default.</summary>
     public AdaptiveParallelismOptions AdaptiveParallelism { get; init; } = new();
+
+    /// <summary>Gets the optional shared retry budget. Null leaves retries unlimited by a run budget.</summary>
+    public RetryBudgetOptions? RetryBudget { get; init; }
+
+    /// <summary>Gets the optional bound on active and detached timed attempts. Null leaves admission unlimited.</summary>
+    public TimedAttemptAdmissionOptions? TimedAttemptAdmission { get; init; }
 
     /// <summary>Gets the runtime clock. The system clock is the default.</summary>
     public IPipelineClock Clock

@@ -19,6 +19,8 @@ internal sealed record PipelineRuntimeOptionsSnapshot(
     PipelineOrderingMode OrderingMode,
     ObserverDispatchOptionsSnapshot ObserverDispatch,
     AdaptiveParallelismOptionsSnapshot AdaptiveParallelism,
+    RetryBudgetOptions? RetryBudget,
+    TimedAttemptAdmissionOptions? TimedAttemptAdmission,
     IPipelineClock Clock,
     bool IsClockConfigured)
 {
@@ -41,6 +43,10 @@ internal sealed record PipelineRuntimeOptionsSnapshot(
             options.OrderingMode,
             ObserverDispatchOptionsSnapshot.Create(options.ObserverDispatch),
             AdaptiveParallelismOptionsSnapshot.Create(options.AdaptiveParallelism),
+            options.RetryBudget is { } budget
+                ? new RetryBudgetOptions(budget.Capacity, budget.RefillTokensPerSecond) : null,
+            options.TimedAttemptAdmission is { } admission
+                ? new TimedAttemptAdmissionOptions(admission.MaxOutstandingAttempts, admission.Mode) : null,
             options.Clock,
             options.IsClockConfigured);
     }
@@ -174,6 +180,7 @@ internal sealed record StageFailureOptionsSnapshot(
     {
         ArgumentNullException.ThrowIfNull(options);
         options.Timeout?.Validate();
+        options.Retry?.Validate();
         options.CircuitBreaker?.Validate();
 
         return new(
@@ -215,6 +222,7 @@ internal sealed record StageFailureOptionsSnapshot(
         }
 
         Timeout?.Validate();
+        Retry?.Validate();
         CircuitBreaker?.Validate();
     }
 
@@ -227,7 +235,7 @@ internal sealed record StageFailureOptionsSnapshot(
                 policy.MaxDelay,
                 policy.Strategy,
                 policy.RetryOn,
-                policy.OnRetry);
+                policy.OnRetry) { Jitter = policy.Jitter };
 
     private static TimeoutPolicy? CopyTimeout(TimeoutPolicy? policy) =>
         policy is null
