@@ -22,6 +22,9 @@ public class CircuitBreakerSamplingBenchmarks
     [Params(1_000, 100_000)]
     public int LiveSamples { get; set; }
 
+    [Params("Exact", "Bucketed")]
+    public string SamplingMode { get; set; } = "Exact";
+
     [GlobalSetup]
     public void Setup()
     {
@@ -49,7 +52,7 @@ public class CircuitBreakerSamplingBenchmarks
     public void PrepareIdleBurst()
     {
         PrepareBreaker();
-        _time.Advance(LiveSamples + 1L);
+        _time.Advance(LiveSamples + (LiveSamples + 63L) / 64 + 1L);
     }
 
     [Benchmark(OperationsPerInvoke = BatchSize)]
@@ -67,7 +70,7 @@ public class CircuitBreakerSamplingBenchmarks
     private void PrepareBreaker()
     {
         _time = new SamplingTimeProvider();
-        _breaker = CreateBreaker(_time, LiveSamples);
+        _breaker = CreateBreaker(_time, LiveSamples, SamplingMode);
         for (var index = 0; index < LiveSamples; index++)
         {
             _time.Advance(1);
@@ -75,13 +78,22 @@ public class CircuitBreakerSamplingBenchmarks
         }
     }
 
-    internal static CircuitBreaker CreateBreaker(TimeProvider time, int windowTicks) => new(
-        new CircuitBreakerOptions
+    internal static CircuitBreaker CreateBreaker(TimeProvider time, int windowTicks, string samplingMode = "Exact")
+    {
+        var options = new CircuitBreakerOptions
         {
             FailureRatio = 1,
             SamplingDuration = TimeSpan.FromTicks(windowTicks),
             MinimumThroughput = 128,
-        }, time);
+        };
+        if (samplingMode != "Exact")
+        {
+            var property = typeof(CircuitBreakerOptions).GetProperty("SamplingMode")
+                ?? throw new InvalidOperationException("Bucketed sampling is unavailable in this candidate.");
+            property.SetValue(options, Enum.Parse(property.PropertyType, samplingMode));
+        }
+        return new CircuitBreaker(options, time);
+    }
 
     internal sealed class SamplingTimeProvider : TimeProvider
     {
@@ -188,6 +200,9 @@ internal static class CircuitBreakerSamplingDiagnostics
         var field = typeof(CircuitBreaker).GetField("_window", BindingFlags.Instance | BindingFlags.NonPublic);
         if (field?.GetValue(breaker) is Queue<(long, bool)> queue)
             return queue.EnsureCapacity(0);
+        var storage = typeof(CircuitBreaker).GetField("_samplingWindow", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(breaker);
+        if (storage?.GetType().GetField("_samples", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(storage) is Queue<(long, bool)> samples)
+            return samples.EnsureCapacity(0);
         throw new InvalidOperationException("Update the identical baseline/candidate diagnostic harness for the sampling storage layout.");
     }
 }
