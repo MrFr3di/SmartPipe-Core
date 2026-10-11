@@ -659,23 +659,15 @@ public class CircuitBreaker
     {
         var now = _time.GetTimestamp();
 
-        while (true)
+        lock (_windowGate)
         {
-            (long Timestamp, bool IsSuccess) candidate;
-            lock (_windowGate)
+            while (_window.TryPeek(out var candidate)
+                && _time.GetElapsedTime(candidate.Timestamp, now) > _samplingDuration)
             {
-                if (!_window.TryPeek(out candidate))
-                    return;
-            }
-
-            if (_time.GetElapsedTime(candidate.Timestamp, now) <= _samplingDuration)
-                return;
-
-            lock (_windowGate)
-            {
+                // A custom time source can reenter cleanup while this monitor
+                // is held. Verify the head after the user clock call as well.
                 if (!_window.TryPeek(out var current) || current != candidate)
                     continue;
-
                 _ = _window.Dequeue();
                 if (!candidate.IsSuccess)
                     _windowFailures--;

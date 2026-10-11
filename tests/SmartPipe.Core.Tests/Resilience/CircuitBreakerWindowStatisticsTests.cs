@@ -97,6 +97,29 @@ public sealed class CircuitBreakerWindowStatisticsTests
         breaker.GetCurrentFailureRatio().Should().Be(0.5);
     }
 
+    [Fact]
+    public void LargeExpiredPrefix_PreservesFreshMixedSamplesAndInclusiveBoundary()
+    {
+        var time = new FakeTimeProvider();
+        var breaker = new CircuitBreaker(new CircuitBreakerOptions
+        {
+            FailureRatio = 1, SamplingDuration = TimeSpan.FromSeconds(30), MinimumThroughput = int.MaxValue,
+        }, time);
+        for (var i = 0; i < 100_000; i++) breaker.RecordSuccess();
+        time.Advance(TimeSpan.FromSeconds(30));
+        Assert.Equal(0, breaker.GetCurrentFailureRatio());
+        time.Advance(TimeSpan.FromTicks(1));
+        for (var i = 0; i < 11; i++) breaker.RecordFailure();
+        for (var i = 0; i < 26; i++) breaker.RecordSuccess();
+        Assert.Equal(11d / 37, breaker.GetCurrentFailureRatio(), precision: 12);
+        time.Advance(TimeSpan.FromSeconds(30));
+        Assert.Equal(11d / 37, breaker.GetCurrentFailureRatio(), precision: 12);
+        time.Advance(TimeSpan.FromTicks(1));
+        Assert.Equal(0, breaker.GetCurrentFailureRatio());
+        breaker.Reset();
+        Assert.Equal(0, breaker.GetCurrentFailureRatio());
+    }
+
     private sealed class GatedFirstReadTimeSource(long firstTimestamp, long laterTimestamp) : ICircuitBreakerTimeSource
     {
         private readonly ManualResetEventSlim _release = new(false);
