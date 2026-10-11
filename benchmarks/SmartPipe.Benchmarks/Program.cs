@@ -7,6 +7,12 @@ if (args is ["--circuit-sampling-latency", var samplingLatencyPath])
     return;
 }
 
+if (args is ["--circuit-sampling-bucket-diagnostics", var bucketMemoryPath])
+{
+    await CircuitBreakerSamplingDiagnostics.WriteAsync(bucketMemoryPath, bucketed: true);
+    return;
+}
+
 if (args is ["--circuit-sampling-bucket-latency", var bucketLatencyPath])
 {
     await CircuitBreakerSamplingLatencyReport.WriteAsync(bucketLatencyPath, bucketed: true);
