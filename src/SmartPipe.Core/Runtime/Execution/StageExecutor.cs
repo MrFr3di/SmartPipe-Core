@@ -48,6 +48,7 @@ internal sealed class StageExecutor
         CancellationToken,
         ValueTask<TypedStageExecutionResult>> _executeStageAttemptAsync;
 
+    private readonly bool _hasObservers;
     private readonly RunRetryBudget? _retryBudget;
     private readonly Func<ITypedPipelineStage, long, CancellationToken, ValueTask<AttemptAdmissionResult>>? _prepareAttemptAsync;
     private bool UsesAdmission => _retryBudget is not null || _prepareAttemptAsync is not null;
@@ -87,9 +88,11 @@ internal sealed class StageExecutor
         Func<ValueTask>? stopCallbacksOnFaultAsync = null,
         RunRetryBudget? retryBudget = null,
         Func<ITypedPipelineStage, object, long, CancellationToken, StageAttemptAdmission?, ValueTask<TypedStageExecutionResult>>? executeAdmittedAttemptAsync = null,
-        Func<ITypedPipelineStage, long, CancellationToken, ValueTask<AttemptAdmissionResult>>? prepareAttemptAsync = null)
+        Func<ITypedPipelineStage, long, CancellationToken, ValueTask<AttemptAdmissionResult>>? prepareAttemptAsync = null,
+        bool hasObservers = true)
     {
         _stopCallbacksOnFaultAsync = stopCallbacksOnFaultAsync ?? (() => ValueTask.CompletedTask);
+        _hasObservers = hasObservers;
         _retryBudget = retryBudget;
         _prepareAttemptAsync = prepareAttemptAsync;
         _executeAdmittedAttemptAsync = executeAdmittedAttemptAsync;
@@ -154,19 +157,20 @@ internal sealed class StageExecutor
                     if (action == FailureAction.FaultPipeline)
                         await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
 
-                    await _emitAsync(
-                            new CircuitBreakerRejectedEvent(
-                                _pipelineId,
-                                _runId,
-                                correlation.TraceId,
-                                stage.StageId,
-                                correlation.Attempt,
-                                _clock.GetUtcNow(),
-                                cbError
-                            ),
-                            ct
-                        )
-                        .ConfigureAwait(false);
+                    if (_hasObservers)
+                        await _emitAsync(
+                                new CircuitBreakerRejectedEvent(
+                                    _pipelineId,
+                                    _runId,
+                                    correlation.TraceId,
+                                    stage.StageId,
+                                    correlation.Attempt,
+                                    _clock.GetUtcNow(),
+                                    cbError
+                                ),
+                                ct
+                            )
+                            .ConfigureAwait(false);
 
                     if (stage.FailureOptions.Retry is not null)
                         await _emitRetryExhaustedAsync(stage, rejectedOutcome, cbError, ct)
@@ -187,19 +191,20 @@ internal sealed class StageExecutor
             try
             {
                 // A half-open probe slot must be released even when emitting the start event throws.
-                await _emitAsync(
-                        new StageStartedEvent(
-                            _pipelineId,
-                            _runId,
-                            correlation.TraceId,
-                            stage.StageId,
-                            stage.StageName,
-                            correlation.Attempt,
-                            _clock.GetUtcNow()
-                        ),
-                        ct
-                    )
-                    .ConfigureAwait(false);
+                if (_hasObservers)
+                    await _emitAsync(
+                            new StageStartedEvent(
+                                _pipelineId,
+                                _runId,
+                                correlation.TraceId,
+                                stage.StageId,
+                                stage.StageName,
+                                correlation.Attempt,
+                                _clock.GetUtcNow()
+                            ),
+                            ct
+                        )
+                        .ConfigureAwait(false);
 
                 try
                 {
@@ -209,24 +214,25 @@ internal sealed class StageExecutor
                 catch (Exception ex)
                 {
                     await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
-                    await _emitAsync(
-                            new StageFailedEvent(
-                                _pipelineId,
-                                _runId,
-                                correlation.TraceId,
-                                stage.StageId,
-                                correlation.Attempt,
-                                _clock.GetUtcNow(),
-                                new SmartPipeError(
-                                    ex.Message,
-                                    ErrorType.Permanent,
-                                    "StageException",
-                                    ex
-                                )
-                            ),
-                            ct
-                        )
-                        .ConfigureAwait(false);
+                    if (_hasObservers)
+                        await _emitAsync(
+                                new StageFailedEvent(
+                                    _pipelineId,
+                                    _runId,
+                                    correlation.TraceId,
+                                    stage.StageId,
+                                    correlation.Attempt,
+                                    _clock.GetUtcNow(),
+                                    new SmartPipeError(
+                                        ex.Message,
+                                        ErrorType.Permanent,
+                                        "StageException",
+                                        ex
+                                    )
+                                ),
+                                ct
+                            )
+                            .ConfigureAwait(false);
                     throw;
                 }
             }
@@ -265,19 +271,20 @@ internal sealed class StageExecutor
 
             await RecordBreakerSuccessAsync(breaker, breakerPermit, stage, ct).ConfigureAwait(false);
 
-            await _emitAsync(
-                    new StageSucceededEvent(
-                        _pipelineId,
-                        _runId,
-                        correlation.TraceId,
-                        stage.StageId,
-                        stage.StageName,
-                        correlation.Attempt,
-                        _clock.GetUtcNow()
-                    ),
-                    ct
-                )
-                .ConfigureAwait(false);
+            if (_hasObservers)
+                await _emitAsync(
+                        new StageSucceededEvent(
+                            _pipelineId,
+                            _runId,
+                            correlation.TraceId,
+                            stage.StageId,
+                            stage.StageName,
+                            correlation.Attempt,
+                            _clock.GetUtcNow()
+                        ),
+                        ct
+                    )
+                    .ConfigureAwait(false);
 
             return new StageExecutionResult(outcome.Envelope!, null, StopProcessing: false);
         }
@@ -320,7 +327,7 @@ internal sealed class StageExecutor
             // with a callback or notification failure.
             var notificationErrors = await RuntimeCleanup.CollectAsync([
                 _stopCallbacksOnFaultAsync,
-                () => _emitAsync(
+                () => _hasObservers ? _emitAsync(
                     new StageFailedEvent(
                         _pipelineId,
                         _runId,
@@ -329,7 +336,7 @@ internal sealed class StageExecutor
                         outcome.Attempt,
                         _clock.GetUtcNow(),
                         error),
-                    ct),
+                    ct) : ValueTask.CompletedTask,
             ]).ConfigureAwait(false);
             RuntimeCleanup.ThrowCombined(ExceptionDispatchInfo.Capture(decisionError), notificationErrors);
             throw;
@@ -343,31 +350,33 @@ internal sealed class StageExecutor
 
         if (justOpened)
         {
+            if (_hasObservers)
+                await _emitAsync(
+                        new CircuitBreakerOpenedEvent(
+                            _pipelineId,
+                            _runId,
+                            stage.StageId,
+                            _clock.GetUtcNow()
+                        ),
+                        ct
+                    )
+                    .ConfigureAwait(false);
+        }
+
+        if (_hasObservers)
             await _emitAsync(
-                    new CircuitBreakerOpenedEvent(
+                    new StageFailedEvent(
                         _pipelineId,
                         _runId,
+                        outcome.TraceId,
                         stage.StageId,
-                        _clock.GetUtcNow()
+                        outcome.Attempt,
+                        _clock.GetUtcNow(),
+                        error
                     ),
                     ct
                 )
                 .ConfigureAwait(false);
-        }
-
-        await _emitAsync(
-                new StageFailedEvent(
-                    _pipelineId,
-                    _runId,
-                    outcome.TraceId,
-                    stage.StageId,
-                    outcome.Attempt,
-                    _clock.GetUtcNow(),
-                    error
-                ),
-                ct
-            )
-            .ConfigureAwait(false);
 
         if (justOpened)
         {
@@ -451,18 +460,19 @@ internal sealed class StageExecutor
             }
 
             var next = stage.WithAttempt(current, decision.NextAttempt);
-            await _emitAsync(
-                    new RetryAttemptedEvent(
-                        _pipelineId,
-                        _runId,
-                        outcome.TraceId,
-                        stage.StageId,
-                        decision.NextAttempt,
-                        _clock.GetUtcNow()
-                    ),
-                    ct
-                )
-                .ConfigureAwait(false);
+            if (_hasObservers)
+                await _emitAsync(
+                        new RetryAttemptedEvent(
+                            _pipelineId,
+                            _runId,
+                            outcome.TraceId,
+                            stage.StageId,
+                            decision.NextAttempt,
+                            _clock.GetUtcNow()
+                        ),
+                        ct
+                    )
+                    .ConfigureAwait(false);
             return new RetryStageResult(true, false, next);
         }
 
@@ -516,8 +526,9 @@ internal sealed class StageExecutor
                         _lineageMode, _clock, stageStartedAtUtc);
                     if (stage.FailureOptions.OnPermanentFailure == FailureAction.FaultPipeline)
                         await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
-                    await _emitAsync(new StageFailedEvent(_pipelineId, _runId, rejected.TraceId,
-                        stage.StageId, rejected.Attempt, _clock.GetUtcNow(), error), ct).ConfigureAwait(false);
+                    if (_hasObservers)
+                        await _emitAsync(new StageFailedEvent(_pipelineId, _runId, rejected.TraceId,
+                            stage.StageId, rejected.Attempt, _clock.GetUtcNow(), error), ct).ConfigureAwait(false);
                     return await CompleteTerminalFailureAsync(stage, current, rejected, error,
                         stage.FailureOptions.OnPermanentFailure, ct).ConfigureAwait(false);
                 }
@@ -565,19 +576,20 @@ internal sealed class StageExecutor
                         if (action == FailureAction.FaultPipeline)
                             await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
 
-                        await _emitAsync(
-                                new CircuitBreakerRejectedEvent(
-                                    _pipelineId,
-                                    _runId,
-                                    correlation.TraceId,
-                                    stage.StageId,
-                                    correlation.Attempt,
-                                    _clock.GetUtcNow(),
-                                    cbError
-                                ),
-                                ct
-                            )
-                            .ConfigureAwait(false);
+                        if (_hasObservers)
+                            await _emitAsync(
+                                    new CircuitBreakerRejectedEvent(
+                                        _pipelineId,
+                                        _runId,
+                                        correlation.TraceId,
+                                        stage.StageId,
+                                        correlation.Attempt,
+                                        _clock.GetUtcNow(),
+                                        cbError
+                                    ),
+                                    ct
+                                )
+                                .ConfigureAwait(false);
 
                         if (stage.FailureOptions.Retry is not null)
                             await _emitRetryExhaustedAsync(stage, rejectedOutcome, cbError, ct)
@@ -601,19 +613,20 @@ internal sealed class StageExecutor
                         await PublishRetryAttemptAsync(stage, retry.Current, retry.Outcome, retry.Error,
                             stage.GetCorrelation(current).Attempt, ct).ConfigureAwait(false);
                     // A half-open probe slot must be released even when emitting the start event throws.
-                    await _emitAsync(
-                            new StageStartedEvent(
-                                _pipelineId,
-                                _runId,
-                                correlation.TraceId,
-                                stage.StageId,
-                                stage.StageName,
-                                correlation.Attempt,
-                                _clock.GetUtcNow()
-                            ),
-                            ct
-                        )
-                        .ConfigureAwait(false);
+                    if (_hasObservers)
+                        await _emitAsync(
+                                new StageStartedEvent(
+                                    _pipelineId,
+                                    _runId,
+                                    correlation.TraceId,
+                                    stage.StageId,
+                                    stage.StageName,
+                                    correlation.Attempt,
+                                    _clock.GetUtcNow()
+                                ),
+                                ct
+                            )
+                            .ConfigureAwait(false);
 
                     try
                     {
@@ -624,24 +637,25 @@ internal sealed class StageExecutor
                     catch (Exception ex)
                     {
                         await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
-                        await _emitAsync(
-                                new StageFailedEvent(
-                                    _pipelineId,
-                                    _runId,
-                                    correlation.TraceId,
-                                    stage.StageId,
-                                    correlation.Attempt,
-                                    _clock.GetUtcNow(),
-                                    new SmartPipeError(
-                                        ex.Message,
-                                        ErrorType.Permanent,
-                                        "StageException",
-                                        ex
-                                    )
-                                ),
-                                ct
-                            )
-                            .ConfigureAwait(false);
+                        if (_hasObservers)
+                            await _emitAsync(
+                                    new StageFailedEvent(
+                                        _pipelineId,
+                                        _runId,
+                                        correlation.TraceId,
+                                        stage.StageId,
+                                        correlation.Attempt,
+                                        _clock.GetUtcNow(),
+                                        new SmartPipeError(
+                                            ex.Message,
+                                            ErrorType.Permanent,
+                                            "StageException",
+                                            ex
+                                        )
+                                    ),
+                                    ct
+                                )
+                                .ConfigureAwait(false);
                         throw;
                     }
                 }
@@ -686,19 +700,20 @@ internal sealed class StageExecutor
 
                 await RecordBreakerSuccessAsync(breaker, breakerPermit, stage, ct).ConfigureAwait(false);
 
-                await _emitAsync(
-                        new StageSucceededEvent(
-                            _pipelineId,
-                            _runId,
-                            correlation.TraceId,
-                            stage.StageId,
-                            stage.StageName,
-                            correlation.Attempt,
-                            _clock.GetUtcNow()
-                        ),
-                        ct
-                    )
-                    .ConfigureAwait(false);
+                if (_hasObservers)
+                    await _emitAsync(
+                            new StageSucceededEvent(
+                                _pipelineId,
+                                _runId,
+                                correlation.TraceId,
+                                stage.StageId,
+                                stage.StageName,
+                                correlation.Attempt,
+                                _clock.GetUtcNow()
+                            ),
+                            ct
+                        )
+                        .ConfigureAwait(false);
 
                 return new StageExecutionResult(outcome.Envelope!, null, StopProcessing: false);
             }
@@ -719,16 +734,17 @@ internal sealed class StageExecutor
         breakerPermit.RecordSuccess();
         if (wasHalfOpen && breaker.State == CircuitState.Closed)
         {
-            await _emitAsync(
-                    new CircuitBreakerClosedEvent(
-                        _pipelineId,
-                        _runId,
-                        stage.StageId,
-                        _clock.GetUtcNow()
-                    ),
-                    ct
-                )
-                .ConfigureAwait(false);
+            if (_hasObservers)
+                await _emitAsync(
+                        new CircuitBreakerClosedEvent(
+                            _pipelineId,
+                            _runId,
+                            stage.StageId,
+                            _clock.GetUtcNow()
+                        ),
+                        ct
+                    )
+                    .ConfigureAwait(false);
         }
     }
 
@@ -769,7 +785,7 @@ internal sealed class StageExecutor
             // with a callback or notification failure.
             var notificationErrors = await RuntimeCleanup.CollectAsync([
                 _stopCallbacksOnFaultAsync,
-                () => _emitAsync(
+                () => _hasObservers ? _emitAsync(
                     new StageFailedEvent(
                         _pipelineId,
                         _runId,
@@ -778,7 +794,7 @@ internal sealed class StageExecutor
                         outcome.Attempt,
                         _clock.GetUtcNow(),
                         error),
-                    ct),
+                    ct) : ValueTask.CompletedTask,
             ]).ConfigureAwait(false);
             RuntimeCleanup.ThrowCombined(ExceptionDispatchInfo.Capture(decisionError), notificationErrors);
             throw;
@@ -798,31 +814,33 @@ internal sealed class StageExecutor
 
             if (justOpened)
             {
+                if (_hasObservers)
+                    await _emitAsync(
+                            new CircuitBreakerOpenedEvent(
+                                _pipelineId,
+                                _runId,
+                                stage.StageId,
+                                _clock.GetUtcNow()
+                            ),
+                            ct
+                        )
+                        .ConfigureAwait(false);
+            }
+
+            if (_hasObservers)
                 await _emitAsync(
-                        new CircuitBreakerOpenedEvent(
+                        new StageFailedEvent(
                             _pipelineId,
                             _runId,
+                            outcome.TraceId,
                             stage.StageId,
-                            _clock.GetUtcNow()
+                            outcome.Attempt,
+                            _clock.GetUtcNow(),
+                            error
                         ),
                         ct
                     )
                     .ConfigureAwait(false);
-            }
-
-            await _emitAsync(
-                    new StageFailedEvent(
-                        _pipelineId,
-                        _runId,
-                        outcome.TraceId,
-                        stage.StageId,
-                        outcome.Attempt,
-                        _clock.GetUtcNow(),
-                        error
-                    ),
-                    ct
-                )
-                .ConfigureAwait(false);
 
             if (justOpened)
             {
@@ -912,19 +930,20 @@ internal sealed class StageExecutor
     {
         if (outcome.Kind == StageResultKind.Filtered)
         {
-            await _emitAsync(
-                    new ItemFilteredEvent(
-                        _pipelineId,
-                        _runId,
-                        outcome.TraceId,
-                        stage.StageId,
-                        stage.StageName,
-                        outcome.Attempt,
-                        _clock.GetUtcNow()
-                    ),
-                    ct
-                )
-                .ConfigureAwait(false);
+            if (_hasObservers)
+                await _emitAsync(
+                        new ItemFilteredEvent(
+                            _pipelineId,
+                            _runId,
+                            outcome.TraceId,
+                            stage.StageId,
+                            stage.StageName,
+                            outcome.Attempt,
+                            _clock.GetUtcNow()
+                        ),
+                        ct
+                    )
+                    .ConfigureAwait(false);
         }
 
         await _writeTerminalAsync(outcome, ct).ConfigureAwait(false);
@@ -978,18 +997,19 @@ internal sealed class StageExecutor
             throw new InvalidOperationException("Retry callback failed.", ex);
         }
 
-        await _emitAsync(
-                new RetryAttemptedEvent(
-                    _pipelineId,
-                    _runId,
-                    outcome.TraceId,
-                    stage.StageId,
-                    nextAttempt,
-                    _clock.GetUtcNow()
-                ),
-                ct
-            )
-            .ConfigureAwait(false);
+        if (_hasObservers)
+            await _emitAsync(
+                    new RetryAttemptedEvent(
+                        _pipelineId,
+                        _runId,
+                        outcome.TraceId,
+                        stage.StageId,
+                        nextAttempt,
+                        _clock.GetUtcNow()
+                    ),
+                    ct
+                )
+                .ConfigureAwait(false);
     }
 
     private readonly record struct PendingRetry(object Current, TypedStageExecutionResult Outcome, SmartPipeError Error);
