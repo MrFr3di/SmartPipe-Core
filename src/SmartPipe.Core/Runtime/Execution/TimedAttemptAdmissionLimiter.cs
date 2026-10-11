@@ -20,7 +20,7 @@ internal sealed class TimedAttemptAdmissionLimiter
         ct.ThrowIfCancellationRequested();
         if (remainingStageTimeout is { } deadline && deadline <= TimeSpan.Zero && deadline != Timeout.InfiniteTimeSpan)
             throw new TimeoutException("Stage deadline expired while admitting a timed attempt.");
-        if (_slots.Wait(0))
+        if (await _slots.WaitAsync(0, ct).ConfigureAwait(false))
             return new TimedAttemptLease(_slots);
         if (_mode == TimedAttemptAdmissionMode.Reject)
             return null;
@@ -38,13 +38,16 @@ internal sealed class TimedAttemptAdmissionLimiter
         catch (Exception error)
         {
             // Never leave a ghost waiter after a deadline/cancellation race.
-            waiterStop.Cancel();
+            await waiterStop.CancelAsync().ConfigureAwait(false);
             try
             {
                 await waiting.ConfigureAwait(false);
                 _slots.Release(); // Acquisition won the race; refund it.
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+            {
+                // The linked waiter was cancelled and did not consume a slot.
+            }
             if (error is OperationCanceledException && ct.IsCancellationRequested)
                 throw new OperationCanceledException(ct);
             throw;
