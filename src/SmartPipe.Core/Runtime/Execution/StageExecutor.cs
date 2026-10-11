@@ -49,6 +49,8 @@ internal sealed class StageExecutor
         ValueTask<TypedStageExecutionResult>> _executeStageAttemptAsync;
 
     private readonly RunRetryBudget? _retryBudget;
+    private readonly Func<ITypedPipelineStage, long, CancellationToken, ValueTask<AttemptAdmissionResult>>? _prepareAttemptAsync;
+    private bool UsesAdmission => _retryBudget is not null || _prepareAttemptAsync is not null;
     private readonly Func<ITypedPipelineStage, object, long, CancellationToken, StageAttemptAdmission?, ValueTask<TypedStageExecutionResult>>? _executeAdmittedAttemptAsync;
 
     public StageExecutor(
@@ -84,10 +86,12 @@ internal sealed class StageExecutor
             ValueTask<TypedStageExecutionResult>> executeStageAttemptAsync,
         Func<ValueTask>? stopCallbacksOnFaultAsync = null,
         RunRetryBudget? retryBudget = null,
-        Func<ITypedPipelineStage, object, long, CancellationToken, StageAttemptAdmission?, ValueTask<TypedStageExecutionResult>>? executeAdmittedAttemptAsync = null)
+        Func<ITypedPipelineStage, object, long, CancellationToken, StageAttemptAdmission?, ValueTask<TypedStageExecutionResult>>? executeAdmittedAttemptAsync = null,
+        Func<ITypedPipelineStage, long, CancellationToken, ValueTask<AttemptAdmissionResult>>? prepareAttemptAsync = null)
     {
         _stopCallbacksOnFaultAsync = stopCallbacksOnFaultAsync ?? (() => ValueTask.CompletedTask);
         _retryBudget = retryBudget;
+        _prepareAttemptAsync = prepareAttemptAsync;
         _executeAdmittedAttemptAsync = executeAdmittedAttemptAsync;
         _pipelineId = pipelineId ?? throw new ArgumentNullException(nameof(pipelineId));
         _runId = runId ?? throw new ArgumentNullException(nameof(runId));
@@ -109,7 +113,10 @@ internal sealed class StageExecutor
             ?? throw new ArgumentNullException(nameof(executeStageAttemptAsync));
     }
 
-    public async ValueTask<StageExecutionResult> ExecuteAsync(
+    public ValueTask<StageExecutionResult> ExecuteAsync(ITypedPipelineStage stage, object current, CancellationToken ct) =>
+        UsesAdmission ? ExecuteAdmittedAsync(stage, current, ct) : ExecuteDefaultAsync(stage, current, ct);
+
+    private async ValueTask<StageExecutionResult> ExecuteDefaultAsync(
         ITypedPipelineStage stage,
         object current,
         CancellationToken ct)
@@ -117,13 +124,8 @@ internal sealed class StageExecutor
         var breaker = _getBreaker(stage);
         var stageStartedAtUtc = _clock.GetUtcNow();
         var stageStartedTimestamp = _clock.GetTimestamp();
-        RetryBudgetLease? pendingRetry = null;
-        try
-        {
         while (true)
         {
-            using var admission = pendingRetry is null ? null : new StageAttemptAdmission(pendingRetry);
-            pendingRetry = null;
             var correlation = stage.GetCorrelation(current);
             var breakerPermit = default(CircuitBreakerPermit);
 
@@ -201,9 +203,8 @@ internal sealed class StageExecutor
 
                 try
                 {
-                    outcome = admission is null
-                        ? await _executeStageAttemptAsync(stage, current, stageStartedTimestamp, ct).ConfigureAwait(false)
-                        : await _executeAdmittedAttemptAsync!(stage, current, stageStartedTimestamp, ct, admission).ConfigureAwait(false);
+                    outcome = await _executeStageAttemptAsync(stage, current, stageStartedTimestamp, ct)
+                        .ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -255,7 +256,6 @@ internal sealed class StageExecutor
                     .ConfigureAwait(false);
                 if (failure.ShouldRetry)
                 {
-                    pendingRetry = failure.RetryLease;
                     current = failure.Envelope!;
                     continue;
                 }
@@ -280,34 +280,6 @@ internal sealed class StageExecutor
                 .ConfigureAwait(false);
 
             return new StageExecutionResult(outcome.Envelope!, null, StopProcessing: false);
-        }
-        }
-        finally { pendingRetry?.Dispose(); }
-    }
-
-    private async ValueTask RecordBreakerSuccessAsync(
-        CircuitBreaker? breaker,
-        CircuitBreakerPermit breakerPermit,
-        ITypedPipelineStage stage,
-        CancellationToken ct)
-    {
-        if (breaker is null)
-            return;
-
-        var wasHalfOpen = breaker.State == CircuitState.HalfOpen;
-        breakerPermit.RecordSuccess();
-        if (wasHalfOpen && breaker.State == CircuitState.Closed)
-        {
-            await _emitAsync(
-                    new CircuitBreakerClosedEvent(
-                        _pipelineId,
-                        _runId,
-                        stage.StageId,
-                        _clock.GetUtcNow()
-                    ),
-                    ct
-                )
-                .ConfigureAwait(false);
         }
     }
 
@@ -363,12 +335,6 @@ internal sealed class StageExecutor
             throw;
         }
 
-        RetryBudgetLease? reservation = null;
-        if (decision.Kind == RetryDecisionKind.Retry && _retryBudget is not null
-            && !_retryBudget.TryReserve(out reservation))
-            decision = new RetryDecision(RetryDecisionKind.Exhausted, 0, TimeSpan.Zero);
-        try
-        {
         var action = decision.Kind == RetryDecisionKind.Exhausted
             ? stage.FailureOptions.OnRetryExhausted
             : stage.FailureOptions.OnPermanentFailure;
@@ -431,11 +397,7 @@ internal sealed class StageExecutor
             )
             .ConfigureAwait(false);
         if (retry.ShouldRetry)
-        {
-            var transferred = reservation;
-            reservation = null;
-            return StageFailureHandlingResult.Retry(retry.Envelope!, transferred);
-        }
+            return StageFailureHandlingResult.Retry(retry.Envelope!);
 
         if (retry.Exhausted)
             await _emitRetryExhaustedAsync(stage, outcome, error, ct).ConfigureAwait(false);
@@ -450,6 +412,462 @@ internal sealed class StageExecutor
             .ConfigureAwait(false);
 
         return StageFailureHandlingResult.Complete(result);
+    }
+
+    private async ValueTask<RetryStageResult> TryRetryAsync(
+        ITypedPipelineStage stage,
+        object current,
+        TypedStageExecutionResult outcome,
+        SmartPipeError error,
+        RetryDecision decision,
+        CancellationToken ct)
+    {
+        if (decision.Kind == RetryDecisionKind.Retry)
+        {
+            await _emitRetryScheduledAsync(
+                    stage,
+                    outcome,
+                    decision.NextAttempt,
+                    decision.Delay,
+                    error,
+                    ct
+            )
+                .ConfigureAwait(false);
+            if (decision.Delay > TimeSpan.Zero)
+                await _time.DelayAsync(decision.Delay, ct).ConfigureAwait(false);
+
+            ct.ThrowIfCancellationRequested();
+
+            try
+            {
+                stage.FailureOptions.Retry?.OnRetry?.Invoke(
+                    stage.BoxEnvelope(current),
+                    error,
+                    decision.NextAttempt);
+            }
+            catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+            {
+                throw new InvalidOperationException("Retry callback failed.", ex);
+            }
+
+            var next = stage.WithAttempt(current, decision.NextAttempt);
+            await _emitAsync(
+                    new RetryAttemptedEvent(
+                        _pipelineId,
+                        _runId,
+                        outcome.TraceId,
+                        stage.StageId,
+                        decision.NextAttempt,
+                        _clock.GetUtcNow()
+                    ),
+                    ct
+                )
+                .ConfigureAwait(false);
+            return new RetryStageResult(true, false, next);
+        }
+
+        return new RetryStageResult(false, decision.Kind == RetryDecisionKind.Exhausted, null);
+    }
+
+    private readonly record struct StageFailureHandlingResult(
+        bool ShouldRetry,
+        object? Envelope,
+        StageExecutionResult Result)
+    {
+        public static StageFailureHandlingResult Retry(object envelope)
+        {
+            return new StageFailureHandlingResult(true, envelope, default);
+        }
+
+        public static StageFailureHandlingResult Complete(StageExecutionResult result)
+        {
+            return new StageFailureHandlingResult(false, null, result);
+        }
+    }
+
+    private async ValueTask<StageExecutionResult> ExecuteAdmittedAsync(
+        ITypedPipelineStage stage,
+        object current,
+        CancellationToken ct)
+    {
+        var breaker = _getBreaker(stage);
+        var stageStartedAtUtc = _clock.GetUtcNow();
+        var stageStartedTimestamp = _clock.GetTimestamp();
+        RetryBudgetLease? pendingRetry = null;
+        PendingRetry? pendingInfo = null;
+        try
+        {
+            while (true)
+            {
+                using var admission = pendingRetry is null && _prepareAttemptAsync is null ? null : new StageAttemptAdmission(pendingRetry);
+                pendingRetry = null;
+                var retryInfo = pendingInfo;
+                pendingInfo = null;
+                if (UsesAdmission) ct.ThrowIfCancellationRequested();
+                var prepared = _prepareAttemptAsync is null ? default
+                    : await _prepareAttemptAsync(stage, stageStartedTimestamp, ct).ConfigureAwait(false);
+                admission?.SetTimedLease(prepared.Lease);
+                ct.ThrowIfCancellationRequested();
+                if (prepared.Rejected)
+                {
+                    var error = new SmartPipeError($"Timed attempt capacity is exhausted for stage '{stage.StageId}'.",
+                        ErrorType.Permanent, "TimedAttemptAdmission");
+                    var rejected = stage.CreateFailureResult(current, error, StageResultKind.Failure,
+                        _lineageMode, _clock, stageStartedAtUtc);
+                    if (stage.FailureOptions.OnPermanentFailure == FailureAction.FaultPipeline)
+                        await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
+                    await _emitAsync(new StageFailedEvent(_pipelineId, _runId, rejected.TraceId,
+                        stage.StageId, rejected.Attempt, _clock.GetUtcNow(), error), ct).ConfigureAwait(false);
+                    return await CompleteTerminalFailureAsync(stage, current, rejected, error,
+                        stage.FailureOptions.OnPermanentFailure, ct).ConfigureAwait(false);
+                }
+                if (prepared.DeadlineExpired)
+                {
+                    if (retryInfo is { } retry)
+                    {
+                        if (stage.FailureOptions.OnRetryExhausted == FailureAction.FaultPipeline)
+                            await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
+                        await _emitRetryExhaustedAsync(stage, retry.Outcome, retry.Error, ct).ConfigureAwait(false);
+                        return await CompleteTerminalFailureAsync(stage, retry.Current, retry.Outcome, retry.Error,
+                            stage.FailureOptions.OnRetryExhausted, ct).ConfigureAwait(false);
+                    }
+                    var expired = stage.CreateTimedOutResult(current, _lineageMode, _clock,
+                        stageStartedAtUtc, TimeSpan.Zero, null, false);
+                    var failure = await HandleAdmittedFailureAsync(stage, current, expired, null, default,
+                        stageStartedTimestamp, ct).ConfigureAwait(false);
+                    return failure.Result;
+                }
+                var correlation = stage.GetCorrelation(current);
+                var breakerPermit = default(CircuitBreakerPermit);
+
+                if (breaker is not null)
+                {
+                    breakerPermit = breaker.AcquirePermit();
+
+                    if (!breakerPermit.IsAllowed)
+                    {
+                        var cbError = new SmartPipeError(
+                            $"Circuit breaker is open for stage '{stage.StageId}'.",
+                            ErrorType.Transient,
+                            "CircuitBreaker"
+                        );
+                        var rejectedOutcome = stage.CreateFailureResult(
+                            current,
+                            cbError,
+                            StageResultKind.Failure,
+                            _lineageMode,
+                            _clock,
+                            stageStartedAtUtc
+                        );
+                        var action = stage.FailureOptions.Retry is not null
+                            ? stage.FailureOptions.OnRetryExhausted
+                            : stage.FailureOptions.OnPermanentFailure;
+                        if (action == FailureAction.FaultPipeline)
+                            await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
+
+                        await _emitAsync(
+                                new CircuitBreakerRejectedEvent(
+                                    _pipelineId,
+                                    _runId,
+                                    correlation.TraceId,
+                                    stage.StageId,
+                                    correlation.Attempt,
+                                    _clock.GetUtcNow(),
+                                    cbError
+                                ),
+                                ct
+                            )
+                            .ConfigureAwait(false);
+
+                        if (stage.FailureOptions.Retry is not null)
+                            await _emitRetryExhaustedAsync(stage, rejectedOutcome, cbError, ct)
+                                .ConfigureAwait(false);
+
+                        return await CompleteTerminalFailureAsync(
+                                stage,
+                                current,
+                                rejectedOutcome,
+                                cbError,
+                                action,
+                                ct)
+                            .ConfigureAwait(false);
+                    }
+                }
+
+                TypedStageExecutionResult outcome;
+                try
+                {
+                    if (retryInfo is { } retry)
+                        await PublishRetryAttemptAsync(stage, retry.Current, retry.Outcome, retry.Error,
+                            stage.GetCorrelation(current).Attempt, ct).ConfigureAwait(false);
+                    // A half-open probe slot must be released even when emitting the start event throws.
+                    await _emitAsync(
+                            new StageStartedEvent(
+                                _pipelineId,
+                                _runId,
+                                correlation.TraceId,
+                                stage.StageId,
+                                stage.StageName,
+                                correlation.Attempt,
+                                _clock.GetUtcNow()
+                            ),
+                            ct
+                        )
+                        .ConfigureAwait(false);
+
+                    try
+                    {
+                        outcome = admission is null
+                            ? await _executeStageAttemptAsync(stage, current, stageStartedTimestamp, ct).ConfigureAwait(false)
+                            : await _executeAdmittedAttemptAsync!(stage, current, stageStartedTimestamp, ct, admission).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
+                        await _emitAsync(
+                                new StageFailedEvent(
+                                    _pipelineId,
+                                    _runId,
+                                    correlation.TraceId,
+                                    stage.StageId,
+                                    correlation.Attempt,
+                                    _clock.GetUtcNow(),
+                                    new SmartPipeError(
+                                        ex.Message,
+                                        ErrorType.Permanent,
+                                        "StageException",
+                                        ex
+                                    )
+                                ),
+                                ct
+                            )
+                            .ConfigureAwait(false);
+                        throw;
+                    }
+                }
+                finally
+                {
+                    breakerPermit.Dispose();
+                }
+
+                if (outcome.IsTerminalNonFailure)
+                {
+                    await RecordBreakerSuccessAsync(breaker, breakerPermit, stage, ct).ConfigureAwait(false);
+                    await CompleteTerminalNonFailureAsync(stage, outcome, ct)
+                        .ConfigureAwait(false);
+                    return new StageExecutionResult(current, null, StopProcessing: true);
+                }
+
+                if (!outcome.IsSuccess)
+                {
+                    var failure = await HandleAdmittedFailureAsync(
+                            stage,
+                            current,
+                            outcome,
+                            breaker,
+                            breakerPermit,
+                            stageStartedTimestamp,
+                            ct)
+                        .ConfigureAwait(false);
+                    if (failure.ShouldRetry)
+                    {
+                        pendingRetry = failure.RetryLease;
+                        pendingInfo = failure.Pending;
+                        current = failure.Envelope!;
+                        continue;
+                    }
+
+                    return failure.Result;
+                }
+
+                await RecordBreakerSuccessAsync(breaker, breakerPermit, stage, ct).ConfigureAwait(false);
+
+                await _emitAsync(
+                        new StageSucceededEvent(
+                            _pipelineId,
+                            _runId,
+                            correlation.TraceId,
+                            stage.StageId,
+                            stage.StageName,
+                            correlation.Attempt,
+                            _clock.GetUtcNow()
+                        ),
+                        ct
+                    )
+                    .ConfigureAwait(false);
+
+                return new StageExecutionResult(outcome.Envelope!, null, StopProcessing: false);
+            }
+        }
+        finally { pendingRetry?.Dispose(); }
+    }
+
+    private async ValueTask RecordBreakerSuccessAsync(
+        CircuitBreaker? breaker,
+        CircuitBreakerPermit breakerPermit,
+        ITypedPipelineStage stage,
+        CancellationToken ct)
+    {
+        if (breaker is null)
+            return;
+
+        var wasHalfOpen = breaker.State == CircuitState.HalfOpen;
+        breakerPermit.RecordSuccess();
+        if (wasHalfOpen && breaker.State == CircuitState.Closed)
+        {
+            await _emitAsync(
+                    new CircuitBreakerClosedEvent(
+                        _pipelineId,
+                        _runId,
+                        stage.StageId,
+                        _clock.GetUtcNow()
+                    ),
+                    ct
+                )
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async ValueTask<AdmittedStageFailureHandlingResult> HandleAdmittedFailureAsync(
+        ITypedPipelineStage stage,
+        object current,
+        TypedStageExecutionResult outcome,
+        CircuitBreaker? breaker,
+        CircuitBreakerPermit breakerPermit,
+        long stageStartedTimestamp,
+        CancellationToken ct)
+    {
+        var wasOpen = breaker?.State == CircuitState.Open;
+        breakerPermit.RecordFailure();
+        var justOpened = breaker is not null && breaker.State == CircuitState.Open && !wasOpen;
+        var error =
+            outcome.Error
+            ?? new SmartPipeError(
+                outcome.Kind.ToString(),
+                ErrorType.Permanent,
+                outcome.Kind.ToString()
+            );
+        RetryDecision decision;
+        try
+        {
+            decision = justOpened
+                ? new RetryDecision(stage.FailureOptions.Retry is not null
+                    ? RetryDecisionKind.Exhausted : RetryDecisionKind.NotRetryable, 0, TimeSpan.Zero)
+                : outcome.Kind == StageResultKind.TimedOut && !outcome.CanRetryTimeout
+                    ? new RetryDecision(RetryDecisionKind.NotRetryable, 0, TimeSpan.Zero)
+                    : _getRetryDecision(stage, error, outcome.Attempt, stageStartedTimestamp);
+        }
+        catch (Exception decisionError) when (decisionError is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            // A user-supplied retry predicate/delay may throw. Preserve the stage
+            // failure event while stopping potentially blocked reliable observers
+            // before publishing into a full queue. Never replace the original error
+            // with a callback or notification failure.
+            var notificationErrors = await RuntimeCleanup.CollectAsync([
+                _stopCallbacksOnFaultAsync,
+                () => _emitAsync(
+                    new StageFailedEvent(
+                        _pipelineId,
+                        _runId,
+                        outcome.TraceId,
+                        stage.StageId,
+                        outcome.Attempt,
+                        _clock.GetUtcNow(),
+                        error),
+                    ct),
+            ]).ConfigureAwait(false);
+            RuntimeCleanup.ThrowCombined(ExceptionDispatchInfo.Capture(decisionError), notificationErrors);
+            throw;
+        }
+
+        RetryBudgetLease? reservation = null;
+        if (decision.Kind == RetryDecisionKind.Retry && _retryBudget is not null
+            && !_retryBudget.TryReserve(out reservation))
+            decision = new RetryDecision(RetryDecisionKind.Exhausted, 0, TimeSpan.Zero);
+        try
+        {
+            var action = decision.Kind == RetryDecisionKind.Exhausted
+                ? stage.FailureOptions.OnRetryExhausted
+                : stage.FailureOptions.OnPermanentFailure;
+            if (decision.Kind != RetryDecisionKind.Retry && action == FailureAction.FaultPipeline)
+                await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
+
+            if (justOpened)
+            {
+                await _emitAsync(
+                        new CircuitBreakerOpenedEvent(
+                            _pipelineId,
+                            _runId,
+                            stage.StageId,
+                            _clock.GetUtcNow()
+                        ),
+                        ct
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            await _emitAsync(
+                    new StageFailedEvent(
+                        _pipelineId,
+                        _runId,
+                        outcome.TraceId,
+                        stage.StageId,
+                        outcome.Attempt,
+                        _clock.GetUtcNow(),
+                        error
+                    ),
+                    ct
+                )
+                .ConfigureAwait(false);
+
+            if (justOpened)
+            {
+                if (stage.FailureOptions.Retry is not null)
+                    await _emitRetryExhaustedAsync(stage, outcome, error, ct).ConfigureAwait(false);
+
+                return AdmittedStageFailureHandlingResult.Complete(
+                    await CompleteTerminalFailureAsync(
+                            stage,
+                            current,
+                            outcome,
+                            error,
+                            stage.FailureOptions.Retry is not null
+                                ? stage.FailureOptions.OnRetryExhausted
+                                : stage.FailureOptions.OnPermanentFailure,
+                            ct)
+                        .ConfigureAwait(false));
+            }
+
+            var retry = await TryAdmittedRetryAsync(
+                    stage,
+                    current,
+                    outcome,
+                    error,
+                    decision,
+                    ct
+                )
+                .ConfigureAwait(false);
+            if (retry.ShouldRetry)
+            {
+                var transferred = reservation;
+                reservation = null;
+                return AdmittedStageFailureHandlingResult.Retry(retry.Envelope!, transferred,
+                    UsesAdmission ? new PendingRetry(current, outcome, error) : null);
+            }
+
+            if (retry.Exhausted)
+                await _emitRetryExhaustedAsync(stage, outcome, error, ct).ConfigureAwait(false);
+
+            var result = await CompleteTerminalFailureAsync(
+                    stage,
+                    current,
+                    outcome,
+                    error,
+                    action,
+                    ct)
+                .ConfigureAwait(false);
+
+            return AdmittedStageFailureHandlingResult.Complete(result);
         }
         finally { reservation?.Dispose(); }
     }
@@ -508,7 +926,7 @@ internal sealed class StageExecutor
         await _writeTerminalAsync(outcome, ct).ConfigureAwait(false);
     }
 
-    private async ValueTask<RetryStageResult> TryRetryAsync(
+    private async ValueTask<RetryStageResult> TryAdmittedRetryAsync(
         ITypedPipelineStage stage,
         object current,
         TypedStageExecutionResult outcome,
@@ -532,56 +950,66 @@ internal sealed class StageExecutor
 
             ct.ThrowIfCancellationRequested();
 
-            try
-            {
-                stage.FailureOptions.Retry?.OnRetry?.Invoke(
-                    stage.BoxEnvelope(current),
-                    error,
-                    decision.NextAttempt);
-            }
-            catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
-            {
-                throw new InvalidOperationException("Retry callback failed.", ex);
-            }
-
             var next = stage.WithAttempt(current, decision.NextAttempt);
-            await _emitAsync(
-                    new RetryAttemptedEvent(
-                        _pipelineId,
-                        _runId,
-                        outcome.TraceId,
-                        stage.StageId,
-                        decision.NextAttempt,
-                        _clock.GetUtcNow()
-                    ),
-                    ct
-                )
-                .ConfigureAwait(false);
+            if (!UsesAdmission)
+                await PublishRetryAttemptAsync(stage, current, outcome, error, decision.NextAttempt, ct).ConfigureAwait(false);
             return new RetryStageResult(true, false, next);
         }
 
         return new RetryStageResult(false, decision.Kind == RetryDecisionKind.Exhausted, null);
     }
 
+    private async ValueTask PublishRetryAttemptAsync(ITypedPipelineStage stage, object current,
+        TypedStageExecutionResult outcome, SmartPipeError error, int nextAttempt, CancellationToken ct)
+    {
+        try
+        {
+            stage.FailureOptions.Retry?.OnRetry?.Invoke(
+                stage.BoxEnvelope(current),
+                error,
+                nextAttempt);
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw new InvalidOperationException("Retry callback failed.", ex);
+        }
+
+        await _emitAsync(
+                new RetryAttemptedEvent(
+                    _pipelineId,
+                    _runId,
+                    outcome.TraceId,
+                    stage.StageId,
+                    nextAttempt,
+                    _clock.GetUtcNow()
+                ),
+                ct
+            )
+            .ConfigureAwait(false);
+    }
+
+    private readonly record struct PendingRetry(object Current, TypedStageExecutionResult Outcome, SmartPipeError Error);
+
     private readonly record struct RetryStageResult(
         bool ShouldRetry,
         bool Exhausted,
         object? Envelope);
 
-    private readonly record struct StageFailureHandlingResult(
+    private readonly record struct AdmittedStageFailureHandlingResult(
         bool ShouldRetry,
         object? Envelope,
         StageExecutionResult Result,
-        RetryBudgetLease? RetryLease = null)
+        RetryBudgetLease? RetryLease = null,
+        PendingRetry? Pending = null)
     {
-        public static StageFailureHandlingResult Retry(object envelope, RetryBudgetLease? lease)
+        public static AdmittedStageFailureHandlingResult Retry(object envelope, RetryBudgetLease? lease, PendingRetry? pending)
         {
-            return new StageFailureHandlingResult(true, envelope, default, lease);
+            return new AdmittedStageFailureHandlingResult(true, envelope, default, lease, pending);
         }
 
-        public static StageFailureHandlingResult Complete(StageExecutionResult result)
+        public static AdmittedStageFailureHandlingResult Complete(StageExecutionResult result)
         {
-            return new StageFailureHandlingResult(false, null, result);
+            return new AdmittedStageFailureHandlingResult(false, null, result);
         }
     }
 }
