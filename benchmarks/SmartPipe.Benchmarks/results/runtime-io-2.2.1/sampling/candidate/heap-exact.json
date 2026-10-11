@@ -1,0 +1,26 @@
+[
+  {
+    "samples": 1000,
+    "bucketed": false,
+    "retainedAfterFillBytes": 16896,
+    "retainedAfterExpiryBytes": 16896,
+    "expiryMicroseconds": 178.1,
+    "notes": "Managed-heap delta including clock, breaker, window, array/object headers; forced collection with breaker kept alive. Separate prototype/resource tests prove the backing-array slot bound."
+  },
+  {
+    "samples": 100000,
+    "bucketed": false,
+    "retainedAfterFillBytes": 2097496,
+    "retainedAfterExpiryBytes": 2097496,
+    "expiryMicroseconds": 3242.4,
+    "notes": "Managed-heap delta including clock, breaker, window, array/object headers; forced collection with breaker kept alive. Separate prototype/resource tests prove the backing-array slot bound."
+  },
+  {
+    "samples": 1000000,
+    "bucketed": false,
+    "retainedAfterFillBytes": 16777560,
+    "retainedAfterExpiryBytes": 16777560,
+    "expiryMicroseconds": 10941.4,
+    "notes": "Managed-heap delta including clock, breaker, window, array/object headers; forced collection with breaker kept alive. Separate prototype/resource tests prove the backing-array slot bound."
+  }
+]

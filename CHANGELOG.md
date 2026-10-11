@@ -7,8 +7,11 @@
 - Extract ordinary processing supervision while preserving producer error precedence, worker joining and late-attempt ownership.
 - Add opt-in shared run retry budgets, full retry jitter and admission limits covering active and detached timed executions. Defaults remain unlimited admission and deterministic retry delays.
 
+- Avoid suppressed output and unobserved domain-event allocations without changing sink, metrics or activity behavior.
+- Batch exact circuit-breaker expiry and add opt-in bounded bucket sampling with an explicit oldest-bucket approximation; Exact remains the default.
+
 - Seal the public API surface shipped in 2.2.0 and use published 2.2.0 packages as the Package Validation baseline for 2.2.1 servicing.
-- Harden release engineering, post-release documentation, dependency automation, and sensitive logging without expanding the public API.
+- Harden release engineering, post-release documentation, dependency automation, and sensitive logging; the additive runtime policies above use the explicit 2.2.1 versioning exception.
 - Stop the legacy Dapper source completion log from emitting raw SQL text at Information level.
 - Keep Entity Framework Core failure logs payload-free by classifying the outcome without attaching provider exception details; the original exception still propagates to the caller.
 

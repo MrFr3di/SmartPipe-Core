@@ -70,7 +70,7 @@ rejected by the release workflow.
 
 The runtime I/O work has an explicit release-owner exception for 2.2.1:
 the backward-compatible, opt-in retry budget, retry jitter, timed-attempt
-admission and conditionally accepted sampling APIs belong to 2.2.1. Existing
+admission and bounded sampling APIs belong to 2.2.1. Existing
 defaults and constructor signatures remain unchanged. This exception does not
 change the policy for future features or the immutable 2.2.0 validation baseline.
 

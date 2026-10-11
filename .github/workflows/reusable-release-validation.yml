@@ -131,6 +131,48 @@ jobs:
     - name: Core adaptive failure accounting regressions
       run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --no-build -c Release --filter-class SmartPipe.Core.Tests.Engine.AdaptiveFailureAccountingRegressionTests --minimum-expected-tests 27
 
+    - name: Runtime I/O ProcessingSupervisorRegression
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Engine.ProcessingSupervisorRegressionTests --minimum-expected-tests 2
+
+    - name: Runtime I/O PipelineProcessingSupervisor
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Runtime.Execution.PipelineProcessingSupervisorTests --minimum-expected-tests 4
+
+    - name: Runtime I/O RetryDelayPlanner
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Resilience.RetryDelayPlannerTests --minimum-expected-tests 10
+
+    - name: Runtime I/O RunRetryBudget
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Runtime.Execution.RunRetryBudgetTests --minimum-expected-tests 4
+
+    - name: Runtime I/O RetryAdmissionRegression
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Engine.RetryAdmissionRegressionTests --minimum-expected-tests 4
+
+    - name: Runtime I/O RetryReservationOwnership
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Engine.RetryReservationOwnershipTests --minimum-expected-tests 7
+
+    - name: Runtime I/O TimedAttemptAdmissionLimiter
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Runtime.Execution.TimedAttemptAdmissionLimiterTests --minimum-expected-tests 4
+
+    - name: Runtime I/O TimedAttemptAdmissionRegression
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Engine.TimedAttemptAdmissionRegressionTests --minimum-expected-tests 6
+
+    - name: Runtime I/O LateAttemptAdmissionOwnership
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Runtime.Execution.LateAttemptAdmissionOwnershipTests --minimum-expected-tests 2
+
+    - name: Runtime I/O OutputAllocationRegression
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Engine.OutputAllocationRegressionTests --minimum-expected-tests 65
+
+    - name: Runtime I/O ObserverInterestRegression
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Engine.ObserverInterestRegressionTests --minimum-expected-tests 12
+
+    - name: Runtime I/O CircuitBreakerSamplingOracle
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Resilience.CircuitBreakerSamplingOracleTests --minimum-expected-tests 7
+
+    - name: Runtime I/O CircuitBreakerBucketWindowPrototype
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Resilience.CircuitBreakerBucketWindowPrototypeTests --minimum-expected-tests 9
+
+    - name: Runtime I/O CircuitBreakerBucketSampling
+      run: dotnet test --project tests/SmartPipe.Core.Tests/SmartPipe.Core.Tests.csproj --configuration Release --no-build --filter-class SmartPipe.Core.Tests.Resilience.CircuitBreakerBucketSamplingTests --minimum-expected-tests 11
+
     - name: Verify RepositoryChecks profile
       run: dotnet run --project eng/SmartPipe.RepositoryChecks/SmartPipe.RepositoryChecks.csproj --configuration Release --no-build -- verify --profile sp220-05 --format github --failures-only
 
