@@ -235,7 +235,8 @@ internal sealed record StageFailureOptionsSnapshot(
                 policy.MaxDelay,
                 policy.Strategy,
                 policy.RetryOn,
-                policy.OnRetry) { Jitter = policy.Jitter };
+                policy.OnRetry)
+            { Jitter = policy.Jitter };
 
     private static TimeoutPolicy? CopyTimeout(TimeoutPolicy? policy) =>
         policy is null

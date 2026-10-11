@@ -60,6 +60,16 @@ public class RuntimeResilienceControlBenchmarks
             }
         }
         await run.Completion.ConfigureAwait(false);
+        ValidateResult(run, transformer, admission, outputs, successes, rejections);
+        double? p99 = null;
+        if (latencies is not null) { Array.Sort(latencies); p99 = latencies[(int)Math.Ceiling(Items * 0.99) - 1]; }
+        return new ControlResult(Scenario, AsyncTransform, transformer.Initial, transformer.Retries, transformer.Peak, admission is null ? 0 : transformer.Peak,
+            successes, rejections, run.Metrics.ItemsRetried, p99);
+    }
+
+    private void ValidateResult(PipelineRun<int> run, Transformer transformer, TimedAttemptAdmissionOptions? admission,
+        int outputs, int successes, int rejections)
+    {
         var expectedRetries = Scenario == ResilienceControlScenario.Unlimited ? 200 : 100;
         if (outputs != Items || run.State != PipelineRunState.Completed || transformer.Active != 0
             || transformer.Retries > expectedRetries || (admission is not null && transformer.Peak > 4)
@@ -67,10 +77,6 @@ public class RuntimeResilienceControlBenchmarks
                 && (transformer.Initial != Items || transformer.Retries != expectedRetries || successes != 800 + expectedRetries))
             || (Scenario == ResilienceControlScenario.TimedReject && rejections == 0 && AsyncTransform && transformer.Peak > 4))
             throw new InvalidOperationException("Fault-stream invocation, retry, output or timed-cap invariant failed.");
-        double? p99 = null;
-        if (latencies is not null) { Array.Sort(latencies); p99 = latencies[(int)Math.Ceiling(Items * 0.99) - 1]; }
-        return new ControlResult(Scenario, AsyncTransform, transformer.Initial, transformer.Retries, transformer.Peak, admission is null ? 0 : transformer.Peak,
-            successes, rejections, run.Metrics.ItemsRetried, p99);
     }
 
     internal static async Task WriteDiagnosticsAsync(string path)

@@ -625,7 +625,6 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly PipelineRuntimeOptions _options;
     private readonly IPipelineClock _clock;
     private readonly PipelineTime _time;
-    private readonly RunRetryBudget? _retryBudget;
     private readonly TimedAttemptAdmissionLimiter? _timedAdmission;
     private readonly RetryDelayPlanner _retryDelayPlanner = new(new SharedRetryRandomSource());
     private readonly Channel<PipelineOutput<TOutput>> _outputs;
@@ -713,7 +712,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _options = _runtime.Options;
         _clock = _options.Clock;
         _time = new PipelineTime(_clock);
-        _retryBudget = _options.RetryBudget is { } budget ? new RunRetryBudget(budget, _time) : null;
+        var retryBudget = _options.RetryBudget is { } budget ? new RunRetryBudget(budget, _time) : null;
         _timedAdmission = _options.TimedAttemptAdmission is { } admission
             ? new TimedAttemptAdmissionLimiter(admission, _time) : null;
         _breakers = CreateBreakers();
@@ -750,9 +749,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             EmitAsync,
             ExecuteStageAttemptAsync,
             StopObserverCallbacksForFaultAsync,
-            _retryBudget,
+            retryBudget,
             ExecuteAdmittedStageAttemptAsync,
-            _retryBudget is not null || _timedAdmission is not null ? PrepareStageAttemptAsync : null,
+            retryBudget is not null || _timedAdmission is not null ? PrepareStageAttemptAsync : null,
             hasObservers: _spec.Observers.Count > 0);
         _sinkExecutor = new SinkExecutor<TOutput>(
             _sink,
@@ -761,8 +760,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _clock,
             EmitAsync,
             _metrics.RecordSinkDuration,
-            StopObserverCallbacksForFaultAsync,
-            hasObservers: _spec.Observers.Count > 0);
+            StopObserverCallbacksForFaultAsync)
+        {
+            HasObservers = _spec.Observers.Count > 0,
+        };
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _observerDispatcher = PipelineObserverDispatcher.Create(
             _spec.Observers,
@@ -1749,137 +1750,38 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
     }
 
-    private async ValueTask<TypedStageExecutionResult> ExecuteStageAttemptAsync(
-        ITypedPipelineStage stage,
-        object current,
-        long stageStartedTimestamp,
-        CancellationToken ct
-    )
-    {
-        var attemptTimeout = GetEffectiveAttemptTimeout(stage, stageStartedTimestamp);
-        if (attemptTimeout is null || attemptTimeout == Timeout.InfiniteTimeSpan)
-            return await stage.ExecuteAsync(current, _spec.LineageMode, _clock, ct).ConfigureAwait(false);
+    private ValueTask<TypedStageExecutionResult> ExecuteStageAttemptAsync(
+        ITypedPipelineStage stage, object current, long stageStartedTimestamp, CancellationToken ct) =>
+        ExecuteStageAttemptCore(stage, current, stageStartedTimestamp, ct, null);
 
-        var startedAtUtc = _clock.GetUtcNow();
-        if (attemptTimeout <= TimeSpan.Zero)
-            return stage.CreateTimedOutResult(
-                current,
-                _spec.LineageMode,
-                _clock,
-                startedAtUtc,
-                TimeSpan.Zero,
-                null,
-                false
-            );
+    private ValueTask<TypedStageExecutionResult> ExecuteAdmittedStageAttemptAsync(
+        ITypedPipelineStage stage, object current, long stageStartedTimestamp, CancellationToken ct,
+        StageAttemptAdmission? admission) =>
+        ExecuteStageAttemptCore(stage, current, stageStartedTimestamp, ct, admission);
 
-        CancellationTokenSource? timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var execution = stage.ExecuteAsync(current, _spec.LineageMode, _clock, timeoutCts.Token).AsTask();
-        var executionObserved = false;
-
-        try
-        {
-            var result = await _time.WaitAsync(execution, attemptTimeout.Value, ct).ConfigureAwait(false);
-            executionObserved = true;
-            return result;
-        }
-        catch (OperationCanceledException ex)
-            when (!ct.IsCancellationRequested && timeoutCts.IsCancellationRequested)
-        {
-            executionObserved = execution.IsCompleted;
-            var retryMode = stage.FailureOptions.Timeout?.RetryMode ?? TimeoutRetryMode.CooperativeOnly;
-            return stage.CreateTimedOutResult(
-                current,
-                _spec.LineageMode,
-                _clock,
-                startedAtUtc,
-                attemptTimeout.Value,
-                ex,
-                retryMode != TimeoutRetryMode.DetachWithoutRetry
-            );
-        }
-        catch (TimeoutException ex)
-        {
-            if (execution.IsCompleted)
-            {
-                executionObserved = true;
-                return await execution.ConfigureAwait(false);
-            }
-
-            timeoutCts.Cancel();
-            var transferredTimeoutCts = timeoutCts;
-            timeoutCts = null;
-            return await HandleTimedOutStageExecutionAsync(
-                    stage,
-                    current,
-                    startedAtUtc,
-                    attemptTimeout.Value,
-                    ex,
-                    execution,
-                    transferredTimeoutCts,
-                    ct)
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            // Wait cancellation can win before linked cancellation reaches the
-            // attempt. Keep the link alive and explicitly request its stop.
-            executionObserved = execution.IsCanceled
-                || (execution.IsFaulted && execution.Exception!.InnerExceptions.Contains(ex));
-            if (!executionObserved && timeoutCts is { IsCancellationRequested: false })
-            {
-                try
-                {
-                    timeoutCts.Cancel();
-                }
-                catch (Exception cancellationError)
-                {
-                    throw new AggregateException(ex, cancellationError);
-                }
-            }
-
-            throw;
-        }
-        finally
-        {
-            if (timeoutCts is not null)
-            {
-                if (executionObserved)
-                    timeoutCts.Dispose();
-                else
-                    RegisterLateStageAttempt(stage, current, execution, timeoutCts, reportUnexpectedFaults: true);
-            }
-        }
-    }
-
-    private async ValueTask<TypedStageExecutionResult> ExecuteAdmittedStageAttemptAsync(
-        ITypedPipelineStage stage,
-        object current,
-        long stageStartedTimestamp,
-        CancellationToken ct,
-        StageAttemptAdmission? admission
-    )
+    private ValueTask<TypedStageExecutionResult> ExecuteStageAttemptCore(
+        ITypedPipelineStage stage, object current, long stageStartedTimestamp, CancellationToken ct,
+        StageAttemptAdmission? admission)
     {
         var attemptTimeout = GetEffectiveAttemptTimeout(stage, stageStartedTimestamp);
         if (attemptTimeout is null || attemptTimeout == Timeout.InfiniteTimeSpan)
         {
             if (admission is not null) ct.ThrowIfCancellationRequested();
             admission?.MarkExecutionStarted();
-            return await stage.ExecuteAsync(current, _spec.LineageMode, _clock, ct).ConfigureAwait(false);
+            return stage.ExecuteAsync(current, _spec.LineageMode, _clock, ct);
         }
-
         var startedAtUtc = _clock.GetUtcNow();
         if (attemptTimeout <= TimeSpan.Zero)
-            return stage.CreateTimedOutResult(
-                current,
-                _spec.LineageMode,
-                _clock,
-                startedAtUtc,
-                TimeSpan.Zero,
-                null,
-                false
-            );
-
+            return ValueTask.FromResult(stage.CreateTimedOutResult(current, _spec.LineageMode, _clock,
+                startedAtUtc, TimeSpan.Zero, null, false));
         if (admission is not null) ct.ThrowIfCancellationRequested();
+        return ExecuteTimedStageAttemptAsync(stage, current, ct, admission, attemptTimeout.Value, startedAtUtc);
+    }
+
+    private async ValueTask<TypedStageExecutionResult> ExecuteTimedStageAttemptAsync(
+        ITypedPipelineStage stage, object current, CancellationToken ct, StageAttemptAdmission? admission,
+        TimeSpan attemptTimeout, DateTimeOffset startedAtUtc)
+    {
         CancellationTokenSource? timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         admission?.MarkExecutionStarted();
         var execution = stage.ExecuteAsync(current, _spec.LineageMode, _clock, timeoutCts.Token).AsTask();
@@ -1887,7 +1789,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
         try
         {
-            var result = await _time.WaitAsync(execution, attemptTimeout.Value, ct).ConfigureAwait(false);
+            var result = await _time.WaitAsync(execution, attemptTimeout, ct).ConfigureAwait(false);
             executionObserved = true;
             return result;
         }
@@ -1901,7 +1803,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 _spec.LineageMode,
                 _clock,
                 startedAtUtc,
-                attemptTimeout.Value,
+                attemptTimeout,
                 ex,
                 retryMode != TimeoutRetryMode.DetachWithoutRetry
             );
@@ -1914,14 +1816,14 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 return await execution.ConfigureAwait(false);
             }
 
-            timeoutCts.Cancel();
+            await timeoutCts.CancelAsync().ConfigureAwait(false);
             var transferredTimeoutCts = timeoutCts;
             timeoutCts = null;
             return await HandleTimedOutStageExecutionAsync(
                     stage,
                     current,
                     startedAtUtc,
-                    attemptTimeout.Value,
+                    attemptTimeout,
                     ex,
                     execution,
                     transferredTimeoutCts,
@@ -1931,34 +1833,34 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            // Wait cancellation can win before linked cancellation reaches the
-            // attempt. Keep the link alive and explicitly request its stop.
-            executionObserved = execution.IsCanceled
-                || (execution.IsFaulted && execution.Exception!.InnerExceptions.Contains(ex));
-            if (!executionObserved && timeoutCts is { IsCancellationRequested: false })
-            {
-                try
-                {
-                    timeoutCts.Cancel();
-                }
-                catch (Exception cancellationError)
-                {
-                    throw new AggregateException(ex, cancellationError);
-                }
-            }
-
+            executionObserved = IsObservedExecutionError(execution, ex);
+            if (!executionObserved)
+                await CancelUnobservedExecutionAsync(timeoutCts, ex).ConfigureAwait(false);
             throw;
         }
         finally
         {
-            if (timeoutCts is not null)
-            {
-                if (executionObserved)
-                    timeoutCts.Dispose();
-                else
-                    RegisterLateStageAttempt(stage, current, execution, timeoutCts, reportUnexpectedFaults: true, admission: admission);
-            }
+            FinalizeAttemptObservation(stage, current, execution, timeoutCts, executionObserved, admission);
         }
+    }
+
+    private static bool IsObservedExecutionError(Task<TypedStageExecutionResult> execution, Exception error) =>
+        execution.IsCanceled || (execution.IsFaulted && execution.Exception.InnerExceptions.Contains(error));
+
+    private static async ValueTask CancelUnobservedExecutionAsync(CancellationTokenSource? timeoutCts, Exception error)
+    {
+        if (timeoutCts is not { IsCancellationRequested: false }) return;
+        try { await timeoutCts.CancelAsync().ConfigureAwait(false); }
+        catch (Exception cancellationError) { throw new AggregateException(error, cancellationError); }
+    }
+
+    private void FinalizeAttemptObservation(ITypedPipelineStage stage, object current,
+        Task<TypedStageExecutionResult> execution, CancellationTokenSource? timeoutCts,
+        bool executionObserved, StageAttemptAdmission? admission)
+    {
+        if (timeoutCts is null) return;
+        if (executionObserved) timeoutCts.Dispose();
+        else RegisterLateStageAttempt(stage, current, execution, timeoutCts, reportUnexpectedFaults: true, admission: admission);
     }
 
     private async ValueTask<TypedStageExecutionResult> HandleTimedOutStageExecutionAsync(

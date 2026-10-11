@@ -5,7 +5,7 @@ namespace SmartPipe.Core;
 internal sealed class SinkExecutor<TOutput> : IDisposable
 {
     private readonly Func<ValueTask> _stopCallbacksOnFaultAsync;
-    private readonly bool _hasObservers;
+    public bool HasObservers { private get; init; } = true;
     private readonly IPipelineSink<TOutput>? _sink;
     private readonly string _pipelineId;
     private readonly string _runId;
@@ -21,11 +21,9 @@ internal sealed class SinkExecutor<TOutput> : IDisposable
         IPipelineClock clock,
         Func<PipelineEvent, CancellationToken, ValueTask> emitAsync,
         Action<double>? recordSinkDuration = null,
-        Func<ValueTask>? stopCallbacksOnFaultAsync = null,
-        bool hasObservers = true)
+        Func<ValueTask>? stopCallbacksOnFaultAsync = null)
     {
         _stopCallbacksOnFaultAsync = stopCallbacksOnFaultAsync ?? (() => ValueTask.CompletedTask);
-        _hasObservers = hasObservers;
         _sink = sink;
         _pipelineId = pipelineId ?? throw new ArgumentNullException(nameof(pipelineId));
         _runId = runId ?? throw new ArgumentNullException(nameof(runId));
@@ -46,7 +44,7 @@ internal sealed class SinkExecutor<TOutput> : IDisposable
         await _writeGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (_hasObservers)
+            if (HasObservers)
                 await _emitAsync(
                         new SinkWriteStartedEvent(
                             _pipelineId,
@@ -69,7 +67,7 @@ internal sealed class SinkExecutor<TOutput> : IDisposable
             catch (Exception ex)
             {
                 await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
-                if (_hasObservers)
+                if (HasObservers)
                     await _emitAsync(
                             new SinkWriteFailedEvent(
                                 _pipelineId,

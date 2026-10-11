@@ -71,6 +71,11 @@ public class RuntimeIoPolicyControlBenchmarks
         var counts = new int[4];
         await foreach (var output in run.Outputs.ReadAllAsync().ConfigureAwait(false)) counts[(int)output.Result.Kind]++;
         await run.Completion.ConfigureAwait(false);
+        ValidateResult(run, sink, observer, counts, observed);
+    }
+
+    private void ValidateResult(PipelineRun<int> run, Sink sink, Observer observer, int[] counts, bool observed)
+    {
         var expectedSuccess = Scenario == RuntimeIoPolicyControl.EmitAll ? Items / 4 : 0;
         var expectedControl = Scenario == RuntimeIoPolicyControl.EmitFailuresOnly ? 0 : Items / 4;
         if (run.State != PipelineRunState.Completed || sink.Count != Items / 4 || counts[0] != expectedSuccess
@@ -130,9 +135,9 @@ public class RuntimeIoPolicyControlBenchmarks
     private sealed class Observer : IPipelineObserver
     {
         public int Successes;
-        public ValueTask OnEventAsync(PipelineEvent evt, CancellationToken ct = default)
+        public ValueTask OnEventAsync(PipelineEvent pipelineEvent, CancellationToken ct = default)
         {
-            if (evt is StageSucceededEvent) Interlocked.Increment(ref Successes);
+            if (pipelineEvent is StageSucceededEvent) Interlocked.Increment(ref Successes);
             return ValueTask.CompletedTask;
         }
     }
