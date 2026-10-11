@@ -79,15 +79,15 @@ public class RuntimeResilienceControlBenchmarks
             throw new InvalidOperationException("Fault-stream invocation, retry, output or timed-cap invariant failed.");
     }
 
-    internal static async Task WriteDiagnosticsAsync(string path)
+    internal static async Task WriteDiagnosticsAsync(string path, int warmupRuns = 1, int repetitions = 3)
     {
         var results = new List<ControlResult>();
         foreach (var scenario in Enum.GetValues<ResilienceControlScenario>())
             foreach (var asynchronous in new[] { false, true })
             {
                 var benchmark = new RuntimeResilienceControlBenchmarks { Scenario = scenario, AsyncTransform = asynchronous };
-                await benchmark.RunAsync(false).ConfigureAwait(false);
-                for (var repetition = 0; repetition < 3; repetition++) results.Add(await benchmark.RunAsync(true).ConfigureAwait(false));
+                for (var warmup = 0; warmup < warmupRuns; warmup++) await benchmark.RunAsync(false).ConfigureAwait(false);
+                for (var repetition = 0; repetition < repetitions; repetition++) results.Add(await benchmark.RunAsync(true).ConfigureAwait(false));
             }
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true })).ConfigureAwait(false);

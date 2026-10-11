@@ -1,0 +1,101 @@
+{
+  "date": "2026-10-11",
+  "os": "Debian GNU/Linux 13 (trixie), x64",
+  "cpu": "AMD EPYC 9V74; 3 visible logical CPUs; cgroup quota 200000/100000 (2 CPUs)",
+  "dotnetSdk": "10.0.401",
+  "runtime": "10.0.12",
+  "benchmarkDotNet": "0.15.8",
+  "gc": "Concurrent workstation GC, Server=false",
+  "settings": {
+    "warmups": 5,
+    "iterations": 15,
+    "launches": 2,
+    "iterationTimeMilliseconds": 100,
+    "dry": false
+  },
+  "baselines": {
+    "mergedF": "4e550683415ac3bca59d28e7f6bfd910f20a597d",
+    "immediateO1Parent": "c7c08ff9be5925c4d59b17f7f0d03a3b14ef2916",
+    "historicalI2Parent": "d27bd811333108f283225f01d4113f11e1cef536"
+  },
+  "candidates": {
+    "o1Preacceptance": "56fd9031f7b53786a37312a2dfaeaea5b0c7f156",
+    "o1MatrixAndControls": "9b0b33954a21d3dc028b91269c8f2200e36c2ef9",
+    "samplingTimedMethods": "880541c365d35078e6e597d4baab33f52d9ecd7d",
+    "samplingDiagnostics": "30b79031290a14f09ee6d5fde630def5fcd5f0c7",
+    "finalProduction": "9b0b33954a21d3dc028b91269c8f2200e36c2ef9",
+    "historicalStartInvocationFastPaths": "2dd0303293f5b1220d037260866f11810a41a6b9"
+  },
+  "prototype": "4c44eef881df9c69f4e0c4b5321553cd0c2843ba",
+  "notes": [
+    "All runs on the same execution host; no concurrent local tests or benchmark workloads.",
+    "Benchmark-only files overlaid on baseline/parent; production sources remain at their listed commits.",
+    "CircuitBreaker production sources are identical between merged F and O1; the exact-window baseline is also the immediate O2 parent implementation.",
+    "Runtime item p99 and individual breaker-operation p99 are separate instrumented reports, never batch p99.",
+    "100ms iterations produce wide timing confidence intervals; allocation changes are evaluated separately and suspicious timing cases require longer paired repetition.",
+    "Actual-breaker timed methods and sampling production behavior are unchanged by the later private-constructor grouping and diagnostic-only refactors.",
+    "Standalone retained-heap diagnostics use forced GC with the breaker kept alive, with a documented S1215 exception on one benchmark-only helper. Never invoked by timed BenchmarkDotNet operations.",
+    "Final default-success optimization at 9b0b339 is measured by the full matrix; PR158 a9f36bb has the same src/tests/benchmark source tree before the tail diagnostic and evidence additions.",
+    "The initial final baseline-accepted run and interrupted parent-accepted run were discarded: BenchmarkDotNet resolved the primary project from cwd despite --project. Final baseline-verified and parent-verified runs execute from their own checkout; generated project references are archived in provenance.",
+    "Whole-matrix single-warmup p99 is a screening diagnostic. Suspect cases require the separately archived 100-warmup tail repetitions; these preserve output queueing and use the same canonical factory.",
+    "Historical original-baseline/original-parent matrices and paired timing review use the earlier RuntimeIo harness hash 534c438d; final matrices all use e30c050b.",
+    "Adding the tail-review CLI/file changes only standalone diagnostics, not any timed BenchmarkDotNet method.",
+    "The final resilience-tail CLI adds warmup/repetition parameters only to the standalone diagnostic. The 14 BDN control cases use the original 38d21ae4 file hash; their timed methods are unchanged by that diagnostic-only edit."
+  ],
+  "review": {
+    "settings": {
+      "warmups": 5,
+      "iterations": 15,
+      "launches": 3,
+      "iterationTimeMilliseconds": 500
+    },
+    "baseline": "4e550683",
+    "beforeFastPaths": "30b7903",
+    "successOnlyFastPath": "5148b35",
+    "startInvocationSuccessFastPaths": "2dd0303"
+  },
+  "finalHarnessSha256": {
+    "RuntimeIoBenchmarks.cs": "e30c050bd19b144abe9fd2576560143eb37af70e7bd1286c1852d20e360982ef",
+    "RuntimeIoPolicyControlBenchmarks.cs": "088f98d722bb53fdb76fac653b9ccca384d8e38b80ab9b0fda010e543e645f1f",
+    "RuntimeResilienceControlBenchmarks.cs": "e404bcc3038eb0d1459adac0ed70a328b3af5ad22f4df39110dec1a324b0a711",
+    "CircuitBreakerSamplingBenchmarks.cs": "b121e50f48c781bd144bd2a0959dcf9b9d59c42cd1780b66a99a4c1f0e5894d1",
+    "CircuitBreakerSamplingLatencyReport.cs": "fe7b00431656c101e31bb601e1cc1e68bd1902152a213bbe0628d7eb504f97e8",
+    "RuntimeIoFocusedLatencyReport.cs": "0acccc10f0185687b0d214a4076c19c8588a3199b6b9881438b0901aa748dbc1",
+    "RuntimeIoTailReviewReport.cs": "5047b79d51ce9828044b49216f1c7f32b9b5190fe0f3d1d13a6088778b349063"
+  },
+  "reviewedStackProductionHead": "a9f36bb2e878e78e344219f3adaf4bf11cf3286b",
+  "historicalHarnessSha256": {
+    "RuntimeIoBenchmarks.cs": "534c438d0df66606e453527fad20f99e8ef69c1bcb45787e80889ee0f09941bc",
+    "RuntimeIoPolicyControlBenchmarks.cs": "088f98d722bb53fdb76fac653b9ccca384d8e38b80ab9b0fda010e543e645f1f",
+    "RuntimeResilienceControlBenchmarks.cs": "38d21ae4ca7c2d0b6236b6df73a7157e6fd0eaf3ad52c7d677f7f0dc202a8946",
+    "CircuitBreakerSamplingBenchmarks.cs": "e12dd9336e67342b98483c627d1e3cc6b22d9f069ede99fac92edbdbf0d81c58",
+    "CircuitBreakerSamplingLatencyReport.cs": "e3882943da458f7395227f9b2b6a49fdd81ecf3e6419cc5ba262b2b7c068b3ef"
+  },
+  "runtimeMatrixHarnessSha256": {
+    "RuntimeIoBenchmarks.cs": "e30c050bd19b144abe9fd2576560143eb37af70e7bd1286c1852d20e360982ef",
+    "RuntimeIoPolicyControlBenchmarks.cs": "088f98d722bb53fdb76fac653b9ccca384d8e38b80ab9b0fda010e543e645f1f",
+    "RuntimeResilienceControlBenchmarks.cs": "38d21ae4ca7c2d0b6236b6df73a7157e6fd0eaf3ad52c7d677f7f0dc202a8946"
+  },
+  "latency": {
+    "wholeMatrix": {
+      "fullWarmupRunsPerCase": 1,
+      "repetitionsPerCasePerFile": 3,
+      "filesPerImplementation": 2
+    },
+    "tailReview": {
+      "fullWarmupRunsPerCase": 100,
+      "repetitionsPerCasePerFile": 9,
+      "filesPerImplementation": 2,
+      "cases": 4
+    },
+    "clock": "native Stopwatch ticks, frequency 1000000000 Hz",
+    "historicalTimeSpanDiagnostics": "100 ns quantization, preliminary only",
+    "resilienceTailReview": {
+      "fullWarmupRunsPerCase": 100,
+      "repetitionsPerCasePerFile": 9,
+      "filesPerImplementation": 2,
+      "cases": 8,
+      "clock": "Stopwatch.GetElapsedTime, 100 ns resolution; reported millisecond-scale item p99"
+    }
+  }
+}

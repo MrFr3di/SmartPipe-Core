@@ -34,16 +34,16 @@ RuntimeStopSemanticsTests и `Runtime/Execution/PipelineWorker.cs`.
 **Interfaces:** Использует existing typed builder/runtime и manually gated components.
 Не добавляет production hooks для утверждения факта pending WriteAsync.
 
-- [ ] Добавить `ProducerFault_JoinsTwoIndependentlyFailingWorkers`: producer
+- [x] Добавить `ProducerFault_JoinsTwoIndependentlyFailingWorkers`: producer
   exception сохраняет identity первым, обе worker ошибки retained, cleanup
   не стартует до release обоих workers.
-- [ ] Добавить `FaultWithFullOutput_StopsSiblingBeforeCleanup` и
+- [x] Добавить `FaultWithFullOutput_StopsSiblingBeforeCleanup` и
   `ThrowingStopCallbacks_DoNotBypassJoin`; output capacity 1,
   concurrency 2/8, gates с RunContinuationsAsynchronously.
-- [ ] Добавить `Drain_PreservesAcceptedWork` и reuse external/scope late
+- [x] Добавить `Drain_PreservesAcceptedWork` и reuse external/scope late
   observation regression: Completion fault не позволяет Dispose завершиться
   до late release, Borrowed/ScopeOwned transformer не disposed Core.
-- [ ] Запустить characterization: ожидается green на merged F. Это
+- [x] Запустить characterization: ожидается green на merged F. Это
   behavior-preserving extraction; не выдумывать red для уже исправленного бага.
 
 ```bash
@@ -66,29 +66,29 @@ test `tests/SmartPipe.Core.Tests/Runtime/Execution/PipelineProcessingSupervisorT
 - `ProcessingJoinResult` internal readonly record struct с
   `ExceptionDispatchInfo? PrimaryError` и `Exception[] SecondaryErrors`.
 
-- [ ] Добавить supervisor unit tests: first-worker error, multiple independent
+- [x] Добавить supervisor unit tests: first-worker error, multiple independent
   errors, requested worker-token OCE filtering, cancellation callback throws.
   Утверждать exact exception identities, а не только AggregateException type.
-- [ ] Выполнить build/tests; отсутствующий supervisor должен дать compile RED.
-- [ ] Перенести существующий F1 algorithm. Producer wrapper остаётся в executor:
+- [x] Выполнить build/tests; отсутствующий supervisor должен дать compile RED.
+- [x] Перенести существующий F1 algorithm. Producer wrapper остаётся в executor:
   graceful source/worker-induced cancellation classification и input completion
   сохраняются. ReportWorkerFailure останавливает source и workers независимо
   от callback failure. Join никогда не отменяется external token.
-- [ ] Executor вызывает JoinAsync после producer finally во всех обычных
+- [x] Executor вызывает JoinAsync после producer finally во всех обычных
   error paths, затем RuntimeCleanup.ThrowCombined с одним captured primary.
   Worker tasks вызывают ReportWorkerFailure через existing PipelineWorker delegate.
-- [ ] Seal registry только после processing join; root run/observer pump
+- [x] Seal registry только после processing join; root run/observer pump
   не включать в эту ordinary-worker группу. Late finalization/disposal не переносить.
-- [ ] Build и обе new suites должны пройти; existing F suites остаются green.
-- [ ] Commit: `refactor(core): extract processing task supervision`.
+- [x] Build и обе new suites должны пройти; existing F suites остаются green.
+- [x] Commit: `refactor(core): extract processing task supervision`.
 
 ### Task 3: lifetime integration acceptance
 
 **Files:** Existing Core/Hosting/DI lifecycle tests;
 `docs/runtime-contracts.md` (только targeted architecture description).
 
-- [ ] Прогнать existing 17/47/37/27/12 gates, correctness/concurrency и DI/Hosting.
-- [ ] Проверить disabled-policy allocation baseline: supervisor создаётся на
+- [x] Прогнать existing 17/47/37/27/12 gates, correctness/concurrency и DI/Hosting.
+- [x] Проверить disabled-policy allocation baseline: supervisor создаётся на
   run/group, не на envelope; sequential sync ValueTask не превращается в Task.
-- [ ] Полный candidate CI и repository/docs gates из roadmap.
-- [ ] Commit только необходимые docs/evidence; не выдавать прежний CI за этот SHA.
+- [x] Полный candidate CI и repository/docs gates из roadmap.
+- [x] Commit только необходимые docs/evidence; не выдавать прежний CI за этот SHA.

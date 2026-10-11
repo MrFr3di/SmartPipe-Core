@@ -1,0 +1,74 @@
+[
+  {
+    "samples": 1000,
+    "bucketed": false,
+    "samplingSeconds": 30,
+    "configuredSamplesPerSecond": 33.333333333333336,
+    "observedFillOperationsPerSecond": 1095650.2684343157,
+    "peakBytes": 16384,
+    "idleBytes": 16384,
+    "expireMicroseconds": 447.5,
+    "bucketSlots": null,
+    "notes": "Backing arrays only; timing diagnostics are separate from BenchmarkDotNet performance evidence."
+  },
+  {
+    "samples": 1000,
+    "bucketed": true,
+    "samplingSeconds": 30,
+    "configuredSamplesPerSecond": 33.333333333333336,
+    "observedFillOperationsPerSecond": 1416229.9957513101,
+    "peakBytes": 1560,
+    "idleBytes": 1560,
+    "expireMicroseconds": 65.1,
+    "bucketSlots": 65,
+    "notes": "Backing arrays only; timing diagnostics are separate from BenchmarkDotNet performance evidence."
+  },
+  {
+    "samples": 100000,
+    "bucketed": false,
+    "samplingSeconds": 30,
+    "configuredSamplesPerSecond": 3333.3333333333335,
+    "observedFillOperationsPerSecond": 6555442.656265364,
+    "peakBytes": 2097152,
+    "idleBytes": 2097152,
+    "expireMicroseconds": 1680.1,
+    "bucketSlots": null,
+    "notes": "Backing arrays only; timing diagnostics are separate from BenchmarkDotNet performance evidence."
+  },
+  {
+    "samples": 100000,
+    "bucketed": true,
+    "samplingSeconds": 30,
+    "configuredSamplesPerSecond": 3333.3333333333335,
+    "observedFillOperationsPerSecond": 20390269.763268966,
+    "peakBytes": 1560,
+    "idleBytes": 1560,
+    "expireMicroseconds": 5.3,
+    "bucketSlots": 65,
+    "notes": "Backing arrays only; timing diagnostics are separate from BenchmarkDotNet performance evidence."
+  },
+  {
+    "samples": 1000000,
+    "bucketed": false,
+    "samplingSeconds": 30,
+    "configuredSamplesPerSecond": 33333.333333333336,
+    "observedFillOperationsPerSecond": 40539006.63218148,
+    "peakBytes": 16777216,
+    "idleBytes": 16777216,
+    "expireMicroseconds": 4942.1,
+    "bucketSlots": null,
+    "notes": "Backing arrays only; timing diagnostics are separate from BenchmarkDotNet performance evidence."
+  },
+  {
+    "samples": 1000000,
+    "bucketed": true,
+    "samplingSeconds": 30,
+    "configuredSamplesPerSecond": 33333.333333333336,
+    "observedFillOperationsPerSecond": 21507920.291647397,
+    "peakBytes": 1560,
+    "idleBytes": 1560,
+    "expireMicroseconds": 4.5,
+    "bucketSlots": 65,
+    "notes": "Backing arrays only; timing diagnostics are separate from BenchmarkDotNet performance evidence."
+  }
+]

@@ -38,24 +38,24 @@ false/true; Concurrency 1/8/32; AsyncTransform false/true. 72 configurations.
 Canonical factory definition, sync completed ValueTask и genuinely asynchronous
 transform await path; считать вызовы/checksum независимо от output suppression.
 
-- [ ] Реализовать harness, который drains output concurrently, затем awaits
+- [x] Реализовать harness, который drains output concurrently, затем awaits
   Completion и Dispose. Проверяет received outputs по policy, transformed
   checksum, sink count, final state; не допускает benchmark deadlock.
-- [ ] Для основной матрицы default output policy; representative отдельные
+- [x] Для основной матрицы default output policy; representative отдельные
   EmitAll/EmitFailuresOnly и buffered observer cases. Item p99 собирать отдельным
   instrumented diagnostic run: start at source emission, finish после sink/output
   обработки. Baseline/candidate имеют одинаковую instrumentation; batch p99
   BenchmarkDotNet не использовать как item p99.
-- [ ] Применить тот же harness к merged-F baseline в isolated checkout; зафиксировать
+- [x] Применить тот же harness к merged-F baseline в isolated checkout; зафиксировать
   SHA, host/CPU/OS/runtime/SDK, GC settings, command, raw JSON/CSV. Historical
   SP220/ReleaseHardening numbers не заменяют этот baseline.
-- [ ] Run без Dry как performance evidence; Dry допустим только для wiring smoke.
+- [x] Run без Dry как performance evidence; Dry допустим только для wiring smoke.
 
 ```bash
 dotnet run -c Release --project benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj -- --filter '*RuntimeIoAllocationBenchmarks*' --warmupCount 5 --iterationCount 15 --launchCount 2 --exporters json csv --artifacts artifacts/benchmarks/o1-baseline
 ```
 
-- [ ] Commit benchmark-only harness/evidence, production untouched.
+- [x] Commit benchmark-only harness/evidence, production untouched.
 
 ### Task 2: output policy before allocation
 
@@ -71,21 +71,21 @@ classification, result overload — existing IsSuccess/IsFailure.
 Callers check gate before `new PipelineOutput<TOutput>`; Writer path still
 enforces policy defensively. Success creation остаётся после successful sink.
 
-- [ ] Parameterized policy regression для Success/Failure/Filtered/Skipped,
+- [x] Parameterized policy regression для Success/Failure/Filtered/Skipped,
   sink present/absent, modern OutputPolicy и configured legacy OutputMode.
   Assert emitted counts/results/trace identity; explicit overrides сохраняются.
   Отдельно default(PipelineResult<T>) сохраняет старую classification policy.
-- [ ] `NoObservers_PreservesTelemetryAndSinkFailure`: throwing sink under
+- [x] `NoObservers_PreservesTelemetryAndSinkFailure`: throwing sink under
   suppressed success, metrics/events when configured, no success output,
   correct primary failure. Full output/drop modes сохраняют accounting.
-- [ ] Выполнить correctness characterization (green на baseline); добавить
+- [x] Выполнить correctness characterization (green на baseline); добавить
   missing kind-gate unit tests → compile RED; measured allocation baseline
   Task 1 является evidence существующего overhead.
-- [ ] Implement minimal kind gate + move constructors behind gate. Sink вызывается
+- [x] Implement minimal kind gate + move constructors behind gate. Sink вызывается
   один раз независимо от ShouldEmit; RecordProcessed только после sink success.
-- [ ] Build → focused policy/sink/F4 tests green; candidate benchmark показывает
+- [x] Build → focused policy/sink/F4 tests green; candidate benchmark показывает
   снижение B/item на suppressed-output cases без смены checksum/state.
-- [ ] Commit: `perf(core): gate output allocation before construction`.
+- [x] Commit: `perf(core): gate output allocation before construction`.
 
 ### Task 3: event interest before construction
 
@@ -99,29 +99,29 @@ immutable initial registration count >0. StageExecutor/SinkExecutor получа
 bool observer-interest на run construction. Прямой branch перед `new Event`;
 не создавать capturing event factory delegate на item.
 
-- [ ] Characterization: zero observers with MeterListener/ActivityListener
+- [x] Characterization: zero observers with MeterListener/ActivityListener
   active, success/retry/failure/sink/terminal/drop events. Metrics counters,
   activity status/tags и primary errors одинаковы baseline.
-- [ ] Gate unit compile RED; implement property/branches. Drop accounting,
+- [x] Gate unit compile RED; implement property/branches. Drop accounting,
   StopCallbacks/Flush/Complete/Dispose исполняются независимо от HasObservers;
   observer buffer с нулём registrations не должен давать fake drop metrics.
-- [ ] При initially registered, но removed observers gate остаётся true:
+- [x] При initially registered, но removed observers gate остаётся true:
   preserve dispatcher Emit fault/state behavior, Flush и terminal delivery.
   Не использовать dynamic count, который мог бы скрыть worker fault.
-- [ ] Build → Inline/BufferedReliable/BestEffort semantics и existing observer/
+- [x] Build → Inline/BufferedReliable/BestEffort semantics и existing observer/
   fault suites green; perf no-observer B/item уменьшается, telemetry работает.
-- [ ] Commit: `perf(core): gate domain events when no observers are registered`.
+- [x] Commit: `perf(core): gate domain events when no observers are registered`.
 
 ### Task 4: paired performance acceptance
 
 **Files:** `benchmarks/SmartPipe.Benchmarks/RuntimeIo-results.md`, targeted docs.
 
-- [ ] Same-host paired parent/candidate runs с identical harness/settings;
+- [x] Same-host paired parent/candidate runs с identical harness/settings;
   raw B/item/Gen0/throughput, diagnostic item p99 и semantic checks для 72 cases.
-- [ ] Дополнительные controls: observer dispatch modes, telemetry on/off,
+- [x] Дополнительные controls: observer dispatch modes, telemetry on/off,
   representative failures/filter/skip, LineageMode и I2 enabled/disabled.
-- [ ] Allocation claim отделить от elapsed-time noise. Никакой per-item heap
+- [x] Allocation claim отделить от elapsed-time noise. Никакой per-item heap
   allocation regression при disabled policies; >5% повторённый throughput/p99
   regression за пределами noise требует исправления до acceptance.
-- [ ] All roadmap checks + exact-head CI. Зафиксировать реально полученное
+- [x] All roadmap checks + exact-head CI. Зафиксировать реально полученное
   evidence; если benchmark не выполнялся, не писать estimated GC savings.

@@ -1,6 +1,18 @@
 using BenchmarkDotNet.Running;
 using SmartPipe.Benchmarks;
 
+if (args is ["--runtime-resilience-tail-review", var resilienceTailPath])
+{
+    await RuntimeResilienceControlBenchmarks.WriteDiagnosticsAsync(resilienceTailPath, warmupRuns: 100, repetitions: 9);
+    return;
+}
+
+if (args is ["--runtime-io-tail-review", var tailReviewPath])
+{
+    await RuntimeIoTailReviewReport.WriteAsync(tailReviewPath);
+    return;
+}
+
 if (args is ["--runtime-io-focused-latency", var focusedLatencyPath])
 {
     await RuntimeIoFocusedLatencyReport.WriteAsync(focusedLatencyPath);

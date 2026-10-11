@@ -433,3 +433,35 @@ attempts are not separate adaptive samples. Unexpected processing/sink/output
 exceptions count as failures. An OperationCanceledException with the processing
 token cancelled is shutdown and contributes no sample; the admission lease is
 still released. Adaptive-disabled and sequential behavior remains unchanged.
+
+## Circuit breaker sampling
+
+`CircuitBreakerOptions.SamplingMode` and `CircuitBreakerPolicy.SamplingMode`
+default to `Exact`, including legacy constructors and compatibility-threshold
+stage policies. Exact sampling retains individual samples and includes samples
+whose age equals `SamplingDuration`. Expiry removes the expired prefix under one
+monitor; its retained queue capacity can remain large after an idle period.
+
+Opt-in `Bucketed` sampling uses `SamplingBucketCount` (default 64, valid 2..4096)
+plus one boundary slot. Width is `ceil(window ticks / bucket count)`, at least one
+tick. Sample backing storage is bounded by that count, independent of throughput;
+this bound does not cover component, pipeline or total process memory. Buckets
+use the resolved monotonic clock and lazy cleanup, with no timer or background
+task. A custom clock must not move backwards in this mode.
+
+The oldest partially overlapping bucket is retained. Samples can therefore stay
+for less than one additional bucket width. This is a **time** uncertainty, not a
+failure-ratio bound of `1 / bucket count`: a concentrated failure burst can change
+the ratio substantially and open the breaker earlier than Exact. Applications
+requiring exact threshold decisions should keep the default. EWMA updates and
+synthetic early-warning samples, half-open permits, generation checks and probe
+limits use the same rules in both modes. Reset clears sampling and EWMA history.
+
+## Output and observer allocation gates
+
+The runtime checks output policy before constructing a terminal output record.
+A suppressed success still invokes the sink, and sink failures propagate through
+the usual failure policy. Metrics and activities remain independent of output
+and observer interest. Domain events are constructed only when observers were
+registered at startup. Removing a failing observer does not change that interest
+flag or bypass dispatcher failure, flush, completion and disposal behavior.
