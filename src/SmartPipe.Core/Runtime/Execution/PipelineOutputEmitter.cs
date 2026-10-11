@@ -30,14 +30,20 @@ internal sealed class PipelineOutputEmitter<TOutput>
     }
 
     public bool ShouldEmit(PipelineResult<TOutput> result)
+        => ShouldEmit(result.IsSuccess, result.IsFailure);
+
+    public bool ShouldEmit(PipelineResultKind kind)
+        => ShouldEmit(kind == PipelineResultKind.Success, kind == PipelineResultKind.Failure);
+
+    private bool ShouldEmit(bool isSuccess, bool isFailure)
     {
         if (!_options.UseCompatibilityOutputMode)
         {
             return _options.OutputPolicy switch
             {
                 PipelineOutputPolicy.EmitAll => true,
-                PipelineOutputPolicy.EmitFailuresOnly => result.IsFailure,
-                PipelineOutputPolicy.SuppressSuccessWhenSinkAttached => !_hasSink || !result.IsSuccess,
+                PipelineOutputPolicy.EmitFailuresOnly => isFailure,
+                PipelineOutputPolicy.SuppressSuccessWhenSinkAttached => !_hasSink || !isSuccess,
                 PipelineOutputPolicy.SuppressAllWhenSinkAttached => !_hasSink,
                 _ => throw new InvalidOperationException(
                     $"Unsupported output policy '{_options.OutputPolicy}'."),
@@ -47,7 +53,7 @@ internal sealed class PipelineOutputEmitter<TOutput>
         return _options.OutputMode switch
         {
             PipelineOutputMode.EmitAll => true,
-            PipelineOutputMode.FailuresOnlyWhenSinkAttached => !_hasSink || result.IsFailure,
+            PipelineOutputMode.FailuresOnlyWhenSinkAttached => !_hasSink || isFailure,
             PipelineOutputMode.SuppressWhenSinkAttached => !_hasSink,
             PipelineOutputMode.SuppressAll => false,
             _ => throw new InvalidOperationException(
