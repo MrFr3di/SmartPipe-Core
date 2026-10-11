@@ -1599,9 +1599,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
         await _sinkExecutor.WriteAsync(outputEnvelope, ct).ConfigureAwait(false);
 
-        await _outputEmitter
-            .WriteAsync(new PipelineOutput<TOutput>(outputEnvelope, result), ct)
-            .ConfigureAwait(false);
+        if (_outputEmitter.ShouldEmit(PipelineResultKind.Success))
+            await _outputEmitter
+                .WriteAsync(new PipelineOutput<TOutput>(outputEnvelope, result), ct)
+                .ConfigureAwait(false);
 
         var elapsed = _clock.GetElapsedTime(started, _clock.GetTimestamp());
         _metrics.RecordProcessed(Math.Max(0, elapsed.TotalMilliseconds));
@@ -2259,9 +2260,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                     $"Unsupported non-failure terminal result '{outcome.Kind}'."),
             };
 
-            await _outputEmitter
-                .WriteAsync(new PipelineOutput<TOutput>(null, terminalResult), ct)
-                .ConfigureAwait(false);
+            if (_outputEmitter.ShouldEmit(terminalResult.Kind))
+                await _outputEmitter
+                    .WriteAsync(new PipelineOutput<TOutput>(null, terminalResult), ct)
+                    .ConfigureAwait(false);
             return;
         }
 
@@ -2274,9 +2276,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 outcome.Kind.ToString()
             );
         var result = PipelineResult<TOutput>.Failure(error, outcome.TraceId);
-        await _outputEmitter
-            .WriteAsync(new PipelineOutput<TOutput>(null, result), ct)
-            .ConfigureAwait(false);
+        if (_outputEmitter.ShouldEmit(PipelineResultKind.Failure))
+            await _outputEmitter
+                .WriteAsync(new PipelineOutput<TOutput>(null, result), ct)
+                .ConfigureAwait(false);
     }
 
     private async ValueTask WriteDeadLetterAsync(
