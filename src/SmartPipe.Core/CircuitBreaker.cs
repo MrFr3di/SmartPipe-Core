@@ -332,7 +332,7 @@ public class CircuitBreaker
     private CircuitBreaker(CircuitBreakerOptions options, ICircuitBreakerTimeSource timeSource)
         : this(options.FailureRatio, options.SamplingDuration, options.MinimumThroughput,
             options.BreakDuration, options.MaxHalfOpenRequests, timeSource,
-            options.SamplingMode, options.SamplingBucketCount)
+            (options.SamplingMode, options.SamplingBucketCount))
     {
     }
 
@@ -344,7 +344,7 @@ public class CircuitBreaker
         int maxHalfOpenRequests,
         ICircuitBreakerTimeSource timeSource)
         : this(failureRatio, samplingDuration, minimumThroughput, breakDuration,
-            maxHalfOpenRequests, timeSource, CircuitBreakerSamplingMode.Exact, 64)
+            maxHalfOpenRequests, timeSource, (CircuitBreakerSamplingMode.Exact, 64))
     {
     }
 
@@ -355,8 +355,7 @@ public class CircuitBreaker
         TimeSpan? breakDuration,
         int maxHalfOpenRequests,
         ICircuitBreakerTimeSource timeSource,
-        CircuitBreakerSamplingMode samplingMode,
-        int samplingBucketCount)
+        (CircuitBreakerSamplingMode Mode, int BucketCount) sampling)
     {
         if (double.IsNaN(failureRatio) || failureRatio <= 0 || failureRatio > 1)
             throw new ArgumentOutOfRangeException(
@@ -396,14 +395,19 @@ public class CircuitBreaker
         _breakDuration = resolvedBreakDuration;
         _maxHalfOpenRequests = maxHalfOpenRequests;
         _time = timeSource ?? throw new ArgumentNullException(nameof(timeSource));
+        _samplingWindow = CreateSamplingWindow(_samplingDuration, _time, sampling.Mode, sampling.BucketCount);
+    }
+
+    private static ICircuitBreakerSamplingWindow CreateSamplingWindow(TimeSpan samplingDuration,
+        ICircuitBreakerTimeSource timeSource, CircuitBreakerSamplingMode samplingMode, int samplingBucketCount)
+    {
         if (!Enum.IsDefined(samplingMode))
             throw new ArgumentOutOfRangeException(nameof(samplingMode));
         if (samplingBucketCount is < 2 or > 4096)
             throw new ArgumentOutOfRangeException(nameof(samplingBucketCount));
-        _samplingWindow = samplingMode == CircuitBreakerSamplingMode.Exact
-            ? new ExactCircuitBreakerSamplingWindow(_samplingDuration, _time)
-            : new BucketedCircuitBreakerSamplingWindow(_samplingDuration, samplingBucketCount, _time);
-
+        return samplingMode == CircuitBreakerSamplingMode.Exact
+            ? new ExactCircuitBreakerSamplingWindow(samplingDuration, timeSource)
+            : new BucketedCircuitBreakerSamplingWindow(samplingDuration, samplingBucketCount, timeSource);
     }
 
     /// <summary>Checks if a request is allowed through the circuit.</summary>
