@@ -235,7 +235,8 @@ internal sealed record StageFailureOptionsSnapshot(
                 policy.MaxDelay,
                 policy.Strategy,
                 policy.RetryOn,
-                policy.OnRetry) { Jitter = policy.Jitter };
+                policy.OnRetry)
+            { Jitter = policy.Jitter };
 
     private static TimeoutPolicy? CopyTimeout(TimeoutPolicy? policy) =>
         policy is null
@@ -261,5 +262,7 @@ internal sealed record StageFailureOptionsSnapshot(
                 SamplingDuration = policy.SamplingDuration,
                 MinimumThroughput = policy.MinimumThroughput,
                 MaxHalfOpenRequests = policy.MaxHalfOpenRequests,
+                SamplingMode = policy.SamplingMode,
+                SamplingBucketCount = policy.SamplingBucketCount,
             };
 }
