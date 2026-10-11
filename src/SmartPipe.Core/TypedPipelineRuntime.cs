@@ -752,7 +752,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             StopObserverCallbacksForFaultAsync,
             _retryBudget,
             ExecuteAdmittedStageAttemptAsync,
-            _retryBudget is not null || _timedAdmission is not null ? PrepareStageAttemptAsync : null);
+            _retryBudget is not null || _timedAdmission is not null ? PrepareStageAttemptAsync : null,
+            hasObservers: _spec.Observers.Count > 0);
         _sinkExecutor = new SinkExecutor<TOutput>(
             _sink,
             _spec.PipelineId,
@@ -760,7 +761,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _clock,
             EmitAsync,
             _metrics.RecordSinkDuration,
-            StopObserverCallbacksForFaultAsync);
+            StopObserverCallbacksForFaultAsync,
+            hasObservers: _spec.Observers.Count > 0);
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _observerDispatcher = PipelineObserverDispatcher.Create(
             _spec.Observers,
@@ -1105,15 +1107,16 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         try
         {
             _lifecycle.MarkRunning();
-            await EmitAsync(
-                    new PipelineStartedEvent(
-                        _spec.PipelineId,
-                        _runtime.RunId,
-                        _clock.GetUtcNow()
-                    ),
-                    _processingCts.Token
-                )
-                .ConfigureAwait(false);
+            if (_observerDispatcher.HasObservers)
+                await EmitAsync(
+                        new PipelineStartedEvent(
+                            _spec.PipelineId,
+                            _runtime.RunId,
+                            _clock.GetUtcNow()
+                        ),
+                        _processingCts.Token
+                    )
+                    .ConfigureAwait(false);
             _startupSignal?.TrySetResult();
 
             if (_options.EffectiveMaxConcurrency == 1)
@@ -1342,6 +1345,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
     private ValueTask EmitTerminalEventAsync(TerminalOutcome outcome)
     {
+        if (!_observerDispatcher.HasObservers) return ValueTask.CompletedTask;
         var now = _clock.GetUtcNow();
         PipelineEvent pipelineEvent = outcome.State switch
         {
@@ -1548,7 +1552,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private void OnInputDropped(ProcessingEnvelope<TInput> envelope)
     {
         _metrics.RecordItemDropped();
-        EmitEventFireAndForget(new InputDroppedEvent(
+        if (_observerDispatcher.HasObservers)
+            EmitEventFireAndForget(new InputDroppedEvent(
             _spec.PipelineId,
             _runtime.RunId,
             envelope.TraceId,
@@ -1558,7 +1563,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private void OnOutputDropped(PipelineOutput<TOutput> output)
     {
         _metrics.RecordOutputDropped();
-        EmitEventFireAndForget(new OutputDroppedEvent(
+        if (_observerDispatcher.HasObservers)
+            EmitEventFireAndForget(new OutputDroppedEvent(
             _spec.PipelineId,
             _runtime.RunId,
             output.Result.TraceId,
@@ -1678,20 +1684,21 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     )
     {
         _metrics.RecordRetry();
-        await EmitAsync(
-                new RetryScheduledEvent(
-                    _spec.PipelineId,
-                    _runtime.RunId,
-                    outcome.TraceId,
-                    stage.StageId,
-                    retryAttempt,
-                    _clock.GetUtcNow(),
-                    delay,
-                    error
-                ),
-                ct
-            )
-            .ConfigureAwait(false);
+        if (_observerDispatcher.HasObservers)
+            await EmitAsync(
+                    new RetryScheduledEvent(
+                        _spec.PipelineId,
+                        _runtime.RunId,
+                        outcome.TraceId,
+                        stage.StageId,
+                        retryAttempt,
+                        _clock.GetUtcNow(),
+                        delay,
+                        error
+                    ),
+                    ct
+                )
+                .ConfigureAwait(false);
     }
 
     private async ValueTask EmitRetryExhaustedAsync(
@@ -1701,19 +1708,20 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         CancellationToken ct
     )
     {
-        await EmitAsync(
-                new RetryExhaustedEvent(
-                    _spec.PipelineId,
-                    _runtime.RunId,
-                    outcome.TraceId,
-                    stage.StageId,
-                    outcome.Attempt,
-                    _clock.GetUtcNow(),
-                    error
-                ),
-                ct
-            )
-            .ConfigureAwait(false);
+        if (_observerDispatcher.HasObservers)
+            await EmitAsync(
+                    new RetryExhaustedEvent(
+                        _spec.PipelineId,
+                        _runtime.RunId,
+                        outcome.TraceId,
+                        stage.StageId,
+                        outcome.Attempt,
+                        _clock.GetUtcNow(),
+                        error
+                    ),
+                    ct
+                )
+                .ConfigureAwait(false);
     }
 
     private async ValueTask<AttemptAdmissionResult> PrepareStageAttemptAsync(
@@ -2304,19 +2312,20 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         }
 
         _metrics.RecordDeadLetter();
-        await EmitAsync(
-                new DeadLetterWrittenEvent(
-                    _spec.PipelineId,
-                    _runtime.RunId,
-                    deadLetter.TraceId,
-                    deadLetter.StageId,
-                    deadLetter.StageName,
-                    deadLetter.Attempt,
-                    _clock.GetUtcNow()
-                ),
-                ct
-            )
-            .ConfigureAwait(false);
+        if (_observerDispatcher.HasObservers)
+            await EmitAsync(
+                    new DeadLetterWrittenEvent(
+                        _spec.PipelineId,
+                        _runtime.RunId,
+                        deadLetter.TraceId,
+                        deadLetter.StageId,
+                        deadLetter.StageName,
+                        deadLetter.Attempt,
+                        _clock.GetUtcNow()
+                    ),
+                    ct
+                )
+                .ConfigureAwait(false);
     }
 
     private async ValueTask StopObserverCallbacksForFaultAsync()
