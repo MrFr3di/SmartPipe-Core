@@ -119,10 +119,7 @@ public sealed class CircuitBreakerPolicy
 
     internal void Validate()
     {
-        if (!Enum.IsDefined(SamplingMode))
-            throw new ArgumentOutOfRangeException(nameof(SamplingMode));
-        if (SamplingBucketCount is < 2 or > 4096)
-            throw new ArgumentOutOfRangeException(nameof(SamplingBucketCount));
+        ValidateSampling(SamplingMode, SamplingBucketCount);
 
         if (FailureThreshold <= 0)
             throw new ArgumentOutOfRangeException(nameof(FailureThreshold), FailureThreshold, "Failure threshold must be greater than zero.");
@@ -145,6 +142,12 @@ public sealed class CircuitBreakerPolicy
         if (MaxHalfOpenRequests <= 0)
             throw new ArgumentOutOfRangeException(nameof(MaxHalfOpenRequests), MaxHalfOpenRequests, "Maximum half-open requests must be greater than zero.");
     }
+    private static void ValidateSampling(CircuitBreakerSamplingMode samplingMode, int samplingBucketCount)
+    {
+        if (!Enum.IsDefined(samplingMode)) throw new ArgumentOutOfRangeException(nameof(samplingMode));
+        if (samplingBucketCount is < 2 or > 4096) throw new ArgumentOutOfRangeException(nameof(samplingBucketCount));
+    }
+
 }
 
 /// <summary>Configures retry, timeout, circuit breaker, and terminal failure behavior for a stage.</summary>
