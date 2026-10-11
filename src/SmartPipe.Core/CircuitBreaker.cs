@@ -64,6 +64,15 @@ internal sealed class TimeProviderCircuitBreakerTimeSource : ICircuitBreakerTime
         _timeProvider.GetElapsedTime(startingTimestamp, endingTimestamp);
 }
 
+/// <summary>Selects the circuit breaker sampling history representation.</summary>
+public enum CircuitBreakerSamplingMode
+{
+    /// <summary>Retains individual samples with exact inclusive window expiry.</summary>
+    Exact = 0,
+    /// <summary>Retains bounded time buckets, including the oldest partially overlapping bucket.</summary>
+    Bucketed = 1,
+}
+
 /// <summary>Configuration for a <see cref="CircuitBreaker" />.</summary>
 public sealed record CircuitBreakerOptions
 {
@@ -81,6 +90,13 @@ public sealed record CircuitBreakerOptions
 
     /// <summary>Gets the maximum number of concurrent half-open probes.</summary>
     public int MaxHalfOpenRequests { get; init; } = 3;
+
+    /// <summary>Gets the sampling representation. Exact is the default.</summary>
+    public CircuitBreakerSamplingMode SamplingMode { get; init; } = CircuitBreakerSamplingMode.Exact;
+
+    /// <summary>Gets the bucket count, between 2 and 4096. Bucketed mode allocates one additional boundary slot.</summary>
+    public int SamplingBucketCount { get; init; } = 64;
+
 }
 
 /// <summary>
@@ -111,12 +127,7 @@ public class CircuitBreaker
 
     // Hybrid: EWMA for early warning + Sliding window for decisions
     private double _ewmaFailureRate;
-    // Every window access happens under _windowGate, so a plain queue suffices. Samples are stamped
-    // inside the gate to keep FIFO order equal to time order, which expiry relies on, and the failure
-    // count is maintained incrementally so threshold evaluation never scans the window.
-    private readonly Queue<(long Timestamp, bool IsSuccess)> _window = new();
-    private readonly object _windowGate = new();
-    private int _windowFailures;
+    private readonly ICircuitBreakerSamplingWindow _samplingWindow;
 
     /// <summary>Gets the current circuit state.</summary>
     public CircuitState State => Volatile.Read(ref _snapshot).State;
@@ -244,11 +255,7 @@ public class CircuitBreaker
 #pragma warning disable RS0027 // Intentional single options-based overload approved before release.
     public CircuitBreaker(CircuitBreakerOptions options, TimeProvider timeProvider)
         : this(
-            (options ?? throw new ArgumentNullException(nameof(options))).FailureRatio,
-            options.SamplingDuration,
-            options.MinimumThroughput,
-            options.BreakDuration,
-            options.MaxHalfOpenRequests,
+            options ?? throw new ArgumentNullException(nameof(options)),
             new TimeProviderCircuitBreakerTimeSource(timeProvider ?? throw new ArgumentNullException(nameof(timeProvider))))
     {
     }
@@ -319,6 +326,16 @@ public class CircuitBreaker
     {
     }
 
+    internal static CircuitBreaker CreateForTimeSource(CircuitBreakerOptions options, ICircuitBreakerTimeSource timeSource) =>
+        new(options, timeSource);
+
+    private CircuitBreaker(CircuitBreakerOptions options, ICircuitBreakerTimeSource timeSource)
+        : this(options.FailureRatio, options.SamplingDuration, options.MinimumThroughput,
+            options.BreakDuration, options.MaxHalfOpenRequests, timeSource,
+            options.SamplingMode, options.SamplingBucketCount)
+    {
+    }
+
     internal CircuitBreaker(
         double failureRatio,
         TimeSpan? samplingDuration,
@@ -326,6 +343,20 @@ public class CircuitBreaker
         TimeSpan? breakDuration,
         int maxHalfOpenRequests,
         ICircuitBreakerTimeSource timeSource)
+        : this(failureRatio, samplingDuration, minimumThroughput, breakDuration,
+            maxHalfOpenRequests, timeSource, CircuitBreakerSamplingMode.Exact, 64)
+    {
+    }
+
+    private CircuitBreaker(
+        double failureRatio,
+        TimeSpan? samplingDuration,
+        int minimumThroughput,
+        TimeSpan? breakDuration,
+        int maxHalfOpenRequests,
+        ICircuitBreakerTimeSource timeSource,
+        CircuitBreakerSamplingMode samplingMode,
+        int samplingBucketCount)
     {
         if (double.IsNaN(failureRatio) || failureRatio <= 0 || failureRatio > 1)
             throw new ArgumentOutOfRangeException(
@@ -365,6 +396,14 @@ public class CircuitBreaker
         _breakDuration = resolvedBreakDuration;
         _maxHalfOpenRequests = maxHalfOpenRequests;
         _time = timeSource ?? throw new ArgumentNullException(nameof(timeSource));
+        if (!Enum.IsDefined(samplingMode))
+            throw new ArgumentOutOfRangeException(nameof(samplingMode));
+        if (samplingBucketCount is < 2 or > 4096)
+            throw new ArgumentOutOfRangeException(nameof(samplingBucketCount));
+        _samplingWindow = samplingMode == CircuitBreakerSamplingMode.Exact
+            ? new ExactCircuitBreakerSamplingWindow(_samplingDuration, _time)
+            : new BucketedCircuitBreakerSamplingWindow(_samplingDuration, samplingBucketCount, _time);
+
     }
 
     /// <summary>Checks if a request is allowed through the circuit.</summary>
@@ -605,11 +644,7 @@ public class CircuitBreaker
     /// <summary>Resets the circuit to Closed state and clears history.</summary>
     public void Reset()
     {
-        lock (_windowGate)
-        {
-            _window.Clear();
-            _windowFailures = 0;
-        }
+        _samplingWindow.Reset();
 
         Interlocked.Exchange(ref _ewmaFailureRate, 0.0);
         UpdateSnapshot(current => current with
@@ -655,43 +690,11 @@ public class CircuitBreaker
         return dict;
     }
 
-    private void CleanupWindow()
-    {
-        var now = _time.GetTimestamp();
+    private void CleanupWindow() => _samplingWindow.ExpireAndGetStatistics();
 
-        lock (_windowGate)
-        {
-            while (_window.TryPeek(out var candidate)
-                && _time.GetElapsedTime(candidate.Timestamp, now) > _samplingDuration)
-            {
-                // A custom time source can reenter cleanup while this monitor
-                // is held. Verify the head after the user clock call as well.
-                if (!_window.TryPeek(out var current) || current != candidate)
-                    continue;
-                _ = _window.Dequeue();
-                if (!candidate.IsSuccess)
-                    _windowFailures--;
-            }
-        }
-    }
+    private void EnqueueWindowSample(bool isSuccess) => _samplingWindow.AddSample(isSuccess);
 
-    private void EnqueueWindowSample(bool isSuccess)
-    {
-        lock (_windowGate)
-        {
-            _window.Enqueue((_time.GetTimestamp(), isSuccess));
-            if (!isSuccess)
-                _windowFailures++;
-        }
-    }
-
-    private WindowStatistics GetWindowStatistics()
-    {
-        lock (_windowGate)
-            return new WindowStatistics(_window.Count, _windowFailures);
-    }
-
-    private readonly record struct WindowStatistics(int Total, int Failures);
+    private CircuitWindowStatistics GetWindowStatistics() => _samplingWindow.GetStatistics();
 
     private bool IsCurrentHalfOpenGeneration(int generation) =>
         Volatile.Read(ref _snapshot) is { State: CircuitState.HalfOpen } snapshot

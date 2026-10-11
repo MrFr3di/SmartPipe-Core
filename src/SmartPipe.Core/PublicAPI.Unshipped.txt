@@ -1,4 +1,15 @@
 #nullable enable
+SmartPipe.Core.CircuitBreakerOptions.SamplingBucketCount.get -> int
+SmartPipe.Core.CircuitBreakerOptions.SamplingBucketCount.init -> void
+SmartPipe.Core.CircuitBreakerOptions.SamplingMode.get -> SmartPipe.Core.CircuitBreakerSamplingMode
+SmartPipe.Core.CircuitBreakerOptions.SamplingMode.init -> void
+SmartPipe.Core.CircuitBreakerPolicy.SamplingBucketCount.get -> int
+SmartPipe.Core.CircuitBreakerPolicy.SamplingBucketCount.init -> void
+SmartPipe.Core.CircuitBreakerPolicy.SamplingMode.get -> SmartPipe.Core.CircuitBreakerSamplingMode
+SmartPipe.Core.CircuitBreakerPolicy.SamplingMode.init -> void
+SmartPipe.Core.CircuitBreakerSamplingMode
+SmartPipe.Core.CircuitBreakerSamplingMode.Bucketed = 1 -> SmartPipe.Core.CircuitBreakerSamplingMode
+SmartPipe.Core.CircuitBreakerSamplingMode.Exact = 0 -> SmartPipe.Core.CircuitBreakerSamplingMode
 SmartPipe.Core.PipelineRuntimeOptions.RetryBudget.get -> SmartPipe.Core.RetryBudgetOptions?
 SmartPipe.Core.PipelineRuntimeOptions.RetryBudget.init -> void
 SmartPipe.Core.PipelineRuntimeOptions.TimedAttemptAdmission.get -> SmartPipe.Core.TimedAttemptAdmissionOptions?
