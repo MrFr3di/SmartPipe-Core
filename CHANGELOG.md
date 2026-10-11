@@ -4,6 +4,9 @@
 
 ### Servicing and hardening
 
+- Extract ordinary processing supervision while preserving producer error precedence, worker joining and late-attempt ownership.
+- Add opt-in shared run retry budgets, full retry jitter and admission limits covering active and detached timed executions. Defaults remain unlimited admission and deterministic retry delays.
+
 - Seal the public API surface shipped in 2.2.0 and use published 2.2.0 packages as the Package Validation baseline for 2.2.1 servicing.
 - Harden release engineering, post-release documentation, dependency automation, and sensitive logging without expanding the public API.
 - Stop the legacy Dapper source completion log from emitting raw SQL text at Information level.
