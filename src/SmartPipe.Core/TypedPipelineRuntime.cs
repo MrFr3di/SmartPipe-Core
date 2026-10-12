@@ -1458,46 +1458,16 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             _options.InputFullMode,
             OnInputDropped);
         Volatile.Write(ref _inputReader, input.Reader);
-        using var workerStop = CancellationTokenSource.CreateLinkedTokenSource(processingToken);
-        var stopErrors = new ConcurrentQueue<Exception>();
-        Exception? workerFailure = null;
-        object workerFailureGate = new();
-
-        void RequestCancellation(CancellationTokenSource cancellation)
+        using var supervisor = new PipelineProcessingSupervisor(processingToken, () =>
         {
-            try
-            {
-                cancellation.Cancel();
-            }
-            catch (Exception ex)
-            {
-                // User cancellation callbacks must not bypass the worker join.
-                stopErrors.Enqueue(ex);
-            }
-        }
-
-        void RecordWorkerFailure(Exception ex)
-        {
-            lock (workerFailureGate)
-                workerFailure ??= ex;
-
-            // Stop siblings, including workers waiting for bounded output capacity.
-            // This is an internal fault stop, not a public cancellation request.
             RecordSourceStopReason(SourceStopReason.WorkerFailure);
-            RequestCancellation(_sourceCts);
-            RequestCancellation(workerStop);
-        }
-
-        bool HasWorkerFailure()
-        {
-            lock (workerFailureGate)
-                return workerFailure is not null;
-        }
+            _sourceCts.Cancel();
+        });
 
         var workers = Enumerable
             .Range(0, _options.EffectiveMaxConcurrency)
             .Select(_ => Task.Run(
-                () => _worker.RunAsync(input.Reader, input.Writer, RecordWorkerFailure, workerStop.Token),
+                () => _worker.RunAsync(input.Reader, input.Writer, supervisor.ReportWorkerFailure, supervisor.WorkerToken),
                 CancellationToken.None
             ))
             .ToArray();
@@ -1524,50 +1494,22 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
                     _cts.Token.ThrowIfCancellationRequested();
                 }
-                catch (ChannelClosedException) when (HasWorkerFailure())
+                catch (ChannelClosedException) when (supervisor.HasWorkerFailure)
                 {
                 }
             }
             catch (Exception ex)
             {
                 primary = ExceptionDispatchInfo.Capture(ex);
-                RequestCancellation(workerStop);
+                supervisor.RequestStop();
             }
             finally
             {
                 input.Writer.TryComplete();
             }
 
-            // Cancellation stops waiting operations; only joining proves that
-            // ordinary workers no longer use runtime-owned components.
-            var allWorkers = Task.WhenAll(workers);
-            try
-            {
-                await allWorkers.ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                // Await surfaces one exception. Collect the full aggregate below.
-                primary ??= ExceptionDispatchInfo.Capture(workerFailure ?? ex);
-            }
-
-            var errors = stopErrors.ToList();
-            if (allWorkers.Exception is { } workerErrors)
-            {
-                foreach (var error in workerErrors.InnerExceptions)
-                {
-                    if (ReferenceEquals(error, primary?.SourceException))
-                        continue;
-                    if (error is OperationCanceledException cancellation
-                        && workerStop.IsCancellationRequested
-                        && cancellation.CancellationToken == workerStop.Token)
-                        continue;
-
-                    errors.Add(error);
-                }
-            }
-
-            RuntimeCleanup.ThrowCombined(primary, errors);
+            var joined = await supervisor.JoinAsync(workers, primary).ConfigureAwait(false);
+            RuntimeCleanup.ThrowCombined(joined.PrimaryError, joined.SecondaryErrors);
         }
         finally
         {
