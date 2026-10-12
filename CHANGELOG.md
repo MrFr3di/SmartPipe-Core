@@ -27,11 +27,11 @@ SmartPipe 2.2.1 is a synchronized servicing update for the 20-package 2.2.0 rele
 
 ### Performance evidence
 
-- Allocation and sampling changes were validated in controlled .NET 10 measurements. Results depend on workload and environment; no universal throughput, latency or p99 improvement is claimed. See [runtime I/O measurements](benchmarks/SmartPipe.Benchmarks/RuntimeIo-results.md) and [circuit-breaker sampling measurements](benchmarks/SmartPipe.Benchmarks/CircuitBreakerSampling-results.md).
+- Allocation and sampling changes were validated in controlled .NET 10 measurements. Results depend on workload and environment; no universal throughput, latency or p99 improvement is claimed. See [runtime I/O measurements](https://github.com/MrFr3di/SmartPipe-Core/blob/main/benchmarks/SmartPipe.Benchmarks/RuntimeIo-results.md) and [circuit-breaker sampling measurements](https://github.com/MrFr3di/SmartPipe-Core/blob/main/benchmarks/SmartPipe.Benchmarks/CircuitBreakerSampling-results.md).
 
 ### Upgrade notes
 
-- Update all referenced SmartPipe NuGet packages together to 2.2.1. Existing policy defaults remain unchanged; new resilience controls require explicit opt-in. See the [2.2.0 → 2.2.1 guide](docs/migration/2.2.1-integration-packages.md) and [compatibility contract](docs/reference/compatibility/2.2.0-to-2.2.1.md).
+- Update all referenced SmartPipe NuGet packages together to 2.2.1. Existing policy defaults remain unchanged; new resilience controls require explicit opt-in. See the [2.2.0 → 2.2.1 guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.1-integration-packages.md) and [compatibility contract](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/reference/compatibility/2.2.0-to-2.2.1.md).
 
 ## [2.2.0] - 2026-10-04
 

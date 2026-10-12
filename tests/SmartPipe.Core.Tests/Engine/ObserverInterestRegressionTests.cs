@@ -18,6 +18,7 @@ public sealed class ObserverInterestRegressionTests
     {
         var pipelineId = "observer-interest-" + Guid.NewGuid().ToString("N");
         var stopped = new System.Collections.Concurrent.ConcurrentQueue<Activity>();
+        var pipelineActivityStopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var measurements = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var activityListener = new ActivityListener
         {
@@ -25,7 +26,12 @@ public sealed class ObserverInterestRegressionTests
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
             ActivityStopped = activity =>
             {
-                if (Equals(activity.GetTagItem("smartpipe.pipeline_id"), pipelineId)) stopped.Enqueue(activity);
+                if (Equals(activity.GetTagItem("smartpipe.pipeline_id"), pipelineId))
+                {
+                    stopped.Enqueue(activity);
+                    if (activity.OperationName == "Pipeline.Run")
+                        pipelineActivityStopped.TrySetResult();
+                }
             },
         };
         ActivitySource.AddActivityListener(activityListener);
@@ -60,6 +66,9 @@ public sealed class ObserverInterestRegressionTests
             Assert.Equal(0, run.Metrics.ObserverEventsDropped);
             Assert.DoesNotContain("smartpipe.observer.events.dropped", measurements);
             Assert.Equal(!sinkFails, measurements.Contains("smartpipe.items.processed"));
+            // Completion is published before RunCoreAsync disposes its outer Activity.
+            // Wait for ActivityStopped rather than racing the final diagnostic callback.
+            await pipelineActivityStopped.Task.WaitAsync(TimeSpan.FromSeconds(10));
             Assert.Contains(stopped, activity => activity.OperationName == "Transform");
             Assert.Contains(stopped, activity => activity.OperationName == "Pipeline.Run"
                 && activity.Status == (sinkFails ? ActivityStatusCode.Error : ActivityStatusCode.Ok));
