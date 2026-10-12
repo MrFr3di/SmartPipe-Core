@@ -5,6 +5,7 @@ namespace SmartPipe.Core;
 internal sealed class SinkExecutor<TOutput> : IDisposable
 {
     private readonly Func<ValueTask> _stopCallbacksOnFaultAsync;
+    public bool HasObservers { private get; init; } = true;
     private readonly IPipelineSink<TOutput>? _sink;
     private readonly string _pipelineId;
     private readonly string _runId;
@@ -43,17 +44,18 @@ internal sealed class SinkExecutor<TOutput> : IDisposable
         await _writeGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await _emitAsync(
-                    new SinkWriteStartedEvent(
-                        _pipelineId,
-                        _runId,
-                        outputEnvelope.TraceId,
-                        outputEnvelope.Attempt,
-                        _clock.GetUtcNow()
-                    ),
-                    ct
-                )
-                .ConfigureAwait(false);
+            if (HasObservers)
+                await _emitAsync(
+                        new SinkWriteStartedEvent(
+                            _pipelineId,
+                            _runId,
+                            outputEnvelope.TraceId,
+                            outputEnvelope.Attempt,
+                            _clock.GetUtcNow()
+                        ),
+                        ct
+                    )
+                    .ConfigureAwait(false);
 
             try
             {
@@ -65,18 +67,19 @@ internal sealed class SinkExecutor<TOutput> : IDisposable
             catch (Exception ex)
             {
                 await _stopCallbacksOnFaultAsync().ConfigureAwait(false);
-                await _emitAsync(
-                        new SinkWriteFailedEvent(
-                            _pipelineId,
-                            _runId,
-                            outputEnvelope.TraceId,
-                            outputEnvelope.Attempt,
-                            _clock.GetUtcNow(),
-                            ex
-                        ),
-                        ct
-                    )
-                    .ConfigureAwait(false);
+                if (HasObservers)
+                    await _emitAsync(
+                            new SinkWriteFailedEvent(
+                                _pipelineId,
+                                _runId,
+                                outputEnvelope.TraceId,
+                                outputEnvelope.Attempt,
+                                _clock.GetUtcNow(),
+                                ex
+                            ),
+                            ct
+                        )
+                        .ConfigureAwait(false);
                 throw;
             }
         }

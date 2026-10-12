@@ -7,6 +7,7 @@ namespace SmartPipe.Core;
 
 internal interface IPipelineObserverDispatcher : IAsyncDisposable
 {
+    bool HasObservers { get; }
     ValueTask EmitAsync(PipelineEvent pipelineEvent, CancellationToken ct);
 
     ValueTask StopCallbacksAsync();
@@ -70,6 +71,7 @@ internal static class PipelineObserverDispatcher
 
 internal sealed class InlinePipelineObserverDispatcher : IPipelineObserverDispatcher
 {
+    public bool HasObservers => _observers.Length > 0;
     private readonly ActiveObserverRegistration[] _observers;
     private readonly ObserverDispatchOptions _options;
     private readonly IPipelineClock _clock;
@@ -170,6 +172,7 @@ internal sealed class InlinePipelineObserverDispatcher : IPipelineObserverDispat
 
 internal sealed class BufferedPipelineObserverDispatcher : IPipelineObserverDispatcher
 {
+    public bool HasObservers => _observers.Length > 0;
     private readonly ActiveObserverRegistration[] _observers;
     private readonly ObserverDispatchOptions _options;
     private readonly IPipelineClock _clock;
