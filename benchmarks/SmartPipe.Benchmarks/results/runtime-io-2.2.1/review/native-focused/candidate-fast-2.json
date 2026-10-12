@@ -1,0 +1,57 @@
+{
+  "framework": ".NET 10.0.12",
+  "warmupRuns": 100,
+  "stages": 1,
+  "observers": 1,
+  "hasSink": true,
+  "concurrency": 1,
+  "asyncTransform": false,
+  "measurement": "Individual source-to-sink p99; nine repetitions after 100 full warmup runs",
+  "rows": [
+    {
+      "repetition": 0,
+      "count": 10000,
+      "itemP99Microseconds": 1.7630000000000001
+    },
+    {
+      "repetition": 1,
+      "count": 10000,
+      "itemP99Microseconds": 1.712
+    },
+    {
+      "repetition": 2,
+      "count": 10000,
+      "itemP99Microseconds": 1.712
+    },
+    {
+      "repetition": 3,
+      "count": 10000,
+      "itemP99Microseconds": 1.722
+    },
+    {
+      "repetition": 4,
+      "count": 10000,
+      "itemP99Microseconds": 1.852
+    },
+    {
+      "repetition": 5,
+      "count": 10000,
+      "itemP99Microseconds": 1.572
+    },
+    {
+      "repetition": 6,
+      "count": 10000,
+      "itemP99Microseconds": 1.873
+    },
+    {
+      "repetition": 7,
+      "count": 10000,
+      "itemP99Microseconds": 1.7730000000000001
+    },
+    {
+      "repetition": 8,
+      "count": 10000,
+      "itemP99Microseconds": 1.6320000000000001
+    }
+  ]
+}

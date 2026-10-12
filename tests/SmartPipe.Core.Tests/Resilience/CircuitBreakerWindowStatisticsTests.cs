@@ -1,4 +1,3 @@
-using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using SmartPipe.Core;
@@ -90,11 +89,34 @@ public sealed class CircuitBreakerWindowStatisticsTests
         time.ReleaseFirstRead();
         await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
 
-        var window = (Queue<(long Timestamp, bool IsSuccess)>)typeof(CircuitBreaker)
-            .GetField("_window", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(breaker)!;
-        window.Select(sample => sample.Timestamp).Should().BeInAscendingOrder();
         breaker.GetCurrentFailureRatio().Should().Be(0.5);
+        time.Now = 1200;
+        breaker.GetCurrentFailureRatio().Should().Be(0, "the earlier failure expires and the later success remains at the inclusive boundary");
+    }
+
+    [Fact]
+    public void LargeExpiredPrefix_PreservesFreshMixedSamplesAndInclusiveBoundary()
+    {
+        var time = new FakeTimeProvider();
+        var breaker = new CircuitBreaker(new CircuitBreakerOptions
+        {
+            FailureRatio = 1,
+            SamplingDuration = TimeSpan.FromSeconds(30),
+            MinimumThroughput = int.MaxValue,
+        }, time);
+        for (var i = 0; i < 100_000; i++) breaker.RecordSuccess();
+        time.Advance(TimeSpan.FromSeconds(30));
+        Assert.Equal(0, breaker.GetCurrentFailureRatio());
+        time.Advance(TimeSpan.FromTicks(1));
+        for (var i = 0; i < 11; i++) breaker.RecordFailure();
+        for (var i = 0; i < 26; i++) breaker.RecordSuccess();
+        Assert.Equal(11d / 37, breaker.GetCurrentFailureRatio(), precision: 12);
+        time.Advance(TimeSpan.FromSeconds(30));
+        Assert.Equal(11d / 37, breaker.GetCurrentFailureRatio(), precision: 12);
+        time.Advance(TimeSpan.FromTicks(1));
+        Assert.Equal(0, breaker.GetCurrentFailureRatio());
+        breaker.Reset();
+        Assert.Equal(0, breaker.GetCurrentFailureRatio());
     }
 
     private sealed class GatedFirstReadTimeSource(long firstTimestamp, long laterTimestamp) : ICircuitBreakerTimeSource
@@ -105,12 +127,14 @@ public sealed class CircuitBreakerWindowStatisticsTests
         public TaskCompletionSource FirstReadStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public DateTime UtcNow => new(laterTimestamp, DateTimeKind.Utc);
+        public long Now { get; set; } = laterTimestamp;
+
+        public DateTime UtcNow => new(Now, DateTimeKind.Utc);
 
         public long GetTimestamp()
         {
             if (Interlocked.Increment(ref _reads) != 1)
-                return laterTimestamp;
+                return Now;
 
             FirstReadStarted.TrySetResult();
             _release.Wait(TimeSpan.FromSeconds(10));

@@ -740,239 +740,91 @@ public class CircuitBreakerTests
     [Trait("Category", "ConcurrencyRegression")]
     public void CircuitBreaker_RatioMode_CleanupWindow_ShouldNotReorderSamples()
     {
-        var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
-        var clock = new ManualClock(now);
-        var cb = new CircuitBreaker(samplingDuration: TimeSpan.FromMinutes(1), clock: clock);
-        var window = GetWindow(cb);
-        var first = (now.AddSeconds(-10).Ticks, true);
-        var second = (now.AddSeconds(-5).Ticks, false);
-        window.Enqueue(first);
-        window.Enqueue(second);
-
-        InvokeCleanupWindow(cb);
-
-        window.ToArray().Should().Equal(first, second);
+        var clock = new ManualClock(DateTime.UnixEpoch);
+        var window = new ExactCircuitBreakerSamplingWindow(TimeSpan.FromSeconds(60), new ClockCircuitBreakerTimeSource(clock));
+        window.AddSample(true);
+        clock.UtcNow = clock.UtcNow.AddSeconds(5);
+        window.AddSample(false);
+        window.ExpireAndGetStatistics().Should().Be(new CircuitWindowStatistics(2, 1));
+        clock.UtcNow = clock.UtcNow.AddSeconds(56);
+        window.ExpireAndGetStatistics().Should().Be(new CircuitWindowStatistics(1, 1));
     }
 
     [Fact]
     public void CircuitBreaker_RatioMode_ShouldRemoveExpiredSamples()
     {
-        var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
-        var clock = new ManualClock(now);
-        var cb = new CircuitBreaker(samplingDuration: TimeSpan.FromMinutes(1), clock: clock);
-        var window = GetWindow(cb);
-        var expired = (now.AddMinutes(-2).Ticks, false);
-        var current = (now.AddSeconds(-5).Ticks, true);
-        window.Enqueue(expired);
-        window.Enqueue(current);
-
-        InvokeCleanupWindow(cb);
-
-        window.ToArray().Should().Equal(current);
+        var clock = new ManualClock(DateTime.UnixEpoch);
+        var window = new ExactCircuitBreakerSamplingWindow(TimeSpan.FromSeconds(60), new ClockCircuitBreakerTimeSource(clock));
+        window.AddSample(false);
+        clock.UtcNow = clock.UtcNow.AddSeconds(115);
+        window.AddSample(true);
+        clock.UtcNow = clock.UtcNow.AddSeconds(5);
+        window.ExpireAndGetStatistics().Should().Be(new CircuitWindowStatistics(1, 0));
     }
 
     [Fact]
     public void CircuitBreaker_RatioMode_ShouldNotKeepExpiredSamplesBehindNewerItems()
     {
-        var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
-        var clock = new ManualClock(now);
-        var cb = new CircuitBreaker(samplingDuration: TimeSpan.FromMinutes(1), clock: clock);
-        var window = GetWindow(cb);
-        var expired1 = (now.AddMinutes(-2).Ticks, false);
-        var expired2 = (now.AddMinutes(-3).Ticks, false);
-        var current1 = (now.AddSeconds(-10).Ticks, true);
-        var current2 = (now.AddSeconds(-5).Ticks, true);
-        window.Enqueue(expired1);
-        window.Enqueue(expired2);
-        window.Enqueue(current1);
-        window.Enqueue(current2);
-
-        InvokeCleanupWindow(cb);
-
-        window.ToArray().Should().Equal(current1, current2);
+        var clock = new ManualClock(DateTime.UnixEpoch);
+        var window = new ExactCircuitBreakerSamplingWindow(TimeSpan.FromSeconds(60), new ClockCircuitBreakerTimeSource(clock));
+        window.AddSample(false);
+        clock.UtcNow = clock.UtcNow.AddSeconds(60);
+        window.AddSample(false);
+        clock.UtcNow = clock.UtcNow.AddSeconds(110);
+        window.AddSample(true);
+        clock.UtcNow = clock.UtcNow.AddSeconds(5);
+        window.AddSample(true);
+        clock.UtcNow = clock.UtcNow.AddSeconds(5);
+        window.ExpireAndGetStatistics().Should().Be(new CircuitWindowStatistics(2, 0));
     }
 
     [Fact]
     [Trait("Category", "ConcurrencyRegression")]
     public void CircuitBreaker_CleanupWindow_InterleavedExpiredHead_DoesNotRemoveFreshSample()
     {
-        var now = new DateTime(2026, 6, 3, 10, 0, 0, DateTimeKind.Utc);
-        var timeSource = new ReentrantCleanupTimeSource(now.Ticks);
-        var cb = new CircuitBreaker(
-            failureRatio: 0.5,
-            samplingDuration: TimeSpan.FromMinutes(1),
-            minimumThroughput: 1,
-            breakDuration: TimeSpan.FromSeconds(30),
-            maxHalfOpenRequests: 1,
-            timeSource);
-        timeSource.Attach(cb);
-        var window = GetWindow(cb);
-        var expired = (now.AddMinutes(-2).Ticks, false);
-        var fresh = (now.AddSeconds(-5).Ticks, true);
-        window.Enqueue(expired);
-        window.Enqueue(fresh);
-
-        InvokeCleanupWindow(cb);
-
-        window.ToArray().Should().Equal(fresh);
-    }
-
-    private readonly ITestOutputHelper _output;
-
-    public CircuitBreakerTests(ITestOutputHelper output)
-    {
-        _output = output;
+        var time = new ReentrantCleanupTimeSource(0);
+        var window = new ExactCircuitBreakerSamplingWindow(TimeSpan.FromTicks(60), time);
+        window.AddSample(false);
+        time.Now = 115;
+        window.AddSample(true);
+        time.Now = 120;
+        time.Attach(() => window.ExpireAndGetStatistics());
+        window.ExpireAndGetStatistics().Should().Be(new CircuitWindowStatistics(1, 0));
     }
 
     [Fact]
     [Trait("Category", "ConcurrencyRegression")]
     public async Task StressTest_CleanupWindow_RaceCondition()
     {
-        // Arrange
-        var samplingDuration = TimeSpan.FromMilliseconds(100); // Short window to trigger frequent cleanup
-        var cb = new CircuitBreaker(
-            failureRatio: 0.5,
-            samplingDuration: samplingDuration,
-            minimumThroughput: 5,
-            breakDuration: TimeSpan.FromSeconds(30));
-
-        // Use reflection to access private members
-        var cleanupMethod = typeof(CircuitBreaker).GetMethod("CleanupWindow", BindingFlags.NonPublic | BindingFlags.Instance);
-        var windowField = typeof(CircuitBreaker).GetField("_window", BindingFlags.NonPublic | BindingFlags.Instance);
-
-        Assert.NotNull(cleanupMethod);
-        Assert.NotNull(windowField);
-
-        var window = (Queue<(long Timestamp, bool IsSuccess)>)windowField.GetValue(cb)!;
-
-        int recordFailureThreads = 10;
-        int cleanupThreads = 5;
-        int testDurationSeconds = 10;
-        int itemsEnqueued = 0;
-        var enqueueLock = new object();
-
-        // Track operations for verification
-        var exceptions = new ConcurrentQueue<Exception>();
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(testDurationSeconds));
-
-        // Act: Start threads that call RecordFailure()
-        var recordTasks = new Task[recordFailureThreads];
-        for (int i = 0; i < recordFailureThreads; i++)
+        var time = new AdvancingTimeProvider();
+        var breaker = new CircuitBreaker(new CircuitBreakerOptions
         {
-            recordTasks[i] = Task.Run(() =>
+            FailureRatio = 1,
+            MinimumThroughput = int.MaxValue,
+            SamplingDuration = TimeSpan.FromTicks(100),
+        }, time);
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tasks = Enumerable.Range(0, 15).Select(worker => Task.Run(async () =>
+        {
+            await start.Task;
+            for (var index = 0; index < 2000; index++)
             {
-                while (!cts.IsCancellationRequested)
-                {
-                    try
-                    {
-                        cb.RecordFailure();
-                        lock (enqueueLock) itemsEnqueued++;
-                    }
-                    catch (Exception ex)
-                    {
-                        exceptions.Enqueue(ex);
-                    }
-                    Thread.SpinWait(10); // Small delay to increase contention
-                }
-            });
-        }
-
-        // Act: Start threads that call CleanupWindow() via reflection
-        var cleanupTasks = new Task[cleanupThreads];
-        for (int i = 0; i < cleanupThreads; i++)
-        {
-            cleanupTasks[i] = Task.Run(() =>
-            {
-                while (!cts.IsCancellationRequested)
-                {
-                    try
-                    {
-                        cleanupMethod.Invoke(cb, null);
-                        // Try to count items that might have been dequeued
-                        // (We can't directly count dequeue operations from CleanupWindow)
-                    }
-                    catch (Exception ex)
-                    {
-                        exceptions.Enqueue(ex);
-                    }
-                    Thread.SpinWait(5); // Small delay to increase contention
-                }
-            });
-        }
-
-        // Wait for test duration
-        Thread.Sleep(TimeSpan.FromSeconds(testDurationSeconds));
-        cts.Cancel();
-
-        // Wait for all tasks to complete
-        await Task.WhenAll(recordTasks.Concat(cleanupTasks)).WaitAsync(TimeSpan.FromSeconds(5));
-
-        // Assert: Check for exceptions
-        if (!exceptions.IsEmpty)
-        {
-            var allExceptions = string.Join("\n", exceptions.Select(e => e.ToString()));
-            _output.WriteLine($"Exceptions during stress test: {allExceptions}");
-        }
-        exceptions.Should().BeEmpty("No exceptions should occur during stress test");
-
-        // Assert: Verify no old items remain in the window
-        var cutoff = DateTime.UtcNow.Ticks - samplingDuration.Ticks;
-        var oldItems = window.Where(item => item.Timestamp < cutoff).ToList();
-
-        if (oldItems.Any())
-        {
-            _output.WriteLine($"Found {oldItems.Count} old items in window after test:");
-            foreach (var item in oldItems.Take(10))
-            {
-                _output.WriteLine($"  Timestamp: {item.Timestamp}, IsSuccess: {item.IsSuccess}, AgeTicks: {DateTime.UtcNow.Ticks - item.Timestamp}");
+                if (worker < 10) { time.Advance(); breaker.RecordFailure(); }
+                else breaker.GetCurrentFailureRatio().Should().BeOneOf(0d, 1d);
             }
-        }
-
-        // The key verification: after cleanup, no items older than cutoff should exist
-        // However, due to timing, some items might still be slightly old
-        // Let's check with a more lenient cutoff (add 1 second tolerance)
-        var tolerantCutoff = DateTime.UtcNow.Ticks - samplingDuration.Ticks + TimeSpan.FromSeconds(1).Ticks;
-        var veryOldItems = window.Where(item => item.Timestamp < tolerantCutoff).ToList();
-
-        _output.WriteLine($"Test completed. Items enqueued: {itemsEnqueued}");
-        _output.WriteLine($"Items remaining in window: {window.Count}");
-        _output.WriteLine($"Old items (beyond tolerance): {veryOldItems.Count}");
-
-        // Verify the queue is in a consistent state (no corruption)
-        // ConcurrentQueue should always be consistent, but we can verify by iterating
-        var allItems = window.ToList();
-        _output.WriteLine($"Successfully enumerated {allItems.Count} items from window");
-
-        // The race condition would manifest as incorrect behavior, not necessarily old items
-        // since cleanup is called frequently. Let's verify the circuit breaker is in a valid state
-        cb.State.Should().BeOneOf(CircuitState.Closed, CircuitState.Open, CircuitState.HalfOpen, CircuitState.Isolated);
-
-        // Log the race condition analysis
-        _output.WriteLine("Race condition test completed. If the TryPeek+TryDequeue pattern has a race,");
-        _output.WriteLine("it could cause items to be incorrectly removed from the queue.");
-        _output.WriteLine("The fix is to replace TryPeek+TryDequeue with TryDequeue+check pattern.");
+        })).ToArray();
+        start.SetResult();
+        await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(15));
+        time.Advance(101);
+        breaker.GetCurrentFailureRatio().Should().Be(0);
     }
 
-    private static Queue<(long Timestamp, bool IsSuccess)> GetWindow(CircuitBreaker cb)
+    private sealed class AdvancingTimeProvider : TimeProvider
     {
-        var windowField = typeof(CircuitBreaker).GetField(
-            "_window",
-            BindingFlags.NonPublic | BindingFlags.Instance
-        );
-
-        windowField.Should().NotBeNull();
-        return (Queue<(long Timestamp, bool IsSuccess)>)windowField!.GetValue(cb)!;
-    }
-
-    private static void InvokeCleanupWindow(CircuitBreaker cb)
-    {
-        var cleanupMethod = typeof(CircuitBreaker).GetMethod(
-            "CleanupWindow",
-            BindingFlags.NonPublic | BindingFlags.Instance
-        );
-
-        cleanupMethod.Should().NotBeNull();
-        cleanupMethod!.Invoke(cb, null);
+        private long _timestamp;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => Interlocked.Read(ref _timestamp);
+        public void Advance(long ticks = 1) => Interlocked.Add(ref _timestamp, ticks);
     }
 
     public static IEnumerable<object[]> InvalidSamplingDurations()
@@ -994,7 +846,7 @@ public class CircuitBreakerTests
             UtcNow = utcNow;
         }
 
-        public DateTime UtcNow { get; }
+        public DateTime UtcNow { get; set; }
     }
 
     private sealed class MutableManualClock : IClock
@@ -1118,32 +970,18 @@ public class CircuitBreakerTests
         }
     }
 
-    private sealed class ReentrantCleanupTimeSource : ICircuitBreakerTimeSource
+    private sealed class ReentrantCleanupTimeSource(long now) : ICircuitBreakerTimeSource
     {
-        private readonly long _now;
-        private CircuitBreaker? _breaker;
+        private Action? _cleanup;
         private int _reentered;
-
-        public ReentrantCleanupTimeSource(long now)
-        {
-            _now = now;
-        }
-
-        public DateTime UtcNow => new(_now, DateTimeKind.Utc);
-
-        public long GetTimestamp() => _now;
-
+        public long Now { get; set; } = now;
+        public DateTime UtcNow => new(Now, DateTimeKind.Utc);
+        public long GetTimestamp() => Now;
         public TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp)
         {
-            if (Interlocked.Exchange(ref _reentered, 1) == 0)
-                InvokeCleanupWindow(_breaker ?? throw new InvalidOperationException("Circuit breaker was not attached."));
-
+            if (_cleanup is not null && Interlocked.Exchange(ref _reentered, 1) == 0) _cleanup();
             return TimeSpan.FromTicks(endingTimestamp - startingTimestamp);
         }
-
-        public void Attach(CircuitBreaker breaker)
-        {
-            _breaker = breaker;
-        }
+        public void Attach(Action cleanup) => _cleanup = cleanup;
     }
 }

@@ -1,0 +1,368 @@
+{
+  "framework": ".NET 10.0.12",
+  "stopwatchFrequency": 1000000000,
+  "warmupRunsPerCase": 100,
+  "measurement": "Individual item p99; nine repetitions per case after 100 full warmup runs",
+  "rows": [
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": true,
+      "repetition": 0,
+      "count": 10000,
+      "itemP99Microseconds": 4.532
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": true,
+      "repetition": 1,
+      "count": 10000,
+      "itemP99Microseconds": 5.258
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": true,
+      "repetition": 2,
+      "count": 10000,
+      "itemP99Microseconds": 14.927
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": true,
+      "repetition": 3,
+      "count": 10000,
+      "itemP99Microseconds": 21.642
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": true,
+      "repetition": 4,
+      "count": 10000,
+      "itemP99Microseconds": 8.051
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": true,
+      "repetition": 5,
+      "count": 10000,
+      "itemP99Microseconds": 18.257
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": true,
+      "repetition": 6,
+      "count": 10000,
+      "itemP99Microseconds": 14.903
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": true,
+      "repetition": 7,
+      "count": 10000,
+      "itemP99Microseconds": 7.892
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": true,
+      "repetition": 8,
+      "count": 10000,
+      "itemP99Microseconds": 7.461
+    },
+    {
+      "stages": 4,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 0,
+      "count": 10000,
+      "itemP99Microseconds": 3236.443
+    },
+    {
+      "stages": 4,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 1,
+      "count": 10000,
+      "itemP99Microseconds": 95.071
+    },
+    {
+      "stages": 4,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 2,
+      "count": 10000,
+      "itemP99Microseconds": 163.132
+    },
+    {
+      "stages": 4,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 3,
+      "count": 10000,
+      "itemP99Microseconds": 1204.414
+    },
+    {
+      "stages": 4,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 4,
+      "count": 10000,
+      "itemP99Microseconds": 93.328
+    },
+    {
+      "stages": 4,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 5,
+      "count": 10000,
+      "itemP99Microseconds": 144.344
+    },
+    {
+      "stages": 4,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 6,
+      "count": 10000,
+      "itemP99Microseconds": 127.068
+    },
+    {
+      "stages": 4,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 7,
+      "count": 10000,
+      "itemP99Microseconds": 5.263
+    },
+    {
+      "stages": 4,
+      "observers": 1,
+      "hasSink": false,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 8,
+      "count": 10000,
+      "itemP99Microseconds": 5.224
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 0,
+      "count": 10000,
+      "itemP99Microseconds": 1.713
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 1,
+      "count": 10000,
+      "itemP99Microseconds": 1.833
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 2,
+      "count": 10000,
+      "itemP99Microseconds": 1.7630000000000001
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 3,
+      "count": 10000,
+      "itemP99Microseconds": 1.803
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 4,
+      "count": 10000,
+      "itemP99Microseconds": 1.752
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 5,
+      "count": 10000,
+      "itemP99Microseconds": 1.7530000000000001
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 6,
+      "count": 10000,
+      "itemP99Microseconds": 1.803
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 7,
+      "count": 10000,
+      "itemP99Microseconds": 1.733
+    },
+    {
+      "stages": 1,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 8,
+      "count": 10000,
+      "itemP99Microseconds": 1.823
+    },
+    {
+      "stages": 16,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 0,
+      "count": 10000,
+      "itemP99Microseconds": 29.063
+    },
+    {
+      "stages": 16,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 1,
+      "count": 10000,
+      "itemP99Microseconds": 34.22
+    },
+    {
+      "stages": 16,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 2,
+      "count": 10000,
+      "itemP99Microseconds": 45.487
+    },
+    {
+      "stages": 16,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 3,
+      "count": 10000,
+      "itemP99Microseconds": 65.247
+    },
+    {
+      "stages": 16,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 4,
+      "count": 10000,
+      "itemP99Microseconds": 62.793
+    },
+    {
+      "stages": 16,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 5,
+      "count": 10000,
+      "itemP99Microseconds": 67.229
+    },
+    {
+      "stages": 16,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 6,
+      "count": 10000,
+      "itemP99Microseconds": 62.532000000000004
+    },
+    {
+      "stages": 16,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 7,
+      "count": 10000,
+      "itemP99Microseconds": 40.5
+    },
+    {
+      "stages": 16,
+      "observers": 1,
+      "hasSink": true,
+      "concurrency": 1,
+      "asyncTransform": false,
+      "repetition": 8,
+      "count": 10000,
+      "itemP99Microseconds": 54.671
+    }
+  ]
+}

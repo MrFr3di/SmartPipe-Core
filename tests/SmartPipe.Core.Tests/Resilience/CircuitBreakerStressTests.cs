@@ -19,9 +19,7 @@ public class CircuitBreakerStressTests
         .GetField("_ewmaFailureRate", BindingFlags.NonPublic | BindingFlags.Instance)
         ?? throw new Exception("Could not find _ewmaFailureRate field");
 
-    private static readonly FieldInfo WindowField = typeof(CircuitBreaker)
-        .GetField("_window", BindingFlags.NonPublic | BindingFlags.Instance)
-        ?? throw new Exception("Could not find _window field");
+
 
     // ============================================
     // Task 1: Race Condition Stress Test

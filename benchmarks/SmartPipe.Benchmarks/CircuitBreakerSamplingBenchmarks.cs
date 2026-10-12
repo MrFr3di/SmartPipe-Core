@@ -20,6 +20,9 @@ public class CircuitBreakerSamplingBenchmarks
     [Params(1_000, 100_000)]
     public int LiveSamples { get; set; }
 
+    [Params("Exact", "Bucketed")]
+    public string SamplingMode { get; set; } = "Exact";
+
     [GlobalSetup]
     public void Setup()
     {
@@ -47,7 +50,7 @@ public class CircuitBreakerSamplingBenchmarks
     public void PrepareIdleBurst()
     {
         PrepareBreaker();
-        _time.Advance(LiveSamples + 1L);
+        _time.Advance(LiveSamples + (LiveSamples + 63L) / 64 + 1L);
     }
 
     [Benchmark(OperationsPerInvoke = BatchSize)]
@@ -65,7 +68,7 @@ public class CircuitBreakerSamplingBenchmarks
     private void PrepareBreaker()
     {
         _time = new SamplingTimeProvider();
-        _breaker = CreateBreaker(_time, LiveSamples);
+        _breaker = CreateBreaker(_time, LiveSamples, SamplingMode);
         for (var index = 0; index < LiveSamples; index++)
         {
             _time.Advance(1);
@@ -73,13 +76,22 @@ public class CircuitBreakerSamplingBenchmarks
         }
     }
 
-    internal static CircuitBreaker CreateBreaker(TimeProvider time, int windowTicks) => new(
-        new CircuitBreakerOptions
+    internal static CircuitBreaker CreateBreaker(TimeProvider time, int windowTicks, string samplingMode = "Exact")
+    {
+        var options = new CircuitBreakerOptions
         {
             FailureRatio = 1,
             SamplingDuration = TimeSpan.FromTicks(windowTicks),
             MinimumThroughput = 128,
-        }, time);
+        };
+        if (samplingMode != "Exact")
+        {
+            var property = typeof(CircuitBreakerOptions).GetProperty("SamplingMode")
+                ?? throw new InvalidOperationException("Bucketed sampling is unavailable in this candidate.");
+            property.SetValue(options, Enum.Parse(property.PropertyType, samplingMode));
+        }
+        return new CircuitBreaker(options, time);
+    }
 
     internal sealed class SamplingTimeProvider : TimeProvider
     {
@@ -90,7 +102,7 @@ public class CircuitBreakerSamplingBenchmarks
         public void Advance(long ticks) => Interlocked.Add(ref _timestamp, ticks);
     }
 
-    private sealed class ContentionWorkers : IDisposable
+    internal sealed class ContentionWorkers : IDisposable
     {
         private readonly AutoResetEvent[] _starts;
         private readonly Thread[] _threads;
@@ -145,16 +157,16 @@ public class CircuitBreakerSamplingBenchmarks
 
 internal static class CircuitBreakerSamplingDiagnostics
 {
-    public static async Task WriteAsync(string path)
+    public static async Task WriteAsync(string path, bool bucketed = false)
     {
         // Warm constructor/JIT paths before using public managed-heap measurements.
         var warmTime = new CircuitBreakerSamplingBenchmarks.SamplingTimeProvider();
-        var warm = CircuitBreakerSamplingBenchmarks.CreateBreaker(warmTime, 1000);
+        var warm = CircuitBreakerSamplingBenchmarks.CreateBreaker(warmTime, 1000, bucketed ? "Bucketed" : "Exact");
         warm.RecordSuccess();
         _ = warm.GetCurrentFailureRatio();
         var rows = new List<object>();
         foreach (var samples in new[] { 1_000, 100_000, 1_000_000 })
-            rows.Add(MeasureMemory(samples));
+            rows.Add(MeasureMemory(samples, bucketed));
         GC.KeepAlive(warm);
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(rows,
@@ -165,11 +177,11 @@ internal static class CircuitBreakerSamplingDiagnostics
         Justification = "This standalone retained-heap diagnostic requires a full collection with the breaker kept alive. It never runs in a BenchmarkDotNet timed operation or production runtime.")]
     private static long ReadRetainedHeap() => GC.GetTotalMemory(forceFullCollection: true);
 
-    private static object MeasureMemory(int samples)
+    private static object MeasureMemory(int samples, bool bucketed)
     {
         var baselineBytes = ReadRetainedHeap();
         var time = new CircuitBreakerSamplingBenchmarks.SamplingTimeProvider();
-        var breaker = CircuitBreakerSamplingBenchmarks.CreateBreaker(time, samples);
+        var breaker = CircuitBreakerSamplingBenchmarks.CreateBreaker(time, samples, bucketed ? "Bucketed" : "Exact");
         for (var index = 0; index < samples; index++)
         {
             time.Advance(1);
@@ -186,7 +198,7 @@ internal static class CircuitBreakerSamplingDiagnostics
         return new
         {
             samples,
-            bucketed = false,
+            bucketed,
             retainedAfterFillBytes,
             retainedAfterExpiryBytes,
             expiryMicroseconds,

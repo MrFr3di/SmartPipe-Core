@@ -2298,26 +2298,17 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             return null;
         policy.Validate();
 
-        if (policy.EvaluationMode == CircuitBreakerEvaluationMode.FailureRatio)
+        var ratioMode = policy.EvaluationMode == CircuitBreakerEvaluationMode.FailureRatio;
+        return CircuitBreaker.CreateForTimeSource(new CircuitBreakerOptions
         {
-            return new CircuitBreaker(
-                failureRatio: policy.FailureRatio,
-                samplingDuration: policy.SamplingDuration,
-                minimumThroughput: policy.MinimumThroughput,
-                breakDuration: policy.BreakDuration,
-                maxHalfOpenRequests: policy.MaxHalfOpenRequests,
-                timeSource: new PipelineClockAdapter(_clock)
-            );
-        }
-
-        return new CircuitBreaker(
-            failureRatio: 0.5,
-            samplingDuration: policy.BreakDuration,
-            minimumThroughput: policy.FailureThreshold,
-            breakDuration: policy.BreakDuration,
-            maxHalfOpenRequests: 3,
-            timeSource: new PipelineClockAdapter(_clock)
-        );
+            FailureRatio = ratioMode ? policy.FailureRatio : 0.5,
+            SamplingDuration = ratioMode ? policy.SamplingDuration : policy.BreakDuration,
+            MinimumThroughput = ratioMode ? policy.MinimumThroughput : policy.FailureThreshold,
+            BreakDuration = policy.BreakDuration,
+            MaxHalfOpenRequests = ratioMode ? policy.MaxHalfOpenRequests : 3,
+            SamplingMode = policy.SamplingMode,
+            SamplingBucketCount = policy.SamplingBucketCount,
+        }, new PipelineClockAdapter(_clock));
     }
 }
 

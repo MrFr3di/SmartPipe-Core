@@ -1,6 +1,48 @@
 using BenchmarkDotNet.Running;
 using SmartPipe.Benchmarks;
 
+if (args is ["--runtime-resilience-tail-review", var resilienceTailPath])
+{
+    await RuntimeResilienceControlBenchmarks.WriteDiagnosticsAsync(resilienceTailPath, warmupRuns: 100, repetitions: 9);
+    return;
+}
+
+if (args is ["--runtime-io-tail-review", var tailReviewPath])
+{
+    await RuntimeIoTailReviewReport.WriteAsync(tailReviewPath);
+    return;
+}
+
+if (args is ["--runtime-io-focused-latency", var focusedLatencyPath])
+{
+    await RuntimeIoFocusedLatencyReport.WriteAsync(focusedLatencyPath);
+    return;
+}
+
+if (args is ["--circuit-sampling-latency", var samplingLatencyPath])
+{
+    await CircuitBreakerSamplingLatencyReport.WriteAsync(samplingLatencyPath);
+    return;
+}
+
+if (args is ["--circuit-sampling-bucket-diagnostics", var bucketMemoryPath])
+{
+    await CircuitBreakerSamplingDiagnostics.WriteAsync(bucketMemoryPath, bucketed: true);
+    return;
+}
+
+if (args is ["--circuit-sampling-bucket-latency", var bucketLatencyPath])
+{
+    await CircuitBreakerSamplingLatencyReport.WriteAsync(bucketLatencyPath, bucketed: true);
+    return;
+}
+
+if (args is ["--circuit-window-prototype-memory", var prototypePath])
+{
+    await CircuitBreakerWindowPrototypeBenchmarks.WriteMemoryDiagnosticsAsync(prototypePath);
+    return;
+}
+
 if (args is ["--runtime-policy-controls"])
 {
     foreach (var scenario in Enum.GetValues<RuntimeIoPolicyControl>())

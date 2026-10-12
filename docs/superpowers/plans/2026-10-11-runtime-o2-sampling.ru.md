@@ -40,22 +40,22 @@ live samples 1,000/100,000; streams steady-expiry and peak→idle→burst.
 Oracle replay takes timestamped success/failure operations plus permit/reset
 commands and compares observed ratios/states at every command.
 
-- [ ] Characterization against current exact: inclusive sampling boundary,
+- [x] Characterization against current exact: inclusive sampling boundary,
   mixed failures, EWMA synthetic sample insertion, zero-throughput/idle,
   Reset, late previous-generation permit completion, disposed probe без sample.
   Tests pass current behavior, independent reference model owns its counts.
-- [ ] Baseline on merged-F SHA with same harness. Report retained memory at
+- [x] Baseline on merged-F SHA with same harness. Report retained memory at
   peak and after idle, GC allocations, expiration batch cost, throughput,
   p99 operation latency, lock contention. Queue.Count != retained capacity.
-- [ ] Не измерять allocation на других threads только thread-local counter;
+- [x] Не измерять allocation на других threads только thread-local counter;
   MemoryDiagnoser/GC process diagnostics покрывают execution topology.
-- [ ] Raw evidence records SHAs/host/settings; use commands ниже. No Dry for claims.
+- [x] Raw evidence records SHAs/host/settings; use commands ниже. No Dry for claims.
 
 ```bash
 dotnet run -c Release --project benchmarks/SmartPipe.Benchmarks/SmartPipe.Benchmarks.csproj -- --filter '*CircuitBreakerSamplingBenchmarks*' --warmupCount 5 --iterationCount 15 --launchCount 2 --exporters json csv --artifacts artifacts/benchmarks/o2-baseline
 ```
 
-- [ ] Commit harness/oracle before production modifications.
+- [x] Commit harness/oracle before production modifications.
 
 ### Task 2: batch exact cleanup
 
@@ -66,29 +66,29 @@ and sampling oracle suite.
 **Interfaces:** Existing CleanupWindow/GetWindowStatistics/public breaker APIs;
 нет new public signatures в exact optimization.
 
-- [ ] Add exact boundary tests at W-1 tick/W/W+1 tick and large expired prefix,
+- [x] Add exact boundary tests at W-1 tick/W/W+1 tick and large expired prefix,
   concurrent record/cleanup/reset with explicit gates. Preserve timestamp reads
   ordered with enqueue; custom clock compatibility follows existing behavior.
-- [ ] Baseline tests green; profiling from Task 1 proves repeated-lock cost.
+- [x] Baseline tests green; profiling from Task 1 proves repeated-lock cost.
   Implement one captured now + one lock to prune expired prefix; maintain
   incremental failures and original elapsed <= W inclusion.
-- [ ] Build → existing breaker/window/stress/half-open/runtime tests + oracle green.
+- [x] Build → existing breaker/window/stress/half-open/runtime tests + oracle green.
   Paired benchmark: steady expiry и burst cleanup; retain latency tradeoff
   of holding lock over large prefix. Если burst p99 regresses materially,
   bounded batches допустимы только с accurate full statistics before evaluation.
-- [ ] Не заявлять уменьшение retained memory от одного batch cleanup.
-- [ ] Commit: `perf(core): batch exact circuit breaker window cleanup`.
+- [x] Не заявлять уменьшение retained memory от одного batch cleanup.
+- [x] Commit: `perf(core): batch exact circuit breaker window cleanup`.
 
 ### Task 3: opt-in bucket feature gate
 
 **Files:** Evidence document Task 1; no production bucket diff до gate.
 
-- [ ] После exact optimization повторить memory/contention diagnostics.
+- [x] После exact optimization повторить memory/contention diagnostics.
   Подтверждённая потребность: exact retained bytes растут с live sample count,
   вызывающий это workload входит в поддерживаемый сценарий, и bounded ring
   prototype устраняет эту зависимость без недопустимой latency regression.
   Отчёт содержит measured rate/window и bytes, не только theoretical O(rate×W).
-- [ ] Если gate не подтверждён, остановить bucket delivery: accepted O2 =
+- [x] Если gate не подтверждён, остановить bucket delivery: accepted O2 =
   measured baseline + exact optimization; clearly record unshipped experiment.
   Если подтверждён, Tasks 4–5 входят в отдельный feature PR 2.2.1.
 
@@ -111,33 +111,34 @@ Constructors `ExactCircuitBreakerSamplingWindow(TimeSpan samplingDuration, ICirc
 Window owns synchronization и читает sample timestamp внутри add lock;
 ExpireAndGetStatistics captures now once и возвращает counts после pruning.
 Exact и bucket не получают timestamp, заранее прочитанный caller вне lock.
-Добавить internal breaker constructor `(CircuitBreakerOptions options, ICircuitBreakerTimeSource timeSource)`
-для runtime CreateBreaker; published constructors остаются с прежними signatures.
+Использовать internal `CircuitBreaker.CreateForTimeSource(options, timeSource)`
+для runtime CreateBreaker; static entry point устраняет неоднозначность existing
+friend-assembly null tests. Published constructors сохраняют signatures.
 
-- [ ] Compile RED public config/window tests; invalid mode/count/nonpositive
+- [x] Compile RED public config/window tests; invalid mode/count/nonpositive
   effective bucket window rejected before activation; snapshots retain properties.
   Legacy constructors always Exact; old source/binary consumers unchanged.
-- [ ] Implement default exact strategy and optional ring; use resolved monotonic
+- [x] Implement default exact strategy and optional ring; use resolved monotonic
   time via ICircuitBreakerTimeSource.GetElapsedTime, не UTC subtraction.
   width=ceil(W ticks/count), >=1; <=count+1 live buckets; long counters.
   No time-driven background cleanup task.
-- [ ] Если moved window меняет private fields, перевести прежние reflection
+- [x] Если moved window меняет private fields, перевести прежние reflection
   assertions на sampling-window diagnostics/ordered timestamp oracle, сохранив
   проверку порядка и original regression, без production public test hooks.
-- [ ] `BoundaryBurst_DivergenceExplainedByOldestBucket`: replay mixed burst/idle
+- [x] `BoundaryBurst_DivergenceExplainedByOldestBucket`: replay mixed burst/idle
   around every bucket/window boundary; compare exact reference counts and ring
   counts plus oldest partial-bucket contribution. Count/ratio/state divergence
   outside this computed boundary uncertainty is failure.
-- [ ] Bound временной погрешности <width не превращать в ratio bound 1/count.
+- [x] Bound временной погрешности <width не превращать в ratio bound 1/count.
   Test large failed burst followed by success/idle; sampling differences can
   legitimately change opening decisions only within oracle uncertainty.
-- [ ] Advance clock several windows/long idle in one step; Reset clears counts;
+- [x] Advance clock several windows/long idle in one step; Reset clears counts;
   timestamp origin/ceil arithmetic overflow-safe; time source must be monotonic
   as required for this opt-in mode. Deterministic concurrent records/reset tests.
-- [ ] EWMA update/synthetic insertion unchanged; same half-open permit allocation,
+- [x] EWMA update/synthetic insertion unchanged; same half-open permit allocation,
   generations/limits/close-reopen logic. Probe behavior проверяется independently
   от approximate Closed→Open threshold decisions.
-- [ ] Build → oracle/new suites green; commit
+- [x] Build → oracle/new suites green; commit
   `feat(core): add opt-in bounded circuit breaker sampling`.
 
 ### Task 5: measured bounded-memory and contract acceptance
@@ -145,16 +146,19 @@ Exact и bucket не получают timestamp, заранее прочитан
 **Files:** `docs/runtime-contracts.md`, `CHANGELOG.md`, `VERSIONING.md`
 (targeted 2.2.1 exception при bucket delivery), benchmark evidence, CI gates.
 
-- [ ] Replay identical streams in Exact/Bucketed; 1,000→100,000 live samples
+- [x] Replay identical streams in Exact/Bucketed; 1,000→100,000 live samples
   должно увеличивать exact retained bytes, но ring storage остаётся bounded
   выбранным bucket count. Assert ring storage bound as resource regression.
-- [ ] Same-host throughput/p99/contention comparisons плюс current baseline;
+- [x] Same-host throughput/p99/contention comparisons плюс current baseline;
   <=count+1 buckets доказать, не подменять full runtime memory этим bound.
-- [ ] Документировать explicit approximation, temporal uncertainty/ratio caveat,
+- [x] Документировать explicit approximation, temporal uncertainty/ratio caveat,
   default Exact и mono-clock assumption. General VERSIONING policy не менять;
   сохранить пользовательскую цель 2.2.1 и immutable baseline 2.2.0.
-- [ ] All roadmap/API/package/source/binary/trim/AOT/docs + full exact-head CI;
-  rejected gate/prototype не публикуется как implemented bucket feature.
+Перед merge обязательны все roadmap/API/package/source/binary/trim/AOT/docs
+проверки и full CI текущего HEAD [PR #158](https://github.com/MrFr3di/SmartPipe-Core/pull/158).
+Результат hosted CI фиксируется в Checks/PR description после завершения, чтобы
+изменение самого checklist не делало свидетельство предыдущего HEAD устаревшим.
+Rejected gate/prototype не публикуется как implemented bucket feature.
 
 Focused command (после build):
 

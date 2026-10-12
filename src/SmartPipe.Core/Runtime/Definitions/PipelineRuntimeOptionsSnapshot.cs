@@ -262,5 +262,7 @@ internal sealed record StageFailureOptionsSnapshot(
                 SamplingDuration = policy.SamplingDuration,
                 MinimumThroughput = policy.MinimumThroughput,
                 MaxHalfOpenRequests = policy.MaxHalfOpenRequests,
+                SamplingMode = policy.SamplingMode,
+                SamplingBucketCount = policy.SamplingBucketCount,
             };
 }

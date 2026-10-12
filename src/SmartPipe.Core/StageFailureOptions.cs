@@ -110,8 +110,17 @@ public sealed class CircuitBreakerPolicy
     /// <summary>Gets the maximum number of concurrent half-open probes in ratio mode.</summary>
     public int MaxHalfOpenRequests { get; init; } = 1;
 
+    /// <summary>Gets the sampling representation. Exact is the default in both evaluation modes.</summary>
+    public CircuitBreakerSamplingMode SamplingMode { get; init; } = CircuitBreakerSamplingMode.Exact;
+
+    /// <summary>Gets the bucket count, between 2 and 4096, for bounded sampling.</summary>
+    public int SamplingBucketCount { get; init; } = 64;
+
+
     internal void Validate()
     {
+        ValidateSampling(SamplingMode, SamplingBucketCount);
+
         if (FailureThreshold <= 0)
             throw new ArgumentOutOfRangeException(nameof(FailureThreshold), FailureThreshold, "Failure threshold must be greater than zero.");
 
@@ -133,6 +142,12 @@ public sealed class CircuitBreakerPolicy
         if (MaxHalfOpenRequests <= 0)
             throw new ArgumentOutOfRangeException(nameof(MaxHalfOpenRequests), MaxHalfOpenRequests, "Maximum half-open requests must be greater than zero.");
     }
+    private static void ValidateSampling(CircuitBreakerSamplingMode samplingMode, int samplingBucketCount)
+    {
+        if (!Enum.IsDefined(samplingMode)) throw new ArgumentOutOfRangeException(nameof(samplingMode));
+        if (samplingBucketCount is < 2 or > 4096) throw new ArgumentOutOfRangeException(nameof(samplingBucketCount));
+    }
+
 }
 
 /// <summary>Configures retry, timeout, circuit breaker, and terminal failure behavior for a stage.</summary>
