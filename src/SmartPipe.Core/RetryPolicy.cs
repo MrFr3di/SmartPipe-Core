@@ -4,6 +4,15 @@ using System;
 
 namespace SmartPipe.Core;
 
+/// <summary>Randomization applied by the runtime to retry delays.</summary>
+public enum RetryJitterMode
+{
+    /// <summary>Use the deterministic backoff delay.</summary>
+    None = 0,
+    /// <summary>Draw one delay uniformly from zero inclusive to the backoff cap exclusive.</summary>
+    Full = 1,
+}
+
 /// <summary>Backoff strategies for retry delays.</summary>
 public enum BackoffStrategy
 {
@@ -24,6 +33,17 @@ public enum BackoffStrategy
 /// </remarks>
 public class RetryPolicy
 {
+    /// <summary>Gets runtime delay randomization. GetDelay remains deterministic.</summary>
+    public RetryJitterMode Jitter { get; init; } = RetryJitterMode.None;
+
+    internal void Validate() => ValidateJitter(Jitter);
+
+    private static void ValidateJitter(RetryJitterMode jitter)
+    {
+        if (!Enum.IsDefined(jitter))
+            throw new ArgumentOutOfRangeException(nameof(jitter), jitter, "Runtime retry randomization mode is invalid.");
+    }
+
     /// <summary>Maximum number of retry attempts.</summary>
     public int MaxRetries { get; }
 

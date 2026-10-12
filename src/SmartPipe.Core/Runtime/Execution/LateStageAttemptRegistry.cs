@@ -27,7 +27,8 @@ internal sealed class LateStageAttemptRegistry
         CancellationTokenSource timeoutCancellation,
         TimeSpan finalizationTimeout,
         bool reportUnexpectedFaults = false,
-        Func<Exception?>? getResultError = null)
+        Func<Exception?>? getResultError = null,
+        TimedAttemptLease? timedLease = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stageId);
         ArgumentException.ThrowIfNullOrWhiteSpace(stageName);
@@ -39,7 +40,7 @@ internal sealed class LateStageAttemptRegistry
         {
             if (_sealed)
             {
-                _ = ObserveRejectedAttemptAsync(execution, timeoutCancellation);
+                _ = ObserveRejectedAttemptAsync(execution, timeoutCancellation, timedLease);
                 throw new InvalidOperationException(
                     "Late stage attempt registration occurred after registry sealing.");
             }
@@ -55,11 +56,12 @@ internal sealed class LateStageAttemptRegistry
                 timeoutCancellation,
                 finalizationTimeout,
                 reportUnexpectedFaults,
-                getResultError);
+                getResultError,
+                timedLease);
 
             if (!_attempts.TryAdd(id, lateAttempt))
             {
-                _ = ObserveRejectedAttemptAsync(execution, timeoutCancellation);
+                _ = ObserveRejectedAttemptAsync(execution, timeoutCancellation, timedLease);
                 throw new InvalidOperationException(
                     "Late stage attempt registration failed.");
             }
@@ -162,6 +164,7 @@ internal sealed class LateStageAttemptRegistry
         finally
         {
             attempt.TimeoutCancellation.Dispose();
+            attempt.TimedLease?.Dispose();
             // Publish errors and release CTS ownership before a waiter can
             // finish or registration disappears from the finalization snapshot.
             attempt.ObservationCompleted.TrySetResult();
@@ -182,7 +185,8 @@ internal sealed class LateStageAttemptRegistry
 
     private static async Task ObserveRejectedAttemptAsync(
         Task execution,
-        CancellationTokenSource timeoutCancellation)
+        CancellationTokenSource timeoutCancellation,
+        TimedAttemptLease? timedLease)
     {
         try
         {
@@ -191,6 +195,7 @@ internal sealed class LateStageAttemptRegistry
         finally
         {
             timeoutCancellation.Dispose();
+            timedLease?.Dispose();
         }
     }
 
@@ -231,7 +236,8 @@ internal sealed class LateStageAttemptRegistry
         CancellationTokenSource TimeoutCancellation,
         TimeSpan FinalizationTimeout,
         bool ReportUnexpectedFaults,
-        Func<Exception?>? GetResultError)
+        Func<Exception?>? GetResultError,
+        TimedAttemptLease? TimedLease)
     {
         public TaskCompletionSource ObservationCompleted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);

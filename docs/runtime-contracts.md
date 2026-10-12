@@ -317,6 +317,34 @@ remain permanent unless a classifier says otherwise. Pipeline cancellation
 
 `RetryPolicy.OnRetry` is invoked after the retry delay completes and before the
 next retry attempt starts. It is not invoked when the retry delay is cancelled.
+
+`PipelineRuntimeOptions.RetryBudget` optionally shares a token bucket across all
+stages and envelopes in one run. Each run starts with `Capacity` tokens; initial
+attempts are free. Retries reserve a token before delay and consume it immediately
+before transformer invocation. Cancellation, expired admission deadlines and
+callback failures before invocation refund the reservation exactly once. Refill
+is lazy and uses the resolved clock. Available plus reserved tokens never exceed
+capacity; time spent at that ceiling cannot accumulate future refill credit.
+Zero refill gives a finite retry allowance. A budget denial preserves the original
+stage error, emits `RetryExhausted` once and applies `OnRetryExhausted`.
+
+`RetryPolicy.Jitter` defaults to `None`. `Full` draws one delay in the tick range
+`[0, GetDelay(attempt).Ticks)` and reuses it for scheduling and waiting; zero delay
+is possible. `GetDelay` itself remains deterministic and the existing constructor
+signature is unchanged.
+
+`PipelineRuntimeOptions.TimedAttemptAdmission` optionally bounds active and
+detached finite-timed executions together. Admission precedes `StageStarted`,
+the retry callback and transformer invocation. `Reject` applies permanent failure
+policy with category `TimedAttemptAdmission`, without a breaker sample or another
+retry loop. `Wait` respects caller cancellation and the remaining whole-stage
+deadline, rechecked after admission. Untimed work consumes no timed slot.
+In the opt-in flow a retry callback runs after delay and successful timed/breaker
+admission. A timed slot remains owned until actual result/fault observation and
+attempt CTS disposal, including after bounded finalization expires. Borrowed and
+scope-owned components retain their external disposal rights. Without a stage
+deadline, waiting at capacity can be indefinite for noncooperative code; explicit
+run disposal likewise waits for actual late observation.
 If the callback throws, the run faults with that exception.
 
 Timeout policy snapshots validate before component activation. Undefined retry

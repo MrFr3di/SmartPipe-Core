@@ -625,6 +625,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
     private readonly PipelineRuntimeOptions _options;
     private readonly IPipelineClock _clock;
     private readonly PipelineTime _time;
+    private readonly TimedAttemptAdmissionLimiter? _timedAdmission;
+    private readonly RetryDelayPlanner _retryDelayPlanner = new(new SharedRetryRandomSource());
     private readonly Channel<PipelineOutput<TOutput>> _outputs;
     private readonly PipelineOutputEmitter<TOutput> _outputEmitter;
     private readonly PipelineProducer<TInput> _producer;
@@ -710,6 +712,9 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         _options = _runtime.Options;
         _clock = _options.Clock;
         _time = new PipelineTime(_clock);
+        var retryBudget = _options.RetryBudget is { } budget ? new RunRetryBudget(budget, _time) : null;
+        _timedAdmission = _options.TimedAttemptAdmission is { } admission
+            ? new TimedAttemptAdmissionLimiter(admission, _time) : null;
         _breakers = CreateBreakers();
         // Generated legacy ids are unique per run and must not become metric dimensions.
         _metrics = new SmartPipeMetricsRecorder(_clock, _spec.ForcePipelineId ? _spec.PipelineId : null);
@@ -743,7 +748,10 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             WriteTerminalAsync,
             EmitAsync,
             ExecuteStageAttemptAsync,
-            StopObserverCallbacksForFaultAsync);
+            StopObserverCallbacksForFaultAsync,
+            retryBudget,
+            ExecuteAdmittedStageAttemptAsync,
+            retryBudget is not null || _timedAdmission is not null ? PrepareStageAttemptAsync : null);
         _sinkExecutor = new SinkExecutor<TOutput>(
             _sink,
             _spec.PipelineId,
@@ -1706,36 +1714,71 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             .ConfigureAwait(false);
     }
 
-    private async ValueTask<TypedStageExecutionResult> ExecuteStageAttemptAsync(
-        ITypedPipelineStage stage,
-        object current,
-        long stageStartedTimestamp,
-        CancellationToken ct
-    )
+    private async ValueTask<AttemptAdmissionResult> PrepareStageAttemptAsync(
+        ITypedPipelineStage stage, long stageStartedTimestamp, CancellationToken ct)
+    {
+        var timeout = GetEffectiveAttemptTimeout(stage, stageStartedTimestamp);
+        if (timeout is { } finite && finite != Timeout.InfiniteTimeSpan && finite <= TimeSpan.Zero)
+            return new AttemptAdmissionResult(DeadlineExpired: true);
+        if (_timedAdmission is null || timeout is null || timeout == Timeout.InfiniteTimeSpan)
+            return default;
+        try
+        {
+            var lease = await _timedAdmission.AcquireAsync(
+                GetStageTimeoutRemaining(stage, stageStartedTimestamp), ct).ConfigureAwait(false);
+            if (GetEffectiveAttemptTimeout(stage, stageStartedTimestamp) <= TimeSpan.Zero)
+            {
+                lease?.Dispose();
+                return new AttemptAdmissionResult(DeadlineExpired: true);
+            }
+            return new AttemptAdmissionResult(lease, Rejected: lease is null);
+        }
+        catch (TimeoutException)
+        {
+            return new AttemptAdmissionResult(DeadlineExpired: true);
+        }
+    }
+
+    private ValueTask<TypedStageExecutionResult> ExecuteStageAttemptAsync(
+        ITypedPipelineStage stage, object current, long stageStartedTimestamp, CancellationToken ct) =>
+        ExecuteStageAttemptCore(stage, current, stageStartedTimestamp, ct, null);
+
+    private ValueTask<TypedStageExecutionResult> ExecuteAdmittedStageAttemptAsync(
+        ITypedPipelineStage stage, object current, long stageStartedTimestamp, CancellationToken ct,
+        StageAttemptAdmission? admission) =>
+        ExecuteStageAttemptCore(stage, current, stageStartedTimestamp, ct, admission);
+
+    private ValueTask<TypedStageExecutionResult> ExecuteStageAttemptCore(
+        ITypedPipelineStage stage, object current, long stageStartedTimestamp, CancellationToken ct,
+        StageAttemptAdmission? admission)
     {
         var attemptTimeout = GetEffectiveAttemptTimeout(stage, stageStartedTimestamp);
         if (attemptTimeout is null || attemptTimeout == Timeout.InfiniteTimeSpan)
-            return await stage.ExecuteAsync(current, _spec.LineageMode, _clock, ct).ConfigureAwait(false);
-
+        {
+            if (admission is not null) ct.ThrowIfCancellationRequested();
+            admission?.MarkExecutionStarted();
+            return stage.ExecuteAsync(current, _spec.LineageMode, _clock, ct);
+        }
         var startedAtUtc = _clock.GetUtcNow();
         if (attemptTimeout <= TimeSpan.Zero)
-            return stage.CreateTimedOutResult(
-                current,
-                _spec.LineageMode,
-                _clock,
-                startedAtUtc,
-                TimeSpan.Zero,
-                null,
-                false
-            );
+            return ValueTask.FromResult(stage.CreateTimedOutResult(current, _spec.LineageMode, _clock,
+                startedAtUtc, TimeSpan.Zero, null, false));
+        if (admission is not null) ct.ThrowIfCancellationRequested();
+        return ExecuteTimedStageAttemptAsync(stage, current, ct, admission, attemptTimeout.Value, startedAtUtc);
+    }
 
+    private async ValueTask<TypedStageExecutionResult> ExecuteTimedStageAttemptAsync(
+        ITypedPipelineStage stage, object current, CancellationToken ct, StageAttemptAdmission? admission,
+        TimeSpan attemptTimeout, DateTimeOffset startedAtUtc)
+    {
         CancellationTokenSource? timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        admission?.MarkExecutionStarted();
         var execution = stage.ExecuteAsync(current, _spec.LineageMode, _clock, timeoutCts.Token).AsTask();
         var executionObserved = false;
 
         try
         {
-            var result = await _time.WaitAsync(execution, attemptTimeout.Value, ct).ConfigureAwait(false);
+            var result = await _time.WaitAsync(execution, attemptTimeout, ct).ConfigureAwait(false);
             executionObserved = true;
             return result;
         }
@@ -1749,7 +1792,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 _spec.LineageMode,
                 _clock,
                 startedAtUtc,
-                attemptTimeout.Value,
+                attemptTimeout,
                 ex,
                 retryMode != TimeoutRetryMode.DetachWithoutRetry
             );
@@ -1762,50 +1805,51 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                 return await execution.ConfigureAwait(false);
             }
 
-            timeoutCts.Cancel();
+            await timeoutCts.CancelAsync().ConfigureAwait(false);
             var transferredTimeoutCts = timeoutCts;
             timeoutCts = null;
             return await HandleTimedOutStageExecutionAsync(
                     stage,
                     current,
                     startedAtUtc,
-                    attemptTimeout.Value,
+                    attemptTimeout,
                     ex,
                     execution,
                     transferredTimeoutCts,
-                    ct)
+                    ct,
+                    admission)
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            // Wait cancellation can win before linked cancellation reaches the
-            // attempt. Keep the link alive and explicitly request its stop.
-            executionObserved = execution.IsCanceled
-                || (execution.IsFaulted && execution.Exception!.InnerExceptions.Contains(ex));
-            if (!executionObserved && timeoutCts is { IsCancellationRequested: false })
-            {
-                try
-                {
-                    timeoutCts.Cancel();
-                }
-                catch (Exception cancellationError)
-                {
-                    throw new AggregateException(ex, cancellationError);
-                }
-            }
-
+            executionObserved = IsObservedExecutionError(execution, ex);
+            if (!executionObserved)
+                await CancelUnobservedExecutionAsync(timeoutCts, ex).ConfigureAwait(false);
             throw;
         }
         finally
         {
-            if (timeoutCts is not null)
-            {
-                if (executionObserved)
-                    timeoutCts.Dispose();
-                else
-                    RegisterLateStageAttempt(stage, current, execution, timeoutCts, reportUnexpectedFaults: true);
-            }
+            FinalizeAttemptObservation(stage, current, execution, timeoutCts, executionObserved, admission);
         }
+    }
+
+    private static bool IsObservedExecutionError(Task<TypedStageExecutionResult> execution, Exception error) =>
+        execution.IsCanceled || (execution.IsFaulted && execution.Exception.InnerExceptions.Contains(error));
+
+    private static async ValueTask CancelUnobservedExecutionAsync(CancellationTokenSource? timeoutCts, Exception error)
+    {
+        if (timeoutCts is not { IsCancellationRequested: false }) return;
+        try { await timeoutCts.CancelAsync().ConfigureAwait(false); }
+        catch (Exception cancellationError) { throw new AggregateException(error, cancellationError); }
+    }
+
+    private void FinalizeAttemptObservation(ITypedPipelineStage stage, object current,
+        Task<TypedStageExecutionResult> execution, CancellationTokenSource? timeoutCts,
+        bool executionObserved, StageAttemptAdmission? admission)
+    {
+        if (timeoutCts is null) return;
+        if (executionObserved) timeoutCts.Dispose();
+        else RegisterLateStageAttempt(stage, current, execution, timeoutCts, reportUnexpectedFaults: true, admission: admission);
     }
 
     private async ValueTask<TypedStageExecutionResult> HandleTimedOutStageExecutionAsync(
@@ -1816,7 +1860,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         TimeoutException exception,
         Task<TypedStageExecutionResult> execution,
         CancellationTokenSource timeoutCts,
-        CancellationToken ct)
+        CancellationToken ct,
+        StageAttemptAdmission? admission = null)
     {
         var retryMode = stage.FailureOptions.Timeout?.RetryMode ?? TimeoutRetryMode.CooperativeOnly;
         bool canRetryTimeout;
@@ -1843,17 +1888,17 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
                         if (execution.IsCompleted)
                             timeoutCts.Dispose();
                         else
-                            RegisterLateStageAttempt(stage, current, execution, timeoutCts, reportUnexpectedFaults: true);
+                            RegisterLateStageAttempt(stage, current, execution, timeoutCts, reportUnexpectedFaults: true, admission: admission);
 
                         ExceptionDispatchInfo.Capture(completion.Exception!).Throw();
                         return default;
                     case TimedAttemptCompletionKind.CallerCancelled:
-                        RegisterLateStageAttempt(stage, current, execution, timeoutCts, reportUnexpectedFaults: true);
+                        RegisterLateStageAttempt(stage, current, execution, timeoutCts, reportUnexpectedFaults: true, admission: admission);
 
                         ExceptionDispatchInfo.Capture(completion.Exception!).Throw();
                         return default;
                     case TimedAttemptCompletionKind.StillRunning:
-                        RegisterLateStageAttempt(stage, current, execution, timeoutCts);
+                        RegisterLateStageAttempt(stage, current, execution, timeoutCts, admission: admission);
                         canRetryTimeout = false;
                         break;
                     default:
@@ -1866,12 +1911,12 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
 
             case TimeoutRetryMode.DetachWithoutRetry:
                 canRetryTimeout = false;
-                RegisterLateStageAttempt(stage, current, execution, timeoutCts);
+                RegisterLateStageAttempt(stage, current, execution, timeoutCts, admission: admission);
                 break;
 
             case TimeoutRetryMode.DetachAndRetryIdempotent:
                 canRetryTimeout = true;
-                RegisterLateStageAttempt(stage, current, execution, timeoutCts);
+                RegisterLateStageAttempt(stage, current, execution, timeoutCts, admission: admission);
                 break;
 
             default:
@@ -1957,7 +2002,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
         object current,
         Task<TypedStageExecutionResult> execution,
         CancellationTokenSource timeoutCts,
-        bool reportUnexpectedFaults = false)
+        bool reportUnexpectedFaults = false,
+        StageAttemptAdmission? admission = null)
     {
         var correlation = stage.GetCorrelation(current);
         _lateAttemptRegistry.Register(
@@ -1969,7 +2015,8 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             timeoutCts,
             GetLateAttemptFinalizationTimeout(stage),
             reportUnexpectedFaults,
-            reportUnexpectedFaults ? GetLateResultError : null);
+            reportUnexpectedFaults ? GetLateResultError : null,
+            admission?.TransferTimedLease());
 
         Exception? GetLateResultError()
         {
@@ -2070,7 +2117,7 @@ internal sealed class TypedPipelineExecutor<TInput, TOutput> : IAsyncDisposable
             return new RetryDecision(RetryDecisionKind.Exhausted, 0, TimeSpan.Zero);
 
         int nextAttempt = attempt + 1;
-        var delay = retry.GetDelay(nextAttempt);
+        var delay = _retryDelayPlanner.GetDelay(retry, nextAttempt);
         var remaining = GetStageTimeoutRemaining(stage, stageStartedTimestamp);
         if (remaining is null)
             return new RetryDecision(RetryDecisionKind.Retry, nextAttempt, delay);
