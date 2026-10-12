@@ -10,7 +10,7 @@ Tracking: [issue #159](https://github.com/MrFr3di/SmartPipe-Core/issues/159). Th
 - `SmartPipeVersionPrefix=2.2.1`, `SmartPipePreviousStableVersion=2.2.0` in `eng/SmartPipe.Versions.props`. Do not modify either while preparing 2.2.1.
 - Published prior release is `v2.2.0`. Maintain its immutable compatibility evidence and the historical 2.1.2 snapshots.
 - I1/I2/O1/O2 and the xUnit package updates were merged through PRs #153–#158 before this checkpoint.
-- This PR changes human-readable release material and package metadata only. No production code, API or baseline changes.
+- This PR changes release material, package metadata and one deterministic regression-test synchronization. No production code, public API or immutable baseline changes.
 
 ## Preflight findings and corresponding fixes
 
@@ -19,6 +19,7 @@ Tracking: [issue #159](https://github.com/MrFr3di/SmartPipe-Core/issues/159). Th
 3. `eng/SmartPipe.Package.props` claimed no package-specific public API changes for the entire release. The Core package adds opt-in API and now has corrected package-specific `PackageReleaseNotes`.
 4. Migration and compatibility notes now explain null budget/admission defaults, deterministic jitter by default, exact sampling by default, and the partial-bucket approximation limitation.
 5. Performance notes link paired measured evidence rather than promising universal p99 or throughput improvement.
+6. Review follow-up: DocFX reported eight invalid links to repository assets outside its content root; those references now use absolute GitHub file URLs, also suitable for extracted GitHub Release notes. The preexisting `ObserverInterestRegressionTests.NoObservers_PreservesTelemetryAndSinkFailure` occasionally checked root `ActivityStopped` before the callback fired because `RunCoreAsync` completes the public run before disposing its root Activity. The test now awaits its own actual `ActivityStopped` signal (10-second test timeout), with no production behavior change.
 
 ## Mandatory go/no-go checks (not yet complete)
 
