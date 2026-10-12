@@ -83,6 +83,29 @@ public sealed class RepositoryDependencyAlignmentTests
         Assert.Equal("0.11.6", coverage.GetProperty("dependencies").GetProperty("Mono.Cecil").GetString());
         Assert.True(graph.TryGetProperty("Mono.Cecil", out _));
         Assert.False(graph.TryGetProperty("Microsoft.DotNet.Cecil", out _));
-        Assert.Equal("2.5.0", graph.GetProperty("Microsoft.Testing.Platform").GetProperty("resolved").GetString());
+        // xUnit's MTP v2 integration may advance the shared platform beyond the
+        // minimum required by CodeCoverage. Keep the resolved family aligned.
+        var platformVersion = graph.GetProperty("Microsoft.Testing.Platform")
+            .GetProperty("resolved").GetString();
+        var xunitDependencies = graph.GetProperty("xunit.v3.core.mtp-v2")
+            .GetProperty("dependencies");
+        Assert.Equal(
+            xunitDependencies.GetProperty("Microsoft.Testing.Platform").GetString(),
+            platformVersion);
+
+        foreach (var id in new[]
+        {
+            "Microsoft.Testing.Extensions.Telemetry",
+            "Microsoft.Testing.Extensions.TrxReport.Abstractions",
+            "Microsoft.Testing.Platform.MSBuild",
+        })
+        {
+            Assert.Equal(
+                platformVersion,
+                graph.GetProperty(id).GetProperty("resolved").GetString());
+            Assert.Equal(
+                xunitDependencies.GetProperty(id).GetString(),
+                graph.GetProperty(id).GetProperty("resolved").GetString());
+        }
     }
 }
