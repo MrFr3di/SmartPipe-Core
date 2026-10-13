@@ -5,7 +5,7 @@
   <Import Project="$(SmartPipeRepositoryRoot)eng/SmartPipe.Package.props" />
   <PropertyGroup>
     <PackageId>SmartPipe.Core</PackageId>
-    <PackageReleaseNotes>SmartPipe $(SmartPipeVersionPrefix) servicing release. Preserves the public API validated against $(SmartPipePreviousStableVersion) and hardens backpressure-delay continuation behavior without changing the contract.</PackageReleaseNotes>
+    <PackageReleaseNotes>SmartPipe $(SmartPipeVersionPrefix) servicing release: preserves the $(SmartPipePreviousStableVersion) API baseline, adds opt-in retry budgets, retry jitter, timed-attempt admission and bounded circuit-breaker sampling, and improves processing supervision and allocation paths. Defaults remain unchanged.</PackageReleaseNotes>
     <Description>Streaming pipeline engine for .NET based on System.Threading.Channels with source, transform, sink, resilience, diagnostics, and compatibility APIs.</Description>
     <PackageTags>etl;pipeline;channels;in-process;streaming;dataflow;resilience;circuit-breaker;retry;dead-letter;deduplication;performance</PackageTags>
     <SmartPipePackageReadmeSource>$(SmartPipeRepositoryRoot)README.md</SmartPipePackageReadmeSource>

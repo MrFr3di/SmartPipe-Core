@@ -1,19 +1,37 @@
 # Changelog
 
-## [2.2.1] — Development
+## [2.2.1] - 2026-10-12
 
-### Servicing and hardening
+SmartPipe 2.2.1 is a synchronized servicing update for the 20-package 2.2.0 release train. There are no intentional public API removals or package movements. New runtime policies listed below are backward-compatible and opt-in, under the documented 2.2.1 exception in [VERSIONING.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/VERSIONING.md).
 
-- Extract ordinary processing supervision while preserving producer error precedence, worker joining and late-attempt ownership.
-- Add opt-in shared run retry budgets, full retry jitter and admission limits covering active and detached timed executions. Defaults remain unlimited admission and deterministic retry delays.
+### Runtime reliability and lifecycle
 
-- Avoid suppressed output and unobserved domain-event allocations without changing sink, metrics or activity behavior.
-- Batch exact circuit-breaker expiry and add opt-in bounded bucket sampling with an explicit oldest-bucket approximation; Exact remains the default.
+- Preserve producer-error precedence and join ordinary processing workers before component cleanup by extracting the internal processing supervisor.
+- Harden timed-attempt cancellation, late-execution ownership, observer shutdown and terminal failure accounting; retain existing behavior for cooperative operations.
+- Improve runtime output and observer allocation paths without suppressing sink writes, diagnostics, metrics or activity instrumentation.
 
-- Seal the public API surface shipped in 2.2.0 and use published 2.2.0 packages as the Package Validation baseline for 2.2.1 servicing.
-- Harden release engineering, post-release documentation, dependency automation, and sensitive logging; the additive runtime policies above use the explicit 2.2.1 versioning exception.
-- Stop the legacy Dapper source completion log from emitting raw SQL text at Information level.
-- Keep Entity Framework Core failure logs payload-free by classifying the outcome without attaching provider exception details; the original exception still propagates to the caller.
+### Optional resilience controls (new Core APIs)
+
+- Add per-run shared retry budgets through `PipelineRuntimeOptions.RetryBudget` and `RetryBudgetOptions`. A null budget preserves the prior unlimited-by-budget behavior; the existing per-policy retry limit still applies.
+- Add `RetryPolicy.Jitter` with `RetryJitterMode.Full` or `None`; the default `None` preserves deterministic delays.
+- Add `PipelineRuntimeOptions.TimedAttemptAdmission` to limit active **and detached** timed executions together. `TimedAttemptAdmissionMode.Wait` waits within the stage deadline; `Reject` produces an admission failure. The default null setting does not impose this cap.
+- Batch exact circuit-breaker expiry and add opt-in `CircuitBreakerSamplingMode.Bucketed` and `SamplingBucketCount`; `Exact` remains the default. Bucketed retains an oldest partial bucket for less than one extra bucket width and does **not** guarantee a small failure-ratio or decision error.
+
+### Packages, integrations and release hardening
+
+- Preserve the 2.2.0 public API and binary compatibility baseline across all 20 packages, including source/binary consumers and package graph validation.
+- Stop logging raw SQL text at Information level from the legacy Dapper source completion event.
+- Keep EF Core failure logs payload-free by reporting outcome metadata without provider exception details, while still propagating the original exception.
+- Update grouped OpenTelemetry/coverage and xUnit test dependencies and regenerate current lockfiles; leave published compatibility baselines unchanged.
+- Harden release validation, repository/package metadata, dependency automation, CI and maintainer documentation.
+
+### Performance evidence
+
+- Allocation and sampling changes were validated in controlled .NET 10 measurements. Results depend on workload and environment; no universal throughput, latency or p99 improvement is claimed. See [runtime I/O measurements](https://github.com/MrFr3di/SmartPipe-Core/blob/main/benchmarks/SmartPipe.Benchmarks/RuntimeIo-results.md) and [circuit-breaker sampling measurements](https://github.com/MrFr3di/SmartPipe-Core/blob/main/benchmarks/SmartPipe.Benchmarks/CircuitBreakerSampling-results.md).
+
+### Upgrade notes
+
+- Update all referenced SmartPipe NuGet packages together to 2.2.1. Existing policy defaults remain unchanged; new resilience controls require explicit opt-in. See the [2.2.0 → 2.2.1 guide](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/migration/2.2.1-integration-packages.md) and [compatibility contract](https://github.com/MrFr3di/SmartPipe-Core/blob/main/docs/reference/compatibility/2.2.0-to-2.2.1.md).
 
 ## [2.2.0] - 2026-10-04
 
