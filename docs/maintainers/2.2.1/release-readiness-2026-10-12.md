@@ -1,6 +1,6 @@
 # REL221-01 — SmartPipe 2.2.1 release-preparation evidence (2026-10-12)
 
-Tracking: [issue #159](https://github.com/MrFr3di/SmartPipe-Core/issues/159). This is a **preparation checkpoint**, not a claim of published release or successful release-mode dry run.
+Tracking: completed preparation [issue #159](https://github.com/MrFr3di/SmartPipe-Core/issues/159); release-mode dry run, publication and verification continue in [issue #161](https://github.com/MrFr3di/SmartPipe-Core/issues/161). This is a **preparation checkpoint**, not a claim of published release or successful release-mode dry run.
 
 ## Immutable input and scope
 
@@ -14,7 +14,7 @@ Tracking: [issue #159](https://github.com/MrFr3di/SmartPipe-Core/issues/159). Th
 
 ## Preflight findings and corresponding fixes
 
-1. `CHANGELOG.md` used a Development heading, rejected by the release-note extractor. It now has the canonical dated heading for 2026-10-12. **If publication is not on that date, correct the heading to the actual release date before publication.**
+1. `CHANGELOG.md` originally used a Development heading, rejected by the release-note extractor. PR #160 dated that heading 2026-10-12; a follow-up release-date correction on 2026-10-13 aligns it with the current planned release date. The actual publication date remains subject to final confirmation before publishing.
 2. `docs/releases/2.2.1.md` incorrectly stated no new public feature surface. The 2.2.1 opt-in API exception is already documented by `VERSIONING.md` and verified in `src/SmartPipe.Core/PublicAPI.Unshipped.txt`.
 3. `eng/SmartPipe.Package.props` claimed no package-specific public API changes for the entire release. The Core package adds opt-in API and now has corrected package-specific `PackageReleaseNotes`.
 4. Migration and compatibility notes now explain null budget/admission defaults, deterministic jitter by default, exact sampling by default, and the partial-bucket approximation limitation.
@@ -42,7 +42,7 @@ Tracking: [issue #159](https://github.com/MrFr3di/SmartPipe-Core/issues/159). Th
 
 ## Remaining risk and stop conditions
 
-- The date 2026-10-12 is the current release candidate heading, **not evidence of publication**; date drift requires a final edit.
+- The date 2026-10-13 is the current release candidate heading, **not evidence of publication**. If publication occurs on a later day, update the heading on a reviewed PR and rerun exact-head validation.
 - No material API break is expected, but the new branch and release artifact still require their own exact-head evidence. Earlier green builds are insufficient.
 - Bucketed sampling has bounded *storage* and less than one bucket-width *temporal overhang*, not a guaranteed failure-ratio or breaker-decision error.
 - Failed docs-link checks from transient upstream HTTP 503 must be diagnosed rather than masked by ignoring valid links.

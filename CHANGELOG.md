@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.2.1] - 2026-10-12
+## [2.2.1] - 2026-10-13
 
 SmartPipe 2.2.1 is a synchronized servicing update for the 20-package 2.2.0 release train. There are no intentional public API removals or package movements. New runtime policies listed below are backward-compatible and opt-in, under the documented 2.2.1 exception in [VERSIONING.md](https://github.com/MrFr3di/SmartPipe-Core/blob/main/VERSIONING.md).
 
