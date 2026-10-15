@@ -56,14 +56,36 @@ All publishable SmartPipe packages in one release use the same package version.
 A package may have a different lifecycle or dependency surface, but it does not
 choose an independent version inside a release train.
 
-For releases after the established 2.2.0 transition, use Semantic Versioning
-2.0.0:
+For releases after the established 2.2.0 transition, use **SmartPipe's
+documented version policy**. The numerical version format follows SemVer
+`MAJOR.MINOR.PATCH`, but the compatibility semantics **intentionally differ
+from strict Semantic Versioning 2.0.0**:
 
-- PATCH for backward-compatible fixes, for example `2.2.0 -> 2.2.1`;
-- MINOR for backward-compatible features, for example `2.2.x -> 2.3.0`;
-- MAJOR for incompatible public-contract changes, for example `2.x -> 3.0.0`;
-- prereleases use canonical suffixes such as `-alpha.1`, `-beta.1`, or
+- PATCH (`2.3.0 -> 2.3.1`) is reserved for backward-compatible fixes.
+  Security/privacy servicing can remove sensitive exported values without
+  changing callable public signatures, provided the change is documented.
+- MINOR (`2.2.x -> 2.3.0 -> 2.4.0`) is the planned feature, cleanup, and
+  API-consolidation boundary. MINOR **may remove or change public APIs and
+  observable behavior** when approved as one coherent release-scoped migration.
+  A MINOR version must not be advertised as automatically source-, binary-,
+  or behavior-compatible with the previous MINOR.
+- MAJOR remains available for a broad platform or architecture generation
+  change. It is **not required for each public API removal**.
+- Prereleases use canonical suffixes such as `-alpha.1`, `-beta.1`, or
   `-rc.1`.
+
+NuGet and automatic dependency update tooling commonly treat a MINOR increment
+as compatible under standard SemVer conventions. Since SmartPipe deliberately
+does not promise that, downstream maintainers should review the migration
+matrix and verify source/binary consumers before accepting a MINOR update.
+
+Every breaking-MINOR release MUST publish one precise removed/changed API
+inventory with migration replacements. Compare candidate packages against
+immutable prior published packages, keep Package Validation and PublicApiAnalyzers
+enabled, and suppress **only explicitly reviewed** compatibility differences.
+Never regenerate the old published baseline to hide a break. Changes should
+remove real compatibility overhead, unmaintained behavior, unsafe paths, or
+measurable runtime cost—not merely shrink the API listing.
 
 Build metadata is not part of a publishable SmartPipe package identity and is
 rejected by the release workflow.
