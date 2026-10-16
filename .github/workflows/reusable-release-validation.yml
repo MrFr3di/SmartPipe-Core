@@ -474,7 +474,7 @@ jobs:
     - name: Upload immutable packages and reports
       id: packages
       if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && inputs.package-artifact-id == ''
-      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: ${{ inputs.artifact-name }}
         retention-days: ${{ github.event_name == 'pull_request' && 1 || inputs.artifact-name == 'packages' && 7 || 90 }}
@@ -488,7 +488,7 @@ jobs:
 
     - name: Upload replay reports
       if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && inputs.package-artifact-id != ''
-      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: ${{ inputs.artifact-name }}
         retention-days: 90
